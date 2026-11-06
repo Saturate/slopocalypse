@@ -22,10 +22,19 @@
     "lod_distance": 48.0,
     "depth": 64.0
   },
+  "biomes": {
+    "seed": 77.0,
+    "forest_frequency": 0.012,
+    "forest_threshold": 0.52,
+    "dry_frequency": 0.01,
+    "rock_frequency": 0.018,
+    "rock_threshold": 0.66,
+    "map_resolution": 128.0
+  },
   "scatter": {
     "seed": 2024.0,
-    "trees": 260.0,
-    "rocks": 420.0,
+    "trees": 2400.0,
+    "rocks": 900.0,
     "grass": 60000.0,
     "clear_radius": 14.0,
     "max_steepness": 0.45

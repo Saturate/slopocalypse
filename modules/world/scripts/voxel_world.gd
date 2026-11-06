@@ -55,6 +55,10 @@ func _terrain_material() -> ShaderMaterial:
 	mat.shader = load(SHADER)
 	if DisplayServer.get_name() == "headless":
 		return mat
+	var data: Dictionary = Data.load_json(config_path)
+	if data.has("biomes") and Data.require(config_path + " biomes", data["biomes"], Biomes.REQUIRED):
+		mat.set_shader_parameter("biome_map", Biomes.new(data["biomes"]).bake(heights.size))
+		mat.set_shader_parameter("world_size", heights.size)
 	for layer in [["grass", "Grass004"], ["dirt", "Ground037"], ["rock", "Rock030"]]:
 		var base := "res://modules/world/textures/%s/%s_1K-JPG_" % [layer[1], layer[1]]
 		mat.set_shader_parameter(layer[0] + "_albedo", load(base + "Color.jpg"))
