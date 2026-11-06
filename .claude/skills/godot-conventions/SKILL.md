@@ -98,4 +98,6 @@ func _initialize() -> void:
 | Faceted mesh renders black | `SurfaceTool.generate_normals(true)` flips normals inward; the argument is not "flat" | `deindex()` then `generate_normals()` for flat faces |
 | Half the grass or foliage is black | `CULL_DISABLED` flips back-face normals, lighting them from below | Emit both windings with an up normal and keep back-face culling |
 | `space is null` / raycasts from a plain `Node` fail | `Viewport.world_3d` is only the viewport's own override, null for the root | `get_viewport().find_world_3d()` or `get_world_3d()` on a `Node3D` |
+| Builder fails: `Identifier not found: Data` | A builder referenced a class whose script names an autoload | Keep constants builders need in standalone scripts with no autoload use (e.g. `ViewModel.LAYER`) |
+| `Node not found: "UpperLeg.L"` | Node names cannot contain `.` `:` `@` `/` `%`; Godot silently rewrites them | Use `_` in node names (`UpperLeg_L`) |
 | Later tests in a suite never run | gdUnit4 stops a suite at the first failing test | Fix the first failure, then rerun; don't read "N passed" as the whole suite |

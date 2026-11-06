@@ -88,8 +88,10 @@ func _spawn_tracer(from: Vector3, to: Vector3) -> void:
 func _spawn_muzzle_flash(at: Vector3) -> void:
 	var light := OmniLight3D.new()
 	light.light_color = Color(1.0, 0.8, 0.45)
-	light.light_energy = 3.0
+	light.light_energy = 2.0
 	light.omni_range = 4.0
+	# Light the world around the muzzle, not the gun it is touching.
+	light.light_cull_mask = ~ViewModel.LAYER
 	_world_root().add_child(light)
 	light.global_position = at
 	get_tree().create_timer(TRACER_SECONDS).timeout.connect(light.queue_free)

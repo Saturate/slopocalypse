@@ -16,7 +16,7 @@ func _ready() -> void:
 	_player = (load(PLAYER) as PackedScene).instantiate()
 	add_child(_player)
 	_player.global_position = Vector3(0.0, 0.1, 0.0)
-	(_player.get_node("BodyMesh") as MeshInstance3D).visible = false
+	PlayerBody.shadows_only(_player.get_node("Body"))
 	var camera: Camera3D = _player.get_node("Head/Camera")
 	camera.current = true
 	var rifle: HitscanWeapon = (load(RIFLE) as PackedScene).instantiate()

@@ -50,7 +50,8 @@ const r = await run(
 const problems = scanLog(r.output, GODOT_NOISE);
 if (r.code !== 0 || problems.length > 0 || !existsSync(out)) {
 	console.error(`capture failed (exit ${r.code})`);
-	for (const p of problems) console.error("  " + p);
+	for (const p of problems.slice(0, 20)) console.error("  " + p);
+	if (problems.length > 20) console.error(`  ... and ${problems.length - 20} more`);
 	exit(1);
 }
 console.log(out);
