@@ -19,17 +19,32 @@ func _initialize() -> void:
 	var terrain := Node3D.new()
 	terrain.name = "Terrain"
 	terrain.set_script(load("res://modules/world/scripts/terrain_chunk.gd"))
+	# Colour comes from per-vertex grass/dirt/rock tints in TerrainChunk.
 	var ground := StandardMaterial3D.new()
-	ground.albedo_color = Color(0.36, 0.45, 0.28)
+	ground.vertex_color_use_as_albedo = true
+	# Our tints are picked in sRGB; without this Godot reads them as linear and washes out.
+	ground.vertex_color_is_srgb = true
 	ground.roughness = 0.95
 	terrain.set("config_path", CONFIG)
 	terrain.set("material", ground)
 	root.add_child(terrain)
 
+	var scenery := Node3D.new()
+	scenery.name = "Scenery"
+	scenery.set_script(load("res://modules/world/scripts/scenery_scatter.gd"))
+	scenery.set("config_path", CONFIG)
+	root.add_child(scenery)
+
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
 	sun.shadow_enabled = true
-	sun.transform = Transform3D(Basis.from_euler(Vector3(deg_to_rad(-50.0), deg_to_rad(35.0), 0.0)), Vector3.ZERO)
+	sun.light_color = Color(1.0, 0.95, 0.86)
+	sun.light_energy = 1.25
+	sun.shadow_blur = 2.0
+	# Fully black shadows read as holes in a bright low-poly scene.
+	sun.shadow_opacity = 0.8
+	sun.directional_shadow_max_distance = 140.0
+	sun.transform = Transform3D(Basis.from_euler(Vector3(deg_to_rad(-42.0), deg_to_rad(35.0), 0.0)), Vector3.ZERO)
 	root.add_child(sun)
 
 	var env := WorldEnvironment.new()
@@ -37,28 +52,50 @@ func _initialize() -> void:
 	var environment := Environment.new()
 	environment.background_mode = Environment.BG_SKY
 	var sky := Sky.new()
-	sky.sky_material = ProceduralSkyMaterial.new()
+	var sky_mat := ProceduralSkyMaterial.new()
+	sky_mat.sky_top_color = Color(0.32, 0.5, 0.78)
+	sky_mat.sky_horizon_color = Color(0.72, 0.78, 0.84)
+	sky_mat.ground_horizon_color = Color(0.72, 0.78, 0.84)
+	sky_mat.ground_bottom_color = Color(0.3, 0.34, 0.3)
+	sky.sky_material = sky_mat
 	environment.sky = sky
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	# Without GI, faces turned away from the sun read as black; lift the fill light.
-	environment.ambient_light_energy = 1.6
-	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	# Hides the hard edge where the 256 m test chunk ends.
+	environment.ambient_light_energy = 1.5
+	environment.tonemap_mode = Environment.TONE_MAPPER_ACES
+	environment.tonemap_exposure = 1.0
+	# Ambient occlusion grounds props and trees; cheap at this scene size.
+	environment.ssao_enabled = true
+	environment.ssao_radius = 1.2
+	environment.ssao_intensity = 1.6
+	environment.glow_enabled = true
+	environment.glow_intensity = 0.4
+	environment.glow_bloom = 0.05
+	environment.adjustment_enabled = true
+	environment.adjustment_saturation = 1.12
+	environment.adjustment_contrast = 1.05
+	# Aerial haze hides the hard edge where the 256 m test chunk ends.
 	environment.fog_enabled = true
-	environment.fog_light_color = Color(0.62, 0.68, 0.75)
-	environment.fog_density = 0.008
-	environment.fog_sky_affect = 0.3
+	environment.fog_light_color = Color(0.68, 0.74, 0.8)
+	environment.fog_density = 0.0035
+	environment.fog_aerial_perspective = 0.3
+	environment.fog_sky_affect = 0.25
 	env.environment = environment
 	root.add_child(env)
 
 	var cover_root := Node3D.new()
 	cover_root.name = "Cover"
 	root.add_child(cover_root)
-	var crate := StandardMaterial3D.new()
-	crate.albedo_color = Color(0.55, 0.5, 0.42)
+	# A small palette of concrete and timber so cover doesn't read as one flat colour.
+	var palette: Array[StandardMaterial3D] = []
+	for c: Color in [Color(0.58, 0.56, 0.52), Color(0.5, 0.48, 0.45), Color(0.52, 0.4, 0.28), Color(0.44, 0.34, 0.24)]:
+		var m := StandardMaterial3D.new()
+		m.albedo_color = c
+		m.roughness = 0.85
+		palette.append(m)
 	var index := 0
 	for item: Dictionary in config["cover"]:
-		cover_root.add_child(_cover_box(index, item, heights, crate))
+		cover_root.add_child(_cover_box(index, item, heights, palette[index % palette.size()]))
 		index += 1
 
 	root.add_child(_boundary(heights.size))
