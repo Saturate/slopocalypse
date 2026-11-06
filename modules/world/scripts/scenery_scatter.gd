@@ -57,14 +57,37 @@ func _random_spot(cfg: Dictionary, weight: Callable) -> Variant:
 	return null
 
 
-## Three firs of different height and shape; each placed tree picks one, then gets its own
-## scale, rotation and needle tint so the forest doesn't repeat.
-const TREE_VARIANTS := [[11, 8.0], [23, 10.5], [37, 13.0]]
+## Tree variants: [seed, height, style]. Each placed tree picks one by biome, then gets its
+## own scale, rotation and needle tint so the forest doesn't repeat.
+const TREE_VARIANTS := [
+	[11, 9.0, "fir"], [23, 11.5, "fir"], [37, 14.0, "fir"],
+	[41, 16.0, "spruce"], [53, 12.5, "spruce"],
+	[61, 17.0, "pine"], [67, 13.5, "pine"],
+	[71, 3.5, "sapling"], [79, 5.0, "sapling"],
+	[83, 11.0, "dead"],
+]
+
+
+## Deep forest is firs and spruces; edges and meadows lean to pines and young trees; a few
+## dead snags everywhere.
+func _pick_variant(forest: float) -> int:
+	var roll := _rng.randf()
+	if roll < 0.04:
+		return 9
+	var style_roll := _rng.randf()
+	if style_roll < 0.25 * (1.0 - forest) + 0.08:
+		return _rng.randi_range(7, 8)
+	if style_roll < 0.6 * (1.0 - forest) + 0.15:
+		return _rng.randi_range(5, 6)
+	return _rng.randi_range(0, 4)
 
 
 func _place_trees(count: int, cfg: Dictionary, collision: StaticBody3D) -> void:
-	var transforms: Array = [[], [], []]
-	var colours: Array = [[], [], []]
+	var transforms: Array = []
+	var colours: Array = []
+	for v in TREE_VARIANTS:
+		transforms.append([])
+		colours.append([])
 	# Dense in forests, the odd lone tree out in the meadows, none on bare rock.
 	var tree_weight := func(x: float, z: float) -> float:
 		return maxf(pow(_biomes.forest(x, z), 1.3), 0.015) * (1.0 - _biomes.rock(x, z) * 0.8)
@@ -73,9 +96,9 @@ func _place_trees(count: int, cfg: Dictionary, collision: StaticBody3D) -> void:
 		if not spot is Vector3:
 			continue
 		var at: Vector3 = spot
-		var variant := _rng.randi_range(0, TREE_VARIANTS.size() - 1)
+		var variant := _pick_variant(_biomes.forest(at.x, at.z))
 		var height: float = TREE_VARIANTS[variant][1]
-		var scale := _rng.randf_range(0.8, 1.25)
+		var scale := _rng.randf_range(0.7, 1.35)
 		var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3.ONE * scale)
 		transforms[variant].append(Transform3D(basis, at + Vector3.DOWN * 0.1))
 		# Needle tint stays close to white: the texture carries the colour, this only varies it.
@@ -89,8 +112,11 @@ func _place_trees(count: int, cfg: Dictionary, collision: StaticBody3D) -> void:
 		collision.add_child(shape)
 	if _visual:
 		for v in TREE_VARIANTS.size():
-			var mesh := PineTreeMesh.build(TREE_VARIANTS[v][0], TREE_VARIANTS[v][1])
-			var inst := _multimesh("Firs%d" % v, mesh, _typed(transforms[v]), _typed_colours(colours[v]))
+			if (transforms[v] as Array).is_empty():
+				continue
+			var spec: Array = TREE_VARIANTS[v]
+			var mesh := PineTreeMesh.build(spec[0], spec[1], spec[2])
+			var inst := _multimesh("Trees_%s_%d" % [spec[2], v], mesh, _typed(transforms[v]), _typed_colours(colours[v]))
 			inst.visibility_range_end = 220.0
 
 
