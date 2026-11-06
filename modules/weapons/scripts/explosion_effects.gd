@@ -4,7 +4,7 @@ extends Node
 ## visual; craters and damage are decided on the server.
 
 const FLASH_SECONDS := 0.12
-const DUST_SECONDS := 3.5
+const DUST_SECONDS := 6.0
 
 
 func _ready() -> void:
@@ -28,8 +28,8 @@ func _on_explosion(p: Dictionary) -> void:
 	var tween := flash.create_tween()
 	tween.tween_property(flash, "light_energy", 0.0, FLASH_SECONDS)
 	tween.tween_callback(flash.queue_free)
-	root.add_child(_burst(at, radius, _dust_mesh(), 60, Vector2(1.5, 5.0), DUST_SECONDS, 0.6, Color(0.55, 0.5, 0.42, 0.55)))
-	root.add_child(_burst(at, radius, _debris_mesh(), 40, Vector2(6.0, 14.0), 2.0, 9.8, Color(0.36, 0.3, 0.22)))
+	root.add_child(_burst(at, radius, _dust_mesh(), 80, Vector2(1.2, 4.0), DUST_SECONDS, 0.3, Color(0.36, 0.3, 0.24, 0.75)))
+	root.add_child(_burst(at, radius, _debris_mesh(), 40, Vector2(6.0, 14.0), 2.0, 9.8, Color(0.42, 0.35, 0.26)))
 
 
 ## One-shot particle burst. Dust drifts slowly upward; debris is thrown out and falls.
@@ -53,6 +53,13 @@ func _burst(at: Vector3, radius: float, mesh: Mesh, amount: int, speed: Vector2,
 	process.scale_min = 0.6
 	process.scale_max = 1.6
 	process.color = colour
+	# Fade out over the particle's life so clouds thin away rather than vanish.
+	var fade := Gradient.new()
+	fade.set_color(0, Color(1, 1, 1, 1))
+	fade.set_color(1, Color(1, 1, 1, 0))
+	var ramp := GradientTexture1D.new()
+	ramp.gradient = fade
+	process.color_ramp = ramp
 	process.angular_velocity_min = -360.0
 	process.angular_velocity_max = 360.0
 	particles.process_material = process
@@ -62,24 +69,39 @@ func _burst(at: Vector3, radius: float, mesh: Mesh, amount: int, speed: Vector2,
 	return particles
 
 
+## Soft billboard puffs: a radial gradient fading to transparent, lit so the cloud picks up
+## the sun, and fading out over its lifetime instead of popping.
 func _dust_mesh() -> Mesh:
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.8
-	sphere.height = 1.6
-	sphere.radial_segments = 8
-	sphere.rings = 4
+	var quad := QuadMesh.new()
+	quad.size = Vector2(2.2, 2.2)
+	var gradient := Gradient.new()
+	gradient.set_color(0, Color(1, 1, 1, 0.9))
+	gradient.set_color(1, Color(1, 1, 1, 0.0))
+	var soft := GradientTexture2D.new()
+	soft.gradient = gradient
+	soft.fill = GradientTexture2D.FILL_RADIAL
+	soft.fill_from = Vector2(0.5, 0.5)
+	soft.fill_to = Vector2(1.0, 0.5)
+	soft.width = 64
+	soft.height = 64
 	var mat := StandardMaterial3D.new()
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_texture = soft
 	mat.vertex_color_use_as_albedo = true
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	sphere.material = mat
-	return sphere
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	mat.roughness = 1.0
+	quad.material = mat
+	return quad
 
 
+## Chunky lit clods. The particle colour arrives as a vertex colour in sRGB; without the
+## flag they rendered as flat near-black squares.
 func _debris_mesh() -> Mesh:
 	var box := BoxMesh.new()
-	box.size = Vector3(0.18, 0.12, 0.15)
+	box.size = Vector3(0.22, 0.16, 0.2)
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
+	mat.vertex_color_is_srgb = true
+	mat.roughness = 1.0
 	box.material = mat
 	return box

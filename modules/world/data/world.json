@@ -26,7 +26,7 @@
     "seed": 2024.0,
     "trees": 260.0,
     "rocks": 420.0,
-    "grass": 16000.0,
+    "grass": 60000.0,
     "clear_radius": 14.0,
     "max_steepness": 0.45
   }

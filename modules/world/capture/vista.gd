@@ -9,7 +9,8 @@ var _t := 0.0
 
 
 func _ready() -> void:
-	add_child((load(WORLD) as PackedScene).instantiate())
+	# Voxel terrain streams in; wait for the spawn area before dropping anything onto it.
+	await VoxelWorld.add_and_wait(self, WORLD)
 	add_child(_camera)
 	_camera.fov = 75.0
 	_camera.current = true

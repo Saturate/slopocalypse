@@ -63,7 +63,8 @@ func _place_trees(count: int, cfg: Dictionary, collision: StaticBody3D) -> void:
 		var basis := Basis(Vector3.UP, yaw).scaled(Vector3.ONE * scale)
 		trunks.append(Transform3D(basis, at))
 		canopies.append(Transform3D(basis, at + Vector3.UP * 1.6 * scale))
-		colours.append(Color(0.2, 0.38, 0.18).lerp(Color(0.32, 0.45, 0.2), _rng.randf()))
+		# Dark, slightly desaturated conifer greens to sit with the grounded palette.
+		colours.append(Color(0.13, 0.2, 0.11).lerp(Color(0.2, 0.27, 0.14), _rng.randf()))
 		var shape := CollisionShape3D.new()
 		var cyl := CylinderShape3D.new()
 		cyl.radius = 0.25 * scale
@@ -88,7 +89,7 @@ func _place_rocks(count: int, cfg: Dictionary, collision: StaticBody3D) -> void:
 		var basis := Basis.from_euler(Vector3(_rng.randf() * 0.4, _rng.randf() * TAU, _rng.randf() * 0.4)).scaled(Vector3(size, size * _rng.randf_range(0.5, 0.9), size))
 		transforms.append(Transform3D(basis, at + Vector3.DOWN * size * 0.15))
 		var grey := _rng.randf_range(0.38, 0.52)
-		colours.append(Color(grey, grey * 0.98, grey * 0.95))
+		colours.append(Color(grey, grey * 0.98, grey * 0.95) * 2.0)
 		var shape := CollisionShape3D.new()
 		var sphere := SphereShape3D.new()
 		sphere.radius = size * 0.45
@@ -106,9 +107,9 @@ func _place_grass(count: int, cfg: Dictionary) -> void:
 	for i in count:
 		var x := _rng.randf_range(-half, half)
 		var z := _rng.randf_range(-half, half)
-		var s := _rng.randf_range(0.6, 1.3)
+		var s := _rng.randf_range(0.5, 1.1)
 		transforms.append(Transform3D(Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(s, s * _rng.randf_range(0.7, 1.4), s)), Vector3(x, _heights.height_at(x, z), z)))
-		colours.append(Color(0.33, 0.5, 0.22).lerp(Color(0.5, 0.58, 0.28), _rng.randf()))
+		colours.append(Color(0.3, 0.36, 0.18).lerp(Color(0.44, 0.45, 0.25), _rng.randf()))
 	var mm := _multimesh("Grass", _grass_mesh(), transforms, colours)
 	mm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# Grass far away is noise; fade it out with distance to keep the horizon clean.
@@ -153,7 +154,7 @@ func _trunk_mesh() -> Mesh:
 	m.height = 2.0
 	m.radial_segments = 6
 	m.rings = 1
-	m.material = _material(Color(0.36, 0.26, 0.17), false)
+	m.material = _material(Color(0.22, 0.19, 0.16), false)
 	# CylinderMesh is centred; lift it so the base sits on the ground.
 	var st := SurfaceTool.new()
 	st.append_from(m, 0, Transform3D(Basis.IDENTITY, Vector3.UP * 1.0))
@@ -163,20 +164,51 @@ func _trunk_mesh() -> Mesh:
 
 
 func _canopy_mesh() -> Mesh:
-	# Two stacked low-poly cones read as a stylised conifer.
-	var st := SurfaceTool.new()
-	var mat := _material(Color.WHITE, true)
-	for tier in [[1.3, 2.0, 0.6], [0.95, 1.6, 1.7]]:
-		var cone := CylinderMesh.new()
-		cone.top_radius = 0.0
-		cone.bottom_radius = tier[0]
-		cone.height = tier[1]
-		cone.radial_segments = 7
-		cone.rings = 1
-		st.append_from(cone, 0, Transform3D(Basis.IDENTITY, Vector3.UP * tier[2]))
+	# Fir: four drooping tiers whose rim alternates in and out, so the silhouette reads as
+	# branches instead of a smooth toy cone. Each tier is twisted differently.
+	var st := LowPoly.begin()
+	var tiers := [[1.5, 1.5, 0.0], [1.2, 1.4, 0.9], [0.9, 1.25, 1.75], [0.55, 1.1, 2.5]]
+	var twist := 0.0
+	for tier: Array in tiers:
+		var radius: float = tier[0]
+		var height: float = tier[1]
+		var base_y: float = tier[2]
+		var sides := 10
+		var apex := Vector3(0, base_y + height, 0)
+		for i in sides:
+			var a0 := twist + TAU * float(i) / sides
+			var a1 := twist + TAU * float(i + 1) / sides
+			# Every other rim point juts out and hangs lower: branch tips.
+			var r0 := radius * (1.0 if i % 2 == 0 else 0.72)
+			var r1 := radius * (1.0 if (i + 1) % 2 == 0 else 0.72)
+			var d0 := 0.18 if i % 2 == 0 else 0.0
+			var d1 := 0.18 if (i + 1) % 2 == 0 else 0.0
+			var p0 := Vector3(cos(a0) * r0, base_y - d0, sin(a0) * r0)
+			var p1 := Vector3(cos(a1) * r1, base_y - d1, sin(a1) * r1)
+			# Outer face points away from a spot on the trunk inside the tier.
+			_canopy_tri(st, apex, p1, p0, Vector3(0, base_y + height * 0.3, 0))
+			# Underside so the tier isn't hollow when seen from below; faces downward.
+			_canopy_tri(st, Vector3(0, base_y + 0.15, 0), p0, p1, Vector3(0, base_y + 1.0, 0))
+		twist += 0.45
+	st.generate_normals()
 	var out := st.commit()
-	out.surface_set_material(0, mat)
+	out.surface_set_material(0, _material(Color.WHITE, true))
 	return out
+
+
+## Canopy triangle facing away from `inside`. Winding is fixed here rather than by vertex
+## order, which is easy to get wrong and renders inverted faces black. White vertex colour,
+## so the instance colour alone tints the tree.
+func _canopy_tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, inside: Vector3) -> void:
+	var n := (b - a).cross(c - a)
+	# Godot's front faces wind clockwise, so a front face's cross product points inward.
+	if n.dot((a + b + c) / 3.0 - inside) > 0.0:
+		var t := b
+		b = c
+		c = t
+	for v in [a, b, c]:
+		st.set_color(Color.WHITE)
+		st.add_vertex(v)
 
 
 func _rock_mesh() -> Mesh:
@@ -192,7 +224,8 @@ func _rock_mesh() -> Mesh:
 	st.deindex()
 	st.generate_normals()
 	var out := st.commit()
-	out.surface_set_material(0, _material(Color.WHITE, true))
+	# Same CC0 rock as the cliffs, tinted per instance so no two rocks match exactly.
+	out.surface_set_material(0, WorldMaterials.triplanar("Rock030", Color.WHITE, 1.5, true))
 	return out
 
 
@@ -212,5 +245,7 @@ func _grass_mesh() -> Mesh:
 			for v: Vector3 in tri:
 				st.add_vertex(v)
 	var out := st.commit()
-	out.surface_set_material(0, _material(Color.WHITE, true))
+	var wind := ShaderMaterial.new()
+	wind.shader = load("res://modules/world/shaders/grass.gdshader")
+	out.surface_set_material(0, wind)
 	return out

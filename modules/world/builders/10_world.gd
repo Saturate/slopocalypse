@@ -29,16 +29,16 @@ func _initialize() -> void:
 	scenery.set("config_path", CONFIG)
 	root.add_child(scenery)
 
+	# Late-afternoon sun: low and warm, long shadows, light shafts through the haze.
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
 	sun.shadow_enabled = true
-	sun.light_color = Color(1.0, 0.95, 0.86)
-	sun.light_energy = 1.25
-	sun.shadow_blur = 2.0
-	# Fully black shadows read as holes in a bright low-poly scene.
-	sun.shadow_opacity = 0.8
-	sun.directional_shadow_max_distance = 140.0
-	sun.transform = Transform3D(Basis.from_euler(Vector3(deg_to_rad(-42.0), deg_to_rad(35.0), 0.0)), Vector3.ZERO)
+	sun.light_color = Color(1.0, 0.88, 0.72)
+	sun.light_energy = 1.4
+	sun.light_volumetric_fog_energy = 1.6
+	sun.shadow_blur = 1.2
+	sun.directional_shadow_max_distance = 160.0
+	sun.transform = Transform3D(Basis.from_euler(Vector3(deg_to_rad(-24.0), deg_to_rad(40.0), 0.0)), Vector3.ZERO)
 	root.add_child(sun)
 
 	var env := WorldEnvironment.new()
@@ -46,47 +46,56 @@ func _initialize() -> void:
 	var environment := Environment.new()
 	environment.background_mode = Environment.BG_SKY
 	var sky := Sky.new()
+	# A hazy, slightly washed sky rather than a clean postcard blue.
 	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.32, 0.5, 0.78)
-	sky_mat.sky_horizon_color = Color(0.72, 0.78, 0.84)
-	sky_mat.ground_horizon_color = Color(0.72, 0.78, 0.84)
-	sky_mat.ground_bottom_color = Color(0.3, 0.34, 0.3)
+	sky_mat.sky_top_color = Color(0.4, 0.54, 0.72)
+	sky_mat.sky_horizon_color = Color(0.76, 0.76, 0.72)
+	sky_mat.ground_horizon_color = Color(0.76, 0.76, 0.72)
+	sky_mat.ground_bottom_color = Color(0.22, 0.22, 0.2)
+	sky_mat.sun_angle_max = 20.0
 	sky.sky_material = sky_mat
 	environment.sky = sky
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	# Without GI, faces turned away from the sun read as black; lift the fill light.
-	environment.ambient_light_energy = 1.5
+	environment.ambient_light_energy = 0.7
 	environment.tonemap_mode = Environment.TONE_MAPPER_ACES
 	environment.tonemap_exposure = 1.0
-	# Ambient occlusion grounds props and trees; cheap at this scene size.
+	# Indirect bounce light and contact occlusion do most of the "grounded" work.
+	environment.ssil_enabled = true
+	environment.ssil_intensity = 1.2
 	environment.ssao_enabled = true
-	environment.ssao_radius = 1.2
-	environment.ssao_intensity = 1.6
+	environment.ssao_radius = 1.0
+	environment.ssao_intensity = 2.0
 	environment.glow_enabled = true
-	environment.glow_intensity = 0.4
-	environment.glow_bloom = 0.05
+	environment.glow_intensity = 0.3
+	environment.glow_bloom = 0.03
+	# Grounded grade: less saturation, a bit more contrast, warm highlights.
 	environment.adjustment_enabled = true
-	environment.adjustment_saturation = 1.12
-	environment.adjustment_contrast = 1.05
-	# Aerial haze hides the hard edge where the 256 m test chunk ends.
+	environment.adjustment_saturation = 0.9
+	environment.adjustment_contrast = 1.12
+	environment.adjustment_brightness = 1.0
+	# Volumetric fog gives depth and sun shafts; it is cheap at these settings on Forward+.
+	environment.volumetric_fog_enabled = true
+	environment.volumetric_fog_density = 0.006
+	environment.volumetric_fog_albedo = Color(0.82, 0.8, 0.76)
+	environment.volumetric_fog_anisotropy = 0.6
+	environment.volumetric_fog_length = 120.0
 	environment.fog_enabled = true
-	environment.fog_light_color = Color(0.68, 0.74, 0.8)
-	environment.fog_density = 0.0035
-	environment.fog_aerial_perspective = 0.3
-	environment.fog_sky_affect = 0.25
+	environment.fog_light_color = Color(0.7, 0.68, 0.64)
+	environment.fog_density = 0.002
+	environment.fog_aerial_perspective = 0.4
+	environment.fog_sky_affect = 0.3
 	env.environment = environment
 	root.add_child(env)
 
 	var cover_root := Node3D.new()
 	cover_root.name = "Cover"
 	root.add_child(cover_root)
-	# A small palette of concrete and timber so cover doesn't read as one flat colour.
-	var palette: Array[StandardMaterial3D] = []
-	for c: Color in [Color(0.58, 0.56, 0.52), Color(0.5, 0.48, 0.45), Color(0.52, 0.4, 0.28), Color(0.44, 0.34, 0.24)]:
-		var m := StandardMaterial3D.new()
-		m.albedo_color = c
-		m.roughness = 0.85
-		palette.append(m)
+	# Weathered concrete and timber (CC0 ambientCG) instead of flat colours.
+	var palette: Array[StandardMaterial3D] = [
+		WorldMaterials.triplanar("Concrete034", Color(0.6, 0.59, 0.56), 2.0),
+		WorldMaterials.triplanar("Planks037A", Color(0.7, 0.64, 0.56), 1.5),
+		WorldMaterials.triplanar("Concrete034", Color(0.48, 0.47, 0.45), 2.0),
+	]
 	var index := 0
 	for item: Dictionary in config["cover"]:
 		cover_root.add_child(_cover_box(index, item, heights, palette[index % palette.size()]))

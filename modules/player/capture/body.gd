@@ -11,7 +11,8 @@ var _ticks := 0
 
 
 func _ready() -> void:
-	add_child((load(WORLD) as PackedScene).instantiate())
+	# Voxel terrain streams in; wait for the spawn area before dropping anything onto it.
+	await VoxelWorld.add_and_wait(self, WORLD)
 	_player = (load(PLAYER) as PackedScene).instantiate()
 	add_child(_player)
 	_player.global_position = Vector3(0.0, 0.1, 6.0)
@@ -27,6 +28,8 @@ func _ready() -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	if _player == null:
+		return
 	_ticks += 1
 	var intent := _player.intent()
 	intent.move = Vector2(0.0, 1.0) if _ticks > 10 and _ticks < 260 else Vector2.ZERO
