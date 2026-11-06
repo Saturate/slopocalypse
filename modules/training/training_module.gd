@@ -1,11 +1,18 @@
 extends Node
-## Places training dummies in front of the spawn once the world is ready.
+## The server places training dummies in front of the spawn once the world is ready; a
+## MultiplayerSpawner replicates them to clients.
 
 const SCENE := "res://modules/training/scenes/dummy.tscn"
 const CONFIG := "res://modules/training/data/training.json"
 
+var _spawner := MultiplayerSpawner.new()
+
 
 func _ready() -> void:
+	_spawner.name = "Spawner"
+	_spawner.spawn_path = NodePath("..")
+	_spawner.spawn_function = _spawn_dummy
+	add_child(_spawner)
 	EventBus.subscribe(&"world.ready", _on_world_ready)
 
 
@@ -14,11 +21,12 @@ func _exit_tree() -> void:
 
 
 func _on_world_ready(payload: Dictionary) -> void:
+	if not multiplayer.is_server():
+		return
 	var data: Variant = Data.load_json(CONFIG)
 	if not data is Dictionary or not Data.require(CONFIG, data, {"dummies": TYPE_ARRAY}):
 		return
 	var spawn: Vector3 = payload["spawn"]
-	var scene: PackedScene = load(SCENE)
 	# Terrain collision added this frame isn't in the physics space until the next step.
 	await get_tree().physics_frame
 	# Viewport.world_3d is only the viewport's own override and is null for the root;
@@ -26,11 +34,18 @@ func _on_world_ready(payload: Dictionary) -> void:
 	var space := get_viewport().find_world_3d().direct_space_state
 	var index := 0
 	for spot: Dictionary in data["dummies"]:
-		var dummy: DummyTarget = scene.instantiate()
-		dummy.name = "Dummy%d" % index
-		add_child(dummy)
-		dummy.global_position = _ground_at(space, spawn.x + float(spot["x"]), spawn.z + float(spot["z"]))
+		var at := _ground_at(space, spawn.x + float(spot["x"]), spawn.z + float(spot["z"]))
+		_spawner.spawn({"index": index, "position": at})
 		index += 1
+
+
+## Runs on the server and, through the spawner, on every client.
+func _spawn_dummy(data: Variant) -> Node:
+	var info: Dictionary = data
+	var dummy: DummyTarget = (load(SCENE) as PackedScene).instantiate()
+	dummy.name = "Dummy%d" % int(info["index"])
+	dummy.position = info["position"]
+	return dummy
 
 
 ## Drops a ray onto whatever ground is there, so dummies stand on hills too.
