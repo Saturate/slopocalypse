@@ -11,6 +11,7 @@ export_presets.cfg
 # Test and capture output
 /tests/reports/
 /screenshots/
+/.selftest-*/
 
 # Node
 node_modules/

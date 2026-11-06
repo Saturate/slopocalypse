@@ -6,7 +6,13 @@
     "node": ">=24"
   },
   "scripts": {
+    "check": "node tools/check.ts",
+    "check:full": "node tools/check.ts --full",
     "get-godot": "node tools/get-godot.ts",
     "test:tools": "node --test \"tools/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
   }
 }
