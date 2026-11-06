@@ -11,6 +11,8 @@ var sprint: bool = false
 var crouch: bool = false
 ## One-shot: set when jump is pressed, cleared by the controller after it acts on it.
 var jump: bool = false
+## One-shot: use whatever is in front of the player (enter a car, later loot and doors).
+var interact: bool = false
 
 
 func consume_look() -> Vector2:
@@ -22,4 +24,10 @@ func consume_look() -> Vector2:
 func consume_jump() -> bool:
 	var out := jump
 	jump = false
+	return out
+
+
+func consume_interact() -> bool:
+	var out := interact
+	interact = false
 	return out

@@ -17,6 +17,7 @@
     "move_right": ["D"],
     "sprint": ["Shift"],
     "crouch": ["Ctrl", "C"],
-    "jump": ["Space"]
+    "jump": ["Space"],
+    "interact": ["E"]
   }
 }

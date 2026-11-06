@@ -50,6 +50,9 @@ func intent() -> PlayerIntent:
 
 
 func _physics_process(delta: float) -> void:
+	if _intent.consume_interact():
+		# Whoever owns the thing in front of us (car, later loot) decides what happens.
+		EventBus.publish(&"player.interact", {"player": self})
 	var look := _intent.consume_look()
 	rotate_y(-look.x)
 	_head.rotation.x = clampf(_head.rotation.x - look.y, -PITCH_LIMIT, PITCH_LIMIT)

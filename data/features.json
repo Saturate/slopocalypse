@@ -2,6 +2,7 @@
   "flags": {
     "example": true,
     "world": true,
-    "player": true
+    "player": true,
+    "car": true
   }
 }
