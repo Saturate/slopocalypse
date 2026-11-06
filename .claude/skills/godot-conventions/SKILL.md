@@ -91,3 +91,7 @@ func _initialize() -> void:
 | Frame-rate dependent damping | `v *= (1 - drag)` per tick | `v *= exp(-rate * delta)` |
 | Folder silently not imported | A `.gdignore` inside it | Only `tools/godot/` and `target/` carry one |
 | Headless run hangs (macOS) | Fatal error shows a modal dialog | Every Godot call in tools has a timeout |
+| Car drives backwards | `VehicleBody3D` drives along +Z, not Godot's usual -Z forward | Cars use +Z as the nose: steering wheels at +Z, camera at -Z turned round |
+| Throttle does nothing on a parked car | A settled `RigidBody3D` sleeps and `engine_force` does not wake it | `can_sleep = false` while driven, `sleeping = false` on enter |
+| Car bounces for seconds | Raycast-vehicle damping scales with 2·sqrt(stiffness); 0.3 is far too low | Damping in whole units (2.5 / 3.5 at stiffness 45) |
+| Later tests in a suite never run | gdUnit4 stops a suite at the first failing test | Fix the first failure, then rerun; don't read "N passed" as the whole suite |

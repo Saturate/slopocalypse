@@ -1,0 +1,6 @@
+{
+  "id": "car",
+  "depends_on": ["world"],
+  "flag": "car",
+  "entry": "car_module.gd"
+}
