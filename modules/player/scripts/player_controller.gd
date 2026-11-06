@@ -108,9 +108,14 @@ func _physics_process(delta: float) -> void:
 		# space; moving it now makes Jolt log "Parameter space is null".
 		if not can_process():
 			return
-	var look := _intent.consume_look()
-	rotate_y(-look.x)
-	_head.rotation.x = clampf(_head.rotation.x - look.y, -PITCH_LIMIT, PITCH_LIMIT)
+	if _intent.remote_look:
+		# A remote client owns its aim and sends it absolute.
+		rotation.y = _intent.look_yaw
+		_head.rotation.x = clampf(_intent.look_pitch, -PITCH_LIMIT, PITCH_LIMIT)
+	else:
+		var look := _intent.consume_look()
+		rotate_y(-look.x)
+		_head.rotation.x = clampf(_head.rotation.x - look.y, -PITCH_LIMIT, PITCH_LIMIT)
 
 	match mode:
 		Mode.MANTLE, Mode.VAULT:

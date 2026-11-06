@@ -55,6 +55,45 @@ func _on_server_gone() -> void:
 	get_tree().quit(0)
 
 
+## Server only: publishes an event here and replays it on every client, so effects
+## (explosions, craters) happen everywhere while the decision stays on the server. Nodes in
+## the payload travel as paths and are looked up again on the client.
+func server_broadcast(topic: StringName, payload: Dictionary) -> void:
+	EventBus.publish(topic, payload)
+	if multiplayer.multiplayer_peer is OfflineMultiplayerPeer or multiplayer.get_peers().is_empty():
+		return
+	_replay.rpc(topic, _encode(payload))
+
+
+@rpc("authority", "call_remote", "reliable")
+func _replay(topic: StringName, encoded: Dictionary) -> void:
+	EventBus.publish(topic, _decode(encoded))
+
+
+func _encode(payload: Dictionary) -> Dictionary:
+	var out := {}
+	for key: Variant in payload:
+		var value: Variant = payload[key]
+		if value is Node:
+			out[key] = {"__node": String((value as Node).get_path())}
+		elif value is Object:
+			out[key] = null
+		else:
+			out[key] = value
+	return out
+
+
+func _decode(encoded: Dictionary) -> Dictionary:
+	var out := {}
+	for key: Variant in encoded:
+		var value: Variant = encoded[key]
+		if value is Dictionary and (value as Dictionary).has("__node"):
+			out[key] = get_node_or_null(NodePath(value["__node"]))
+		else:
+			out[key] = value
+	return out
+
+
 ## True when this instance should have a player of its own (solo or client).
 func has_local_player() -> bool:
 	return mode != Mode.SERVER
@@ -76,13 +115,26 @@ func _physics_process(_delta: float) -> void:
 			get_tree().quit(0)
 
 
-## One line describing the session, for tools and tests.
+## One line describing the session, for tools and tests. `moved` is the furthest any player
+## stands from the world origin (the spawn), `shots` the weapon.fired events seen here.
 func report() -> String:
 	var players := get_tree().get_nodes_in_group(&"players")
 	# The server owns every player body, so "local" means the player spawned for this peer.
 	var me := multiplayer.get_unique_id()
 	var local := players.filter(func(p: Node) -> bool: return mode != Mode.SERVER and int(p.get_meta(&"peer_id", 0)) == me)
-	return "NET-REPORT mode=%s peer=%d peers=%d players=%d local_players=%d" % [Mode.keys()[mode], multiplayer.get_unique_id(), multiplayer.get_peers().size(), players.size(), local.size()]
+	var moved := 0.0
+	for p: Node in players:
+		var at := (p as Node3D).global_position
+		moved = maxf(moved, Vector2(at.x, at.z).length())
+	return "NET-REPORT mode=%s peer=%d peers=%d players=%d local_players=%d moved=%.1f shots=%d" % [Mode.keys()[mode], me, multiplayer.get_peers().size(), players.size(), local.size(), moved, _shots]
+
+
+var _shots := 0
+
+
+func _enter_tree() -> void:
+	# Test hook only: counts shots for the report. A topic name, not a module dependency.
+	EventBus.subscribe(&"weapon.fired", func(_p: Dictionary) -> void: _shots += 1)
 
 
 func _parse(args: PackedStringArray) -> void:

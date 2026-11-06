@@ -101,6 +101,13 @@ func _spawn_player(data: Variant) -> Node:
 func _on_player_ready(player: PlayerController, local: bool) -> void:
 	# Other modules (weapons, world viewer, later inventory) equip players through this.
 	EventBus.publish(&"player.spawned", {"player": player, "local": local})
+	var bot := _bot_behaviour()
+	if local and not bot.is_empty():
+		var driver := PlayerBot.new()
+		driver.name = "Bot"
+		driver.player = player
+		driver.behaviour = bot
+		player.add_child(driver)
 	if DisplayServer.get_name() == "headless":
 		return
 	var animator := PlayerBodyAnimator.new()
@@ -116,6 +123,7 @@ func _setup_local(player: PlayerController) -> void:
 	var input := PlayerInput.new()
 	input.name = "Input"
 	input.intent = player.intent()
+	input.player = player
 	input.sensitivity = player.config["mouse_sensitivity"]
 	player.add_child(input)
 	var feel := PlayerCameraFeel.new()
@@ -151,6 +159,14 @@ func _on_car_exited(payload: Dictionary) -> void:
 	var peer: int = player.get_meta(&"peer_id", 0)
 	if DisplayServer.get_name() != "headless" and Net.has_local_player() and peer == Net.local_peer_id():
 		_camera(player).current = true
+
+
+## `--bot=NAME` after `--` makes this instance's own player drive itself (tests, soak).
+func _bot_behaviour() -> String:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--bot="):
+			return arg.trim_prefix("--bot=")
+	return ""
 
 
 func _camera(player: PlayerController) -> Camera3D:

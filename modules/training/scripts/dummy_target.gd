@@ -31,8 +31,17 @@ func is_down() -> bool:
 	return _down_for >= 0.0
 
 
+var _shown_health := -1.0
+
+
+func _process(_delta: float) -> void:
+	# On clients health arrives by sync, not through the damage signals.
+	if not is_equal_approx(_health.health, _shown_health):
+		_refresh()
+
+
 func _physics_process(delta: float) -> void:
-	if _down_for < 0.0:
+	if _down_for < 0.0 or not multiplayer.is_server():
 		return
 	_down_for += delta
 	if _down_for >= respawn_seconds:
@@ -53,5 +62,6 @@ func _on_died(_source: Node) -> void:
 
 
 func _refresh() -> void:
+	_shown_health = _health.health
 	_label.text = "%d" % ceili(_health.health)
 	_label.modulate = Color(1, 0.3, 0.3) if _health.is_dead() else Color(1, 1, 1)

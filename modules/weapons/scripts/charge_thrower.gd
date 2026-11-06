@@ -39,9 +39,15 @@ func server_place(origin: Vector3, direction: Vector3) -> DemolitionCharge:
 	if hit.is_empty():
 		return null
 	_cooldown = stats["cooldown_seconds"]
-	var charge := DemolitionCharge.new()
-	charge.stats = stats
+	var at: Vector3 = hit["position"]
+	# The weapons module replicates charges to clients; tests hand in a plain parent.
+	var charge: DemolitionCharge
+	if charges_parent.has_method(&"spawn_charge"):
+		charge = charges_parent.call(&"spawn_charge", at, stats)
+	else:
+		charge = DemolitionCharge.new()
+		charge.stats = stats
+		charges_parent.add_child(charge)
+		charge.global_position = at
 	charge.owner_player = holder
-	charges_parent.add_child(charge)
-	charge.global_position = hit["position"]
 	return charge
