@@ -6,7 +6,7 @@ Persistent open-world co-op shooter for 2 to 4 friends: Tarkov-style gear and ri
 
 - Godot 4.7.2-stable, Forward+, Jolt physics, 60 physics ticks per second. Never use a system Godot; `node tools/get-godot.ts` installs the pinned build into `tools/godot/` (git-ignored).
 - Node.js 24 for tooling. TypeScript runs directly through Node's type stripping, so only erasable syntax: no `enum`, `namespace` or constructor parameter properties.
-- Rust stable through godot-rust gdext 0.5.x (arrives with #5).
+- Rust 1.95.0 (pinned in `rust-toolchain.toml`, MSVC on Windows) with godot-rust gdext `godot = 0.5.5`.
 
 When an engine API detail is uncertain, check the Godot 4.7 docs or the installed engine instead of guessing, and say so. Models often produce Godot 3 syntax.
 
@@ -18,12 +18,13 @@ When an engine API detail is uncertain, check the Godot 4.7 docs or the installe
 | Fast gate (while coding) | `npm run check` (TypeScript, tool tests, Godot import, parse check of changed scripts, unit tests) |
 | Full gate (before every commit and merge) | `npm run check:full` (adds gate self-tests, all scripts, all test folders) |
 | Tool tests only | `npm run test:tools` |
-| First setup | `npm ci && node tools/get-godot.ts` |
+| First setup | `npm ci && node tools/get-godot.ts` (Rust via rustup; the toolchain file installs the pinned version) |
+| Build Rust extensions | `node tools/build-rust.ts` (`--release` for exports); the gate does this before Godot imports |
 | Open editor | `tools/godot/Godot_v4.7.2-stable_win64.exe -e --path .` (Windows; other OSes use their binary in `tools/godot/`) |
 
 CI (`.github/workflows/check.yml`) is manual-only for now to save Actions minutes: `gh workflow run check`.
 
-Planned, added by their issues: `tools/build-rust` (#5), `tools/build-scenes` (#6), `tools/capture` (#7), `tools/server` and `tools/run-local` (#9), `tools/journal` (#11), `tools/soak` (#15).
+Planned, added by their issues: `tools/build-scenes` (#6), `tools/capture` (#7), `tools/server` and `tools/run-local` (#9), `tools/journal` (#11), `tools/soak` (#15).
 
 ## Architecture rules
 
@@ -36,7 +37,7 @@ Planned, added by their issues: `tools/build-rust` (#5), `tools/build-scenes` (#
 7. **No magic numbers.** Gameplay values live in `data/` and are read through `Data`.
 8. **Cross-platform.** Clients on Windows, macOS, Linux; server on Linux and Windows. Tooling is TypeScript on Node; engine-side helpers are GDScript launched by Node. Game code uses `res://` and `user://` paths only.
 9. **Language split.** Rust for pure rules over data, anything that must match on server and client, hot paths, and logic that wants exhaustive tests (inventory, car stats, saves, mission rolls, faction/noise/heat rules, world ticking, server validation). GDScript for nodes, scenes, input, cameras, UI, audio, feel and module wiring. Rust is a pure crate (no `godot` dependency, `cargo test`) plus a thin gdext binding. When unsure, start in GDScript and move a rule to Rust once it settles.
-10. **Rust stays deletable.** A module's crates live in `modules/<name>/rust/` and it ships its own `.gdextension`, so deleting the folder removes the Rust side too.
+10. **Rust stays deletable.** A module's crates live in `modules/<name>/rust/core` (pure, `cargo test`, `unsafe` denied) and `modules/<name>/rust/gd` (cdylib binding; crate-level `#![allow(unsafe_code)]` because gdext's entry is an `unsafe impl`). The module ships `<name>.gdextension` pointing at `bin/<os>/<profile>/`, which `tools/build-rust.ts` fills (git-ignored). Deleting the folder removes the Rust side too. `modules/example/` is the template.
 11. **Server journals every event.** Requests (accepted or rejected with reason), state changes, replays, connects, disconnects and authority changes go through one event pipeline that writes an append-only NDJSON journal per session. An event type without a journal schema fails the gate.
 
 ## Core autoloads

@@ -21,3 +21,7 @@ node_modules/
 Thumbs.db
 .vscode/
 *.tmp
+
+# Rust
+/target/
+/modules/*/bin/

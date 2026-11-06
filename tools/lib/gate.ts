@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { scanLog, stripAnsi, testSummary } from "./log-scan.ts";
 import { run } from "./proc.ts";
@@ -18,7 +18,25 @@ export interface StepResult {
 
 const toRes = (root: string, path: string): string => "res://" + relative(root, path).split(sep).join("/");
 
+// Godot caches the extension list in .godot/ and errors on a deleted module's .gdextension
+// until a second import, so write the list from what actually exists, as Godot itself does.
+export function refreshExtensionList(root: string): void {
+	const found: string[] = [];
+	const walk = (dir: string): void => {
+		for (const name of readdirSync(dir)) {
+			if (name.startsWith(".") || name === "node_modules" || name === "target" || name === "tools") continue;
+			const full = join(dir, name);
+			if (statSync(full).isDirectory()) walk(full);
+			else if (name.endsWith(".gdextension")) found.push(toRes(root, full));
+		}
+	};
+	walk(root);
+	mkdirSync(join(root, ".godot"), { recursive: true });
+	writeFileSync(join(root, ".godot", "extension_list.cfg"), found.map((p) => p + "\n").join(""));
+}
+
 export async function godotImport(godot: string, root: string): Promise<StepResult> {
+	refreshExtensionList(root);
 	const r = await run(godot, ["--headless", "--path", root, "--import"], { cwd: root, timeoutMs: 300_000 });
 	const problems = scanLog(r.output, GODOT_NOISE);
 	if (r.timedOut) return { ok: false, detail: "import timed out" };

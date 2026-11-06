@@ -1,4 +1,4 @@
-// The gate. Fast mode while coding, --full before every commit and in CI.
+// The gate. Fast mode while coding, --full before every commit and merge.
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -6,10 +6,13 @@ import { argv, execPath, exit } from "node:process";
 import { bootGame, checkScripts, findTestDirs, godotImport, runGdUnit, type StepResult } from "./lib/gate.ts";
 import { localGodot } from "./lib/godot.ts";
 import { run } from "./lib/proc.ts";
+import { buildRust, hasRustCrates } from "./lib/rust.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const full = argv.includes("--full");
 const godot = localGodot(root);
+
+type Step = [string, () => Promise<StepResult>];
 
 function git(args: string[]): string[] {
 	try {
@@ -23,7 +26,8 @@ function gdScripts(): string[] {
 	// tools/gd scripts run as the main loop; loading check_scripts.gd from itself segfaults Godot.
 	const isOurs = (f: string): boolean => f.endsWith(".gd") && !f.startsWith("addons/") && !f.startsWith("tools/");
 	if (full) {
-		return [...git(["ls-files", "--cached", "--others", "--exclude-standard"])].filter(isOurs);
+		// ls-files still lists tracked files deleted in the working tree.
+		return git(["ls-files", "--cached", "--others", "--exclude-standard"]).filter((f) => isOurs(f) && existsSync(join(root, f)));
 	}
 	const base = git(["merge-base", "HEAD", "origin/main"])[0] ?? "HEAD";
 	const changed = new Set([
@@ -33,14 +37,27 @@ function gdScripts(): string[] {
 	return [...changed].filter(isOurs);
 }
 
-async function nodeStep(args: string[]): Promise<StepResult> {
-	const r = await run(execPath, args, { cwd: root, timeoutMs: 300_000 });
-	return r.code === 0 ? { ok: true, detail: "ok" } : { ok: false, detail: r.output.trim().split("\n").slice(-30).join("\n") };
+const tail = (output: string): string => output.trim().split(/\r?\n/).slice(-30).join("\n");
+
+async function commandStep(cmd: string, args: string[], timeoutMs: number): Promise<StepResult> {
+	const r = await run(cmd, args, { cwd: root, timeoutMs });
+	return r.code === 0 ? { ok: true, detail: "ok" } : { ok: false, detail: tail(r.output) };
 }
 
-const steps: [string, () => Promise<StepResult>][] = [
-	["typescript", () => nodeStep([join(root, "node_modules/typescript/bin/tsc"), "--noEmit", "-p", root])],
-	["tool tests", () => nodeStep(["--test", "tools/**/*.test.ts"])],
+const rustSteps: Step[] = hasRustCrates(root)
+	? [
+			["rust fmt", () => commandStep("cargo", ["fmt", "--all", "--check"], 120_000)],
+			["rust clippy", () => commandStep("cargo", ["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"], 1_800_000)],
+			["rust tests", () => commandStep("cargo", ["test", "--workspace"], 1_800_000)],
+			// Godot loads the extensions during import, so they must be built first.
+			["rust build", () => buildRust(root, false)],
+		]
+	: [];
+
+const steps: Step[] = [
+	["typescript", () => commandStep(execPath, [join(root, "node_modules/typescript/bin/tsc"), "--noEmit", "-p", root], 300_000)],
+	["tool tests", () => commandStep(execPath, ["--test", "tools/**/*.test.ts"], 300_000)],
+	...rustSteps,
 	["godot import", () => godotImport(godot, root)],
 	["gdscript parse", () => checkScripts(godot, root, gdScripts().map((f) => join(root, f)))],
 	["gdscript tests", () => runGdUnit(godot, root, findTestDirs(root, full ? "full" : "fast"))],
@@ -48,7 +65,7 @@ const steps: [string, () => Promise<StepResult>][] = [
 	["boot, optional off", () => bootGame(godot, root, ["--all-optional-off"], /loaded modules: \(none\)/)],
 ];
 // Self-tests start Godot with gdUnit4, which needs the class cache that the import step builds.
-if (full) steps.push(["gate self-tests", () => nodeStep(["--test", "tools/**/*.itest.ts"])]);
+if (full) steps.push(["gate self-tests", () => commandStep(execPath, ["--test", "tools/**/*.itest.ts"], 300_000)]);
 
 async function main(): Promise<void> {
 	if (!existsSync(godot)) {
@@ -66,7 +83,7 @@ async function main(): Promise<void> {
 		const t = Date.now();
 		const result = await step();
 		const secs = ((Date.now() - t) / 1000).toFixed(1);
-		console.log(`${result.ok ? "PASS" : "FAIL"}  ${name.padEnd(16)} ${secs}s  ${result.ok ? result.detail : ""}`);
+		console.log(`${result.ok ? "PASS" : "FAIL"}  ${name.padEnd(18)} ${secs.padStart(5)}s  ${result.ok ? result.detail : ""}`);
 		if (!result.ok) {
 			failed++;
 			console.log(result.detail.replace(/^/gm, "      "));
