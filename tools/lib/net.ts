@@ -11,10 +11,11 @@ export interface NetReport {
 	localPlayers: number;
 	moved: number;
 	shots: number;
+	driven: number;
 }
 
 export function parseReport(output: string): NetReport | undefined {
-	const m = /NET-REPORT mode=(\w+) peer=(\d+) peers=(\d+) players=(\d+) local_players=(\d+) moved=([\d.]+) shots=(\d+)/.exec(output);
+	const m = /NET-REPORT mode=(\w+) peer=(\d+) peers=(\d+) players=(\d+) local_players=(\d+) moved=([\d.]+) shots=(\d+) driven=([\d.]+)/.exec(output);
 	if (m === null) return undefined;
 	return {
 		mode: m[1] ?? "",
@@ -24,6 +25,7 @@ export function parseReport(output: string): NetReport | undefined {
 		localPlayers: Number(m[5]),
 		moved: Number(m[6]),
 		shots: Number(m[7]),
+		driven: Number(m[8]),
 	};
 }
 
@@ -84,8 +86,9 @@ export async function soloSmoke(godot: string, root: string): Promise<StepResult
 }
 
 // A dedicated server plus two clients as real processes on localhost. Client 1 runs a bot
-// that walks and fires through the network intent path; the checks prove input reaches the
-// server and the results (movement, shots) reach the other client.
+// that walks and fires, client 2 one that gets in the car and drives, both through the
+// network intent path; the checks prove input reaches the server and the results
+// (movement, shots, the car's new position) reach everyone.
 export async function netSmoke(godot: string, root: string, port = 7791): Promise<StepResult> {
 	const base = ["--headless", "--path", root, "--"];
 	// Clients report at ~900 frames and stay connected; the server reports at 1300 while it
@@ -96,7 +99,7 @@ export async function netSmoke(godot: string, root: string, port = 7791): Promis
 	const join = `--connect=127.0.0.1:${port}`;
 	const clients = [
 		run(godot, [...base, join, "--net-report-after=900", "--bot=walk"], { cwd: root, timeoutMs: 150_000 }),
-		run(godot, [...base, join, "--net-report-after=900"], { cwd: root, timeoutMs: 150_000 }),
+		run(godot, [...base, join, "--net-report-after=900", "--bot=drive"], { cwd: root, timeoutMs: 150_000 }),
 	];
 	const results: [string, ProcResult][] = [["server", await server], ["client 1 (bot)", await clients[0]!], ["client 2", await clients[1]!]];
 
@@ -118,8 +121,9 @@ export async function netSmoke(godot: string, root: string, port = 7791): Promis
 		// The bot's player must have walked and fired, as seen by everyone, not only itself.
 		if (rep.moved < 3.0) problems.push(`${name}: no player moved more than 3 m (moved=${rep.moved})`);
 		if (rep.shots < 1) problems.push(`${name}: saw no shots`);
+		if (rep.driven < 5.0) problems.push(`${name}: the car was not driven 5 m (driven=${rep.driven})`);
 	}
 	return problems.length > 0
 		? { ok: false, detail: problems.slice(0, 20).join("\n") }
-		: { ok: true, detail: "server + 2 clients: bot input reaches the server, movement and shots reach everyone" };
+		: { ok: true, detail: "server + 2 clients: walking, shooting and driving reach the server and everyone else" };
 }

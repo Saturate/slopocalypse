@@ -1,11 +1,17 @@
 class_name CarInput
 extends Node
-## Client-only: keyboard to CarIntent while the local player drives.
+## Client-only: keyboard to CarIntent while the local player drives. On a remote client the
+## intent goes to the server, which simulates the car.
 
 var intent: CarIntent
 # Enter and exit share a key; ignore it until it has been released once, or the press
 # that got us in would throw us straight back out.
 var _exit_armed := false
+var _remote := false
+
+
+func _ready() -> void:
+	_remote = not multiplayer.is_server()
 
 
 func _physics_process(_delta: float) -> void:
@@ -16,3 +22,7 @@ func _physics_process(_delta: float) -> void:
 		_exit_armed = true
 	elif _exit_armed and Input.is_action_just_pressed(&"car_exit"):
 		intent.exit = true
+		if _remote:
+			intent.submit_exit.rpc_id(1)
+	if _remote:
+		intent.submit.rpc_id(1, intent.throttle, intent.steer, intent.brake)

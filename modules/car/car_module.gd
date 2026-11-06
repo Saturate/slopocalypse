@@ -10,6 +10,7 @@ var _cars: Array[CarController] = []
 var _spawn := Vector3.ZERO
 var _kill_y := -INF
 var _spawner := MultiplayerSpawner.new()
+var _bot: CarBot
 
 
 func cars() -> Array[CarController]:
@@ -55,6 +56,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"player.interact", _on_player_interact)
 	EventBus.subscribe(&"car.entered", _on_car_entered)
 	EventBus.subscribe(&"car.exited", _on_car_exited)
+	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 
 
 func _exit_tree() -> void:
@@ -62,6 +64,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"player.interact", _on_player_interact)
 	EventBus.unsubscribe(&"car.entered", _on_car_entered)
 	EventBus.unsubscribe(&"car.exited", _on_car_exited)
+	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
 
 
 func _on_world_ready(payload: Dictionary) -> void:
@@ -79,8 +82,10 @@ func _spawn_car(data: Variant) -> Node:
 	var car: CarController = (load(SCENE) as PackedScene).instantiate()
 	car.name = "Car%d" % int(info["index"])
 	car.position = info["position"]
-	# Frozen until the server finds ground under it; client copies stay frozen until
-	# vehicle sync arrives (#14).
+	car.add_to_group(&"vehicles")
+	car.set_meta(&"spawn_position", info["position"])
+	# Frozen until the server finds ground under it. Client copies stay frozen for good:
+	# they only show the transform the server syncs.
 	car.freeze = true
 	_cars.append(car)
 	return car
@@ -95,9 +100,15 @@ func _on_player_interact(payload: Dictionary) -> void:
 
 
 func _on_car_entered(payload: Dictionary) -> void:
+	var car := payload.get("car") as CarController
+	var who := payload.get("player") as Node
+	if car == null or who == null or not _is_local(who):
+		return
+	if _bot != null:
+		_bot.entered(car)
+		return
 	if DisplayServer.get_name() == "headless":
 		return
-	var car: CarController = payload["car"]
 	var input := CarInput.new()
 	input.name = "Input"
 	input.intent = car.intent()
@@ -106,7 +117,30 @@ func _on_car_entered(payload: Dictionary) -> void:
 
 
 func _on_car_exited(payload: Dictionary) -> void:
-	var car: CarController = payload["car"]
+	var car := payload.get("car") as CarController
+	if car == null:
+		return
 	var input := car.get_node_or_null("Input")
 	if input != null:
 		input.queue_free()
+
+
+func _on_player_spawned(p: Dictionary) -> void:
+	if not p.get("local", false) or _bot_behaviour() != CarBot.BEHAVIOUR:
+		return
+	_bot = CarBot.new()
+	_bot.name = "Bot"
+	_bot.player = p["player"]
+	add_child(_bot)
+
+
+## True for the player controlled from this instance (solo or that client).
+func _is_local(who: Node) -> bool:
+	return Net.has_local_player() and int(who.get_meta(&"peer_id", 0)) == Net.local_peer_id()
+
+
+func _bot_behaviour() -> String:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--bot="):
+			return arg.trim_prefix("--bot=")
+	return ""

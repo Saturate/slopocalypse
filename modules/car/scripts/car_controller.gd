@@ -1,7 +1,8 @@
 class_name CarController
 extends VehicleBody3D
-## Drives a VehicleBody3D from CarIntent. Holds who is driving; entering and leaving are
-## announced on the EventBus so the player module handles its own node.
+## Drives a VehicleBody3D from CarIntent. Only the server simulates; clients see the synced
+## transform. Holds who is driving; entering and leaving are broadcast to every instance so
+## each module (player parking, car input, terrain viewer) reacts everywhere.
 
 const CONFIG := "res://modules/car/data/car.json"
 const REQUIRED := {
@@ -72,7 +73,7 @@ func enter(who: Node3D) -> void:
 	# A settled car falls asleep and engine_force alone does not wake it.
 	can_sleep = false
 	sleeping = false
-	EventBus.publish(&"car.entered", {"player": who, "car": self})
+	Net.server_broadcast(&"car.entered", {"player": who, "car": self})
 
 
 func exit_car() -> void:
@@ -82,7 +83,7 @@ func exit_car() -> void:
 	driver = null
 	_intent.clear()
 	can_sleep = true
-	EventBus.publish(&"car.exited", {"player": who, "car": self, "position": exit_position()})
+	Net.server_broadcast(&"car.exited", {"player": who, "car": self, "position": exit_position()})
 
 
 ## Beside the driver door, lifted so the player drops onto the ground instead of into it.
@@ -91,6 +92,8 @@ func exit_position() -> Vector3:
 
 
 func _physics_process(delta: float) -> void:
+	if not multiplayer.is_server():
+		return
 	if driver != null and _intent.consume_exit():
 		exit_car()
 	var throttle := _intent.throttle if driver != null else 0.0
