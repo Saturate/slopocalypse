@@ -1,0 +1,6 @@
+{
+  "id": "weapons",
+  "depends_on": ["player"],
+  "flag": "weapons",
+  "entry": "weapons_module.gd"
+}

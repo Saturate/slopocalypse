@@ -1,0 +1,16 @@
+{
+  "rifle": {
+    "damage": 25.0,
+    "rounds_per_minute": 600.0,
+    "magazine": 30.0,
+    "reload_seconds": 2.2,
+    "spread_degrees": 0.6,
+    "range": 300.0,
+    "recoil_pitch_degrees": 0.9,
+    "recoil_yaw_degrees": 0.35,
+    "kick_back": 0.06,
+    "kick_return": 14.0,
+    "recoil_recovery": 6.0,
+    "recoil_recovery_share": 0.85
+  }
+}

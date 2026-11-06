@@ -1,0 +1,62 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://modules/training/scripts/dummy_target.gd" id="1_iitcg"]
+[ext_resource type="Script" path="res://core/components/health_component.gd" id="2_gl2rs"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ecda90"]
+albedo_color = Color(0.35, 0.26, 0.18, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_e1eb92"]
+material = SubResource("StandardMaterial3D_ecda90")
+size = Vector3(0.1, 0.9, 0.1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_64b879"]
+albedo_color = Color(0.78, 0.68, 0.42, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_fefd80"]
+material = SubResource("StandardMaterial3D_64b879")
+size = Vector3(0.5, 0.7, 0.25)
+
+[sub_resource type="SphereMesh" id="SphereMesh_61775b"]
+material = SubResource("StandardMaterial3D_64b879")
+radius = 0.15
+height = 0.3
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_1856a1"]
+size = Vector3(0.5, 1.75, 0.3)
+
+[node name="Dummy" type="StaticBody3D" unique_id=219121905]
+script = ExtResource("1_iitcg")
+health_path = NodePath("Health")
+label_path = NodePath("HealthLabel")
+body_path = NodePath("Body")
+
+[node name="Post" type="MeshInstance3D" parent="." unique_id=1991022376]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45, 0)
+mesh = SubResource("BoxMesh_e1eb92")
+
+[node name="Body" type="Node3D" parent="." unique_id=1990518768]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+
+[node name="Torso" type="MeshInstance3D" parent="Body" unique_id=1647016569]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.35, 0)
+mesh = SubResource("BoxMesh_fefd80")
+
+[node name="Head" type="MeshInstance3D" parent="Body" unique_id=439918452]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.88, 0)
+mesh = SubResource("SphereMesh_61775b")
+
+[node name="Shape" type="CollisionShape3D" parent="." unique_id=1282515539]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.875, 0)
+shape = SubResource("BoxShape3D_1856a1")
+
+[node name="Health" type="Node" parent="." unique_id=1086772632]
+script = ExtResource("2_gl2rs")
+
+[node name="HealthLabel" type="Label3D" parent="." unique_id=1870281208]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.1, 0)
+pixel_size = 0.004
+billboard = 1
+no_depth_test = true
+font_size = 96
+outline_size = 16

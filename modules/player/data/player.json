@@ -23,6 +23,7 @@
     "sprint": ["Shift"],
     "crouch": ["Ctrl", "C"],
     "jump": ["Space"],
-    "interact": ["E"]
+    "interact": ["E"],
+    "reload": ["R"]
   }
 }

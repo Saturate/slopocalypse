@@ -55,6 +55,8 @@ Planned, added by their issues: `tools/server` and `tools/run-local` (#9), `tool
 | `Features` | `core/features.gd` | `Features.is_enabled(&"flag")`. Flags in `data/features.json`; per run `-- --flags=car:off` or `-- --all-optional-off`. |
 | `EventBus` | `core/event_bus.gd` | `subscribe(&"topic", handler)`, `publish(&"topic", payload)`. Topics are named `module.event`. |
 
+Shared components live in `core/components/`: `HealthComponent` (`server_apply_damage`, `died` and `damaged` signals, `HealthComponent.find_on(collider)`).
+
 A module is `modules/<id>/module.json` (`id`, `depends_on`, `flag`, `entry`) plus an entry script extending `Node`; `core/boot.gd` instances it under `/root/Boot/Modules/<id>`. An empty `flag` means always on. Use `modules/example/` as the template.
 
 ## Code style

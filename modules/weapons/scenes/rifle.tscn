@@ -1,0 +1,63 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://modules/weapons/scripts/hitscan_weapon.gd" id="1_07qtp"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_9b8576"]
+albedo_color = Color(0.15, 0.15, 0.16, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_b65c01"]
+material = SubResource("StandardMaterial3D_9b8576")
+size = Vector3(0.06, 0.08, 0.32)
+
+[sub_resource type="BoxMesh" id="BoxMesh_748c04"]
+material = SubResource("StandardMaterial3D_9b8576")
+size = Vector3(0.025, 0.025, 0.3)
+
+[sub_resource type="BoxMesh" id="BoxMesh_bb0bb8"]
+material = SubResource("StandardMaterial3D_9b8576")
+size = Vector3(0.04, 0.12, 0.06)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_a8655c"]
+albedo_color = Color(0.42, 0.3, 0.2, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_168210"]
+material = SubResource("StandardMaterial3D_a8655c")
+size = Vector3(0.05, 0.07, 0.18)
+
+[sub_resource type="BoxMesh" id="BoxMesh_bac0de"]
+material = SubResource("StandardMaterial3D_a8655c")
+size = Vector3(0.04, 0.09, 0.04)
+
+[node name="Rifle" type="Node3D" unique_id=235285879]
+script = ExtResource("1_07qtp")
+model_path = NodePath("Model")
+
+[node name="Model" type="Node3D" parent="." unique_id=1275654483]
+transform = Transform3D(0.7, 0, 0, 0, 0.7, 0, 0, 0, 0.7, 0.17, -0.16, -0.42)
+
+[node name="Receiver" type="MeshInstance3D" parent="Model" unique_id=385647706]
+cast_shadow = 0
+mesh = SubResource("BoxMesh_b65c01")
+
+[node name="Barrel" type="MeshInstance3D" parent="Model" unique_id=1560864381]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.015, -0.3)
+cast_shadow = 0
+mesh = SubResource("BoxMesh_748c04")
+
+[node name="Magazine" type="MeshInstance3D" parent="Model" unique_id=1323287985]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.09, -0.04)
+cast_shadow = 0
+mesh = SubResource("BoxMesh_bb0bb8")
+
+[node name="Stock" type="MeshInstance3D" parent="Model" unique_id=1825170697]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.02, 0.24)
+cast_shadow = 0
+mesh = SubResource("BoxMesh_168210")
+
+[node name="Grip" type="MeshInstance3D" parent="Model" unique_id=380250903]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.07, 0.1)
+cast_shadow = 0
+mesh = SubResource("BoxMesh_bac0de")
+
+[node name="Muzzle" type="Marker3D" parent="Model" unique_id=2015368556]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.015, -0.46)
