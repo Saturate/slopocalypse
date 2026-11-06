@@ -48,11 +48,15 @@ func _build_mesh() -> void:
 	var step := heights.spacing()
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var tint := FastNoiseLite.new()
+	tint.seed = 7
+	tint.frequency = 0.03
 	for iz in n:
 		for ix in n:
 			var x := ix * step - half
 			var z := iz * step - half
 			st.set_uv(Vector2(float(ix) / (n - 1), float(iz) / (n - 1)))
+			st.set_color(_ground_color(x, z, step, tint))
 			st.add_vertex(Vector3(x, heights.height_at(x, z), z))
 	for iz in n - 1:
 		for ix in n - 1:
@@ -74,3 +78,26 @@ func _build_mesh() -> void:
 	if material != null:
 		mesh_instance.material_override = material
 	add_child(mesh_instance)
+
+
+## Grass on gentle ground, dirt on slopes, rock on steep faces, with a soft noise tint so
+## large areas don't read as one flat colour.
+func _ground_color(x: float, z: float, step: float, tint: FastNoiseLite) -> Color:
+	var dx := heights.height_at(x + step, z) - heights.height_at(x - step, z)
+	var dz := heights.height_at(x, z + step) - heights.height_at(x, z - step)
+	var steepness := Vector2(dx, dz).length() / (2.0 * step)
+	var grass_a := Color(0.24, 0.40, 0.17)
+	var grass_b := Color(0.47, 0.56, 0.26)
+	var dry := Color(0.58, 0.55, 0.32)
+	var dirt := Color(0.50, 0.38, 0.24)
+	var rock := Color(0.46, 0.45, 0.43)
+	# Broad patches plus finer mottling, so the ground varies near the camera too.
+	var broad := clampf(tint.get_noise_2d(x, z) * 0.6 + 0.5, 0.0, 1.0)
+	var fine := tint.get_noise_2d(x * 5.0 + 100.0, z * 5.0) * 0.5 + 0.5
+	var grass := grass_a.lerp(grass_b, broad).lerp(dry, smoothstep(0.65, 0.9, fine) * 0.5)
+	# Tops catch more light and dry out; hollows stay darker and lusher.
+	var relief := clampf(heights.height_at(x, z) / maxf(heights.amplitude, 0.001), -1.0, 1.0)
+	grass = grass.lightened(maxf(relief, 0.0) * 0.12).darkened(maxf(-relief, 0.0) * 0.15)
+	var c := grass.lerp(dirt, smoothstep(0.22, 0.34, steepness))
+	c = c.lerp(rock, smoothstep(0.5, 0.62, steepness))
+	return c

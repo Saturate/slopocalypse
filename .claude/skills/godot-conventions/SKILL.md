@@ -94,4 +94,8 @@ func _initialize() -> void:
 | Car drives backwards | `VehicleBody3D` drives along +Z, not Godot's usual -Z forward | Cars use +Z as the nose: steering wheels at +Z, camera at -Z turned round |
 | Throttle does nothing on a parked car | A settled `RigidBody3D` sleeps and `engine_force` does not wake it | `can_sleep = false` while driven, `sleeping = false` on enter |
 | Car bounces for seconds | Raycast-vehicle damping scales with 2·sqrt(stiffness); 0.3 is far too low | Damping in whole units (2.5 / 3.5 at stiffness 45) |
+| Vertex or MultiMesh instance colours wash out to near white | Godot reads them as linear by default | `vertex_color_is_srgb = true` on the material |
+| Faceted mesh renders black | `SurfaceTool.generate_normals(true)` flips normals inward; the argument is not "flat" | `deindex()` then `generate_normals()` for flat faces |
+| Half the grass or foliage is black | `CULL_DISABLED` flips back-face normals, lighting them from below | Emit both windings with an up normal and keep back-face culling |
+| `space is null` / raycasts from a plain `Node` fail | `Viewport.world_3d` is only the viewport's own override, null for the root | `get_viewport().find_world_3d()` or `get_world_3d()` on a `Node3D` |
 | Later tests in a suite never run | gdUnit4 stops a suite at the first failing test | Fix the first failure, then rerun; don't read "N passed" as the whole suite |

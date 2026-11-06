@@ -1,12 +1,18 @@
 [gd_scene format=3]
 
-[ext_resource type="Script" path="res://modules/world/scripts/terrain_chunk.gd" id="1_62jx0"]
+[ext_resource type="Script" path="res://modules/world/scripts/terrain_chunk.gd" id="1_takve"]
+[ext_resource type="Script" path="res://modules/world/scripts/scenery_scatter.gd" id="2_qs8vc"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_21da83"]
-albedo_color = Color(0.36, 0.45, 0.28, 1)
+vertex_color_use_as_albedo = true
+vertex_color_is_srgb = true
 roughness = 0.95
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_443883"]
+sky_top_color = Color(0.32, 0.5, 0.78, 1)
+sky_horizon_color = Color(0.72, 0.78, 0.84, 1)
+ground_bottom_color = Color(0.3, 0.34, 0.3, 1)
+ground_horizon_color = Color(0.72, 0.78, 0.84, 1)
 
 [sub_resource type="Sky" id="Sky_317d2f"]
 sky_material = SubResource("ProceduralSkyMaterial_443883")
@@ -15,29 +21,48 @@ sky_material = SubResource("ProceduralSkyMaterial_443883")
 background_mode = 2
 sky = SubResource("Sky_317d2f")
 ambient_light_source = 3
-ambient_light_energy = 1.6
-tonemap_mode = 2
+ambient_light_energy = 1.5
+tonemap_mode = 3
+ssao_enabled = true
+ssao_radius = 1.2
+ssao_intensity = 1.6
+glow_enabled = true
+glow_intensity = 0.4
+glow_bloom = 0.05
 fog_enabled = true
-fog_light_color = Color(0.62, 0.68, 0.75, 1)
-fog_density = 0.008
-fog_sky_affect = 0.3
+fog_light_color = Color(0.68, 0.74, 0.8, 1)
+fog_density = 0.0035
+fog_aerial_perspective = 0.3
+fog_sky_affect = 0.25
+adjustment_enabled = true
+adjustment_contrast = 1.05
+adjustment_saturation = 1.12
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_8a2969"]
-albedo_color = Color(0.55, 0.5, 0.42, 1)
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_3bcca7"]
+albedo_color = Color(0.58, 0.56, 0.52, 1)
+roughness = 0.85
 
 [sub_resource type="BoxMesh" id="BoxMesh_4c5ac5"]
-material = SubResource("StandardMaterial3D_8a2969")
+material = SubResource("StandardMaterial3D_3bcca7")
 size = Vector3(4, 2, 1)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_71242d"]
 size = Vector3(4, 2, 1)
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_62fb08"]
+albedo_color = Color(0.5, 0.48, 0.45, 1)
+roughness = 0.85
+
 [sub_resource type="BoxMesh" id="BoxMesh_a91006"]
-material = SubResource("StandardMaterial3D_8a2969")
+material = SubResource("StandardMaterial3D_62fb08")
 size = Vector3(1, 1.2, 6)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_d02dae"]
 size = Vector3(1, 1.2, 6)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_8a2969"]
+albedo_color = Color(0.52, 0.4, 0.28, 1)
+roughness = 0.85
 
 [sub_resource type="BoxMesh" id="BoxMesh_5c547"]
 material = SubResource("StandardMaterial3D_8a2969")
@@ -46,22 +71,26 @@ size = Vector3(6, 1.5, 1)
 [sub_resource type="BoxShape3D" id="BoxShape3D_2f372f"]
 size = Vector3(6, 1.5, 1)
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_149e46"]
+albedo_color = Color(0.44, 0.34, 0.24, 1)
+roughness = 0.85
+
 [sub_resource type="BoxMesh" id="BoxMesh_627a88"]
-material = SubResource("StandardMaterial3D_8a2969")
+material = SubResource("StandardMaterial3D_149e46")
 size = Vector3(3, 3, 3)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_8e40b0"]
 size = Vector3(3, 3, 3)
 
 [sub_resource type="BoxMesh" id="BoxMesh_bf2fc9"]
-material = SubResource("StandardMaterial3D_8a2969")
+material = SubResource("StandardMaterial3D_3bcca7")
 size = Vector3(2, 2.5, 8)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ed4a31"]
 size = Vector3(2, 2.5, 8)
 
 [sub_resource type="BoxMesh" id="BoxMesh_1be50a"]
-material = SubResource("StandardMaterial3D_8a2969")
+material = SubResource("StandardMaterial3D_62fb08")
 size = Vector3(3, 0.9, 0.4)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_4c53b2"]
@@ -89,12 +118,20 @@ size = Vector3(2, 80, 256)
 [node name="World" type="Node3D" unique_id=241444173]
 
 [node name="Terrain" type="Node3D" parent="." unique_id=1989344311]
-script = ExtResource("1_62jx0")
+script = ExtResource("1_takve")
 material = SubResource("StandardMaterial3D_21da83")
 
+[node name="Scenery" type="Node3D" parent="." unique_id=604049499]
+script = ExtResource("2_qs8vc")
+
 [node name="Sun" type="DirectionalLight3D" parent="." unique_id=190487992]
-transform = Transform3D(0.81915206, -0.43938506, 0.36868784, 0, 0.64278764, 0.76604444, -0.57357645, -0.62750685, 0.5265408, 0, 0, 0)
+transform = Transform3D(0.81915206, -0.38379756, 0.42625037, 0, 0.7431448, 0.6691306, -0.57357645, -0.5481197, 0.6087486, 0, 0, 0)
+light_color = Color(1, 0.95, 0.86, 1)
+light_energy = 1.25
 shadow_enabled = true
+shadow_opacity = 0.8
+shadow_blur = 2.0
+directional_shadow_max_distance = 140.0
 
 [node name="Environment" type="WorldEnvironment" parent="." unique_id=1174438231]
 environment = SubResource("Environment_c83369")
