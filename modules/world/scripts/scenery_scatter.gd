@@ -1,6 +1,7 @@
 class_name SceneryScatter
 extends Node3D
-## Scatters low-poly trees, rocks and grass over the terrain from a seed, so the server
+## Scatters firs, rocks and grass over the terrain by biome (forests, meadows, dry and rocky
+## ground) from a seed, so the server
 ## and every client place the same trees in the same spots. Trees and rocks get collision
 ## everywhere; the visuals (and grass, which has no collision) are client-only.
 
@@ -9,6 +10,7 @@ extends Node3D
 const REQUIRED := {"trees": TYPE_FLOAT, "rocks": TYPE_FLOAT, "grass": TYPE_FLOAT, "clear_radius": TYPE_FLOAT, "max_steepness": TYPE_FLOAT, "seed": TYPE_FLOAT}
 
 var _heights: TerrainHeights
+var _biomes: Biomes
 var _rng := RandomNumberGenerator.new()
 var _visual := DisplayServer.get_name() != "headless"
 
@@ -21,7 +23,10 @@ func _ready() -> void:
 	if not world.has("scatter") or not Data.require(config_path + " scatter", world["scatter"], REQUIRED):
 		return
 	var cfg: Dictionary = world["scatter"]
+	if not world.has("biomes") or not Data.require(config_path + " biomes", world["biomes"], Biomes.REQUIRED):
+		return
 	_heights = TerrainHeights.new(world)
+	_biomes = Biomes.new(world["biomes"])
 	var collision := StaticBody3D.new()
 	collision.name = "SceneryCollision"
 	add_child(collision)
@@ -32,13 +37,16 @@ func _ready() -> void:
 		_place_grass(int(cfg["grass"]), cfg)
 
 
-## A spot on gentle ground, away from the spawn pad and the chunk edge.
-func _random_spot(cfg: Dictionary) -> Variant:
+## A spot on gentle ground, away from the spawn pad and the chunk edge, kept with the
+## probability `weight(x, z)` returns, so biomes decide where things cluster.
+func _random_spot(cfg: Dictionary, weight: Callable) -> Variant:
 	var half := _heights.size / 2.0 - 6.0
 	for attempt in 12:
 		var x := _rng.randf_range(-half, half)
 		var z := _rng.randf_range(-half, half)
 		if Vector2(x, z).length() < float(cfg["clear_radius"]):
+			continue
+		if _rng.randf() > float(weight.call(x, z)):
 			continue
 		var s := 1.0
 		var dx := _heights.height_at(x + s, z) - _heights.height_at(x - s, z)
@@ -57,8 +65,11 @@ const TREE_VARIANTS := [[11, 8.0], [23, 10.5], [37, 13.0]]
 func _place_trees(count: int, cfg: Dictionary, collision: StaticBody3D) -> void:
 	var transforms: Array = [[], [], []]
 	var colours: Array = [[], [], []]
+	# Dense in forests, the odd lone tree out in the meadows, none on bare rock.
+	var tree_weight := func(x: float, z: float) -> float:
+		return maxf(pow(_biomes.forest(x, z), 1.3), 0.015) * (1.0 - _biomes.rock(x, z) * 0.8)
 	for i in count:
-		var spot: Variant = _random_spot(cfg)
+		var spot: Variant = _random_spot(cfg, tree_weight)
 		if not spot is Vector3:
 			continue
 		var at: Vector3 = spot
@@ -98,12 +109,16 @@ func _typed_colours(a: Array) -> Array[Color]:
 func _place_rocks(count: int, cfg: Dictionary, collision: StaticBody3D) -> void:
 	var transforms: Array[Transform3D] = []
 	var colours: Array[Color] = []
+	# Boulder fields on rocky ground, a few stones scattered elsewhere.
+	var rock_weight := func(x: float, z: float) -> float:
+		return 0.05 + _biomes.rock(x, z) * 0.95
 	for i in count:
-		var spot: Variant = _random_spot(cfg)
+		var spot: Variant = _random_spot(cfg, rock_weight)
 		if not spot is Vector3:
 			continue
 		var at: Vector3 = spot
-		var size := _rng.randf_range(0.4, 1.6)
+		# Rocky ground gets the big boulders.
+		var size := _rng.randf_range(0.4, 1.2) + _biomes.rock(at.x, at.z) * _rng.randf_range(0.0, 1.6)
 		var basis := Basis.from_euler(Vector3(_rng.randf() * 0.4, _rng.randf() * TAU, _rng.randf() * 0.4)).scaled(Vector3(size, size * _rng.randf_range(0.5, 0.9), size))
 		transforms.append(Transform3D(basis, at + Vector3.DOWN * size * 0.15))
 		var grey := _rng.randf_range(0.38, 0.52)
@@ -125,9 +140,14 @@ func _place_grass(count: int, cfg: Dictionary) -> void:
 	for i in count:
 		var x := _rng.randf_range(-half, half)
 		var z := _rng.randf_range(-half, half)
+		# Thick in meadows, thin on the forest floor and on rock.
+		var keep := 1.0 - _biomes.forest(x, z) * 0.8 - _biomes.rock(x, z) * 0.6
+		if _rng.randf() > keep:
+			continue
 		var s := _rng.randf_range(0.5, 1.1)
 		transforms.append(Transform3D(Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(s, s * _rng.randf_range(0.7, 1.4), s)), Vector3(x, _heights.height_at(x, z), z)))
-		colours.append(Color(0.3, 0.36, 0.18).lerp(Color(0.44, 0.45, 0.25), _rng.randf()))
+		var green := Color(0.3, 0.36, 0.18).lerp(Color(0.44, 0.45, 0.25), _rng.randf())
+		colours.append(green.lerp(Color(0.62, 0.55, 0.32), _biomes.dry(x, z) * 0.85))
 	var mm := _multimesh("Grass", _grass_mesh(), transforms, colours)
 	mm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# Grass far away is noise; fade it out with distance to keep the horizon clean.

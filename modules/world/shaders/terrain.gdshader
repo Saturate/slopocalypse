@@ -23,6 +23,9 @@ uniform vec3 rock_tint : source_color = vec3(0.62, 0.62, 0.6);
 uniform float dirt_start = 0.86;
 uniform float rock_start = 0.6;
 uniform float normal_strength = 0.9;
+// Baked by Biomes: R forest, G dry, B rock, covering the whole world.
+uniform sampler2D biome_map : hint_default_black, filter_linear, repeat_disable;
+uniform float world_size = 256.0;
 
 varying vec3 world_pos;
 varying vec3 world_normal;
@@ -85,10 +88,16 @@ Surface top(sampler2D alb, sampler2D nrm, sampler2D rgh, float scale) {
 }
 
 void fragment() {
+	vec3 biome = texture(biome_map, world_pos.xz / world_size + 0.5).rgb;
+	float forest = biome.r;
+	float rocky = biome.b;
 	float breakup = noise(world_pos.xz * 0.15) * 0.12 + noise(world_pos.xz * 0.9) * 0.05;
 	float up = world_normal.y + breakup - 0.08;
-	float w_grass = smoothstep(dirt_start - 0.05, dirt_start + 0.05, up);
-	float w_rock = 1.0 - smoothstep(rock_start - 0.06, rock_start + 0.06, up);
+	// Rocky ground shows rock even where it's fairly flat; forest floors show more soil.
+	float rock_line = rock_start + rocky * 0.3;
+	float dirt_line = dirt_start + rocky * 0.08 + forest * 0.04;
+	float w_grass = smoothstep(dirt_line - 0.05, dirt_line + 0.05, up);
+	float w_rock = 1.0 - smoothstep(rock_line - 0.06, rock_line + 0.06, up);
 	float w_dirt = clamp(1.0 - w_grass - w_rock, 0.0, 1.0);
 
 	Surface g = top(grass_albedo, grass_normal, grass_rough, grass_scale);
@@ -98,8 +107,11 @@ void fragment() {
 	// Large-scale tone variation so open fields don't read as one repeated tile, plus patches
 	// of dry, khaki grass for a lived-in, less lawn-like look.
 	float tone = mix(0.82, 1.08, noise(world_pos.xz * 0.03));
-	float dry = smoothstep(0.55, 0.75, noise(world_pos.xz * 0.02 + vec2(40.0, 7.0)));
-	vec3 grass_col = mix(g.albedo * grass_tint, g.albedo * vec3(0.86, 0.76, 0.46), dry * 0.7);
+	float dry = biome.g;
+	vec3 grass_col = mix(g.albedo * grass_tint, g.albedo * vec3(0.86, 0.76, 0.46), dry * 0.8);
+	// Forest floor: shaded, brown needle litter showing through thin grass.
+	vec3 litter = mix(g.albedo * grass_tint * 0.6, d.albedo * vec3(0.5, 0.38, 0.26), 0.55);
+	grass_col = mix(grass_col, litter, forest * 0.85);
 	vec3 albedo = (grass_col * w_grass + d.albedo * dirt_tint * w_dirt + r.albedo * rock_tint * w_rock) * tone;
 	vec3 n = normalize(g.normal * w_grass + d.normal * w_dirt + r.normal * w_rock);
 	ALBEDO = albedo;
