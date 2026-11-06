@@ -41,8 +41,8 @@ func _frames(count: int) -> void:
 
 
 func test_leaving_the_car_from_its_physics_step_keeps_the_player_in_the_world() -> void:
-	var player: PlayerController = _players.get_node("LocalPlayer")
-	var car: CarController = _cars.get_child(0)
+	var player: PlayerController = _players.players()[0]
+	var car: CarController = _cars.cars()[0]
 	await _frames(30)
 	player.global_position = car.global_position + Vector3(2.0, 0.5, 0.0)
 	await _frames(5)

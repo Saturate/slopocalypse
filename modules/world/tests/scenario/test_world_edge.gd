@@ -52,7 +52,7 @@ func test_falling_out_of_the_world_respawns_at_the_spawn() -> void:
 	add_child(module)
 	var spawn := Vector3(1.0, 2.0, 3.0)
 	EventBus.publish(&"world.ready", {"spawn": spawn, "kill_y": -40.0})
-	var player: PlayerController = module.get_node("LocalPlayer")
+	var player: PlayerController = module.players()[0]
 	Log.begin_capture()
 	player.global_position = Vector3(0.0, -100.0, 0.0)
 	await _frames(2)

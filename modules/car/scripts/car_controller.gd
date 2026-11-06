@@ -27,6 +27,12 @@ var _intent: CarIntent
 var _exit_point: Marker3D
 
 
+## The car's key bindings from data, for registering before any car exists on a client.
+static func bindings() -> Dictionary:
+	var data: Variant = Data.load_json(CONFIG)
+	return (data as Dictionary).get("bindings", {}) if data is Dictionary else {}
+
+
 func _ready() -> void:
 	_intent = get_node(intent_path)
 	_exit_point = get_node(exit_point_path)

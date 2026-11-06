@@ -23,7 +23,7 @@ func _frames(count: int) -> void:
 
 func test_car_waits_for_ground_then_settles_on_it() -> void:
 	EventBus.publish(&"world.ready", {"spawn": Vector3(0, 1, 0), "kill_y": -40.0})
-	var car: CarController = _module.get_child(0)
+	var car: CarController = _module.cars()[0]
 	var start := car.global_position
 	await _frames(60)
 	# No ground yet: the car must not have fallen.

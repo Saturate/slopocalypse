@@ -25,12 +25,14 @@ Agent tooling note: in this environment, backslashes inside Bash heredocs (inclu
 | First setup | `npm ci && node tools/get-godot.ts && node tools/get-addons.ts` (Rust via rustup; the toolchain file installs the pinned version) |
 | Build scenes | `node tools/build-scenes.ts` (runs `modules/*/builders/*.gd`; commit the `.tscn` output) |
 | Capture for review | `node tools/capture.ts --setup res://modules/<id>/capture/<name>.gd --out screenshots/<name>.png --frames 120 --sheet 6` (opens a window; then use the `visual-review` skill) |
+| Dedicated server | `node tools/server.ts [--port 7777]` (headless; clients join with `-- --connect=HOST:7777`) |
+| Server + two clients locally | `node tools/run-local.ts` |
 | Build Rust extensions | `node tools/build-rust.ts` (`--release` for exports); the gate does this before Godot imports |
 | Open editor | `tools/godot/Godot_v4.7.2-stable_win64.exe -e --path .` (Windows; other OSes use their binary in `tools/godot/`) |
 
 CI (`.github/workflows/check.yml`) is manual-only for now to save Actions minutes: `gh workflow run check`.
 
-Planned, added by their issues: `tools/server` and `tools/run-local` (#9), `tools/journal` (#11), `tools/soak` (#15).
+Planned, added by their issues: `tools/journal` (#11), `tools/soak` (#15).
 
 ## Architecture rules
 
@@ -53,6 +55,7 @@ Planned, added by their issues: `tools/server` and `tools/run-local` (#9), `tool
 | `Log` | `core/log.gd` | `Log.info(&"category", "message")`; `warn`, `error` push to the engine log. Tests that expect errors wrap them in `Log.begin_capture()` / `Log.end_capture()` and read them with `LogCapture.text()`. |
 | `Data` | `core/data.gd` | `Data.load_json(path)` and `Data.require(path, dict, {field: TYPE_*})`. JSON numbers are always `TYPE_FLOAT`. |
 | `Features` | `core/features.gd` | `Features.is_enabled(&"flag")`. Flags in `data/features.json`; per run `-- --flags=car:off` or `-- --all-optional-off`. |
+| `Net` | `core/net.gd` | Session mode from the command line: `--server[=PORT]`, `--connect=HOST[:PORT]`, or solo. `Net.has_local_player()`, `Net.local_peer_id()`, `peer_joined` / `peer_left`. Server-spawned things go through a `MultiplayerSpawner` in their module. |
 | `EventBus` | `core/event_bus.gd` | `subscribe(&"topic", handler)`, `publish(&"topic", payload)`. Topics are named `module.event`. |
 
 Shared components live in `core/components/`: `HealthComponent` (`server_apply_damage`, `died` and `damaged` signals, `HealthComponent.find_on(collider)`).
