@@ -1,0 +1,16 @@
+{
+  "max_health": 60.0,
+  "speed": 9.0,
+  "acceleration": 6.0,
+  "orbit_radius": 14.0,
+  "orbit_height": 6.0,
+  "orbit_speed": 0.45,
+  "min_ground_clearance": 2.5,
+  "direction_change_seconds": 4.0,
+  "spawn_distance": 60.0,
+  "respawn_seconds": 5.0,
+  "max_drones": 1.0,
+  "fall_seconds": 4.0,
+  "crash_radius": 1.5,
+  "crash_damage": 40.0
+}
