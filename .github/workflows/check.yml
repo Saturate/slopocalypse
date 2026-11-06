@@ -1,7 +1,8 @@
 name: check
 
 # Manual only for now: private-repo Actions minutes cost money, so the local
-# `npm run check:full` is the merge gate. Run this by hand to verify Linux.
+# `npm run check:full` is the merge gate. Run this by hand (`gh workflow run check`)
+# for Linux and macOS evidence; macOS minutes cost ten times Linux.
 on:
   workflow_dispatch:
 
@@ -10,9 +11,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  linux:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+  gate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -23,6 +28,11 @@ jobs:
         with:
           node-version: 24
           cache: npm
+
+      # rust-toolchain.toml pins the version; rustup installs it on first use.
+      - run: rustup show active-toolchain
+
+      - uses: Swatinem/rust-cache@v2
 
       - run: npm ci
 

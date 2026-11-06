@@ -1,0 +1,16 @@
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.7
+reloadable = true
+
+[libraries]
+windows.debug.x86_64 = "res://modules/example/bin/windows/debug/example_gd.dll"
+windows.release.x86_64 = "res://modules/example/bin/windows/release/example_gd.dll"
+windows.debug.arm64 = "res://modules/example/bin/windows/debug/example_gd.dll"
+windows.release.arm64 = "res://modules/example/bin/windows/release/example_gd.dll"
+linux.debug.x86_64 = "res://modules/example/bin/linux/debug/libexample_gd.so"
+linux.release.x86_64 = "res://modules/example/bin/linux/release/libexample_gd.so"
+linux.debug.arm64 = "res://modules/example/bin/linux/debug/libexample_gd.so"
+linux.release.arm64 = "res://modules/example/bin/linux/release/libexample_gd.so"
+macos.debug = "res://modules/example/bin/macos/debug/libexample_gd.dylib"
+macos.release = "res://modules/example/bin/macos/release/libexample_gd.dylib"

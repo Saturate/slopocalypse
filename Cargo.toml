@@ -1,0 +1,22 @@
+[workspace]
+# Each module keeps its crates in modules/<id>/rust/, so deleting the module folder removes them.
+members = ["modules/*/rust/*"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.95"
+publish = false
+
+[workspace.dependencies]
+godot = "=0.5.5"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+
+[profile.dev]
+# Engine-facing crates are slow to link; keep debug info light so the dev loop stays quick.
+debug = "line-tables-only"
