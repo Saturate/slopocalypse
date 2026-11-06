@@ -69,8 +69,20 @@ export async function buildRust(root: string, release: boolean): Promise<BuildRe
 		const file = libraryFile(c.name, platform);
 		const dest = binDir(c.moduleDir, platform, profile);
 		mkdirSync(dest, { recursive: true });
-		// Windows locks a loaded DLL: close the Godot editor first if this copy fails.
-		copyFileSync(join(root, "target", profile, file), join(dest, file));
+		const from = join(root, "target", profile, file);
+		const to = join(dest, file);
+		// Windows locks a DLL while the game or editor has it loaded, so skip identical copies
+		// and only fail when the library really changed.
+		if (existsSync(to) && readFileSync(from).equals(readFileSync(to))) continue;
+		try {
+			copyFileSync(from, to);
+		} catch (err) {
+			const code = err instanceof Error && "code" in err ? String(err.code) : "";
+			if (code === "EBUSY" || code === "EPERM") {
+				return { ok: false, detail: `${to} is locked: close the running game or Godot editor, then rerun` };
+			}
+			throw err;
+		}
 	}
 	return { ok: true, detail: `built ${crates.map((c) => c.name).join(", ")} (${profile})` };
 }
