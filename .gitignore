@@ -8,8 +8,12 @@ export_presets.cfg
 # Pinned engine binary (fetch with tools/get-godot.ps1)
 /tools/godot/
 
-# Test output
+# Test and capture output
 /tests/reports/
+/screenshots/
+
+# Node
+node_modules/
 
 # OS / editors
 .DS_Store
