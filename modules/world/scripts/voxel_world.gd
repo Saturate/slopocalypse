@@ -1,7 +1,7 @@
 class_name VoxelWorld
 extends Node3D
 ## Smooth, diggable voxel terrain (Voxel Tools' VoxelLodTerrain with Transvoxel meshing)
-## generated from TerrainHeights. Replaces the old heightmap TerrainChunk.
+## generated from TerrainHeights.
 
 const SHADER := "res://modules/world/shaders/terrain.gdshader"
 const VOXEL_REQUIRED := {"view_distance": TYPE_FLOAT, "lod_count": TYPE_FLOAT, "lod_distance": TYPE_FLOAT, "depth": TYPE_FLOAT}
@@ -36,9 +36,7 @@ func _ready() -> void:
 	terrain.lod_distance = cfg["lod_distance"]
 	terrain.generate_collisions = true
 	terrain.collision_lod_count = 1
-	var mat := ShaderMaterial.new()
-	mat.shader = load(SHADER)
-	terrain.material = mat
+	terrain.material = _terrain_material()
 	add_child(terrain)
 	_tool = terrain.get_voxel_tool()
 	_tool.channel = VoxelBuffer.CHANNEL_SDF
@@ -50,12 +48,40 @@ func _ready() -> void:
 	add_child(viewer)
 
 
+## CC0 ambientCG texture sets (see assets/LICENSES.md); the server never renders, so it
+## skips loading them.
+func _terrain_material() -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = load(SHADER)
+	if DisplayServer.get_name() == "headless":
+		return mat
+	for layer in [["grass", "Grass004"], ["dirt", "Ground037"], ["rock", "Rock030"]]:
+		var base := "res://modules/world/textures/%s/%s_1K-JPG_" % [layer[1], layer[1]]
+		mat.set_shader_parameter(layer[0] + "_albedo", load(base + "Color.jpg"))
+		mat.set_shader_parameter(layer[0] + "_normal", load(base + "NormalGL.jpg"))
+		mat.set_shader_parameter(layer[0] + "_rough", load(base + "Roughness.jpg"))
+	return mat
+
+
 ## A viewer for a player, so terrain streams in around them as they move.
 func make_viewer() -> VoxelViewer:
 	var viewer := VoxelViewer.new()
 	viewer.name = "VoxelViewer"
 	viewer.view_distance = terrain.view_distance if terrain != null else 128
 	return viewer
+
+
+## For captures and harnesses: adds the world scene under `parent` and waits until the
+## spawn area has collision, so nothing dropped in falls through terrain still streaming.
+static func add_and_wait(parent: Node, scene_path: String, max_frames: int = 900) -> Node3D:
+	var world: Node3D = (load(scene_path) as PackedScene).instantiate()
+	parent.add_child(world)
+	var voxels: VoxelWorld = world.get_node("Terrain")
+	for i in max_frames:
+		if voxels.is_ready_at(Vector3.ZERO):
+			break
+		await parent.get_tree().physics_frame
+	return world
 
 
 ## True once the area around `point` has meshes (and collision) at full detail.
