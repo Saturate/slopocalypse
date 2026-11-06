@@ -20,3 +20,6 @@
 *.ttf filter=lfs diff=lfs merge=lfs -text
 *.otf filter=lfs diff=lfs merge=lfs -text
 *.res filter=lfs diff=lfs merge=lfs -text
+
+# Vendored addons are small and must work on a checkout without LFS.
+addons/** !filter !diff !merge
