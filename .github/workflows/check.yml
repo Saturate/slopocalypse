@@ -1,7 +1,8 @@
 name: check
 
+# Manual only for now: private-repo Actions minutes cost money, so the local
+# `npm run check:full` is the merge gate. Run this by hand to verify Linux.
 on:
-  push:
   workflow_dispatch:
 
 concurrency:
