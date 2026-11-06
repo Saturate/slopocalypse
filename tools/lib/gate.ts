@@ -120,7 +120,7 @@ export function findTestDirs(root: string, mode: "fast" | "full"): string[] {
 // Runs the real main scene for a few frames and checks the boot log line. This is what
 // proves a module can be switched off (or deleted) without breaking startup.
 export async function bootGame(godot: string, root: string, userArgs: readonly string[], expect: RegExp): Promise<StepResult> {
-	const args = ["--headless", "--path", root, "--quit-after", "30", ...(userArgs.length > 0 ? ["--", ...userArgs] : [])];
+	const args = ["--headless", "--path", root, "--quit-after", "120", ...(userArgs.length > 0 ? ["--", ...userArgs] : [])];
 	const r = await run(godot, args, { cwd: root, timeoutMs: 60_000 });
 	const problems = scanLog(r.output, GODOT_NOISE);
 	if (r.timedOut) return { ok: false, detail: "boot timed out" };

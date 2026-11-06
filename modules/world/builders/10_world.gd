@@ -61,6 +61,8 @@ func _initialize() -> void:
 		cover_root.add_child(_cover_box(index, item, heights, crate))
 		index += 1
 
+	root.add_child(_boundary(heights.size))
+
 	var spawn := Marker3D.new()
 	spawn.name = "SpawnPoint"
 	spawn.position = Vector3(0.0, heights.height_at(0.0, 0.0) + 1.0, 0.0)
@@ -73,6 +75,30 @@ func _initialize() -> void:
 		quit(1)
 		return
 	quit(0)
+
+
+## Invisible walls just inside the chunk edge so nobody walks or drives off the world.
+func _boundary(size: float) -> StaticBody3D:
+	var body := StaticBody3D.new()
+	body.name = "Boundary"
+	var half := size / 2.0 - 1.0
+	var height := 80.0
+	var thickness := 2.0
+	var walls := [
+		["North", Vector3(0.0, 0.0, -half), Vector3(size, height, thickness)],
+		["South", Vector3(0.0, 0.0, half), Vector3(size, height, thickness)],
+		["West", Vector3(-half, 0.0, 0.0), Vector3(thickness, height, size)],
+		["East", Vector3(half, 0.0, 0.0), Vector3(thickness, height, size)],
+	]
+	for w: Array in walls:
+		var shape := CollisionShape3D.new()
+		shape.name = w[0]
+		var box := BoxShape3D.new()
+		box.size = w[2]
+		shape.shape = box
+		shape.position = w[1]
+		body.add_child(shape)
+	return body
 
 
 func _cover_box(index: int, item: Dictionary, heights: TerrainHeights, mat: Material) -> StaticBody3D:

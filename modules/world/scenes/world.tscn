@@ -22,43 +22,69 @@ fog_light_color = Color(0.62, 0.68, 0.75, 1)
 fog_density = 0.008
 fog_sky_affect = 0.3
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_3bcca7"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_8a2969"]
 albedo_color = Color(0.55, 0.5, 0.42, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_4c5ac5"]
-material = SubResource("StandardMaterial3D_3bcca7")
+material = SubResource("StandardMaterial3D_8a2969")
 size = Vector3(4, 2, 1)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_71242d"]
 size = Vector3(4, 2, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_a91006"]
-material = SubResource("StandardMaterial3D_3bcca7")
+material = SubResource("StandardMaterial3D_8a2969")
 size = Vector3(1, 1.2, 6)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_d02dae"]
 size = Vector3(1, 1.2, 6)
 
 [sub_resource type="BoxMesh" id="BoxMesh_5c547"]
-material = SubResource("StandardMaterial3D_3bcca7")
+material = SubResource("StandardMaterial3D_8a2969")
 size = Vector3(6, 1.5, 1)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_2f372f"]
 size = Vector3(6, 1.5, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_627a88"]
-material = SubResource("StandardMaterial3D_3bcca7")
+material = SubResource("StandardMaterial3D_8a2969")
 size = Vector3(3, 3, 3)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_8e40b0"]
 size = Vector3(3, 3, 3)
 
 [sub_resource type="BoxMesh" id="BoxMesh_bf2fc9"]
-material = SubResource("StandardMaterial3D_3bcca7")
+material = SubResource("StandardMaterial3D_8a2969")
 size = Vector3(2, 2.5, 8)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ed4a31"]
 size = Vector3(2, 2.5, 8)
+
+[sub_resource type="BoxMesh" id="BoxMesh_1be50a"]
+material = SubResource("StandardMaterial3D_8a2969")
+size = Vector3(3, 0.9, 0.4)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_4c53b2"]
+size = Vector3(3, 0.9, 0.4)
+
+[sub_resource type="BoxMesh" id="BoxMesh_789a4b"]
+material = SubResource("StandardMaterial3D_8a2969")
+size = Vector3(0.4, 1, 3)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ab5d33"]
+size = Vector3(0.4, 1, 3)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_bfafee"]
+size = Vector3(256, 80, 2)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_48d36"]
+size = Vector3(256, 80, 2)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_cbeb26"]
+size = Vector3(2, 80, 256)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_1bf2d0"]
+size = Vector3(2, 80, 256)
 
 [node name="World" type="Node3D" unique_id=241444173]
 
@@ -119,6 +145,42 @@ mesh = SubResource("BoxMesh_bf2fc9")
 
 [node name="Shape" type="CollisionShape3D" parent="Cover/Cover4" unique_id=476130406]
 shape = SubResource("BoxShape3D_ed4a31")
+
+[node name="Cover5" type="StaticBody3D" parent="Cover" unique_id=1227156903]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5, 0.14999999, -5)
+
+[node name="Mesh" type="MeshInstance3D" parent="Cover/Cover5" unique_id=2135753667]
+mesh = SubResource("BoxMesh_1be50a")
+
+[node name="Shape" type="CollisionShape3D" parent="Cover/Cover5" unique_id=1767598375]
+shape = SubResource("BoxShape3D_4c53b2")
+
+[node name="Cover6" type="StaticBody3D" parent="Cover" unique_id=1227156904]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 0.2, 5)
+
+[node name="Mesh" type="MeshInstance3D" parent="Cover/Cover6" unique_id=27405412]
+mesh = SubResource("BoxMesh_789a4b")
+
+[node name="Shape" type="CollisionShape3D" parent="Cover/Cover6" unique_id=911582696]
+shape = SubResource("BoxShape3D_ab5d33")
+
+[node name="Boundary" type="StaticBody3D" parent="." unique_id=886081222]
+
+[node name="North" type="CollisionShape3D" parent="Boundary" unique_id=746408035]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -127)
+shape = SubResource("BoxShape3D_bfafee")
+
+[node name="South" type="CollisionShape3D" parent="Boundary" unique_id=752340907]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 127)
+shape = SubResource("BoxShape3D_48d36")
+
+[node name="West" type="CollisionShape3D" parent="Boundary" unique_id=933984667]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -127, 0, 0)
+shape = SubResource("BoxShape3D_cbeb26")
+
+[node name="East" type="CollisionShape3D" parent="Boundary" unique_id=933333445]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 127, 0, 0)
+shape = SubResource("BoxShape3D_1bf2d0")
 
 [node name="SpawnPoint" type="Marker3D" parent="." unique_id=973275349]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)

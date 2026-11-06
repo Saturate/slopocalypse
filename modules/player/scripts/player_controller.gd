@@ -1,6 +1,8 @@
 class_name PlayerController
 extends CharacterBody3D
-## First-person movement driven only by PlayerIntent: walk, sprint, crouch, jump, look.
+## First-person movement driven only by PlayerIntent: walk, sprint with momentum, crouch,
+## slide, hop, vault low cover and mantle onto ledges. Cosmetic camera feel (FOV, bob)
+## lives in PlayerCameraFeel on clients; nothing here depends on rendering.
 
 const CONFIG := "res://modules/player/data/player.json"
 const REQUIRED := {
@@ -8,6 +10,7 @@ const REQUIRED := {
 	"sprint_speed": TYPE_FLOAT,
 	"crouch_speed": TYPE_FLOAT,
 	"acceleration": TYPE_FLOAT,
+	"sprint_acceleration": TYPE_FLOAT,
 	"air_control": TYPE_FLOAT,
 	"jump_velocity": TYPE_FLOAT,
 	"fall_gravity_multiplier": TYPE_FLOAT,
@@ -15,6 +18,15 @@ const REQUIRED := {
 	"mantle_min_height": TYPE_FLOAT,
 	"mantle_max_height": TYPE_FLOAT,
 	"mantle_time": TYPE_FLOAT,
+	"vault_max_height": TYPE_FLOAT,
+	"vault_max_depth": TYPE_FLOAT,
+	"vault_time": TYPE_FLOAT,
+	"vault_clearance": TYPE_FLOAT,
+	"vault_min_speed": TYPE_FLOAT,
+	"slide_min_speed": TYPE_FLOAT,
+	"slide_boost": TYPE_FLOAT,
+	"slide_time": TYPE_FLOAT,
+	"slide_friction": TYPE_FLOAT,
 	"stand_height": TYPE_FLOAT,
 	"crouch_height": TYPE_FLOAT,
 	"eye_offset": TYPE_FLOAT,
@@ -23,21 +35,30 @@ const REQUIRED := {
 }
 const PITCH_LIMIT := deg_to_rad(89.0)
 
+enum Mode { NORMAL, MANTLE, VAULT, SLIDE }
+
 @export var intent_path: NodePath
 @export var head_path: NodePath
 @export var shape_path: NodePath
 
 var config: Dictionary = {}
+var mode: Mode = Mode.NORMAL
 
 var _intent: PlayerIntent
 var _head: Node3D
 var _capsule: CapsuleShape3D
 var _shape_node: CollisionShape3D
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
-## -1 when not mantling, otherwise 0..1 through the climb.
-var _mantle_progress: float = -1.0
-var _mantle_from: Vector3
-var _mantle_to: Vector3
+var _was_crouching := false
+
+# Traversal (mantle and vault) runs along a scripted path instead of physics.
+var _path_t := 0.0
+var _path_from: Vector3
+var _path_over: Vector3
+var _path_to: Vector3
+var _path_exit_velocity := Vector3.ZERO
+
+var _slide_left := 0.0
 
 
 func _ready() -> void:
@@ -58,6 +79,27 @@ func intent() -> PlayerIntent:
 	return _intent
 
 
+func horizontal_speed() -> float:
+	return Vector2(velocity.x, velocity.z).length()
+
+
+func is_mantling() -> bool:
+	return mode == Mode.MANTLE
+
+
+func is_vaulting() -> bool:
+	return mode == Mode.VAULT
+
+
+func is_sliding() -> bool:
+	return mode == Mode.SLIDE
+
+
+## True while the sprint key is driving speed above walking pace.
+func is_sprinting() -> bool:
+	return mode == Mode.NORMAL and _wants_sprint() and is_on_floor() and horizontal_speed() > float(config["walk_speed"]) + 0.1
+
+
 func _physics_process(delta: float) -> void:
 	if _intent.consume_interact():
 		# Whoever owns the thing in front of us (car, later loot) decides what happens.
@@ -66,68 +108,125 @@ func _physics_process(delta: float) -> void:
 	rotate_y(-look.x)
 	_head.rotation.x = clampf(_head.rotation.x - look.y, -PITCH_LIMIT, PITCH_LIMIT)
 
-	if _mantle_progress >= 0.0:
-		_step_mantle(delta)
-		return
+	match mode:
+		Mode.MANTLE, Mode.VAULT:
+			_step_path(delta)
+		Mode.SLIDE:
+			_step_slide(delta)
+		_:
+			_step_normal(delta)
+	_was_crouching = _intent.crouch
 
+
+func _wants_sprint() -> bool:
+	# Firing interrupts sprinting, as does moving anywhere but forward.
+	return _intent.sprint and _intent.move.y > 0.0 and not _intent.fire
+
+
+func _step_normal(delta: float) -> void:
 	var crouching := _intent.crouch
+	var crouch_pressed := crouching and not _was_crouching
+	if crouch_pressed and is_on_floor() and _wants_sprint() and horizontal_speed() >= float(config["slide_min_speed"]):
+		_start_slide()
+		return
 	_apply_height(config["crouch_height"] if crouching else config["stand_height"])
 
 	if not is_on_floor():
-		# Falling faster than rising makes the jump feel heavy instead of floaty.
+		# Falling faster than rising makes jumps feel heavy instead of floaty.
 		var gravity_scale: float = config["fall_gravity_multiplier"] if velocity.y < 0.0 else 1.0
 		velocity.y -= _gravity * gravity_scale * delta
-	elif _intent.consume_jump() and not crouching:
-		# Climbing onto things matters more than jumping: mantle when there is a ledge,
-		# otherwise only a small hop.
-		var ledge: Variant = PlayerMantle.find_ledge(self, config)
-		if ledge is Vector3:
-			_start_mantle(ledge)
-			return
-		velocity.y = config["jump_velocity"]
+	elif _intent.consume_jump() and not crouching and _try_traverse():
+		return
 
 	var speed: float = config["walk_speed"]
+	var accel: float = config["acceleration"]
 	if crouching:
 		speed = config["crouch_speed"]
-	elif _intent.sprint and _intent.move.y > 0.0:
+	elif _wants_sprint():
 		speed = config["sprint_speed"]
+		# Building up to a sprint takes a moment; slowing down stays snappy.
+		if horizontal_speed() >= float(config["walk_speed"]) - 0.1:
+			accel = config["sprint_acceleration"]
+	if not is_on_floor():
+		accel *= float(config["air_control"])
 	var wish := transform.basis * Vector3(_intent.move.x, 0.0, -_intent.move.y)
 	var target := wish.limit_length(1.0) * speed
-	var accel: float = config["acceleration"] * (1.0 if is_on_floor() else config["air_control"])
 	var horizontal := Vector2(velocity.x, velocity.z).move_toward(Vector2(target.x, target.z), accel * delta)
 	velocity.x = horizontal.x
 	velocity.z = horizontal.y
 	move_and_slide()
 
 
-func horizontal_speed() -> float:
-	return Vector2(velocity.x, velocity.z).length()
+## Space on the ground: vault low cover at speed, mantle ledges, otherwise a small hop.
+## Returns true when a traversal started.
+func _try_traverse() -> bool:
+	if horizontal_speed() >= float(config["vault_min_speed"]):
+		var vault: Variant = PlayerMantle.find_vault(self, config)
+		if vault is Dictionary:
+			var v: Dictionary = vault
+			var top: Vector3 = v["top"]
+			var landing: Vector3 = v["landing"]
+			var over := global_position.lerp(landing, 0.5)
+			over.y = top.y + float(config["vault_clearance"])
+			# Carry the run through the vault.
+			var flat := Vector3(velocity.x, 0.0, velocity.z)
+			_start_path(Mode.VAULT, over, landing, flat)
+			return true
+	var ledge: Variant = PlayerMantle.find_ledge(self, config)
+	if ledge is Vector3:
+		var target: Vector3 = ledge
+		var corner := Vector3(global_position.x, target.y + 0.1, global_position.z)
+		_start_path(Mode.MANTLE, corner, target, Vector3.ZERO)
+		return true
+	velocity.y = config["jump_velocity"]
+	return false
 
 
-func is_mantling() -> bool:
-	return _mantle_progress >= 0.0
-
-
-func _start_mantle(target: Vector3) -> void:
-	_mantle_from = global_position
-	_mantle_to = target
-	_mantle_progress = 0.0
+func _start_path(new_mode: Mode, over: Vector3, to: Vector3, exit_velocity: Vector3) -> void:
+	mode = new_mode
+	_path_t = 0.0
+	_path_from = global_position
+	_path_over = over
+	_path_to = to
+	_path_exit_velocity = exit_velocity
 	velocity = Vector3.ZERO
+	_apply_height(config["stand_height"])
 
 
-## Rise first, then move over the edge, so the body never clips the ledge corner.
-func _step_mantle(delta: float) -> void:
-	_mantle_progress = minf(_mantle_progress + delta / float(config["mantle_time"]), 1.0)
-	var t := _mantle_progress
-	var rise := smoothstep(0.0, 0.6, t)
-	var over := smoothstep(0.4, 1.0, t)
-	var pos := _mantle_from
-	pos.y = lerpf(_mantle_from.y, _mantle_to.y, rise)
-	pos.x = lerpf(_mantle_from.x, _mantle_to.x, over)
-	pos.z = lerpf(_mantle_from.z, _mantle_to.z, over)
-	global_position = pos
-	if _mantle_progress >= 1.0:
-		_mantle_progress = -1.0
+## Quadratic curve through `_path_over`: rising first, then over the edge, so the body
+## never clips the obstacle's corner. Vaults are quicker than mantles.
+func _step_path(delta: float) -> void:
+	var duration: float = config["vault_time"] if mode == Mode.VAULT else config["mantle_time"]
+	_path_t = minf(_path_t + delta / duration, 1.0)
+	var t := _path_t
+	var a := _path_from.lerp(_path_over, t)
+	var b := _path_over.lerp(_path_to, t)
+	global_position = a.lerp(b, t)
+	if _path_t >= 1.0:
+		mode = Mode.NORMAL
+		velocity = _path_exit_velocity
+
+
+func _start_slide() -> void:
+	mode = Mode.SLIDE
+	_slide_left = config["slide_time"]
+	var flat := Vector3(velocity.x, 0.0, velocity.z)
+	var boosted := flat.normalized() * (flat.length() + float(config["slide_boost"]))
+	velocity.x = boosted.x
+	velocity.z = boosted.z
+	_apply_height(config["crouch_height"])
+
+
+func _step_slide(delta: float) -> void:
+	_slide_left -= delta
+	var flat := Vector2(velocity.x, velocity.z).move_toward(Vector2.ZERO, float(config["slide_friction"]) * delta)
+	velocity.x = flat.x
+	velocity.z = flat.y
+	if not is_on_floor():
+		velocity.y -= _gravity * delta
+	move_and_slide()
+	if _slide_left <= 0.0 or flat.length() <= float(config["crouch_speed"]) or not _intent.crouch:
+		mode = Mode.NORMAL
 
 
 ## Resizes the capsule from the feet up, so crouching never pushes the body into the ground.

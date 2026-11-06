@@ -21,7 +21,9 @@ func _on_world_ready(payload: Dictionary) -> void:
 	var scene: PackedScene = load(SCENE)
 	# Terrain collision added this frame isn't in the physics space until the next step.
 	await get_tree().physics_frame
-	var space := get_viewport().world_3d.direct_space_state
+	# Viewport.world_3d is only the viewport's own override and is null for the root;
+	# find_world_3d() returns the world the scene actually uses.
+	var space := get_viewport().find_world_3d().direct_space_state
 	var index := 0
 	for spot: Dictionary in data["dummies"]:
 		var dummy: DummyTarget = scene.instantiate()

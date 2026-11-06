@@ -7,6 +7,18 @@ const SCENE := "res://modules/car/scenes/box_car.tscn"
 const SPAWN_OFFSET := Vector3(5.0, 1.0, -3.0)
 
 var _cars: Array[CarController] = []
+var _spawn := Vector3.ZERO
+var _kill_y := -INF
+
+
+func _physics_process(_delta: float) -> void:
+	# Safety net: a car that falls out of the world comes back upright beside the spawn.
+	for car in _cars:
+		if car.global_position.y < _kill_y:
+			Log.warn(&"car", "fell out of the world at %s, respawning" % car.global_position)
+			car.global_transform = Transform3D(Basis.IDENTITY, _spawn + SPAWN_OFFSET)
+			car.linear_velocity = Vector3.ZERO
+			car.angular_velocity = Vector3.ZERO
 
 
 func _ready() -> void:
@@ -24,10 +36,11 @@ func _exit_tree() -> void:
 
 
 func _on_world_ready(payload: Dictionary) -> void:
-	var spawn: Vector3 = payload["spawn"]
+	_spawn = payload["spawn"]
+	_kill_y = payload.get("kill_y", -INF)
 	var car: CarController = (load(SCENE) as PackedScene).instantiate()
 	add_child(car)
-	car.global_position = spawn + SPAWN_OFFSET
+	car.global_position = _spawn + SPAWN_OFFSET
 	_cars.append(car)
 	if DisplayServer.get_name() != "headless":
 		InputBindings.register(car.config.get("bindings", {}), &"car")
