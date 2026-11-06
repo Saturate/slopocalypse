@@ -12,3 +12,5 @@ Every third-party asset, generated asset and vendored code in this repo, with it
 | `modules/world/textures/Rock030/` | Rock texture set (1K) | https://ambientcg.com/view?id=Rock030 | CC0 | 2026-11-06 |
 | `modules/world/textures/Concrete034/` | Concrete texture set (1K) | https://ambientcg.com/view?id=Concrete034 | CC0 | 2026-11-06 |
 | `modules/world/textures/Planks037A/` | Wood planks texture set (1K) | https://ambientcg.com/view?id=Planks037A | CC0 | 2026-11-06 |
+| `modules/world/textures/Bark014/` | Bark texture set (Color, NormalGL 1K) | https://ambientcg.com/view?id=Bark014 | CC0 | 2026-11-06 |
+| `modules/world/textures/generated/pine_branch.png` | Pine branch card, painted procedurally by `modules/world/builders/02_pine_branch_texture.gd` | this repo | same as project code | 2026-11-06 |
