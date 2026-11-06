@@ -16,17 +16,11 @@ func _initialize() -> void:
 	var root := Node3D.new()
 	root.name = "World"
 
+	# Smooth voxel terrain, built at runtime by VoxelWorld (Voxel Tools) from world.json.
 	var terrain := Node3D.new()
 	terrain.name = "Terrain"
-	terrain.set_script(load("res://modules/world/scripts/terrain_chunk.gd"))
-	# Colour comes from per-vertex grass/dirt/rock tints in TerrainChunk.
-	var ground := StandardMaterial3D.new()
-	ground.vertex_color_use_as_albedo = true
-	# Our tints are picked in sRGB; without this Godot reads them as linear and washes out.
-	ground.vertex_color_is_srgb = true
-	ground.roughness = 0.95
+	terrain.set_script(load("res://modules/world/scripts/voxel_world.gd"))
 	terrain.set("config_path", CONFIG)
-	terrain.set("material", ground)
 	root.add_child(terrain)
 
 	var scenery := Node3D.new()
@@ -119,7 +113,8 @@ func _boundary(size: float) -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.name = "Boundary"
 	var half := size / 2.0 - 1.0
-	var height := 80.0
+	# Tall enough to reach well below the voxel depth, so nothing slips under the wall.
+	var height := 400.0
 	var thickness := 2.0
 	var walls := [
 		["North", Vector3(0.0, 0.0, -half), Vector3(size, height, thickness)],

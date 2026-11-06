@@ -17,6 +17,8 @@ var interact: bool = false
 var fire: bool = false
 ## One-shot: reload the carried weapon.
 var reload: bool = false
+## One-shot: place a demolition charge where the player aims.
+var throw: bool = false
 
 
 func consume_look() -> Vector2:
@@ -40,4 +42,10 @@ func consume_interact() -> bool:
 func consume_reload() -> bool:
 	var out := reload
 	reload = false
+	return out
+
+
+func consume_throw() -> bool:
+	var out := throw
+	throw = false
 	return out

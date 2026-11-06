@@ -23,6 +23,8 @@ Running notes: playtest feedback, findings, known issues and ideas for later. De
 - Cover boxes are axis-aligned on slopes, so one corner digs in and the far end can lift (visual review, #7). Fine for greybox; align to the terrain normal when the real map arrives.
 - Car chase camera is rigidly parented to the car, so speed and turns are hard to read (visual review, #8). A smoothed follow camera with lag and FOV kick is a candidate after the Checkpoint A playtest.
 - The box car has no front or back shape, so its heading is hard to read from outside.
+- Grass, rocks and trees stay floating where the ground was dug away; the scatter doesn't know about digging yet (#30). Move scenery to VoxelInstancer, which removes instances on edits.
+- Dust puffs are hard-edged spheres; soft particles come with the art pass (#38).
 - Cover blocks are plain boxes: no bevels, planks or concrete detail (visual review, #34). Replace with proper prop meshes when the generated map adds buildings (#32).
 - The view model can still clip into walls when standing right against them; it renders on its own light layer but not yet on top. Fix with a view-model shader or SubViewport when it bothers playtesters.
 - Contact sheets shrink frames to 640x360, so thin HUD lines and short tracers can vanish; check HUD with a single full-size frame (`--sheet 1`).

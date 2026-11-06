@@ -9,6 +9,10 @@ static var _held_mesh: ArrayMesh
 
 func _ready() -> void:
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
+	if DisplayServer.get_name() != "headless":
+		var effects := ExplosionEffects.new()
+		effects.name = "ExplosionEffects"
+		add_child(effects)
 
 
 func _exit_tree() -> void:
@@ -21,6 +25,11 @@ func _on_player_spawned(p: Dictionary) -> void:
 	rifle.holder = player
 	# At the camera, so shots start at the eye and follow the view.
 	player.get_node("Head/Camera").add_child(rifle)
+	var thrower := ChargeThrower.new()
+	thrower.name = "ChargeThrower"
+	thrower.holder = player
+	thrower.charges_parent = self
+	player.add_child(thrower)
 	if DisplayServer.get_name() == "headless":
 		return
 	# What everyone else (and the local player's shadow) sees: the rifle in the body's hands.

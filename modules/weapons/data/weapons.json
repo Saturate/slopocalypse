@@ -12,5 +12,12 @@
     "kick_return": 14.0,
     "recoil_recovery": 6.0,
     "recoil_recovery_share": 0.85
+  },
+  "charge": {
+    "fuse_seconds": 1.5,
+    "radius": 3.0,
+    "damage": 150.0,
+    "range": 40.0,
+    "cooldown_seconds": 1.0
   }
 }
