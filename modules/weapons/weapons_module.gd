@@ -6,8 +6,16 @@ const RIFLE := "res://modules/weapons/scenes/rifle.tscn"
 
 static var _held_mesh: ArrayMesh
 
+var _charge_spawner := MultiplayerSpawner.new()
+var _charges_placed := 0
+
 
 func _ready() -> void:
+	# Placed charges are created by the server and replicated, so everyone sees them blink.
+	_charge_spawner.name = "ChargeSpawner"
+	_charge_spawner.spawn_path = NodePath("..")
+	_charge_spawner.spawn_function = _make_charge
+	add_child(_charge_spawner)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	if DisplayServer.get_name() != "headless":
 		var effects := ExplosionEffects.new()
@@ -44,6 +52,22 @@ func _on_player_spawned(p: Dictionary) -> void:
 		feedback.name = "ShotFeedback"
 		feedback.local_player = player
 		add_child(feedback)
+
+
+## Server only, called by ChargeThrower.
+func spawn_charge(at: Vector3, stats: Dictionary) -> DemolitionCharge:
+	_charges_placed += 1
+	return _charge_spawner.spawn({"index": _charges_placed, "position": at, "stats": stats})
+
+
+## Runs on the server and, through the spawner, on every client.
+func _make_charge(data: Variant) -> Node:
+	var info: Dictionary = data
+	var charge := DemolitionCharge.new()
+	charge.name = "Charge%d" % int(info["index"])
+	charge.stats = info["stats"]
+	charge.position = info["position"]
+	return charge
 
 
 ## Built once and shared by every player's held rifle.

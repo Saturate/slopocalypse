@@ -72,6 +72,8 @@ func _initialize() -> void:
 	root.set("intent_path", NodePath("Intent"))
 	root.set("exit_point_path", NodePath("ExitPoint"))
 	root.set("camera_path", NodePath("ChaseCamera"))
+	# The server simulates the car; clients see it move.
+	root.add_child(NetSync.make([".:position", ".:rotation"]))
 
 	var result := SceneBuilder.pack_and_save(root, OUT)
 	root.free()

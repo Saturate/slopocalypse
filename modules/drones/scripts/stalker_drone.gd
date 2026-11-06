@@ -122,6 +122,6 @@ func _on_died(_source: Node) -> void:
 ## Server only: the wreck hits the ground and goes up in a small blast.
 func server_crash() -> void:
 	set_physics_process(false)
-	EventBus.publish(&"explosion", {"position": global_position, "radius": float(config["crash_radius"]), "source": null})
+	Net.server_broadcast(&"explosion", {"position": global_position, "radius": float(config["crash_radius"]), "source": null})
 	destroyed.emit()
 	queue_free()

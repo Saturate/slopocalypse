@@ -116,14 +116,33 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 		if health != null:
 			damage = health.server_apply_damage(stats["damage"], holder)
 			target = health.get_parent()
-	_play_shot_effects(hit_point, damage > 0.0)
+	var target_path := String(target.get_path()) if target != null else ""
+	var collider_path := String((collider as Node).get_path()) if collider is Node else ""
+	# Decided here; replayed everywhere (this instance included) for effects and craters.
+	_replay_shot.rpc(origin, hit_point, damage, target_path, collider_path)
+
+
+## Runs on the server and every client: publishes `weapon.fired` locally (tracers, hit
+## markers, craters) and kicks the aim on the instance that owns this player.
+@rpc("authority", "call_local", "reliable")
+func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_path: String, collider_path: String) -> void:
+	var target: Node = get_node_or_null(target_path) if not target_path.is_empty() else null
+	var collider: Node = get_node_or_null(collider_path) if not collider_path.is_empty() else null
+	_play_shot_effects()
 	# `collider` lets other modules react to what was hit (the world digs into terrain).
 	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "collider": collider, "damage": damage})
 
 
-## Recoil and kick for the shooter. Replayed to other clients once networking lands.
-func _play_shot_effects(_hit_point: Vector3, _hit_something: bool) -> void:
-	if holder != null:
+## True on the one instance whose player is holding this weapon (solo, or that client).
+func _held_locally() -> bool:
+	if holder == null or not Net.has_local_player():
+		return false
+	return int(holder.get_meta(&"peer_id", Net.local_peer_id())) == Net.local_peer_id()
+
+
+## Recoil for the shooter's own view, gun kick for everyone who sees it.
+func _play_shot_effects() -> void:
+	if _held_locally():
 		var pitch := deg_to_rad(stats["recoil_pitch_degrees"])
 		var yaw := deg_to_rad(stats["recoil_yaw_degrees"]) * _recoil_rng.randf_range(-1.0, 1.0)
 		# Negative y looks up: the controller pitches down for positive look_delta.y.

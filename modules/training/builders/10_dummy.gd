@@ -63,6 +63,8 @@ func _initialize() -> void:
 	root.set("label_path", NodePath("HealthLabel"))
 	root.set("body_path", NodePath("Body"))
 	root.set("respawn_seconds", cfg["respawn_seconds"])
+	# Damage happens on the server; clients follow its health and knocked-over pose.
+	root.add_child(NetSync.make([], ["Health:health", "Body:rotation"]))
 
 	var result := SceneBuilder.pack_and_save(root, OUT)
 	root.free()

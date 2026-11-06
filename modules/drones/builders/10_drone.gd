@@ -81,6 +81,8 @@ func _initialize() -> void:
 	root.set("health_path", NodePath("Health"))
 	root.set("rotors_path", NodePath("Rotors"))
 	root.set("light_path", NodePath("WarningLight"))
+	# Server flies it; clients see where it is, its health and whether it is going down.
+	root.add_child(NetSync.make([".:position", ".:rotation"], ["Health:health", ".:downed"]))
 
 	var result := SceneBuilder.pack_and_save(root, OUT)
 	root.free()

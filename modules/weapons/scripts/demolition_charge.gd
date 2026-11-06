@@ -62,5 +62,5 @@ func server_explode() -> void:
 		# Full damage at the centre, falling off to a quarter at the edge.
 		var falloff := lerpf(1.0, 0.25, clampf(distance / radius, 0.0, 1.0))
 		health.server_apply_damage(float(stats["damage"]) * falloff, source)
-	EventBus.publish(&"explosion", {"position": centre, "radius": radius, "source": source})
+	Net.server_broadcast(&"explosion", {"position": centre, "radius": radius, "source": source})
 	queue_free()
