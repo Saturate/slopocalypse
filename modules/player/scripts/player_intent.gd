@@ -1,0 +1,25 @@
+class_name PlayerIntent
+extends Node
+## What the player wants to do this tick. Keyboard input, tests, bots and (later) the
+## network all write here; the controller only ever reads it.
+
+## x = strafe right, y = forward. Length 0..1.
+var move: Vector2 = Vector2.ZERO
+## Accumulated look input in radians since the controller last consumed it.
+var look_delta: Vector2 = Vector2.ZERO
+var sprint: bool = false
+var crouch: bool = false
+## One-shot: set when jump is pressed, cleared by the controller after it acts on it.
+var jump: bool = false
+
+
+func consume_look() -> Vector2:
+	var out := look_delta
+	look_delta = Vector2.ZERO
+	return out
+
+
+func consume_jump() -> bool:
+	var out := jump
+	jump = false
+	return out

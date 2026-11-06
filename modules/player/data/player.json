@@ -1,0 +1,22 @@
+{
+  "walk_speed": 4.5,
+  "sprint_speed": 7.0,
+  "crouch_speed": 2.2,
+  "acceleration": 40.0,
+  "air_control": 0.3,
+  "jump_velocity": 4.8,
+  "stand_height": 1.8,
+  "crouch_height": 1.1,
+  "eye_offset": 0.15,
+  "radius": 0.35,
+  "mouse_sensitivity": 0.0025,
+  "bindings": {
+    "move_forward": ["W"],
+    "move_back": ["S"],
+    "move_left": ["A"],
+    "move_right": ["D"],
+    "sprint": ["Shift"],
+    "crouch": ["Ctrl", "C"],
+    "jump": ["Space"]
+  }
+}
