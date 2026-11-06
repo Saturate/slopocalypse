@@ -93,7 +93,8 @@ func _place_trees(count: int, cfg: Dictionary, collision: StaticBody3D) -> void:
 		colours.append([])
 	# Dense in forests, the odd lone tree out in the meadows, none on bare rock.
 	var tree_weight := func(x: float, z: float) -> float:
-		return maxf(pow(_biomes.forest(x, z), 1.3), 0.015) * (1.0 - _biomes.rock(x, z) * 0.8)
+		# Squared so only forest cores are dense; most woodland is open enough to see through.
+		return maxf(pow(_biomes.forest(x, z), 2.0), 0.015) * (1.0 - _biomes.rock(x, z) * 0.8)
 	for i in count:
 		var spot: Variant = _random_spot(cfg, tree_weight)
 		if not spot is Vector3:
