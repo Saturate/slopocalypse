@@ -38,6 +38,7 @@
     "crouch": ["Ctrl", "C"],
     "jump": ["Space"],
     "interact": ["E"],
-    "reload": ["R"]
+    "reload": ["R"],
+    "charge": ["G"]
   }
 }

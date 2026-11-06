@@ -1,12 +1,7 @@
 [gd_scene format=3]
 
-[ext_resource type="Script" path="res://modules/world/scripts/terrain_chunk.gd" id="1_takve"]
+[ext_resource type="Script" path="res://modules/world/scripts/voxel_world.gd" id="1_takve"]
 [ext_resource type="Script" path="res://modules/world/scripts/scenery_scatter.gd" id="2_qs8vc"]
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_21da83"]
-vertex_color_use_as_albedo = true
-vertex_color_is_srgb = true
-roughness = 0.95
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_443883"]
 sky_top_color = Color(0.32, 0.5, 0.78, 1)
@@ -104,22 +99,21 @@ size = Vector3(0.4, 1, 3)
 size = Vector3(0.4, 1, 3)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_bfafee"]
-size = Vector3(256, 80, 2)
+size = Vector3(256, 400, 2)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_48d36"]
-size = Vector3(256, 80, 2)
+size = Vector3(256, 400, 2)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_cbeb26"]
-size = Vector3(2, 80, 256)
+size = Vector3(2, 400, 256)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_1bf2d0"]
-size = Vector3(2, 80, 256)
+size = Vector3(2, 400, 256)
 
 [node name="World" type="Node3D" unique_id=241444173]
 
 [node name="Terrain" type="Node3D" parent="." unique_id=1989344311]
 script = ExtResource("1_takve")
-material = SubResource("StandardMaterial3D_21da83")
 
 [node name="Scenery" type="Node3D" parent="." unique_id=604049499]
 script = ExtResource("2_qs8vc")

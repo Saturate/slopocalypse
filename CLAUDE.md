@@ -22,7 +22,7 @@ Agent tooling note: in this environment, backslashes inside Bash heredocs (inclu
 | Fast gate (while coding) | `npm run check` (TypeScript, tool tests, Godot import, parse check of changed scripts, unit tests) |
 | Full gate (before every commit and merge) | `npm run check:full` (adds gate self-tests, all scripts, all test folders) |
 | Tool tests only | `npm run test:tools` |
-| First setup | `npm ci && node tools/get-godot.ts` (Rust via rustup; the toolchain file installs the pinned version) |
+| First setup | `npm ci && node tools/get-godot.ts && node tools/get-addons.ts` (Rust via rustup; the toolchain file installs the pinned version) |
 | Build scenes | `node tools/build-scenes.ts` (runs `modules/*/builders/*.gd`; commit the `.tscn` output) |
 | Capture for review | `node tools/capture.ts --setup res://modules/<id>/capture/<name>.gd --out screenshots/<name>.png --frames 120 --sheet 6` (opens a window; then use the `visual-review` skill) |
 | Build Rust extensions | `node tools/build-rust.ts` (`--release` for exports); the gate does this before Godot imports |

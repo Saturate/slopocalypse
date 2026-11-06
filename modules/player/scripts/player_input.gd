@@ -33,3 +33,5 @@ func _physics_process(_delta: float) -> void:
 	intent.fire = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	if Input.is_action_just_pressed(&"reload"):
 		intent.reload = true
+	if Input.is_action_just_pressed(&"charge"):
+		intent.throw = true

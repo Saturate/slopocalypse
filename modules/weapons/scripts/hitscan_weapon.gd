@@ -108,14 +108,17 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 	var hit_point := to
 	var damage := 0.0
 	var target: Node = null
+	var collider: Object = null
 	if not hit.is_empty():
 		hit_point = hit["position"]
-		var health := HealthComponent.find_on(hit["collider"])
+		collider = hit["collider"]
+		var health := HealthComponent.find_on(collider as Node) if collider is Node else null
 		if health != null:
 			damage = health.server_apply_damage(stats["damage"], holder)
 			target = health.get_parent()
 	_play_shot_effects(hit_point, damage > 0.0)
-	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "damage": damage})
+	# `collider` lets other modules react to what was hit (the world digs into terrain).
+	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "collider": collider, "damage": damage})
 
 
 ## Recoil and kick for the shooter. Replayed to other clients once networking lands.
