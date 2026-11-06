@@ -58,6 +58,8 @@ async function main(): Promise<void> {
 		extract(zip, target);
 		// Self-contained mode keeps editor settings and caches inside tools/godot/.
 		writeFileSync(join(target, "._sc_"), "");
+		// The engine folder sits inside the project; keep Godot's importer out of it.
+		writeFileSync(join(target, ".gdignore"), "");
 		if (platform !== "win32") {
 			execFileSync("chmod", ["+x", exe]);
 		}

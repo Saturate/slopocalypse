@@ -1,0 +1,6 @@
+{
+  "id": "gamma",
+  "depends_on": ["missing_module"],
+  "flag": "gamma",
+  "entry": "module.gd"
+}

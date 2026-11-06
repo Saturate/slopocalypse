@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { argv, execPath, exit } from "node:process";
-import { checkScripts, findTestDirs, godotImport, runGdUnit, type StepResult } from "./lib/gate.ts";
+import { bootGame, checkScripts, findTestDirs, godotImport, runGdUnit, type StepResult } from "./lib/gate.ts";
 import { localGodot } from "./lib/godot.ts";
 import { run } from "./lib/proc.ts";
 
@@ -20,7 +20,8 @@ function git(args: string[]): string[] {
 }
 
 function gdScripts(): string[] {
-	const isOurs = (f: string): boolean => f.endsWith(".gd") && !f.startsWith("addons/");
+	// tools/gd scripts run as the main loop; loading check_scripts.gd from itself segfaults Godot.
+	const isOurs = (f: string): boolean => f.endsWith(".gd") && !f.startsWith("addons/") && !f.startsWith("tools/");
 	if (full) {
 		return [...git(["ls-files", "--cached", "--others", "--exclude-standard"])].filter(isOurs);
 	}
@@ -43,6 +44,8 @@ const steps: [string, () => Promise<StepResult>][] = [
 	["godot import", () => godotImport(godot, root)],
 	["gdscript parse", () => checkScripts(godot, root, gdScripts().map((f) => join(root, f)))],
 	["gdscript tests", () => runGdUnit(godot, root, findTestDirs(root, full ? "full" : "fast"))],
+	["boot", () => bootGame(godot, root, [], /loaded modules: \S/)],
+	["boot, optional off", () => bootGame(godot, root, ["--all-optional-off"], /loaded modules: \(none\)/)],
 ];
 // Self-tests start Godot with gdUnit4, which needs the class cache that the import step builds.
 if (full) steps.push(["gate self-tests", () => nodeStep(["--test", "tools/**/*.itest.ts"])]);

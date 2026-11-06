@@ -1,0 +1,6 @@
+{
+  "id": "beta",
+  "depends_on": ["alpha"],
+  "flag": "beta",
+  "entry": "module.gd"
+}
