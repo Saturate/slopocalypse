@@ -54,8 +54,13 @@ func _on_world_ready(payload: Dictionary) -> void:
 	feel.camera = _camera()
 	_player.add_child(feel)
 	_camera().current = true
-	# The local player's own body would block the first-person camera.
-	(_player.get_node("BodyMesh") as MeshInstance3D).visible = false
+	var animator := PlayerBodyAnimator.new()
+	animator.name = "BodyAnimator"
+	animator.player = _player
+	_player.add_child(animator)
+	# The local player's own body would block the first-person camera, but its shadow
+	# should still land on the ground.
+	PlayerBody.shadows_only(_player.get_node("Body"))
 
 
 func _on_car_entered(payload: Dictionary) -> void:

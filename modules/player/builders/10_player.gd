@@ -16,14 +16,10 @@ func _initialize() -> void:
 	shape.shape = capsule
 	root.add_child(shape)
 
-	var body_mesh := MeshInstance3D.new()
-	body_mesh.name = "BodyMesh"
-	var capsule_mesh := CapsuleMesh.new()
-	capsule_mesh.radius = 0.35
-	capsule_mesh.height = 1.8
-	body_mesh.mesh = capsule_mesh
-	body_mesh.position = Vector3(0, 0.9, 0)
-	root.add_child(body_mesh)
+	# Built by 05_player_body.gd first; instanced, so its parts stay in their own file.
+	var body: Node3D = (load("res://modules/player/scenes/player_body.tscn") as PackedScene).instantiate()
+	body.name = "Body"
+	root.add_child(body)
 
 	var head := Node3D.new()
 	head.name = "Head"
