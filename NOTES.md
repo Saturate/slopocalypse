@@ -23,6 +23,8 @@ Running notes: playtest feedback, findings, known issues and ideas for later. De
 - Cover boxes are axis-aligned on slopes, so one corner digs in and the far end can lift (visual review, #7). Fine for greybox; align to the terrain normal when the real map arrives.
 - Car chase camera is rigidly parented to the car, so speed and turns are hard to read (visual review, #8). A smoothed follow camera with lag and FOV kick is a candidate after the Checkpoint A playtest.
 - The box car has no front or back shape, so its heading is hard to read from outside.
+- Rifle view model is placeholder boxes seen a little side-on; arms and a proper pose come with #29.
+- Contact sheets shrink frames to 640x360, so thin HUD lines and short tracers can vanish; check HUD with a single full-size frame (`--sheet 1`).
 - The player capsule has no walk bob or sway, so movement is hard to read in captures. Arrives with weapon motion in Phase 1.
 
 ## Later

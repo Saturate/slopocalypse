@@ -13,6 +13,10 @@ var crouch: bool = false
 var jump: bool = false
 ## One-shot: use whatever is in front of the player (enter a car, later loot and doors).
 var interact: bool = false
+## Held while the trigger is down; whatever weapon the player carries reads it.
+var fire: bool = false
+## One-shot: reload the carried weapon.
+var reload: bool = false
 
 
 func consume_look() -> Vector2:
@@ -30,4 +34,10 @@ func consume_jump() -> bool:
 func consume_interact() -> bool:
 	var out := interact
 	interact = false
+	return out
+
+
+func consume_reload() -> bool:
+	var out := reload
+	reload = false
 	return out

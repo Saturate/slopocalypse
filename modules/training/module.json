@@ -1,0 +1,6 @@
+{
+  "id": "training",
+  "depends_on": ["world"],
+  "flag": "training",
+  "entry": "training_module.gd"
+}

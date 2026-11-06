@@ -160,3 +160,15 @@ dependencies = [
  "proc-macro2",
  "quote",
 ]
+
+[[package]]
+name = "weapons_core"
+version = "0.1.0"
+
+[[package]]
+name = "weapons_gd"
+version = "0.1.0"
+dependencies = [
+ "godot",
+ "weapons_core",
+]

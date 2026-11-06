@@ -1,0 +1,16 @@
+[package]
+name = "weapons_gd"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+godot.workspace = true
+weapons_core = { path = "../core" }
+
+[lints]
+workspace = true

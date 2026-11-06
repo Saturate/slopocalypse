@@ -26,6 +26,8 @@ func _on_world_ready(payload: Dictionary) -> void:
 	_player.name = "LocalPlayer"
 	add_child(_player)
 	_player.global_position = payload["spawn"]
+	# Other modules (weapons, later inventory) equip the player through this event.
+	EventBus.publish(&"player.spawned", {"player": _player, "local": true})
 	if DisplayServer.get_name() == "headless":
 		return
 	InputBindings.register(_player.config.get("bindings", {}), &"player")

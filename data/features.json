@@ -3,6 +3,8 @@
     "example": true,
     "world": true,
     "player": true,
-    "car": true
+    "car": true,
+    "weapons": true,
+    "training": true
   }
 }

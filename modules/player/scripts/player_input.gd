@@ -29,3 +29,7 @@ func _physics_process(_delta: float) -> void:
 		intent.jump = true
 	if Input.is_action_just_pressed(&"interact"):
 		intent.interact = true
+	# The click that captures the mouse should not also fire.
+	intent.fire = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	if Input.is_action_just_pressed(&"reload"):
+		intent.reload = true
