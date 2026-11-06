@@ -15,10 +15,13 @@ When an engine API detail is uncertain, check the Godot 4.7 docs or the installe
 | What | Command |
 | --- | --- |
 | Install Godot | `node tools/get-godot.ts` (`--force` reinstalls) |
-| Tool tests | `npm run test:tools` |
+| Fast gate (while coding) | `npm run check` (TypeScript, tool tests, Godot import, parse check of changed scripts, unit tests) |
+| Full gate (before commit, CI) | `npm run check:full` (adds gate self-tests, all scripts, all test folders) |
+| Tool tests only | `npm run test:tools` |
+| First setup | `npm ci && node tools/get-godot.ts` |
 | Open editor | `tools/godot/Godot_v4.7.2-stable_win64.exe -e --path .` (Windows; other OSes use their binary in `tools/godot/`) |
 
-Planned, added by their issues: `tools/check` (#2), CI (#3), `tools/build-rust` (#5), `tools/build-scenes` (#6), `tools/capture` (#7), `tools/server` and `tools/run-local` (#9), `tools/journal` (#11), `tools/soak` (#15).
+Planned, added by their issues: CI (#3), `tools/build-rust` (#5), `tools/build-scenes` (#6), `tools/capture` (#7), `tools/server` and `tools/run-local` (#9), `tools/journal` (#11), `tools/soak` (#15).
 
 ## Architecture rules
 
@@ -47,7 +50,8 @@ Planned, added by their issues: `tools/check` (#2), CI (#3), `tools/build-rust` 
 - Specs and plans live in `~/.claude/specs/outpost/`, never in the repo. The game design doc is `~/.claude/specs/outpost/DESIGN.md`.
 - GitHub issues are the live task list (milestone per phase). One branch per issue, named `issue-<n>-<slug>`; commits and PRs reference the issue.
 - Write a failing test first wherever behaviour is testable. Feel is checked by playtest and recorded in `NOTES.md`.
-- Never trust a Godot exit code alone: headless runs can exit 0 after a script error, so logs are scanned.
+- Never trust a Godot exit code alone: headless runs can exit 0 after a script error, and gdUnit4 passes tests that only `push_error`. The gate scans logs and fails on any `ERROR:`, `Error:` or `SCRIPT ERROR` line not allow-listed in `tools/lib/gate.ts`.
+- GDScript tests live in `tests/unit`, `tests/scenario`, `tests/net` (and the same under each module). The fast gate runs only `unit` folders. Godot does not deliver input events headless, so tests drive intent components, never simulated key presses.
 - Ask before: adding any dependency (npm, Cargo, Godot addon), changing architecture rules or the module layout, changing the save or journal format, `unsafe` Rust.
 - Do not add features beyond the current issue; put ideas in `NOTES.md` under "Later".
 - Record every third-party asset and vendored code in `assets/LICENSES.md`.

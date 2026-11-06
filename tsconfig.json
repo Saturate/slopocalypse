@@ -11,6 +11,7 @@
     "erasableSyntaxOnly": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
+    "types": ["node"],
     "skipLibCheck": true
   },
   "include": ["tools/**/*.ts"]
