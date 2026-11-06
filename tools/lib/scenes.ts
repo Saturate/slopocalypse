@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { GODOT_NOISE, type StepResult } from "./gate.ts";
+import { GODOT_NOISE, godotImport, type StepResult } from "./gate.ts";
 import { scanLog } from "./log-scan.ts";
 import { run } from "./proc.ts";
 
@@ -36,6 +36,9 @@ function sceneHashes(root: string): Map<string, string> {
 }
 
 export async function buildScenes(godot: string, root: string): Promise<StepResult & { changed: string[] }> {
+	// New class_name scripts are only visible to builders after an import refreshes the class cache.
+	const imported = await godotImport(godot, root);
+	if (!imported.ok) return { ...imported, changed: [] };
 	const before = sceneHashes(root);
 	const builders = findBuilders(root);
 	for (const b of builders) {

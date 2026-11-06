@@ -1,0 +1,6 @@
+{
+  "id": "world",
+  "depends_on": [],
+  "flag": "world",
+  "entry": "world_module.gd"
+}

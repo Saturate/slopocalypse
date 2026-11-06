@@ -1,5 +1,7 @@
 {
   "flags": {
-    "example": true
+    "example": true,
+    "world": true,
+    "player": true
   }
 }

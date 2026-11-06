@@ -1,0 +1,6 @@
+{
+  "id": "player",
+  "depends_on": ["world"],
+  "flag": "player",
+  "entry": "player_module.gd"
+}
