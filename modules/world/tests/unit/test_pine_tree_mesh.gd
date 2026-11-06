@@ -30,9 +30,13 @@ func test_limbs_face_away_from_their_axis() -> void:
 	assert_int(inward).is_equal(0)
 
 
-func test_pines_have_a_long_bare_trunk() -> void:
-	var range_start: Array = PineTreeMesh.STYLES["pine"]["crown_start"]
-	assert_float(range_start[0]).is_greater(0.5)
+func test_pines_have_a_higher_crown_than_firs_but_not_a_pole() -> void:
+	# Pines show more bare trunk than firs, but a crown starting above half height read as
+	# a ball on a pole in playtest.
+	var pine: Array = PineTreeMesh.STYLES["pine"]["crown_start"]
+	var fir: Array = PineTreeMesh.STYLES["fir"]["crown_start"]
+	assert_float(pine[0]).is_greater(fir[1])
+	assert_float(pine[1]).is_less_equal(0.5)
 
 
 func test_same_seed_builds_the_same_tree() -> void:

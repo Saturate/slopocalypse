@@ -33,7 +33,7 @@
   },
   "scatter": {
     "seed": 2024.0,
-    "trees": 2400.0,
+    "trees": 1000.0,
     "rocks": 900.0,
     "grass": 60000.0,
     "clear_radius": 14.0,
