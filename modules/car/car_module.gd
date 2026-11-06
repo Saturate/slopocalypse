@@ -12,13 +12,30 @@ var _kill_y := -INF
 
 
 func _physics_process(_delta: float) -> void:
-	# Safety net: a car that falls out of the world comes back upright beside the spawn.
 	for car in _cars:
-		if car.global_position.y < _kill_y:
+		if car.freeze:
+			_release_when_grounded(car)
+		# Safety net: a car that falls out of the world comes back upright beside the spawn.
+		elif car.global_position.y < _kill_y:
 			Log.warn(&"car", "fell out of the world at %s, respawning" % car.global_position)
-			car.global_transform = Transform3D(Basis.IDENTITY, _spawn + SPAWN_OFFSET)
-			car.linear_velocity = Vector3.ZERO
-			car.angular_velocity = Vector3.ZERO
+			_place(car)
+
+
+## Puts a car at its spawn, frozen until there is ground under it. Voxel collision is built
+## per 16 m block and can arrive after the spawn point's own block, so a car placed beside
+## the spawn could otherwise drop through before its ground exists.
+func _place(car: CarController) -> void:
+	car.global_transform = Transform3D(Basis.IDENTITY, _spawn + SPAWN_OFFSET)
+	car.linear_velocity = Vector3.ZERO
+	car.angular_velocity = Vector3.ZERO
+	car.freeze = true
+
+
+func _release_when_grounded(car: CarController) -> void:
+	var from := car.global_position + Vector3.UP * 2.0
+	var query := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 12.0, 0xFFFFFFFF, [car.get_rid()])
+	if not car.get_world_3d().direct_space_state.intersect_ray(query).is_empty():
+		car.freeze = false
 
 
 func _ready() -> void:
@@ -40,7 +57,7 @@ func _on_world_ready(payload: Dictionary) -> void:
 	_kill_y = payload.get("kill_y", -INF)
 	var car: CarController = (load(SCENE) as PackedScene).instantiate()
 	add_child(car)
-	car.global_position = _spawn + SPAWN_OFFSET
+	_place(car)
 	_cars.append(car)
 	if DisplayServer.get_name() != "headless":
 		InputBindings.register(car.config.get("bindings", {}), &"car")
