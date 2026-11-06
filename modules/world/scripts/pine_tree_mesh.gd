@@ -22,7 +22,7 @@ const FOLIAGE_SHADER := "res://modules/world/shaders/foliage.gdshader"
 const STYLES := {
 	"fir": {"crown_start": [0.15, 0.25], "spread": 0.32, "density": 1.4, "droop": [28.0, 8.0], "taper": 0.85, "per_whorl": 8, "foliage": true, "stubs": 0.0},
 	"spruce": {"crown_start": [0.1, 0.2], "spread": 0.2, "density": 1.8, "droop": [35.0, 12.0], "taper": 0.95, "per_whorl": 9, "foliage": true, "stubs": 0.0},
-	"pine": {"crown_start": [0.58, 0.7], "spread": 0.28, "density": 1.5, "droop": [6.0, -4.0], "taper": 0.45, "per_whorl": 8, "foliage": true, "stubs": 1.2},
+	"pine": {"crown_start": [0.4, 0.5], "spread": 0.3, "density": 1.7, "droop": [6.0, -4.0], "taper": 0.45, "per_whorl": 8, "foliage": true, "stubs": 1.2},
 	"sapling": {"crown_start": [0.03, 0.08], "spread": 0.38, "density": 2.4, "droop": [20.0, 5.0], "taper": 0.9, "per_whorl": 6, "foliage": true, "stubs": 0.0},
 	"dead": {"crown_start": [0.3, 0.45], "spread": 0.22, "density": 0.9, "droop": [10.0, -10.0], "taper": 0.7, "per_whorl": 4, "foliage": false, "stubs": 1.0},
 }
@@ -37,7 +37,8 @@ static func build(seed_value: int, height: float, style_name: String = "fir") ->
 	bark.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var foliage := SurfaceTool.new()
 	foliage.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var trunk_radius := height * 0.028 * rng.randf_range(0.85, 1.2)
+	# Thin enough that crowns hide it; thick trunks read as poles through the needles.
+	var trunk_radius := height * 0.019 * rng.randf_range(0.9, 1.1)
 	_tapered_limb(bark, Vector3.ZERO, Vector3(0, height, 0), trunk_radius, trunk_radius * 0.15, 8, 6)
 	_crown(bark, foliage, height, trunk_radius, style, rng)
 	bark.generate_normals()

@@ -60,19 +60,22 @@ func _random_spot(cfg: Dictionary, weight: Callable) -> Variant:
 ## Tree variants: [seed, height, style]. Each placed tree picks one by biome, then gets its
 ## own scale, rotation and needle tint so the forest doesn't repeat.
 const TREE_VARIANTS := [
-	[11, 9.0, "fir"], [23, 11.5, "fir"], [37, 14.0, "fir"],
-	[41, 16.0, "spruce"], [53, 12.5, "spruce"],
-	[61, 17.0, "pine"], [67, 13.5, "pine"],
+	[11, 9.0, "fir"], [23, 11.0, "fir"], [37, 13.0, "fir"],
+	[41, 14.0, "spruce"], [53, 11.5, "spruce"],
+	[61, 13.5, "pine"], [67, 11.0, "pine"],
 	[71, 3.5, "sapling"], [79, 5.0, "sapling"],
-	[83, 11.0, "dead"],
+	[83, 8.0, "dead"],
 ]
+## Limits so no placed tree gets silly: per-tree scale range, and a hard cap on final height.
+const TREE_SCALE := Vector2(0.8, 1.2)
+const TREE_MAX_HEIGHT := 15.0
 
 
-## Deep forest is firs and spruces; edges and meadows lean to pines and young trees; a few
-## dead snags everywhere.
+## Deep forest is firs and spruces; edges and meadows lean to pines and young trees; dead
+## snags are rare.
 func _pick_variant(forest: float) -> int:
 	var roll := _rng.randf()
-	if roll < 0.04:
+	if roll < 0.015:
 		return 9
 	var style_roll := _rng.randf()
 	if style_roll < 0.25 * (1.0 - forest) + 0.08:
@@ -98,14 +101,14 @@ func _place_trees(count: int, cfg: Dictionary, collision: StaticBody3D) -> void:
 		var at: Vector3 = spot
 		var variant := _pick_variant(_biomes.forest(at.x, at.z))
 		var height: float = TREE_VARIANTS[variant][1]
-		var scale := _rng.randf_range(0.7, 1.35)
+		var scale := minf(_rng.randf_range(TREE_SCALE.x, TREE_SCALE.y), TREE_MAX_HEIGHT / height)
 		var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3.ONE * scale)
 		transforms[variant].append(Transform3D(basis, at + Vector3.DOWN * 0.1))
 		# Needle tint stays close to white: the texture carries the colour, this only varies it.
 		colours[variant].append(Color(0.85, 0.9, 0.85).lerp(Color(1.05, 1.0, 0.85), _rng.randf()))
 		var shape := CollisionShape3D.new()
 		var cyl := CylinderShape3D.new()
-		cyl.radius = height * 0.028 * scale
+		cyl.radius = height * 0.02 * scale
 		cyl.height = height * scale * 0.6
 		shape.shape = cyl
 		shape.position = at + Vector3.UP * cyl.height * 0.5
