@@ -5,6 +5,8 @@ const MODULES_ROOT := "res://modules"
 
 
 func _ready() -> void:
+	# Before modules load, so they already see this instance as a client of its own server.
+	Net.start_solo()
 	var modules_node := Node.new()
 	modules_node.name = "Modules"
 	add_child(modules_node)
