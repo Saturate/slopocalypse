@@ -104,6 +104,10 @@ func _physics_process(delta: float) -> void:
 	if _intent.consume_interact():
 		# Whoever owns the thing in front of us (car, later loot) decides what happens.
 		EventBus.publish(&"player.interact", {"player": self})
+		# Entering a car parks this player mid-step, which takes the body out of the physics
+		# space; moving it now makes Jolt log "Parameter space is null".
+		if not can_process():
+			return
 	var look := _intent.consume_look()
 	rotate_y(-look.x)
 	_head.rotation.x = clampf(_head.rotation.x - look.y, -PITCH_LIMIT, PITCH_LIMIT)
