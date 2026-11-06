@@ -39,11 +39,13 @@ async function nodeStep(args: string[]): Promise<StepResult> {
 
 const steps: [string, () => Promise<StepResult>][] = [
 	["typescript", () => nodeStep([join(root, "node_modules/typescript/bin/tsc"), "--noEmit", "-p", root])],
-	["tool tests", () => nodeStep(["--test", full ? "tools/**/*.{test,itest}.ts" : "tools/**/*.test.ts"])],
+	["tool tests", () => nodeStep(["--test", "tools/**/*.test.ts"])],
 	["godot import", () => godotImport(godot, root)],
 	["gdscript parse", () => checkScripts(godot, root, gdScripts().map((f) => join(root, f)))],
 	["gdscript tests", () => runGdUnit(godot, root, findTestDirs(root, full ? "full" : "fast"))],
 ];
+// Self-tests start Godot with gdUnit4, which needs the class cache that the import step builds.
+if (full) steps.push(["gate self-tests", () => nodeStep(["--test", "tools/**/*.itest.ts"])]);
 
 async function main(): Promise<void> {
 	if (!existsSync(godot)) {
