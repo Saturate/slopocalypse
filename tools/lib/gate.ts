@@ -28,21 +28,18 @@ export async function godotImport(godot: string, root: string): Promise<StepResu
 	return { ok: true, detail: "clean" };
 }
 
+// One Godot process compiles every script inside the running project, so autoload names
+// resolve. `--check-only` compiles in isolation and rejects any script that uses an autoload.
 export async function checkScripts(godot: string, root: string, files: readonly string[]): Promise<StepResult> {
-	const failures: string[] = [];
-	for (const file of files) {
-		const r = await run(godot, ["--headless", "--path", root, "--check-only", "--script", toRes(root, file)], {
-			cwd: root,
-			timeoutMs: 60_000,
-		});
-		const problems = scanLog(r.output, GODOT_NOISE);
-		if (r.code !== 0 || r.timedOut || problems.length > 0) {
-			failures.push(`${relative(root, file)}:\n  ${problems.join("\n  ") || `exit ${r.code}`}`);
-		}
+	if (files.length === 0) return { ok: true, detail: "no scripts to check" };
+	const args = ["--headless", "--path", root, "-s", "res://tools/gd/check_scripts.gd", "--", ...files.map((f) => toRes(root, f))];
+	const r = await run(godot, args, { cwd: root, timeoutMs: 120_000 });
+	const problems = scanLog(r.output, GODOT_NOISE);
+	if (r.timedOut) return { ok: false, detail: "script check timed out" };
+	if (r.code !== 0 || problems.length > 0) {
+		return { ok: false, detail: problems.join("\n") || `exit ${r.code}` };
 	}
-	return failures.length > 0
-		? { ok: false, detail: failures.join("\n") }
-		: { ok: true, detail: `${files.length} script(s) parse cleanly` };
+	return { ok: true, detail: `${files.length} script(s) compile` };
 }
 
 export async function runGdUnit(godot: string, root: string, testDirs: readonly string[]): Promise<StepResult> {
@@ -100,4 +97,19 @@ export function findTestDirs(root: string, mode: "fast" | "full"): string[] {
 	};
 	walk(root);
 	return found;
+}
+
+// Runs the real main scene for a few frames and checks the boot log line. This is what
+// proves a module can be switched off (or deleted) without breaking startup.
+export async function bootGame(godot: string, root: string, userArgs: readonly string[], expect: RegExp): Promise<StepResult> {
+	const args = ["--headless", "--path", root, "--quit-after", "30", ...(userArgs.length > 0 ? ["--", ...userArgs] : [])];
+	const r = await run(godot, args, { cwd: root, timeoutMs: 60_000 });
+	const problems = scanLog(r.output, GODOT_NOISE);
+	if (r.timedOut) return { ok: false, detail: "boot timed out" };
+	if (r.code !== 0 || problems.length > 0) return { ok: false, detail: [`exit ${r.code}`, ...problems].join("\n") };
+	const line = r.output.split(/\r?\n/).find((l) => l.includes("loaded modules:"));
+	if (line === undefined || !expect.test(line)) {
+		return { ok: false, detail: `expected boot line matching ${expect}, got: ${line ?? "(none)"}` };
+	}
+	return { ok: true, detail: line.trim() };
 }

@@ -1,0 +1,6 @@
+{
+  "id": "epsilon",
+  "depends_on": ["delta"],
+  "flag": "epsilon",
+  "entry": "module.gd"
+}

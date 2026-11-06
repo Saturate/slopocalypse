@@ -1,0 +1,6 @@
+{
+  "id": "example",
+  "depends_on": [],
+  "flag": "example",
+  "entry": "example_module.gd"
+}

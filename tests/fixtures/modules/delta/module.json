@@ -1,0 +1,6 @@
+{
+  "id": "delta",
+  "depends_on": [],
+  "flag": "delta",
+  "entry": "module.gd"
+}

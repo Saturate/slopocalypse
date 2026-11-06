@@ -39,6 +39,17 @@ Planned, added by their issues: `tools/build-rust` (#5), `tools/build-scenes` (#
 10. **Rust stays deletable.** A module's crates live in `modules/<name>/rust/` and it ships its own `.gdextension`, so deleting the folder removes the Rust side too.
 11. **Server journals every event.** Requests (accepted or rejected with reason), state changes, replays, connects, disconnects and authority changes go through one event pipeline that writes an append-only NDJSON journal per session. An event type without a journal schema fails the gate.
 
+## Core autoloads
+
+| Autoload | Script | Use |
+| --- | --- | --- |
+| `Log` | `core/log.gd` | `Log.info(&"category", "message")`; `warn`, `error` push to the engine log. Tests that expect errors wrap them in `Log.begin_capture()` / `Log.end_capture()` and read them with `LogCapture.text()`. |
+| `Data` | `core/data.gd` | `Data.load_json(path)` and `Data.require(path, dict, {field: TYPE_*})`. JSON numbers are always `TYPE_FLOAT`. |
+| `Features` | `core/features.gd` | `Features.is_enabled(&"flag")`. Flags in `data/features.json`; per run `-- --flags=car:off` or `-- --all-optional-off`. |
+| `EventBus` | `core/event_bus.gd` | `subscribe(&"topic", handler)`, `publish(&"topic", payload)`. Topics are named `module.event`. |
+
+A module is `modules/<id>/module.json` (`id`, `depends_on`, `flag`, `entry`) plus an entry script extending `Node`; `core/boot.gd` instances it under `/root/Boot/Modules/<id>`. An empty `flag` means always on. Use `modules/example/` as the template.
+
 ## Code style
 
 - GDScript: static types everywhere; typed helpers (`absf`, `clampf`, `lerpf`, `maxi`) so `:=` infers. `snake_case` files and functions, `PascalCase` classes, `_private` members. One responsibility per script.
