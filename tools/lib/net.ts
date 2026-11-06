@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import { GODOT_NOISE, type StepResult } from "./gate.ts";
 import { scanLog } from "./log-scan.ts";
 import { run, type ProcResult } from "./proc.ts";
@@ -26,7 +27,61 @@ export function parseReport(output: string): NetReport | undefined {
 	};
 }
 
+export interface SoloServerLine {
+	pid: number;
+	port: number;
+	log: string;
+}
+
+export function parseSoloServer(output: string): SoloServerLine | undefined {
+	const m = /solo server pid=(\d+) port=(\d+) log=(.+?)\r?$/m.exec(output);
+	if (m === null) return undefined;
+	return { pid: Number(m[1]), port: Number(m[2]), log: m[3] ?? "" };
+}
+
+function isRunning(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+// Solo is a client of a server process it starts itself. The bot's movement and shots must
+// make the round trip, the server's own log must be clean, and the server must not outlive
+// the game.
+export async function soloSmoke(godot: string, root: string): Promise<StepResult> {
+	const r = await run(godot, ["--headless", "--path", root, "--", "--net-report-after=900", "--bot=walk"], { cwd: root, timeoutMs: 120_000 });
+	const problems: string[] = [];
+	for (const line of scanLog(r.output, GODOT_NOISE)) problems.push(`solo: ${line}`);
+	if (r.timedOut) problems.push("solo: timed out");
+	const rep = parseReport(r.output);
+	if (rep === undefined) problems.push("solo: no NET-REPORT line");
+	else {
+		if (rep.mode !== "SOLO" || rep.peers !== 1 || rep.players !== 1 || rep.localPlayers !== 1) problems.push(`solo: wrong session shape: ${JSON.stringify(rep)}`);
+		if (rep.moved < 3.0) problems.push(`solo: player did not move through the server (moved=${rep.moved})`);
+		if (rep.shots < 1) problems.push("solo: saw no shots");
+	}
+	const child = parseSoloServer(r.output);
+	if (child === undefined) {
+		problems.push("solo: no 'solo server pid=' line");
+	} else {
+		// It quits when its only player leaves, and within a second or so if the game vanished.
+		for (let i = 0; i < 20 && isRunning(child.pid); i++) await delay(500);
+		if (isRunning(child.pid)) {
+			problems.push(`solo: server process ${child.pid} still running after the game quit`);
+			process.kill(child.pid);
+		}
+		if (!existsSync(child.log)) problems.push(`solo: no server log at ${child.log}`);
+		else for (const line of scanLog(readFileSync(child.log, "utf8"), GODOT_NOISE)) problems.push(`solo server: ${line}`);
+	}
+	return problems.length > 0
+		? { ok: false, detail: problems.slice(0, 20).join("\n") }
+		: { ok: true, detail: "solo runs through its own server process, which exits with the game" };
+}
 
 // A dedicated server plus two clients as real processes on localhost. Client 1 runs a bot
 // that walks and fires through the network intent path; the checks prove input reaches the

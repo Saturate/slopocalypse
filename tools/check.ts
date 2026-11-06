@@ -8,7 +8,7 @@ import { localGodot } from "./lib/godot.ts";
 import { run } from "./lib/proc.ts";
 import { buildRust, hasRustCrates } from "./lib/rust.ts";
 import { buildScenes } from "./lib/scenes.ts";
-import { netSmoke } from "./lib/net.ts";
+import { netSmoke, soloSmoke } from "./lib/net.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const full = argv.includes("--full");
@@ -81,7 +81,7 @@ if (full) {
 	]);
 }
 // A real dedicated server and two clients as separate processes.
-if (full) steps.push(["net smoke", () => netSmoke(godot, root)]);
+if (full) steps.push(["net smoke", () => netSmoke(godot, root)], ["solo smoke", () => soloSmoke(godot, root)]);
 // Self-tests start Godot with gdUnit4, which needs the class cache that the import step builds.
 if (full) steps.push(["gate self-tests", () => commandStep(execPath, ["--test", "tools/**/*.itest.ts"], 300_000)]);
 
