@@ -8,6 +8,7 @@ const CONFIG := "res://modules/world/data/world.json"
 ## Give up waiting for the spawn area after this long rather than hang a headless server.
 const READY_TIMEOUT_SECONDS := 30.0
 const BULLET_CRATER_RADIUS := 0.35
+const SPAWN_AREA_RADIUS := 16.0
 
 var _voxels: VoxelWorld
 var _announcement: Dictionary = {}
@@ -54,12 +55,21 @@ func _process(delta: float) -> void:
 		return
 	_waited += delta
 	var spawn: Vector3 = _announcement["spawn"]
-	if _voxels.is_ready_at(spawn) or _waited > READY_TIMEOUT_SECONDS:
+	# Meshes can be ready a frame or two before their collision, and things spawn up to ~8 m
+	# from the spawn point (the car), so wait for a wider area and a real physics hit.
+	var ready := _voxels.is_ready_at(spawn, SPAWN_AREA_RADIUS) and _ground_hit(spawn)
+	if ready or _waited > READY_TIMEOUT_SECONDS:
 		if _waited > READY_TIMEOUT_SECONDS:
 			Log.warn(&"world", "spawn terrain not ready after %.0f s, announcing anyway" % READY_TIMEOUT_SECONDS)
 		var payload := _announcement
 		_announcement = {}
 		EventBus.publish(&"world.ready", payload)
+
+
+func _ground_hit(at: Vector3) -> bool:
+	var space := get_viewport().find_world_3d().direct_space_state
+	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 20.0, at + Vector3.DOWN * 40.0)
+	return not space.intersect_ray(query).is_empty()
 
 
 func _on_player_spawned(p: Dictionary) -> void:
