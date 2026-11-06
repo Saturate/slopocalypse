@@ -7,6 +7,7 @@ import { bootGame, checkScripts, findTestDirs, godotImport, runGdUnit, type Step
 import { localGodot } from "./lib/godot.ts";
 import { run } from "./lib/proc.ts";
 import { buildRust, hasRustCrates } from "./lib/rust.ts";
+import { buildScenes } from "./lib/scenes.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const full = argv.includes("--full");
@@ -64,6 +65,20 @@ const steps: Step[] = [
 	["boot", () => bootGame(godot, root, [], /loaded modules: \S/)],
 	["boot, optional off", () => bootGame(godot, root, ["--all-optional-off"], /loaded modules: \(none\)/)],
 ];
+// Rebuilding must not change any committed scene: a diff means a builder changed without
+// regenerating, or someone hand-edited generated output.
+if (full) {
+	steps.push([
+		"scenes up to date",
+		async () => {
+			const r = await buildScenes(godot, root);
+			if (!r.ok) return r;
+			return r.changed.length === 0
+				? { ok: true, detail: r.detail }
+				: { ok: false, detail: ["rebuilt scenes differ (now regenerated, review and commit):", ...r.changed].join("\n") };
+		},
+	]);
+}
 // Self-tests start Godot with gdUnit4, which needs the class cache that the import step builds.
 if (full) steps.push(["gate self-tests", () => commandStep(execPath, ["--test", "tools/**/*.itest.ts"], 300_000)]);
 

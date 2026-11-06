@@ -10,6 +10,10 @@ Persistent open-world co-op shooter for 2 to 4 friends: Tarkov-style gear and ri
 
 When an engine API detail is uncertain, check the Godot 4.7 docs or the installed engine instead of guessing, and say so. Models often produce Godot 3 syntax.
 
+Load the `godot-conventions` project skill (`.claude/skills/godot-conventions/`) before writing GDScript, scenes, builders, modules or gdext code. It holds the how-to and the silent-failure list.
+
+Agent tooling note: in this environment, backslashes inside Bash heredocs (including `python -` and `node -e`) get collapsed, turning `"\n"` into a real newline. Write code that contains backslashes with the Edit or Write tools, not through the shell.
+
 ## Commands
 
 | What | Command |
@@ -19,12 +23,13 @@ When an engine API detail is uncertain, check the Godot 4.7 docs or the installe
 | Full gate (before every commit and merge) | `npm run check:full` (adds gate self-tests, all scripts, all test folders) |
 | Tool tests only | `npm run test:tools` |
 | First setup | `npm ci && node tools/get-godot.ts` (Rust via rustup; the toolchain file installs the pinned version) |
+| Build scenes | `node tools/build-scenes.ts` (runs `modules/*/builders/*.gd`; commit the `.tscn` output) |
 | Build Rust extensions | `node tools/build-rust.ts` (`--release` for exports); the gate does this before Godot imports |
 | Open editor | `tools/godot/Godot_v4.7.2-stable_win64.exe -e --path .` (Windows; other OSes use their binary in `tools/godot/`) |
 
 CI (`.github/workflows/check.yml`) is manual-only for now to save Actions minutes: `gh workflow run check`.
 
-Planned, added by their issues: `tools/build-scenes` (#6), `tools/capture` (#7), `tools/server` and `tools/run-local` (#9), `tools/journal` (#11), `tools/soak` (#15).
+Planned, added by their issues: `tools/capture` (#7), `tools/server` and `tools/run-local` (#9), `tools/journal` (#11), `tools/soak` (#15).
 
 ## Architecture rules
 
