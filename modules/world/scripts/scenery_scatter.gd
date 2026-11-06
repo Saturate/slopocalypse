@@ -49,32 +49,50 @@ func _random_spot(cfg: Dictionary) -> Variant:
 	return null
 
 
+## Three firs of different height and shape; each placed tree picks one, then gets its own
+## scale, rotation and needle tint so the forest doesn't repeat.
+const TREE_VARIANTS := [[11, 8.0], [23, 10.5], [37, 13.0]]
+
+
 func _place_trees(count: int, cfg: Dictionary, collision: StaticBody3D) -> void:
-	var trunks: Array[Transform3D] = []
-	var canopies: Array[Transform3D] = []
-	var colours: Array[Color] = []
+	var transforms: Array = [[], [], []]
+	var colours: Array = [[], [], []]
 	for i in count:
 		var spot: Variant = _random_spot(cfg)
 		if not spot is Vector3:
 			continue
 		var at: Vector3 = spot
-		var scale := _rng.randf_range(0.8, 1.5)
-		var yaw := _rng.randf() * TAU
-		var basis := Basis(Vector3.UP, yaw).scaled(Vector3.ONE * scale)
-		trunks.append(Transform3D(basis, at))
-		canopies.append(Transform3D(basis, at + Vector3.UP * 1.6 * scale))
-		# Dark, slightly desaturated conifer greens to sit with the grounded palette.
-		colours.append(Color(0.13, 0.2, 0.11).lerp(Color(0.2, 0.27, 0.14), _rng.randf()))
+		var variant := _rng.randi_range(0, TREE_VARIANTS.size() - 1)
+		var height: float = TREE_VARIANTS[variant][1]
+		var scale := _rng.randf_range(0.8, 1.25)
+		var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3.ONE * scale)
+		transforms[variant].append(Transform3D(basis, at + Vector3.DOWN * 0.1))
+		# Needle tint stays close to white: the texture carries the colour, this only varies it.
+		colours[variant].append(Color(0.85, 0.9, 0.85).lerp(Color(1.05, 1.0, 0.85), _rng.randf()))
 		var shape := CollisionShape3D.new()
 		var cyl := CylinderShape3D.new()
-		cyl.radius = 0.25 * scale
-		cyl.height = 3.0 * scale
+		cyl.radius = height * 0.028 * scale
+		cyl.height = height * scale * 0.6
 		shape.shape = cyl
-		shape.position = at + Vector3.UP * 1.5 * scale
+		shape.position = at + Vector3.UP * cyl.height * 0.5
 		collision.add_child(shape)
 	if _visual:
-		_multimesh("Trunks", _trunk_mesh(), trunks, [])
-		_multimesh("Canopies", _canopy_mesh(), canopies, colours)
+		for v in TREE_VARIANTS.size():
+			var mesh := PineTreeMesh.build(TREE_VARIANTS[v][0], TREE_VARIANTS[v][1])
+			var inst := _multimesh("Firs%d" % v, mesh, _typed(transforms[v]), _typed_colours(colours[v]))
+			inst.visibility_range_end = 220.0
+
+
+func _typed(a: Array) -> Array[Transform3D]:
+	var out: Array[Transform3D] = []
+	out.assign(a)
+	return out
+
+
+func _typed_colours(a: Array) -> Array[Color]:
+	var out: Array[Color] = []
+	out.assign(a)
+	return out
 
 
 func _place_rocks(count: int, cfg: Dictionary, collision: StaticBody3D) -> void:
