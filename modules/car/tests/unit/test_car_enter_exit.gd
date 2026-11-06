@@ -73,3 +73,34 @@ func test_exit_intent_gets_the_driver_out() -> void:
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	assert_object(_car.driver).is_null()
+
+
+# Called directly, not over the network, the sender id is 0, so a driver tagged as peer 0
+# stands in for "the sender is the driver".
+func test_driver_intent_is_accepted_from_the_driver() -> void:
+	var who := _person_at(Vector3(2.0, 0.0, 0.0))
+	who.set_meta(&"peer_id", 0)
+	_car.enter(who)
+	_car.intent().submit(1.0, -0.5, false)
+	assert_float(_car.intent().throttle).is_equal(1.0)
+	assert_float(_car.intent().steer).is_equal(-0.5)
+
+
+func test_driver_intent_from_anyone_else_is_ignored() -> void:
+	var who := _person_at(Vector3(2.0, 0.0, 0.0))
+	who.set_meta(&"peer_id", 5)
+	_car.enter(who)
+	Log.begin_capture()
+	_car.intent().submit(1.0, 0.0, false)
+	_car.intent().submit_exit()
+	var logged := LogCapture.text(Log.end_capture())
+	assert_float(_car.intent().throttle).is_equal(0.0)
+	assert_bool(_car.intent().exit).is_false()
+	assert_str(logged).contains("tried to drive")
+
+
+func test_nobody_drives_an_empty_car() -> void:
+	Log.begin_capture()
+	_car.intent().submit(1.0, 0.0, false)
+	Log.end_capture()
+	assert_float(_car.intent().throttle).is_equal(0.0)

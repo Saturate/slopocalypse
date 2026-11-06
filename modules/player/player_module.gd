@@ -102,7 +102,7 @@ func _on_player_ready(player: PlayerController, local: bool) -> void:
 	# Other modules (weapons, world viewer, later inventory) equip players through this.
 	EventBus.publish(&"player.spawned", {"player": player, "local": local})
 	var bot := _bot_behaviour()
-	if local and not bot.is_empty():
+	if local and bot in PlayerBot.BEHAVIOURS:
 		var driver := PlayerBot.new()
 		driver.name = "Bot"
 		driver.player = player

@@ -29,7 +29,7 @@ Running notes: playtest feedback, findings, known issues and ideas for later. De
 - The view model can still clip into walls when standing right against them; it renders on its own light layer but not yet on top. Fix with a view-model shader or SubViewport when it bothers playtesters.
 - Contact sheets shrink frames to 640x360, so thin HUD lines and short tracers can vanish; check HUD with a single full-size frame (`--sheet 1`).
 - The player capsule has no walk bob or sway, so movement is hard to read in captures. Arrives with weapon motion in Phase 1.
-- Solo runs through its own server process (#12), so anything not networked yet is missing in solo too: the car can't be driven until #14, and remote state has no smoothing, so other players (and the car) may look steppy.
+- Solo runs through its own server process (#12), so anything not networked is missing in solo too. Remote state has no smoothing yet, so other players and the car (even your own, while driving) may look steppy, and the car responds a round trip late; driver-side car physics is the follow-up to #14.
 - The solo server writes its log to `user://logs/solo-server.log` (the path is printed at startup). Look there when something works with a dedicated server but not in solo.
 
 ## Later

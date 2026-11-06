@@ -6,6 +6,9 @@ extends Node
 ##
 ## "walk": walks forward turning slowly, firing short bursts.
 
+## The behaviours this bot knows; other modules may handle other `--bot=` names.
+const BEHAVIOURS: Array[String] = ["walk"]
+
 var player: PlayerController
 var behaviour := "walk"
 

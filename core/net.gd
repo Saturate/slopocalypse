@@ -178,7 +178,8 @@ func _watch_empty(delta: float) -> void:
 
 
 ## One line describing the session, for tools and tests. `moved` is the furthest any player
-## stands from the world origin (the spawn), `shots` the weapon.fired events seen here.
+## stands from the world origin (the spawn), `shots` the weapon.fired events seen here,
+## `driven` the furthest any vehicle is from where it spawned.
 func report() -> String:
 	var players := get_tree().get_nodes_in_group(&"players")
 	# The server owns every player body, so "local" means the player spawned for this peer.
@@ -188,7 +189,12 @@ func report() -> String:
 	for p: Node in players:
 		var at := (p as Node3D).global_position
 		moved = maxf(moved, Vector2(at.x, at.z).length())
-	return "NET-REPORT mode=%s peer=%d peers=%d players=%d local_players=%d moved=%.1f shots=%d" % [Mode.keys()[mode], me, multiplayer.get_peers().size(), players.size(), local.size(), moved, _shots]
+	# Group and meta names, not a module dependency: whoever spawns vehicles tags them.
+	var driven := 0.0
+	for v: Node in get_tree().get_nodes_in_group(&"vehicles"):
+		var start: Vector3 = v.get_meta(&"spawn_position", (v as Node3D).global_position)
+		driven = maxf(driven, (v as Node3D).global_position.distance_to(start))
+	return "NET-REPORT mode=%s peer=%d peers=%d players=%d local_players=%d moved=%.1f shots=%d driven=%.1f" % [Mode.keys()[mode], me, multiplayer.get_peers().size(), players.size(), local.size(), moved, _shots, driven]
 
 
 var _shots := 0
