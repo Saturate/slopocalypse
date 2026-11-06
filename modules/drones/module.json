@@ -1,0 +1,6 @@
+{
+  "id": "drones",
+  "depends_on": ["world"],
+  "flag": "drones",
+  "entry": "drones_module.gd"
+}

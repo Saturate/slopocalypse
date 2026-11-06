@@ -27,9 +27,19 @@ func _ready() -> void:
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.subscribe(&"explosion", _on_explosion)
+	EventBus.subscribe(&"car.entered", _on_car_entered)
+
+
+## The driver's own viewer stays with their parked body, so a car driven away would leave
+## terrain collision behind and fall through. Driven cars carry a viewer too.
+func _on_car_entered(p: Dictionary) -> void:
+	var car: Node3D = p["car"]
+	if car.get_node_or_null("VoxelViewer") == null:
+		car.add_child(_voxels.make_viewer())
 
 
 func _exit_tree() -> void:
+	EventBus.unsubscribe(&"car.entered", _on_car_entered)
 	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
 	EventBus.unsubscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.unsubscribe(&"explosion", _on_explosion)

@@ -5,6 +5,7 @@
     "player": true,
     "car": true,
     "weapons": true,
-    "training": true
+    "training": true,
+    "drones": true
   }
 }
