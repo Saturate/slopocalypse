@@ -1,0 +1,18 @@
+# Godot
+.godot/
+/android/
+*.translation
+export_presets.cfg
+/build/
+
+# Pinned engine binary (fetch with tools/get-godot.ps1)
+/tools/godot/
+
+# Test output
+/tests/reports/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+*.tmp
