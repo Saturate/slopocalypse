@@ -22,6 +22,13 @@ func _spawn(peer: int) -> PlayerController:
 	return player
 
 
+## Tilts the head so the crosshair is on `point`, as a player looks down at an item.
+func _look_at(player: PlayerController, point: Vector3) -> void:
+	var eye := (player.get_node("Head/Camera") as Node3D).global_position
+	var d := point - eye
+	(player.get_node("Head") as Node3D).rotation.x = atan2(d.y, Vector2(d.x, d.z).length())
+
+
 func _in_front(player: PlayerController, metres: float) -> Vector3:
 	return player.global_position - player.global_transform.basis.z * metres
 
@@ -30,6 +37,7 @@ func test_e_picks_up_loot_in_front_and_claims_the_press() -> void:
 	var player := _spawn(41)
 	var loot: LootItem = _module.call(&"server_spawn_loot", "grp_ar_std", _in_front(player, 1.2))
 	await get_tree().process_frame
+	_look_at(player, loot.global_position)
 	var payload := {"player": player}
 	EventBus.publish(&"player.interact", payload)
 	assert_bool(payload.get("handled", false)).is_true()

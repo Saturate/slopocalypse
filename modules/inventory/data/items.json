@@ -1,12 +1,13 @@
 {
   "bindings": {
-    "inventory": ["Tab"]
+    "inventory": ["Tab"],
+    "use_medkit": ["H"]
   },
   "grid": [10, 6],
   "npc_loot": {
     "rolls": [1, 3],
     "items": {
-      "mag_ar_30": 6, "mag_ar_45": 2, "muz_flash": 4, "muz_comp": 3, "muz_supp": 1,
+      "medkit": 5, "mag_ar_30": 6, "mag_ar_45": 2, "muz_flash": 4, "muz_comp": 3, "muz_supp": 1,
       "opt_reddot": 3, "opt_holo": 2, "opt_scope_4x": 1, "stk_ar_light": 2, "hg_ar_long": 1,
       "bar_ar_10": 2, "mag_pistol_15": 4, "mag_pistol_21": 2, "muz_pistol_comp": 2,
       "muz_pistol_supp": 1, "opt_pistol_dot": 2, "sld_pistol_long": 1
@@ -17,7 +18,22 @@
     { "at": [-4.0, -3.0], "items": ["opt_reddot", "stk_ar_std", "mag_pistol_15"] },
     { "at": [6.0, 3.0], "items": ["hg_ar_std", "bar_ar_14", "sld_pistol_std"] }
   ],
+  "crates": {
+    "count": 12,
+    "distance": [12.0, 110.0],
+    "seed": 7,
+    "refill_seconds": 150.0,
+    "rolls": [2, 4],
+    "items": {
+      "medkit": 8, "mag_ar_30": 5, "mag_ar_45": 2, "muz_flash": 3, "muz_comp": 3, "muz_supp": 2,
+      "opt_reddot": 3, "opt_holo": 2, "opt_scope_4x": 1, "stk_ar_std": 2, "stk_ar_light": 2,
+      "hg_ar_std": 2, "hg_ar_long": 1, "bar_ar_14": 1, "bar_ar_10": 2, "grp_ar_std": 2,
+      "mag_pistol_15": 3, "mag_pistol_21": 2, "muz_pistol_comp": 2, "muz_pistol_supp": 1,
+      "opt_pistol_dot": 2, "sld_pistol_std": 1, "sld_pistol_long": 1
+    }
+  },
   "starting_kit": [
+    "medkit",
     "opt_scope_4x", "opt_holo", "muz_comp", "muz_supp", "mag_ar_45", "stk_ar_light",
     "bar_ar_10", "hg_ar_long", "sld_pistol_long", "mag_pistol_21", "muz_pistol_comp",
     "muz_pistol_supp", "opt_pistol_dot"
@@ -28,7 +44,8 @@
     "magazine": [0.4, 0.45, 0.32],
     "furniture": [0.5, 0.42, 0.3],
     "barrel": [0.38, 0.38, 0.4],
-    "pistol": [0.42, 0.36, 0.46]
+    "pistol": [0.42, 0.36, 0.46],
+    "med": [0.62, 0.22, 0.2]
   },
   "items": {
     "opt_reddot": { "name": "Tube red dot", "short": "Red dot", "size": [1, 1], "kind": "optic" },
@@ -52,6 +69,7 @@
     "mag_pistol_21": { "name": "21 round extended magazine", "short": "21 rd", "size": [1, 2], "kind": "pistol" },
     "muz_pistol_comp": { "name": "Pistol compensator", "short": "P comp", "size": [1, 1], "kind": "pistol" },
     "muz_pistol_supp": { "name": "Pistol suppressor", "short": "P supp", "size": [2, 1], "kind": "pistol" },
-    "opt_pistol_dot": { "name": "Mini red dot", "short": "Mini dot", "size": [1, 1], "kind": "pistol" }
+    "opt_pistol_dot": { "name": "Mini red dot", "short": "Mini dot", "size": [1, 1], "kind": "pistol" },
+    "medkit": { "name": "Field medkit", "short": "Medkit", "size": [1, 1], "kind": "med", "use": { "heal": 60.0, "seconds": 3.0 } }
   }
 }

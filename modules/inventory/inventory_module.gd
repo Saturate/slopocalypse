@@ -9,7 +9,7 @@ extends Node
 const ITEMS := "res://modules/inventory/data/items.json"
 ## Reach for picking things up, metres from the eye, and how squarely you must face it.
 const PICKUP_RANGE := 2.6
-const PICKUP_FACING := 0.5
+const PICKUP_FACING := 0.8
 const DROP_DISTANCE := 1.0
 const PILE_RADIUS := 0.45
 
@@ -21,6 +21,12 @@ var _grids: Dictionary = {}
 var _next_uid := 1
 var _loot_spawner := MultiplayerSpawner.new()
 var _loot_count := 0
+var _crate_spawner := MultiplayerSpawner.new()
+## Server: crate -> item ids inside; crate -> seconds until it refills.
+var _crate_items: Dictionary = {}
+var _crate_refill: Dictionary = {}
+## Server: player -> {per_second, left} while a medkit works.
+var _healing: Dictionary = {}
 ## This instance's copy of its own player's inventory (on the server, the same grid).
 var _mine: InventoryGrid
 
@@ -39,11 +45,16 @@ func _ready() -> void:
 	_loot_spawner.spawn_path = NodePath("..")
 	_loot_spawner.spawn_function = _make_loot
 	add_child(_loot_spawner)
+	_crate_spawner.name = "CrateSpawner"
+	_crate_spawner.spawn_path = NodePath("..")
+	_crate_spawner.spawn_function = _make_crate
+	add_child(_crate_spawner)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	EventBus.subscribe(&"player.interact", _on_player_interact)
 	EventBus.subscribe(&"world.ready", _on_world_ready)
 	EventBus.subscribe(&"player.died", _on_player_died)
 	EventBus.subscribe(&"enemy.died", _on_enemy_died)
+	EventBus.subscribe(&"inventory.crate_changed", _on_crate_changed)
 	Net.peer_left.connect(_on_peer_left)
 	if DisplayServer.get_name() != "headless":
 		InputBindings.register(_data.get("bindings", {}), &"inventory")
@@ -55,6 +66,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"world.ready", _on_world_ready)
 	EventBus.unsubscribe(&"player.died", _on_player_died)
 	EventBus.unsubscribe(&"enemy.died", _on_enemy_died)
+	EventBus.unsubscribe(&"inventory.crate_changed", _on_crate_changed)
 	if Net.peer_left.is_connected(_on_peer_left):
 		Net.peer_left.disconnect(_on_peer_left)
 
@@ -158,6 +170,7 @@ func _on_player_spawned(p: Dictionary) -> void:
 		prompt.name = "LootPrompt"
 		prompt.inventory = self
 		prompt.player = player as Node3D
+		prompt.peer = peer
 		add_child(prompt)
 		var screen := InventoryScreen.new()
 		screen.name = "InventoryScreen"
@@ -199,27 +212,64 @@ func loot_in_reach(player: Node3D) -> LootItem:
 	var eye := head.global_position if head != null else player.global_position + Vector3.UP * 1.6
 	var forward := -head.global_transform.basis.z if head != null else -player.global_transform.basis.z
 	var best: LootItem = null
-	var best_d := PICKUP_RANGE
+	var best_facing := PICKUP_FACING
 	for node: Node in get_tree().get_nodes_in_group(&"loot"):
 		var loot := node as LootItem
 		if loot == null or loot.is_queued_for_deletion():
 			continue
 		var to := loot.global_position - eye
-		var d := to.length()
-		if d < best_d and forward.dot(to.normalized()) > PICKUP_FACING:
+		var facing := forward.dot(to.normalized())
+		# What the crosshair is closest to wins, not what is nearest.
+		if to.length() < PICKUP_RANGE and facing > best_facing:
 			best = loot
-			best_d = d
+			best_facing = facing
+	if best == null:
+		return null
+	# A crate the crosshair is more squarely on takes the press instead.
+	var crate := _crate_facing(eye, forward)
+	if crate.size() > 0 and float(crate[1]) > best_facing:
+		return null
 	return best
 
 
-## Server: E near loot picks it up if it fits. Claims the press so the car does not also
-## take it.
+## The crate `player` would search now, or null.
+func crate_in_reach(player: Node3D) -> LootCrate:
+	var head := player.get_node_or_null("Head/Camera") as Node3D
+	var eye := head.global_position if head != null else player.global_position + Vector3.UP * 1.6
+	var forward := -head.global_transform.basis.z if head != null else -player.global_transform.basis.z
+	var found := _crate_facing(eye, forward)
+	return found[0] if found.size() > 0 else null
+
+
+## [crate, facing] for the crate the crosshair is most squarely on within reach, or [].
+func _crate_facing(eye: Vector3, forward: Vector3) -> Array:
+	var best: LootCrate = null
+	# A crate is big; a looser aim still counts.
+	var best_facing := PICKUP_FACING - 0.1
+	for node: Node in get_tree().get_nodes_in_group(&"crates"):
+		var crate := node as LootCrate
+		if crate == null:
+			continue
+		var to := crate.global_position + Vector3.UP * 0.3 - eye
+		var facing := forward.dot(to.normalized())
+		if to.length() < PICKUP_RANGE + 0.4 and facing > best_facing:
+			best = crate
+			best_facing = facing
+	return [best, best_facing] if best != null else []
+
+
+## Server: E near loot picks it up if it fits, or searches a crate. Claims the press so
+## the car does not also take it.
 func _on_player_interact(payload: Dictionary) -> void:
 	if not multiplayer.is_server() or payload.get("handled", false):
 		return
 	var player: Node3D = payload["player"]
 	var loot := loot_in_reach(player)
 	if loot == null:
+		var crate := crate_in_reach(player)
+		if crate != null:
+			payload["handled"] = true
+			server_search(int(player.get_meta(&"peer_id", 1)), crate)
 		return
 	payload["handled"] = true
 	var peer := int(player.get_meta(&"peer_id", 1))
@@ -262,11 +312,20 @@ func server_drop(peer: int, uid: int) -> bool:
 	return true
 
 
-## Server: the loot piles near the spawn, once the ground there exists.
+## Server: the loot piles near the spawn, once the ground there exists, and the crates
+## spread over the map (the same places every session, from the seed).
 func _on_world_ready(payload: Dictionary) -> void:
 	if not multiplayer.is_server():
 		return
 	var spawn: Vector3 = payload.get("spawn", Vector3.ZERO)
+	var crates: Dictionary = _data.get("crates", {})
+	var place := RandomNumberGenerator.new()
+	place.seed = int(crates.get("seed", 1))
+	var ring: Array = crates.get("distance", [10.0, 100.0])
+	for i in int(crates.get("count", 0)):
+		var a := place.randf() * TAU
+		var d := place.randf_range(float(ring[0]), float(ring[1]))
+		server_spawn_crate(_on_ground(spawn + Vector3(cos(a), 0.0, sin(a)) * d))
 	for pile: Dictionary in _data.get("loot", []):
 		var offset: Array = pile.get("at", [0, 0])
 		var centre := spawn + Vector3(float(offset[0]), 0.0, float(offset[1]))
@@ -288,22 +347,7 @@ func _on_enemy_died(p: Dictionary) -> void:
 
 ## Item ids for an enemy's pockets: a few rolls on the weighted loot table.
 func _roll_loot() -> Array:
-	var table: Dictionary = (_data.get("npc_loot", {}) as Dictionary).get("items", {})
-	var rolls: Array = (_data.get("npc_loot", {}) as Dictionary).get("rolls", [1, 2])
-	var total := 0.0
-	for id: String in table:
-		total += float(table[id])
-	var out := []
-	if total <= 0.0:
-		return out
-	for i in randi_range(int(rolls[0]), int(rolls[1])):
-		var pick := randf() * total
-		for id: String in table:
-			pick -= float(table[id])
-			if pick <= 0.0:
-				out.append(id)
-				break
-	return out
+	return _roll(_data.get("npc_loot", {}))
 
 
 func _on_player_died(p: Dictionary) -> void:
@@ -326,6 +370,124 @@ func _on_player_died(p: Dictionary) -> void:
 	_send(peer)
 
 
+## Server: moves a crate's contents into `peer`'s backpack, as much as fits. An emptied
+## crate refills later.
+func server_search(peer: int, crate: LootCrate) -> int:
+	var items: Array = _crate_items.get(crate, [])
+	var taken := 0
+	for item: String in items.duplicate():
+		if server_give(peer, item):
+			items.erase(item)
+			taken += 1
+	_crate_items[crate] = items
+	if items.is_empty() and not crate.get_meta(&"empty", false):
+		_crate_refill[crate] = float((_data.get("crates", {}) as Dictionary).get("refill_seconds", 120.0))
+		Net.server_broadcast(&"inventory.crate_changed", {"crate": crate, "empty": true})
+	return taken
+
+
+func crate_contents(crate: LootCrate) -> Array:
+	return _crate_items.get(crate, [])
+
+
+## Server: puts a crate on the ground with a roll of contents.
+func server_spawn_crate(at: Vector3) -> LootCrate:
+	_loot_count += 1
+	var crate: LootCrate = _crate_spawner.spawn({"index": _loot_count, "position": at})
+	_crate_items[crate] = _roll(_data.get("crates", {}))
+	return crate
+
+
+func _make_crate(data: Variant) -> Node:
+	var info: Dictionary = data
+	var crate := LootCrate.new()
+	crate.name = "Crate%d" % int(info["index"])
+	crate.position = info["position"]
+	crate.rotation.y = float(int(info["index"]) * 53 % 360) * PI / 180.0
+	return crate
+
+
+func _on_crate_changed(p: Dictionary) -> void:
+	var crate := p.get("crate") as LootCrate
+	if crate != null:
+		crate.set_empty(bool(p.get("empty", false)))
+
+
+## Server: H (or a right click on it in the backpack) uses an item: a medkit heals over a
+## few seconds. Returns false if there is none or nothing to heal.
+func server_use(peer: int, item: String) -> bool:
+	var use: Dictionary = item_info(item).get("use", {})
+	var player := _player_of(peer)
+	if use.is_empty() or player == null or player.get_meta(&"dead", false):
+		return false
+	var health := player.get_node_or_null("Health") as HealthComponent
+	if health == null or health.health >= health.max_health or _healing.has(player):
+		return false
+	if not server_take(peer, item):
+		return false
+	var seconds := maxf(float(use.get("seconds", 1.0)), 0.01)
+	_healing[player] = {"per_second": float(use.get("heal", 0.0)) / seconds, "left": seconds}
+	return true
+
+
+func request_use(item: String) -> void:
+	if multiplayer.is_server():
+		server_use(multiplayer.get_unique_id(), item)
+	else:
+		_request_use.rpc_id(1, item)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _request_use(item: String) -> void:
+	if multiplayer.is_server():
+		server_use(multiplayer.get_remote_sender_id(), item)
+
+
+func _physics_process(delta: float) -> void:
+	if not multiplayer.is_server():
+		return
+	for player: Node in _healing.keys():
+		var h: Dictionary = _healing[player]
+		var health := player.get_node_or_null("Health") as HealthComponent if is_instance_valid(player) else null
+		if health == null or player.get_meta(&"dead", false):
+			_healing.erase(player)
+			continue
+		var step := minf(delta, float(h["left"]))
+		health.server_heal(float(h["per_second"]) * step)
+		h["left"] = float(h["left"]) - step
+		if float(h["left"]) <= 0.0:
+			_healing.erase(player)
+	for crate: Node in _crate_refill.keys():
+		if not is_instance_valid(crate):
+			_crate_refill.erase(crate)
+			continue
+		_crate_refill[crate] = float(_crate_refill[crate]) - delta
+		if float(_crate_refill[crate]) <= 0.0:
+			_crate_refill.erase(crate)
+			_crate_items[crate] = _roll(_data.get("crates", {}))
+			Net.server_broadcast(&"inventory.crate_changed", {"crate": crate, "empty": false})
+
+
+## Item ids from a loot table `{rolls: [min, max], items: {id: weight}}`.
+func _roll(table_def: Dictionary) -> Array:
+	var table: Dictionary = table_def.get("items", {})
+	var rolls: Array = table_def.get("rolls", [1, 2])
+	var total := 0.0
+	for id: String in table:
+		total += float(table[id])
+	var out := []
+	if total <= 0.0:
+		return out
+	for i in randi_range(int(rolls[0]), int(rolls[1])):
+		var pick := randf() * total
+		for id: String in table:
+			pick -= float(table[id])
+			if pick <= 0.0:
+				out.append(id)
+				break
+	return out
+
+
 func _player_of(peer: int) -> Node3D:
 	for node: Node in get_tree().get_nodes_in_group(&"players"):
 		if int(node.get_meta(&"peer_id", 1)) == peer:
@@ -346,7 +508,13 @@ func _on_ground(at: Vector3) -> Vector3:
 			exclude.append((node as CollisionObject3D).get_rid())
 	query.exclude = exclude
 	var hit := world.direct_space_state.intersect_ray(query)
-	return hit["position"] if not hit.is_empty() else at
+	if not hit.is_empty():
+		return hit["position"]
+	# Far from players the server has no terrain loaded; the height map knows anyway.
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	if ground != null and ground.has_method(&"ground_height"):
+		return Vector3(at.x, float(ground.call(&"ground_height", at.x, at.z)), at.z)
+	return at
 
 
 func _on_peer_left(peer: int) -> void:

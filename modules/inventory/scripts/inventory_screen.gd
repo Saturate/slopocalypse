@@ -127,7 +127,12 @@ func _drop_cell(local: Vector2) -> Vector2i:
 
 
 func _on_grid_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+	if event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_RIGHT and event.is_pressed():
+		# Right click uses an item that can be used (a medkit).
+		var used := item_at(_cell_at((event as InputEventMouseButton).position))
+		if not used.is_empty() and not (inventory.call(&"item_info", str(used["item"])) as Dictionary).get("use", {}).is_empty():
+			inventory.call(&"request_use", str(used["item"]))
+	elif event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
 		var mb := event as InputEventMouseButton
 		if mb.pressed:
 			pick(_cell_at(mb.position))
@@ -206,7 +211,7 @@ func _build_ui() -> void:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(spacer)
-	head.add_child(_label("Drag to move  ·  R turns  ·  drag out to drop  ·  E picks up  ·  B mods your gun", 13, DIM))
+	head.add_child(_label("Drag to move  ·  R turns  ·  drag out to drop  ·  right click uses  ·  B mods your gun", 13, DIM))
 	var size: Vector2i = inventory.call(&"grid_size")
 	_grid_view = Control.new()
 	_grid_view.custom_minimum_size = Vector2(size * CELL)
