@@ -1,33 +1,42 @@
 extends SceneTree
-## Builds modules/player/scenes/player_body.tscn: a chunky low-poly soldier as one skinned
-## mesh on a Skeleton3D, with an AnimationPlayer of clips (idle, walk, run, crouch, slide,
-## fall) and an AnimationTree that blends them. Bones use humanoid names (Hips, Spine,
-## Chest, Shoulders, Head, UpperArm_R ...) so a rigged model from the art teammate can replace this.
-## Feet at the origin, facing -Z, 1.8 m tall.
+## Builds modules/player/scenes/player_body.tscn: a low-poly soldier with realistic
+## proportions as one skinned mesh on a Skeleton3D, with an AnimationPlayer of clips (idle,
+## walk, run, crouch, slide, fall) and an AnimationTree that blends them. Bones use
+## humanoid names (Hips, Spine, Chest, Shoulders, Head, UpperArm_R ...) so a rigged model
+## from the art teammate can replace this. Feet at the origin, facing -Z, 1.8 m tall.
 ##
-## Every part is weighted fully to one bone: rigid segments suit the blocky style and keep
-## joints from smearing. Clips are generated from pose functions sampled over the cycle;
-## grounded clips solve the hip height per key so the lower boot sole touches the ground.
+## Low poly, not cartoon: a head about an eighth of the height, long legs, a torso no
+## wider than the shoulders, tapered faceted limbs and small bevels so edges stay crisp.
+## Gear (plate carrier, pouches, knee pads, headset) carries the soldier read.
+##
+## Every part is weighted fully to one bone: rigid segments keep joints from smearing.
+## Clips are generated from pose functions sampled over the cycle; grounded clips solve
+## the hip height per key so the lower boot sole touches the ground.
 
 const OUT := "res://modules/player/scenes/player_body.tscn"
 const PLAYER_DATA := "res://modules/player/data/player.json"
 const AIM_SCRIPT := "res://modules/player/scripts/body_aim_modifier.gd"
 
-const CAMO := Color(0.33, 0.37, 0.26)
-const CAMO_DARK := Color(0.26, 0.29, 0.2)
-const VEST := Color(0.45, 0.42, 0.3)
-const POUCH := Color(0.38, 0.35, 0.24)
-const SKIN := Color(0.78, 0.6, 0.47)
-const HELMET := Color(0.3, 0.33, 0.24)
-const DARK := Color(0.12, 0.12, 0.12)
-const BOOT := Color(0.2, 0.16, 0.12)
-const GLOVE := Color(0.16, 0.15, 0.14)
+## Muted, real-world kit colours.
+const SHIRT := Color(0.3, 0.32, 0.25)
+const TROUSERS := Color(0.31, 0.33, 0.27)
+const VEST := Color(0.4, 0.37, 0.28)
+const POUCH := Color(0.35, 0.32, 0.24)
+const STRAP := Color(0.13, 0.13, 0.12)
+const SKIN := Color(0.7, 0.54, 0.43)
+const HELMET := Color(0.32, 0.33, 0.27)
+const GLOVE := Color(0.14, 0.13, 0.12)
+const BOOT := Color(0.21, 0.17, 0.13)
+const SOLE := Color(0.09, 0.09, 0.09)
+const PAD := Color(0.2, 0.21, 0.18)
+## Faceted limbs: enough sides to read round at distance, few enough to stay low poly.
+const LIMB_SIDES := 7
 
-const HIPS_HEIGHT := 0.86
+const HIPS_HEIGHT := 1.0
 ## Leg chain: hip joint below the Hips bone, thigh length, knee to boot sole.
 const HIP_JOINT := 0.07
-const THIGH := 0.38
-const SHIN := 0.405
+const THIGH := 0.43
+const SHIN := 0.5
 ## Travel per full walk cycle (two steps), so the feet do not skate at the matching speed.
 const WALK_STRIDE := 2.6
 const RUN_STRIDE := 3.6
@@ -37,13 +46,14 @@ const KEYS_PER_CYCLE := 16
 ## Rifle hold, in chest space. The rifle sits right of centre with its stock in the right
 ## shoulder; the hands go where the rifle mesh has its pistol grip and handguard, and the
 ## elbows are solved from the arm lengths, pointing down and out.
-const RIFLE_AT := Vector3(0.08, 0.25, -0.36)
-const GRIP := RIFLE_AT + Vector3(0.0, -0.08, 0.11)
-const FORE := RIFLE_AT + Vector3(0.0, -0.02, -0.18)
-const R_SHOULDER := Vector3(0.28, 0.27, 0)
-const L_SHOULDER := Vector3(-0.28, 0.27, 0)
-const UPPER_ARM := 0.33
-const FOREARM := 0.33
+const RIFLE_AT := Vector3(0.12, 0.13, -0.34)
+const GRIP := RIFLE_AT + Vector3(0.0, -0.085, 0.12)
+const FORE := RIFLE_AT + Vector3(-0.035, -0.005, -0.2)
+const R_SHOULDER := Vector3(0.2, 0.17, 0)
+# Pushed forward: the support shoulder reaches toward the handguard when shooting.
+const L_SHOULDER := Vector3(-0.2, 0.17, -0.03)
+const UPPER_ARM := 0.31
+const FOREARM := 0.31
 const R_ELBOW_POLE := Vector3(1.0, -1.0, 0.3)
 const L_ELBOW_POLE := Vector3(-0.6, -1.0, 0.0)
 
@@ -98,9 +108,10 @@ func _initialize() -> void:
 
 func _build_bones() -> void:
 	_bone("Hips", "", _at(Vector3(0, HIPS_HEIGHT, 0)))
-	_bone("Spine", "Hips", _at(Vector3(0, 0.09, 0)))
-	_bone("Chest", "Spine", _at(Vector3(0, 0.18, 0)))
-	_bone("Head", "Chest", _at(Vector3(0, 0.38, 0)))
+	_bone("Spine", "Hips", _at(Vector3(0, 0.1, 0)))
+	_bone("Chest", "Spine", _at(Vector3(0, 0.2, 0)))
+	# At the top of the neck, so the head nods about the right point.
+	_bone("Head", "Chest", _at(Vector3(0, 0.27, 0)))
 	# The arms and rifle hang from the shoulder line, so aiming pitches them as one piece
 	# around the shoulders instead of bending the whole back.
 	_bone("Shoulders", "Chest", _at(Vector3(0, R_SHOULDER.y, 0)))
@@ -116,65 +127,86 @@ func _build_bones() -> void:
 		_bone_global("LowerArm_" + side, "UpperArm_" + side, Transform3D(_along(hand - elbow), elbow))
 		_bone_global("Hand_" + side, "LowerArm_" + side, Transform3D(_along(hand - elbow), hand))
 	for side in [["L", -1.0], ["R", 1.0]]:
-		_bone("UpperLeg_" + side[0], "Hips", _at(Vector3(side[1] * 0.11, -HIP_JOINT, 0)))
+		_bone("UpperLeg_" + side[0], "Hips", _at(Vector3(side[1] * 0.1, -HIP_JOINT, 0)))
 		_bone("LowerLeg_" + side[0], "UpperLeg_" + side[0], _at(Vector3(0, -THIGH, 0)))
 
 
 func _build_mesh() -> void:
 	var st := LowPoly.begin()
-	# Chunky proportions: sturdy legs, a big torso and an oversized helmet read well at
-	# distance in a low-poly shooter.
 	_weight(st, "Hips")
-	_box(st, "Hips", Vector3(0.4, 0.2, 0.25), 0.04, Vector3(0, -0.02, 0), CAMO_DARK)
-	_box(st, "Hips", Vector3(0.42, 0.06, 0.27), 0.015, Vector3(0, 0.07, 0), DARK)
-	_box(st, "Hips", Vector3(0.1, 0.12, 0.08), 0.02, Vector3(0.2, 0.0, 0.02), POUCH)
+	_box(st, "Hips", Vector3(0.32, 0.2, 0.21), 0.02, Vector3(0, -0.02, 0), TROUSERS)
+	_box(st, "Hips", Vector3(0.34, 0.05, 0.23), 0.01, Vector3(0, 0.06, 0), STRAP)
+	for x in [-0.17, 0.17]:
+		_box(st, "Hips", Vector3(0.06, 0.1, 0.08), 0.01, Vector3(x, 0.02, -0.03), POUCH)
+
+	_weight(st, "Spine")
+	_box(st, "Spine", Vector3(0.3, 0.22, 0.19), 0.02, Vector3(0, 0.08, 0), SHIRT)
 
 	_weight(st, "Chest")
-	_box(st, "Chest", Vector3(0.46, 0.48, 0.27), 0.06, Vector3(0, 0.1, 0), CAMO)
-	# Plate carrier and pouches give the silhouette its soldier read.
-	_box(st, "Chest", Vector3(0.52, 0.38, 0.34), 0.05, Vector3(0, 0.1, 0), VEST)
-	for x in [-0.15, 0.0, 0.15]:
-		_box(st, "Chest", Vector3(0.12, 0.14, 0.07), 0.02, Vector3(x, -0.01, -0.2), POUCH)
-	_box(st, "Chest", Vector3(0.36, 0.14, 0.1), 0.03, Vector3(0, 0.2, 0.19), POUCH)
-	_box(st, "Chest", Vector3(0.14, 0.08, 0.12), 0.02, Vector3(0, 0.33, 0), CAMO_DARK)
+	_box(st, "Chest", Vector3(0.36, 0.3, 0.23), 0.025, Vector3(0, 0.04, 0), SHIRT)
+	_box(st, "Chest", Vector3(0.38, 0.08, 0.19), 0.025, Vector3(0, 0.15, 0), SHIRT)
+	# Plate carrier: front and back plates, side panels, cummerbund, straps and pouches.
+	_box(st, "Chest", Vector3(0.3, 0.3, 0.05), 0.012, Vector3(0, 0.02, -0.135), VEST)
+	_box(st, "Chest", Vector3(0.26, 0.26, 0.022), 0.006, Vector3(0, 0.03, 0.123), VEST)
+	for x in [-0.17, 0.17]:
+		_box(st, "Chest", Vector3(0.04, 0.2, 0.2), 0.01, Vector3(x, -0.03, 0), VEST)
+		_box(st, "Chest", Vector3(0.05, 0.03, 0.26), 0.008, Vector3(x * 0.6, 0.17, 0), STRAP)
+	_box(st, "Chest", Vector3(0.35, 0.08, 0.27), 0.012, Vector3(0, -0.1, 0), VEST)
+	for x in [-0.085, 0.0, 0.085]:
+		_box(st, "Chest", Vector3(0.08, 0.14, 0.08), 0.01, Vector3(x, -0.07, -0.195), POUCH)
+	_box(st, "Chest", Vector3(0.2, 0.08, 0.04), 0.008, Vector3(0, 0.1, -0.175), POUCH)
+	_box(st, "Chest", Vector3(0.2, 0.05, 0.2), 0.01, Vector3(0, 0.2, 0), SHIRT.darkened(0.1))
+	_tube(st, "Chest", 0.19, 0.29, 0.056, 0.05, SKIN)
 
 	_weight(st, "Head")
-	_box(st, "Head", Vector3(0.22, 0.22, 0.23), 0.06, Vector3(0, 0.1, 0), SKIN)
-	# Helmet: shell, brim and side shells so it reads as a helmet, not a cap.
-	_box(st, "Head", Vector3(0.3, 0.16, 0.32), 0.07, Vector3(0, 0.22, 0.01), HELMET)
-	_box(st, "Head", Vector3(0.33, 0.035, 0.36), 0.012, Vector3(0, 0.16, 0.0), HELMET.darkened(0.15))
-	for x in [-0.155, 0.155]:
-		_box(st, "Head", Vector3(0.04, 0.13, 0.22), 0.015, Vector3(x, 0.14, 0.02), HELMET.darkened(0.1))
-	_box(st, "Head", Vector3(0.2, 0.05, 0.03), 0.012, Vector3(0, 0.12, -0.12), DARK)
-	_box(st, "Head", Vector3(0.09, 0.03, 0.03), 0.01, Vector3(0, 0.03, -0.115), SKIN.darkened(0.2))
+	_box(st, "Head", Vector3(0.17, 0.21, 0.2), 0.03, Vector3(0, 0.1, -0.005), SKIN)
+	_box(st, "Head", Vector3(0.03, 0.045, 0.03), 0.006, Vector3(0, 0.07, -0.11), SKIN.darkened(0.12))
+	for x in [-0.036, 0.036]:
+		_box(st, "Head", Vector3(0.03, 0.014, 0.01), 0.002, Vector3(x, 0.095, -0.103), STRAP)
+	# Helmet sits close on the head, with a rim, a mount at the front and a headset under it.
+	_box(st, "Head", Vector3(0.21, 0.11, 0.24), 0.04, Vector3(0, 0.18, 0.005), HELMET)
+	_box(st, "Head", Vector3(0.22, 0.03, 0.25), 0.01, Vector3(0, 0.135, 0.005), HELMET.darkened(0.15))
+	_box(st, "Head", Vector3(0.045, 0.04, 0.02), 0.005, Vector3(0, 0.17, -0.125), STRAP)
+	for x in [-0.1, 0.1]:
+		_box(st, "Head", Vector3(0.04, 0.07, 0.07), 0.01, Vector3(x, 0.085, 0.01), STRAP)
+		_box(st, "Head", Vector3(0.012, 0.09, 0.012), 0.002, Vector3(x * 0.85, 0.03, -0.03), STRAP)
 
+	# The arms are their own mesh: in first person the player sees their own arms holding
+	# the rifle while the rest of the body only casts a shadow.
+	var arms := LowPoly.begin()
 	for side in ["R", "L"]:
-		_weight(st, "UpperArm_" + side)
-		_limb(st, "UpperArm_" + side, 0.13, CAMO)
-		# Shoulder pads round off the joint.
-		_box(st, "UpperArm_" + side, Vector3(0.16, 0.17, 0.15), 0.05, Vector3(0, 0.0, 0), CAMO_DARK)
-		_weight(st, "LowerArm_" + side)
-		_limb(st, "LowerArm_" + side, 0.115, CAMO_DARK)
-		_weight(st, "Hand_" + side)
-		_box(st, "Hand_" + side, Vector3(0.1, 0.11, 0.11), 0.03, Vector3.ZERO, GLOVE)
+		_weight(arms, "UpperArm_" + side)
+		_tube(arms, "UpperArm_" + side, 0.0, UPPER_ARM, 0.055, 0.046, SHIRT)
+		_box(arms, "UpperArm_" + side, Vector3(0.11, 0.1, 0.11), 0.02, Vector3(0, 0.03, 0), SHIRT.darkened(0.08))
+		_weight(arms, "LowerArm_" + side)
+		_tube(arms, "LowerArm_" + side, 0.0, FOREARM - 0.02, 0.046, 0.039, SHIRT)
+		_weight(arms, "Hand_" + side)
+		_box(arms, "Hand_" + side, Vector3(0.09, 0.11, 0.06), 0.014, Vector3(0, 0.02, 0), GLOVE)
 
 	for side in [["L", -1.0], ["R", 1.0]]:
 		var upper: String = "UpperLeg_" + side[0]
 		var lower: String = "LowerLeg_" + side[0]
 		_weight(st, upper)
-		_box(st, upper, Vector3(0.19, 0.4, 0.21), 0.05, Vector3(0, -0.18, 0), CAMO)
-		_box(st, upper, Vector3(0.08, 0.13, 0.1), 0.02, Vector3(side[1] * 0.1, -0.18, 0), POUCH)
+		_tube(st, upper, 0.0, -THIGH * 0.45, 0.092, 0.088, TROUSERS)
+		_tube(st, upper, -THIGH * 0.45, -THIGH, 0.088, 0.062, TROUSERS)
+		_box(st, upper, Vector3(0.03, 0.12, 0.1), 0.006, Vector3(side[1] * 0.075, -0.22, 0), TROUSERS.darkened(0.1))
 		_weight(st, lower)
-		_box(st, lower, Vector3(0.17, 0.33, 0.19), 0.05, Vector3(0, -0.15, 0), CAMO_DARK)
-		_box(st, lower, Vector3(0.18, 0.11, 0.07), 0.025, Vector3(0, 0.0, -0.1), DARK)
-		_box(st, lower, Vector3(0.19, 0.13, 0.31), 0.045, Vector3(0, -0.34, -0.05), BOOT)
+		_box(st, lower, Vector3(0.1, 0.11, 0.04), 0.012, Vector3(0, -0.01, -0.065), PAD)
+		_tube(st, lower, 0.0, -0.16, 0.06, 0.068, TROUSERS)
+		_tube(st, lower, -0.16, -0.39, 0.068, 0.047, TROUSERS)
+		_box(st, lower, Vector3(0.09, 0.12, 0.13), 0.015, Vector3(0, -0.43, 0.0), BOOT)
+		_box(st, lower, Vector3(0.088, 0.075, 0.13), 0.02, Vector3(0, -0.4575, -0.1), BOOT)
+		_box(st, lower, Vector3(0.095, 0.022, 0.25), 0.004, Vector3(0, -SHIN + 0.011, -0.045), SOLE)
 
-	var inst := MeshInstance3D.new()
-	inst.name = "Mesh"
-	inst.mesh = LowPoly.finish(st, LowPoly.material(0.85))
-	inst.skin = _skel.create_skin_from_rest_transforms()
-	inst.skeleton = NodePath("..")
-	_skel.add_child(inst)
+	var skin := _skel.create_skin_from_rest_transforms()
+	var material := LowPoly.material(0.85)
+	for part in [["Mesh", st], ["Arms", arms]]:
+		var inst := MeshInstance3D.new()
+		inst.name = part[0]
+		inst.mesh = LowPoly.finish(part[1], material)
+		inst.skin = skin
+		inst.skeleton = NodePath("..")
+		_skel.add_child(inst)
 
 
 # --- Clips -------------------------------------------------------------------------------
@@ -196,7 +228,7 @@ func _build_clips(data: Dictionary) -> AnimationLibrary:
 func _idle(p: float) -> Dictionary:
 	var breathe := sin(TAU * p)
 	return {"Spine": Vector3(-2, 0, 0), "Chest": Vector3(1.5 * breathe, 0, 0), "Head": Vector3(-0.8 * breathe, 0, 0),
-		"UpperLeg_L": Vector3(4, 0, -3), "LowerLeg_L": Vector3(-6, 0, 0), "UpperLeg_R": Vector3(-3, 0, 3), "LowerLeg_R": Vector3(-4, 0, 0)}
+		"UpperLeg_L": Vector3(8, 0, -7), "LowerLeg_L": Vector3(-10, 0, 0), "UpperLeg_R": Vector3(-6, 0, 6), "LowerLeg_R": Vector3(-6, 0, 0)}
 
 
 ## `carry` tips the rifle down from level: 0 while walking, a low-ready carry when sprinting.
@@ -220,15 +252,15 @@ func _stride(p: float, swing: float, knee_stance: float, knee_swing: float, lean
 func _crouch_idle(p: float) -> Dictionary:
 	var breathe := sin(TAU * p)
 	return {"Spine": Vector3(-28, 0, 0), "Chest": Vector3(-10 + breathe, 0, 0), "Head": Vector3(32, 0, 0),
-		"UpperLeg_L": Vector3(80, 0, -6), "LowerLeg_L": Vector3(-130, 0, 0), "UpperLeg_R": Vector3(62, 0, 6), "LowerLeg_R": Vector3(-118, 0, 0)}
+		"UpperLeg_L": Vector3(72, 0, -6), "LowerLeg_L": Vector3(-112, 0, 0), "UpperLeg_R": Vector3(50, 0, 6), "LowerLeg_R": Vector3(-105, 0, 0)}
 
 
 func _crouch_walk(p: float) -> Dictionary:
 	var pose := {"Spine": Vector3(-28, 0, 0), "Chest": Vector3(-10, 0, 0), "Head": Vector3(32, 0, 0)}
 	for side in [["L", 0.0], ["R", 0.5]]:
 		var q := TAU * (p + float(side[1]))
-		pose["UpperLeg_" + side[0]] = Vector3(60 + 32 * cos(q), 0, 0)
-		pose["LowerLeg_" + side[0]] = Vector3(-(100 + 35 * maxf(0.0, -sin(q))), 0, 0)
+		pose["UpperLeg_" + side[0]] = Vector3(58 + 20 * cos(q), 0, 0)
+		pose["LowerLeg_" + side[0]] = Vector3(-(95 + 25 * maxf(0.0, -sin(q))), 0, 0)
 	return pose
 
 
@@ -241,7 +273,7 @@ func _slide(_p: float) -> Dictionary:
 func _fall(_p: float) -> Dictionary:
 	# Knees pulled up, feet off the ground: in the air, not mid-stride.
 	return {"Spine": Vector3(-10, 0, 0), "Head": Vector3(10, 0, 0), "airborne": true,
-		"UpperLeg_L": Vector3(85, 0, -8), "LowerLeg_L": Vector3(-115, 0, 0), "UpperLeg_R": Vector3(60, 0, 8), "LowerLeg_R": Vector3(-105, 0, 0)}
+		"UpperLeg_L": Vector3(118, 0, -8), "LowerLeg_L": Vector3(-115, 0, 0), "UpperLeg_R": Vector3(95, 0, 8), "LowerLeg_R": Vector3(-100, 0, 0)}
 
 
 ## Samples `pose` over one cycle into rotation keys, plus a Hips position track. Every clip
@@ -376,11 +408,10 @@ func _box(st: SurfaceTool, bone: String, size: Vector3, bevel: float, offset: Ve
 	LowPoly.chamfer_box(st, size, bevel, xf, colour)
 
 
-## A limb segment from `bone`'s head to its child's head.
-func _limb(st: SurfaceTool, bone: String, thickness: float, colour: Color) -> void:
-	var i := _skel.find_bone(bone)
-	var from := _skel.get_bone_global_rest(i).origin
-	var to := _skel.get_bone_global_rest(i + 1).origin
-	var dir := to - from
-	var basis := Basis.looking_at(dir.normalized(), Vector3.UP if absf(dir.normalized().y) < 0.95 else Vector3.FORWARD)
-	LowPoly.chamfer_box(st, Vector3(thickness, thickness, dir.length() + thickness * 0.5), thickness * 0.3, Transform3D(basis, from + dir * 0.5), colour)
+## A faceted, tapered tube along `bone`'s Y axis from `from_y` to `to_y`, in bone space.
+func _tube(st: SurfaceTool, bone: String, from_y: float, to_y: float, r_from: float, r_to: float, colour: Color) -> void:
+	var xf := _skel.get_bone_global_rest(_skel.find_bone(bone)) * _at(Vector3(0, (from_y + to_y) * 0.5, 0))
+	# The cylinder's first radius is at its lower end.
+	var low_r := r_from if from_y < to_y else r_to
+	var high_r := r_to if from_y < to_y else r_from
+	LowPoly.cylinder(st, low_r, absf(to_y - from_y), LIMB_SIDES, xf, colour, high_r)

@@ -1,8 +1,11 @@
 extends Node
-## Equips spawned players with a rifle: the first-person weapon at the camera, the same rifle
-## in the third-person body's hands, and, for the local player, shot feedback.
+## Equips spawned players with a rifle: its logic at the camera (shots follow the aim) and
+## its one visible model in the body's hands, which the owner sees in first person and
+## everyone else in third. Adds shot effects for all shots and the HUD for the local player.
 
 const RIFLE := "res://modules/weapons/scenes/rifle.tscn"
+## Muzzle of RifleMesh.rifle(), in the held rifle's space.
+const MUZZLE := Vector3(0.0, 0.04, -0.64)
 
 static var _held_mesh: ArrayMesh
 
@@ -21,6 +24,9 @@ func _ready() -> void:
 		var effects := ExplosionEffects.new()
 		effects.name = "ExplosionEffects"
 		add_child(effects)
+		var shots := ShotEffects.new()
+		shots.name = "ShotEffects"
+		add_child(shots)
 
 
 func _exit_tree() -> void:
@@ -38,15 +44,18 @@ func _on_player_spawned(p: Dictionary) -> void:
 	thrower.holder = player
 	thrower.charges_parent = self
 	player.add_child(thrower)
-	if DisplayServer.get_name() == "headless":
-		return
-	# What everyone else (and the local player's shadow) sees: the rifle in the body's hands.
 	var socket := PlayerBody.weapon_socket(player)
 	if socket != null:
 		var held := MeshInstance3D.new()
 		held.name = "HeldRifle"
-		held.mesh = _third_person_mesh()
+		held.mesh = _held_mesh_shared()
+		var muzzle := Marker3D.new()
+		muzzle.name = "Muzzle"
+		muzzle.position = MUZZLE
+		held.add_child(muzzle)
 		socket.add_child(held)
+	if DisplayServer.get_name() == "headless":
+		return
 	if p.get("local", false):
 		var feedback := ShotFeedback.new()
 		feedback.name = "ShotFeedback"
@@ -71,7 +80,7 @@ func _make_charge(data: Variant) -> Node:
 
 
 ## Built once and shared by every player's held rifle.
-static func _third_person_mesh() -> ArrayMesh:
+static func _held_mesh_shared() -> ArrayMesh:
 	if _held_mesh == null:
 		_held_mesh = RifleMesh.rifle()
 	return _held_mesh
