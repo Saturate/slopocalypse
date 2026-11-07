@@ -12,5 +12,11 @@
   "max_drones": 1.0,
   "fall_seconds": 4.0,
   "crash_radius": 1.5,
-  "crash_damage": 40.0
+  "crash_damage": 40.0,
+  "dive_interval_seconds": [8.0, 14.0],
+  "dive_speed": 17.0,
+  "dive_seconds": 4.0,
+  "dive_trigger_radius": 1.7,
+  "dive_blast_radius": 3.5,
+  "dive_damage": 55.0
 }

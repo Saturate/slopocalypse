@@ -1,9 +1,10 @@
 class_name StalkerDrone
 extends CharacterBody3D
-## A scout drone that stalks a target: orbits it at a set radius and height, changing
-## direction now and then, never hugging the ground. When its health runs out it tumbles
-## out of the sky and crashes. All decisions run on the server; rotor spin and the blinking
-## light are cosmetic.
+## A drone that stalks a target: orbits it at a set radius and height, changing direction
+## now and then, never hugging the ground, and every so often dives at it and blows up on
+## contact (a whine warns everyone first). Shot down, it tumbles out of the sky and its
+## crash hurts whatever is near. All decisions run on the server; rotor spin and the
+## blinking light are cosmetic.
 
 signal destroyed
 
@@ -13,6 +14,8 @@ const REQUIRED := {
 	"orbit_radius": TYPE_FLOAT, "orbit_height": TYPE_FLOAT, "orbit_speed": TYPE_FLOAT,
 	"min_ground_clearance": TYPE_FLOAT, "direction_change_seconds": TYPE_FLOAT,
 	"fall_seconds": TYPE_FLOAT, "crash_radius": TYPE_FLOAT, "crash_damage": TYPE_FLOAT,
+	"dive_interval_seconds": TYPE_ARRAY, "dive_speed": TYPE_FLOAT, "dive_seconds": TYPE_FLOAT,
+	"dive_trigger_radius": TYPE_FLOAT, "dive_blast_radius": TYPE_FLOAT, "dive_damage": TYPE_FLOAT,
 }
 
 @export var health_path: NodePath
@@ -33,6 +36,8 @@ var _fall_left := 0.0
 var _tumble := Vector3.ZERO
 var _rng := RandomNumberGenerator.new()
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
+var _until_dive := 0.0
+var _dive_left := -1.0
 
 
 func _ready() -> void:
@@ -47,6 +52,7 @@ func _ready() -> void:
 	_rng.seed = get_instance_id()
 	_orbit_angle = _rng.randf() * TAU
 	_until_turn = config["direction_change_seconds"]
+	_until_dive = _next_dive()
 	_health.died.connect(_on_died)
 
 
@@ -71,10 +77,54 @@ func _physics_process(delta: float) -> void:
 		_step_stalk(delta)
 
 
+func is_diving() -> bool:
+	return _dive_left >= 0.0
+
+
+## Holds off diving for `seconds` (tests that watch it circle).
+func postpone_dive(seconds: float) -> void:
+	_until_dive = seconds
+
+
+func _next_dive() -> float:
+	var range_pair: Array = config["dive_interval_seconds"]
+	return _rng.randf_range(float(range_pair[0]), float(range_pair[1]))
+
+
+## Server: start a dive at the target now (also what the timer does).
+func server_dive() -> void:
+	_dive_left = float(config["dive_seconds"])
+	Net.server_broadcast(&"drone.diving", {"drone": self})
+
+
+func _step_dive(delta: float) -> void:
+	_dive_left -= delta
+	var aim := target.global_position + Vector3.UP * 1.1
+	var to := aim - global_position
+	if to.length() < float(config["dive_trigger_radius"]):
+		server_detonate(float(config["dive_blast_radius"]), float(config["dive_damage"]))
+		return
+	if _dive_left < 0.0 or target.get_meta(&"dead", false):
+		# Missed: pull up and go back to circling.
+		_dive_left = -1.0
+		_until_dive = _next_dive()
+		return
+	velocity = velocity.move_toward(to.normalized() * float(config["dive_speed"]), float(config["acceleration"]) * delta * 6.0)
+	move_and_slide()
+	global_basis = global_basis.slerp(Basis.looking_at(to.normalized(), Vector3.UP), 1.0 - exp(-8.0 * delta)).orthonormalized()
+
+
 func _step_stalk(delta: float) -> void:
+	if is_diving() and is_instance_valid(target):
+		_step_dive(delta)
+		return
 	if not is_instance_valid(target):
 		velocity = velocity.move_toward(Vector3.ZERO, float(config["acceleration"]) * delta)
 		move_and_slide()
+		return
+	_until_dive -= delta
+	if _until_dive <= 0.0 and not target.get_meta(&"dead", false):
+		server_dive()
 		return
 	_until_turn -= delta
 	if _until_turn <= 0.0:
@@ -121,7 +171,29 @@ func _on_died(_source: Node) -> void:
 
 ## Server only: the wreck hits the ground and goes up in a small blast.
 func server_crash() -> void:
+	server_detonate(float(config["crash_radius"]), float(config["crash_damage"]))
+
+
+## Server only: blows up here, hurting everything within `radius` (full damage at the
+## centre, a quarter at the edge), and is gone.
+func server_detonate(radius: float, damage: float) -> void:
 	set_physics_process(false)
-	Net.server_broadcast(&"explosion", {"position": global_position, "radius": float(config["crash_radius"]), "source": null})
+	var shape := SphereShape3D.new()
+	shape.radius = radius
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = shape
+	query.transform = Transform3D(Basis.IDENTITY, global_position)
+	query.exclude = [get_rid()]
+	var damaged: Array[HealthComponent] = []
+	for hit in get_world_3d().direct_space_state.intersect_shape(query, 32):
+		var collider: Object = hit["collider"]
+		var health := HealthComponent.find_on(collider as Node) if collider is Node else null
+		if health == null or health == _health or health in damaged:
+			continue
+		damaged.append(health)
+		var holder := health.get_parent() as Node3D
+		var distance := holder.global_position.distance_to(global_position) if holder != null else 0.0
+		health.server_apply_damage(damage * lerpf(1.0, 0.25, clampf(distance / radius, 0.0, 1.0)), self)
+	Net.server_broadcast(&"explosion", {"position": global_position, "radius": radius, "source": null})
 	destroyed.emit()
 	queue_free()

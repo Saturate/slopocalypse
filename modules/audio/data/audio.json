@@ -10,7 +10,8 @@
     "reload": -10.0,
     "pickup": -10.0,
     "hurt": -6.0,
-    "wind": -28.0
+    "wind": -28.0,
+    "dive": -2.0
   },
   "shot_range": 320.0,
   "footstep_range": 28.0,

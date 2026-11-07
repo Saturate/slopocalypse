@@ -24,6 +24,7 @@ static func get_sound(sound: String) -> AudioStreamWAV:
 		"reload": samples = _clicks()
 		"pickup": samples = _blip()
 		"hurt": samples = _hurt()
+		"dive": samples = _dive()
 		"wind":
 			samples = _wind()
 			looped = true
@@ -113,6 +114,19 @@ static func _blip() -> PackedFloat32Array:
 		var t := float(i) / RATE
 		var hz := 880.0 if t < 0.07 else 1320.0
 		out.append(sin(TAU * hz * t) * 0.35 * minf(1.0, (0.16 - t) * 30.0))
+	return out
+
+
+## A drone diving: a buzzing whine rising in pitch, as a warning.
+static func _dive() -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	var phase := 0.0
+	for i in int(1.4 * RATE):
+		var t := float(i) / RATE
+		var hz := lerpf(380.0, 1400.0, pow(t / 1.4, 1.5))
+		phase += TAU * hz / RATE
+		var buzz := sin(phase) + 0.4 * sin(phase * 2.0) + 0.25 * signf(sin(phase * 0.5))
+		out.append(buzz * 0.35 * minf(1.0, t * 6.0))
 	return out
 
 

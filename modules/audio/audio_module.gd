@@ -26,6 +26,7 @@ func _ready() -> void:
 	config = data if data is Dictionary else {}
 	EventBus.subscribe(&"weapon.fired", _on_fired)
 	EventBus.subscribe(&"explosion", _on_explosion)
+	EventBus.subscribe(&"drone.diving", _on_drone_diving)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	EventBus.subscribe(&"inventory.changed", _on_inventory_changed)
 	var wind := AudioStreamPlayer.new()
@@ -41,6 +42,7 @@ func _exit_tree() -> void:
 		return
 	EventBus.unsubscribe(&"weapon.fired", _on_fired)
 	EventBus.unsubscribe(&"explosion", _on_explosion)
+	EventBus.unsubscribe(&"drone.diving", _on_drone_diving)
 	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
 	EventBus.unsubscribe(&"inventory.changed", _on_inventory_changed)
 
@@ -73,6 +75,16 @@ func _on_fired(p: Dictionary) -> void:
 
 func _on_explosion(p: Dictionary) -> void:
 	play_at("explosion", p.get("position", Vector3.ZERO), 400.0)
+
+
+## The dive whine rides along with the drone, so it grows louder as it comes.
+func _on_drone_diving(p: Dictionary) -> void:
+	var drone := p.get("drone") as Node3D
+	if drone == null:
+		return
+	var sound := play_at("dive", drone.global_position, 200.0)
+	if sound != null:
+		sound.reparent(drone)
 
 
 func _on_player_spawned(p: Dictionary) -> void:
