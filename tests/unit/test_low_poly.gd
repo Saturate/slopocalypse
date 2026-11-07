@@ -68,3 +68,54 @@ func test_tube_walls_face_the_right_way() -> void:
 			wrong += 1
 	assert_int(verts.size()).is_equal(8 * 4 * 2 * 3)
 	assert_int(wrong).is_equal(0)
+
+
+## Signed volume from the generated normals: positive and equal to the real volume only
+## when every face points out, so it checks winding on concave shapes too.
+func _volume(mesh: ArrayMesh) -> float:
+	var arrays := mesh.surface_get_arrays(0)
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var v := 0.0
+	for i in range(0, verts.size(), 3):
+		var area := (verts[i + 1] - verts[i]).cross(verts[i + 2] - verts[i]).length() / 2.0
+		var c := (verts[i] + verts[i + 1] + verts[i + 2]) / 3.0
+		v += c.dot(normals[i]) * area / 3.0
+	return v
+
+
+func test_plain_box_is_twelve_outward_triangles() -> void:
+	var st := LowPoly.begin()
+	LowPoly.box(st, Vector3(0.2, 0.4, 1.0), Transform3D.IDENTITY, Color.WHITE)
+	var mesh := LowPoly.finish(st, LowPoly.material(0.5))
+	assert_int(mesh.surface_get_array_len(0)).is_equal(36)
+	assert_float(_volume(mesh)).is_equal_approx(0.08, 0.0001)
+
+
+func test_a_concave_profile_extrudes_into_a_closed_solid() -> void:
+	# An L seen from the side, wound both ways: 0.03 m^2 of outline, 0.1 m thick.
+	var l := PackedVector2Array([Vector2(0, 0), Vector2(0.2, 0), Vector2(0.2, 0.1), Vector2(0.1, 0.1), Vector2(0.1, 0.2), Vector2(0, 0.2)])
+	for outline: PackedVector2Array in [l, _reversed(l)]:
+		var st := LowPoly.begin()
+		LowPoly.extrude(st, outline, 0.1, Transform3D(Basis.IDENTITY, Vector3(1, 2, 3)), Color.WHITE)
+		assert_float(_volume(LowPoly.finish(st, LowPoly.material(0.5)))).is_equal_approx(0.003, 0.00001)
+
+
+func test_a_curved_loft_is_closed_and_faces_out() -> void:
+	var rings: Array[Transform3D] = []
+	for i in 6:
+		var b := Basis(Vector3.RIGHT, 0.08 * i)
+		rings.append(Transform3D(b, Vector3(0, -0.05 * i, -0.01 * i * i * 0.2)))
+	var st := LowPoly.begin()
+	LowPoly.loft(st, rings, Vector2(0.02, 0.03), Color.WHITE)
+	assert_float(_volume(LowPoly.finish(st, LowPoly.material(0.5)))).is_greater(0.0)
+	var straight: Array[Transform3D] = [Transform3D(Basis.IDENTITY, Vector3.ZERO), Transform3D(Basis.IDENTITY, Vector3(0, 0, -0.5)), Transform3D(Basis.IDENTITY, Vector3(0, 0, -1.0))]
+	var st2 := LowPoly.begin()
+	LowPoly.loft(st2, straight, Vector2(0.1, 0.2), Color.WHITE)
+	assert_float(_volume(LowPoly.finish(st2, LowPoly.material(0.5)))).is_equal_approx(0.08, 0.0001)
+
+
+func _reversed(p: PackedVector2Array) -> PackedVector2Array:
+	var out := p.duplicate()
+	out.reverse()
+	return out
