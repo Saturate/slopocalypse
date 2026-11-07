@@ -1,0 +1,6 @@
+{
+  "id": "inventory",
+  "depends_on": ["player"],
+  "flag": "inventory",
+  "entry": "inventory_module.gd"
+}
