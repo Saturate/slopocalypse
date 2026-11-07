@@ -1,6 +1,8 @@
 class_name HitscanWeapon
 extends Node3D
-## A carried hitscan gun. Reads the holder's PlayerIntent; the server decides every hit.
+## A carried hitscan gun's logic, at the holder's camera so shots follow the aim. It has
+## no mesh: the one visible rifle is in the body's hands. Reads the holder's PlayerIntent;
+## the server decides every hit.
 ## Fire rules (rate, magazine, reload, spread) run in Rust (`WeaponRules`).
 
 const CONFIG := "res://modules/weapons/data/weapons.json"
@@ -20,24 +22,18 @@ const REQUIRED := {
 }
 
 @export var weapon_id: String = "rifle"
-@export var model_path: NodePath
 
 var stats: Dictionary = {}
 ## The player carrying this weapon. Set by the weapons module when it equips.
 var holder: PlayerController
 var rules := WeaponRules.new()
 
-var _model: Node3D
-var _model_rest: Vector3
 var _recoil_rng := RandomNumberGenerator.new()
 ## Recoil applied to the view that has not yet been pulled back.
 var _recoil_debt := Vector2.ZERO
 
 
 func _ready() -> void:
-	_model = get_node_or_null(model_path)
-	if _model != null:
-		_model_rest = _model.position
 	var data: Variant = Data.load_json(CONFIG)
 	if not data is Dictionary or not (data as Dictionary).has(weapon_id):
 		Log.error(&"weapons", "%s: no weapon '%s'" % [CONFIG, weapon_id])
@@ -57,8 +53,6 @@ func ammo() -> int:
 
 func _physics_process(delta: float) -> void:
 	rules.tick(delta)
-	if _model != null:
-		_model.position = _model.position.lerp(_model_rest, 1.0 - exp(-float(stats["kick_return"]) * delta))
 	if holder == null:
 		return
 	var intent := holder.intent()
@@ -140,7 +134,7 @@ func _held_locally() -> bool:
 	return int(holder.get_meta(&"peer_id", Net.local_peer_id())) == Net.local_peer_id()
 
 
-## Recoil for the shooter's own view, gun kick for everyone who sees it.
+## Recoil for the shooter's own view. The gun's visible kick is ShotEffects.
 func _play_shot_effects() -> void:
 	if _held_locally():
 		var pitch := deg_to_rad(stats["recoil_pitch_degrees"])
@@ -149,5 +143,3 @@ func _play_shot_effects() -> void:
 		var kick := Vector2(yaw, -pitch)
 		holder.intent().look_delta += kick
 		_recoil_debt += kick * float(stats["recoil_recovery_share"])
-	if _model != null:
-		_model.position.z += float(stats["kick_back"])

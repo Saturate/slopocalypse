@@ -1,15 +1,12 @@
 class_name RifleMesh
 extends RefCounted
-## Geometry for the rifle and the first-person arms, built from bevelled low-poly parts.
-## Metres, rifle points down -Z, origin at the receiver. Used by builders, not at runtime.
+## Geometry for the rifle, built from bevelled low-poly parts.
+## Metres, rifle points down -Z, origin at the receiver. Built once at runtime and shared.
 
 const GUNMETAL := Color(0.21, 0.22, 0.24)
 const DARK := Color(0.08, 0.08, 0.09)
 const POLYMER := Color(0.14, 0.14, 0.15)
 const FURNITURE := Color(0.55, 0.47, 0.33)
-const SLEEVE := Color(0.33, 0.37, 0.26)
-const SLEEVE_DARK := Color(0.27, 0.3, 0.21)
-const GLOVE := Color(0.16, 0.15, 0.14)
 
 
 static func _at(pos: Vector3, rot: Vector3 = Vector3.ZERO) -> Transform3D:
@@ -61,29 +58,3 @@ static func rifle() -> ArrayMesh:
 	glow.emission_energy_multiplier = 4.0
 	LowPoly.finish(dot, glow, mesh)
 	return mesh
-
-
-## Box limb from `from` to `to` (thickness x/y), oriented along the segment.
-static func _limb(st: SurfaceTool, from: Vector3, to: Vector3, thickness: Vector2, colour: Color) -> void:
-	var dir := to - from
-	var basis := Basis.looking_at(dir.normalized(), Vector3.UP if absf(dir.normalized().y) < 0.95 else Vector3.FORWARD)
-	LowPoly.chamfer_box(st, Vector3(thickness.x, thickness.y, dir.length()), minf(thickness.x, thickness.y) * 0.25, Transform3D(basis, from + dir * 0.5), colour)
-
-
-## First-person arms posed on the rifle: right hand on the grip, left on the handguard.
-static func arms() -> ArrayMesh:
-	var st := LowPoly.begin()
-	# Right: glove wraps the grip, forearm runs back and down toward the camera.
-	var r_hand := Vector3(0.0, -0.085, 0.12)
-	var r_elbow := Vector3(0.1, -0.22, 0.42)
-	LowPoly.chamfer_box(st, Vector3(0.055, 0.09, 0.07), 0.015, _at(r_hand, Vector3(-0.3, 0, 0)), GLOVE)
-	_limb(st, r_hand + Vector3(0.01, -0.02, 0.04), r_elbow, Vector2(0.075, 0.075), SLEEVE)
-	_limb(st, r_hand + Vector3(0.01, -0.02, 0.06), r_hand + Vector3(0.02, -0.04, 0.12), Vector2(0.085, 0.085), SLEEVE_DARK)
-	# Left: palm under the handguard, forearm angling back to the left.
-	var l_hand := Vector3(-0.005, -0.012, -0.27)
-	var l_elbow := Vector3(-0.2, -0.22, 0.02)
-	LowPoly.chamfer_box(st, Vector3(0.075, 0.045, 0.09), 0.015, _at(l_hand), GLOVE)
-	LowPoly.chamfer_box(st, Vector3(0.02, 0.04, 0.06), 0.006, _at(l_hand + Vector3(0.045, 0.02, 0.0)), GLOVE)
-	_limb(st, l_hand + Vector3(-0.03, -0.02, 0.03), l_elbow, Vector2(0.075, 0.075), SLEEVE)
-	_limb(st, l_hand + Vector3(-0.04, -0.025, 0.06), l_hand + Vector3(-0.07, -0.05, 0.12), Vector2(0.085, 0.085), SLEEVE_DARK)
-	return LowPoly.finish(st, LowPoly.material(0.85))

@@ -132,9 +132,9 @@ func _setup_local(player: PlayerController) -> void:
 	feel.camera = _camera(player)
 	player.add_child(feel)
 	_camera(player).current = true
-	# The local player's own body would block the first-person camera, but its shadow
-	# should still land on the ground.
-	PlayerBody.shadows_only(player.get_node("Body"))
+	# The camera sits inside the head: the torso only casts its shadow, while the player's
+	# own arms and rifle stay in view.
+	PlayerBody.first_person(player.get_node("Body"))
 
 
 func _on_car_entered(payload: Dictionary) -> void:

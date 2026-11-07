@@ -6,7 +6,7 @@ const BODY := "res://modules/player/scenes/player_body.tscn"
 const BONES := ["Hips", "Spine", "Chest", "Shoulders", "Head", "UpperArm_R", "LowerArm_R", "Hand_R", "UpperArm_L", "LowerArm_L", "Hand_L", "UpperLeg_L", "LowerLeg_L", "UpperLeg_R", "LowerLeg_R"]
 const CLIPS := ["idle", "walk", "run", "crouch_idle", "crouch_walk", "slide", "fall"]
 ## Boot sole below the knee joint, in the shin bone's space.
-const SOLE := Vector3(0.0, -0.405, 0.0)
+const SOLE := Vector3(0.0, -0.5, 0.0)
 
 var _body: Node3D
 var _skeleton: Skeleton3D
