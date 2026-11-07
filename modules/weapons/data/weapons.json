@@ -16,7 +16,8 @@
     "recoil_recovery": 6.0,
     "recoil_recovery_share": 0.85,
     "ads_spread_multiplier": 0.25,
-    "ads_zoom": 1.25
+    "ads_zoom": 1.25,
+    "draw_seconds": 0.35
   },
   "charge": {
     "fuse_seconds": 1.5,

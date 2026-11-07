@@ -40,6 +40,18 @@
       "magazine": "mag_ar_45",
       "muzzle": "muz_supp",
       "optic": "opt_reddot"
+    },
+    "pistol_standard": {
+      "receiver": "rcv_pistol",
+      "slide": "sld_pistol_std",
+      "pistol_magazine": "mag_pistol_15"
+    },
+    "pistol_tactical": {
+      "receiver": "rcv_pistol",
+      "slide": "sld_pistol_long",
+      "pistol_magazine": "mag_pistol_21",
+      "pistol_muzzle": "muz_pistol_supp",
+      "pistol_optic": "opt_pistol_dot"
     }
   },
   "parts": {
@@ -56,7 +68,9 @@
         "magazine": [0.0, -0.035, -0.04],
         "optic": [0.0, 0.082, -0.02]
       },
-      "markers": { "GripL": [-0.035, -0.04, -0.1] },
+      "markers": {
+        "GripL": [-0.035, -0.04, -0.1]
+      },
       "stats": {
         "rounds_per_minute": 600.0,
         "damage": 25.0,
@@ -67,126 +81,349 @@
         "ads_seconds": 0.18,
         "ergonomics": 30.0,
         "weight": 1.3
-      }
+      },
+      "weapon_slot": "primary"
     },
     "bar_ar_14": {
       "name": "14 inch barrel",
       "slot": "barrel",
       "mesh": "barrel_14",
       "provides": ["muzzle"],
-      "mounts": { "muzzle": [0.0, 0.0, -0.44] },
-      "markers": { "Muzzle": [0.0, 0.0, -0.44] },
-      "stats": { "range": 300.0, "weight": 0.7 }
+      "mounts": {
+        "muzzle": [0.0, 0.0, -0.44]
+      },
+      "markers": {
+        "Muzzle": [0.0, 0.0, -0.44]
+      },
+      "stats": {
+        "range": 300.0,
+        "weight": 0.7
+      }
     },
     "bar_ar_10": {
       "name": "10 inch barrel",
       "slot": "barrel",
       "mesh": "barrel_10",
       "provides": ["muzzle"],
-      "mounts": { "muzzle": [0.0, 0.0, -0.32] },
-      "markers": { "Muzzle": [0.0, 0.0, -0.32] },
-      "stats": { "range": 180.0, "spread_pct": 35.0, "recoil_pct": 8.0, "ergonomics": 8.0, "weight": 0.5 }
+      "mounts": {
+        "muzzle": [0.0, 0.0, -0.32]
+      },
+      "markers": {
+        "Muzzle": [0.0, 0.0, -0.32]
+      },
+      "stats": {
+        "range": 180.0,
+        "spread_pct": 35.0,
+        "recoil_pct": 8.0,
+        "ergonomics": 8.0,
+        "weight": 0.5
+      }
     },
     "hg_ar_std": {
       "name": "Vented handguard",
       "slot": "handguard",
       "mesh": "handguard_std",
       "provides": [],
-      "markers": { "GripL": [-0.035, -0.04, -0.075] },
-      "stats": { "ergonomics": 6.0, "weight": 0.3 }
+      "markers": {
+        "GripL": [-0.035, -0.04, -0.075]
+      },
+      "stats": {
+        "ergonomics": 6.0,
+        "weight": 0.3
+      }
     },
     "hg_ar_long": {
       "name": "Long rail handguard",
       "slot": "handguard",
       "mesh": "handguard_long",
       "provides": [],
-      "markers": { "GripL": [-0.035, -0.04, -0.095] },
-      "stats": { "ergonomics": 3.0, "recoil_pct": -4.0, "weight": 0.45 }
+      "markers": {
+        "GripL": [-0.035, -0.04, -0.095]
+      },
+      "stats": {
+        "ergonomics": 3.0,
+        "recoil_pct": -4.0,
+        "weight": 0.45
+      }
     },
     "stk_ar_std": {
       "name": "Fixed stock",
       "slot": "stock",
       "mesh": "stock_std",
       "provides": [],
-      "stats": { "recoil_pct": -25.0, "ergonomics": 6.0, "weight": 0.35 }
+      "stats": {
+        "recoil_pct": -25.0,
+        "ergonomics": 6.0,
+        "weight": 0.35
+      }
     },
     "stk_ar_light": {
       "name": "Skeleton stock",
       "slot": "stock",
       "mesh": "stock_light",
       "provides": [],
-      "stats": { "recoil_pct": -15.0, "ergonomics": 12.0, "weight": 0.2 }
+      "stats": {
+        "recoil_pct": -15.0,
+        "ergonomics": 12.0,
+        "weight": 0.2
+      }
     },
     "grp_ar_std": {
       "name": "Pistol grip",
       "slot": "grip",
       "mesh": "grip_std",
       "provides": [],
-      "markers": { "GripR": [0.0, -0.045, 0.02] },
-      "stats": { "ergonomics": 8.0, "weight": 0.08 }
+      "markers": {
+        "GripR": [0.0, -0.045, 0.02]
+      },
+      "stats": {
+        "ergonomics": 8.0,
+        "weight": 0.08
+      }
     },
     "mag_ar_30": {
       "name": "30 round magazine",
       "slot": "magazine",
       "mesh": "mag_30",
       "provides": [],
-      "stats": { "magazine": 30.0, "weight": 0.45 }
+      "stats": {
+        "magazine": 30.0,
+        "weight": 0.45
+      }
     },
     "mag_ar_45": {
       "name": "45 round magazine",
       "slot": "magazine",
       "mesh": "mag_45",
       "provides": [],
-      "stats": { "magazine": 45.0, "ergonomics": -8.0, "reload_pct": 15.0, "weight": 0.7 }
+      "stats": {
+        "magazine": 45.0,
+        "ergonomics": -8.0,
+        "reload_pct": 15.0,
+        "weight": 0.7
+      }
     },
     "muz_flash": {
       "name": "Flash hider",
       "slot": "muzzle",
       "mesh": "muzzle_flash",
       "provides": [],
-      "markers": { "Muzzle": [0.0, 0.0, -0.06] },
-      "stats": { "recoil_pct": -3.0, "weight": 0.05 }
+      "markers": {
+        "Muzzle": [0.0, 0.0, -0.06]
+      },
+      "stats": {
+        "recoil_pct": -3.0,
+        "weight": 0.05
+      }
     },
     "muz_comp": {
       "name": "Compensator",
       "slot": "muzzle",
       "mesh": "muzzle_comp",
       "provides": [],
-      "markers": { "Muzzle": [0.0, 0.0, -0.065] },
-      "stats": { "recoil_pct": -14.0, "ergonomics": -2.0, "weight": 0.1 }
+      "markers": {
+        "Muzzle": [0.0, 0.0, -0.065]
+      },
+      "stats": {
+        "recoil_pct": -14.0,
+        "ergonomics": -2.0,
+        "weight": 0.1
+      }
     },
     "muz_supp": {
       "name": "Suppressor",
       "slot": "muzzle",
       "mesh": "muzzle_supp",
       "provides": [],
-      "markers": { "Muzzle": [0.0, 0.0, -0.17] },
-      "stats": { "recoil_pct": -8.0, "ergonomics": -6.0, "weight": 0.35 }
+      "markers": {
+        "Muzzle": [0.0, 0.0, -0.17]
+      },
+      "stats": {
+        "recoil_pct": -8.0,
+        "ergonomics": -6.0,
+        "weight": 0.35
+      }
     },
     "opt_reddot": {
       "name": "Tube red dot",
       "slot": "optic",
       "mesh": "optic_reddot",
       "provides": [],
-      "markers": { "Sight": [0.0, 0.036, 0.035] },
-      "stats": { "zoom": 1.25, "ergonomics": -1.0, "weight": 0.15 }
+      "markers": {
+        "Sight": [0.0, 0.036, 0.035]
+      },
+      "stats": {
+        "zoom": 1.25,
+        "ergonomics": -1.0,
+        "weight": 0.15
+      }
     },
     "opt_scope_4x": {
       "name": "4x scope",
       "slot": "optic",
       "mesh": "optic_scope",
       "provides": [],
-      "markers": { "Sight": [0.0, 0.045, 0.135] },
-      "marker_meta": { "Sight": { "eye_relief": 0.06 } },
-      "stats": { "zoom": 1.1, "magnification": 4.0, "ergonomics": -9.0, "weight": 0.55 }
+      "markers": {
+        "Sight": [0.0, 0.045, 0.135]
+      },
+      "marker_meta": {
+        "Sight": {
+          "eye_relief": 0.06
+        }
+      },
+      "stats": {
+        "zoom": 1.1,
+        "magnification": 4.0,
+        "ergonomics": -9.0,
+        "weight": 0.55
+      }
     },
     "opt_holo": {
       "name": "Window holo sight",
       "slot": "optic",
       "mesh": "optic_holo",
       "provides": [],
-      "markers": { "Sight": [0.0, 0.034, 0.03] },
-      "stats": { "zoom": 1.1, "ergonomics": -2.0, "weight": 0.25 }
+      "markers": {
+        "Sight": [0.0, 0.034, 0.03]
+      },
+      "stats": {
+        "zoom": 1.1,
+        "ergonomics": -2.0,
+        "weight": 0.25
+      }
+    },
+    "rcv_pistol": {
+      "name": "Polymer pistol frame",
+      "slot": "receiver",
+      "mesh": "pistol_frame",
+      "weapon_slot": "secondary",
+      "fire_mode": "semi",
+      "hold": [0.0, 0.0, -0.2],
+      "eye_relief": 0.42,
+      "hip_sight": [0.03, -0.1, -0.45],
+      "provides": ["slide", "pistol_magazine"],
+      "requires": ["slide", "pistol_magazine"],
+      "mounts": {
+        "slide": [0.0, 0.0, 0.0],
+        "pistol_magazine": [0.0, -0.118, 0.052]
+      },
+      "markers": {
+        "GripR": [0.0, -0.07, 0.075],
+        "GripL": [-0.03, -0.085, 0.045]
+      },
+      "stats": {
+        "rounds_per_minute": 420.0,
+        "damage": 20.0,
+        "spread_degrees": 1.0,
+        "recoil_pitch_degrees": 1.8,
+        "recoil_yaw_degrees": 0.6,
+        "reload_seconds": 1.6,
+        "ads_seconds": 0.12,
+        "ergonomics": 48.0,
+        "weight": 0.45
+      }
+    },
+    "sld_pistol_std": {
+      "name": "Standard slide",
+      "slot": "slide",
+      "mesh": "slide_std",
+      "provides": ["pistol_optic"],
+      "mounts": {
+        "pistol_optic": [0.0, 0.032, 0.028]
+      },
+      "markers": {
+        "Sight": [0.0, 0.0355, 0.064],
+        "Muzzle": [0.0, 0.016, -0.103]
+      },
+      "stats": {
+        "range": 50.0,
+        "weight": 0.2
+      }
+    },
+    "sld_pistol_long": {
+      "name": "Long threaded slide",
+      "slot": "slide",
+      "mesh": "slide_long",
+      "provides": ["pistol_optic", "pistol_muzzle"],
+      "mounts": {
+        "pistol_optic": [0.0, 0.032, 0.028],
+        "pistol_muzzle": [0.0, 0.016, -0.145]
+      },
+      "markers": {
+        "Sight": [0.0, 0.0355, 0.064],
+        "Muzzle": [0.0, 0.016, -0.145]
+      },
+      "stats": {
+        "range": 70.0,
+        "recoil_pct": -6.0,
+        "ergonomics": -3.0,
+        "weight": 0.27
+      }
+    },
+    "mag_pistol_15": {
+      "name": "15 round pistol magazine",
+      "slot": "pistol_magazine",
+      "mesh": "pistol_mag_15",
+      "provides": [],
+      "stats": {
+        "magazine": 15.0,
+        "weight": 0.1
+      }
+    },
+    "mag_pistol_21": {
+      "name": "21 round extended magazine",
+      "slot": "pistol_magazine",
+      "mesh": "pistol_mag_21",
+      "provides": [],
+      "stats": {
+        "magazine": 21.0,
+        "ergonomics": -5.0,
+        "reload_pct": 8.0,
+        "weight": 0.15
+      }
+    },
+    "muz_pistol_comp": {
+      "name": "Pistol compensator",
+      "slot": "pistol_muzzle",
+      "mesh": "pistol_comp",
+      "provides": [],
+      "markers": {
+        "Muzzle": [0.0, 0.0, -0.035]
+      },
+      "stats": {
+        "recoil_pct": -18.0,
+        "ergonomics": -2.0,
+        "weight": 0.06
+      }
+    },
+    "muz_pistol_supp": {
+      "name": "Pistol suppressor",
+      "slot": "pistol_muzzle",
+      "mesh": "pistol_supp",
+      "provides": [],
+      "markers": {
+        "Muzzle": [0.0, 0.0, -0.137]
+      },
+      "stats": {
+        "recoil_pct": -8.0,
+        "ergonomics": -8.0,
+        "weight": 0.2
+      }
+    },
+    "opt_pistol_dot": {
+      "name": "Mini red dot",
+      "slot": "pistol_optic",
+      "mesh": "optic_pistol_dot",
+      "provides": [],
+      "markers": {
+        "Sight": [0.0, 0.018, 0.016]
+      },
+      "stats": {
+        "zoom": 1.15,
+        "ergonomics": -2.0,
+        "weight": 0.05
+      }
     }
-  }
+  },
+  "default_secondary": "pistol_standard"
 }

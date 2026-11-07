@@ -12,6 +12,8 @@ const ARMS := {
 ## Wrist targets in the Shoulders bone's space, per side (&"R", &"L"); a side without one
 ## keeps its animated pose. Set every frame by the body animator from the gun's markers.
 var targets: Dictionary = {}
+## How strongly elbows are pulled down, in metres of pole offset.
+const ELBOW_DROP := 0.25
 
 var _bones: Dictionary = {}
 var _shoulders := -1
@@ -50,8 +52,9 @@ func _solve(skeleton: Skeleton3D, ids: Array[int], target: Vector3) -> void:
 	if to_target.length_squared() < 1e-8:
 		return
 	var dir := to_target.normalized()
-	# Bend toward where the elbow already is, so arms keep the pose's character.
-	var pole := lower.origin - s
+	# Bend toward where the elbow already is, so arms keep the pose's character, nudged
+	# down so reaching up for a pistol does not wing the elbows out above the shoulders.
+	var pole := (lower.origin - s) + Vector3.DOWN * ELBOW_DROP
 	var side := (pole - dir * pole.dot(dir))
 	if side.length_squared() < 1e-8:
 		side = Vector3.DOWN - dir * Vector3.DOWN.dot(dir)

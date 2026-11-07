@@ -1,9 +1,10 @@
 // Puts the dedicated server on a Linux machine you own and keeps it running with systemd.
 //   node tools/deploy.ts --host user@server [--port 7777] [--dir /opt/outpost] [--user outpost]
-//                        [--open-firewall] [--zip build/linux-folder-or-zip] [--dry-run]
+//                        [--open-firewall] (--zip build/linux-folder-or-zip | --ci) [--dry-run]
 // The Linux build needs the Rust extensions compiled for Linux, which this Windows machine
-// cannot do, so by default it runs the manual `server-build` GitHub workflow (Ubuntu runner;
-// it exports and smoke-tests the Linux game) and downloads its artifact. --zip skips that.
+// cannot do. Give a Linux build with --zip (built on a Linux box with
+// `node tools/export.ts --os linux`), or --ci to run the manual `server-build` GitHub
+// workflow and download its artifact; that spends Actions minutes, so it is opt-in.
 // Needs ssh and scp (key login is easiest), and root or passwordless sudo on the server:
 // the install runs non-interactively, so sudo cannot ask for a password.
 import { spawnSync } from "node:child_process";
@@ -83,6 +84,10 @@ async function main(): Promise<void> {
 	}
 
 	const zip = arg("zip");
+	// GitHub Actions minutes are limited, so CI runs only when asked for by name.
+	if (zip === undefined && !argv.includes("--ci")) {
+		throw new Error("give --zip <linux build folder or zip>, or --ci to build it on the server-build GitHub workflow (uses Actions minutes)");
+	}
 	const build = zip !== undefined ? await localBuild(resolve(zip)) : buildOnCi();
 	if (!existsSync(join(build, LINUX_EXE))) throw new Error(`${build} has no ${LINUX_EXE}; files: ${readdirSync(build).join(", ")}`);
 

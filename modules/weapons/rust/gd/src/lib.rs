@@ -151,16 +151,8 @@ fn part_from(id: String, data: &VarDictionary) -> PartDef {
         .try_to::<GString>()
         .map(|s| s.to_string())
         .unwrap_or_default();
-    let provides = data
-        .get_or_nil("provides")
-        .try_to::<VarArray>()
-        .map(|a| {
-            a.iter_shared()
-                .filter_map(|v| v.try_to::<GString>().ok())
-                .map(|s| s.to_string())
-                .collect()
-        })
-        .unwrap_or_default();
+    let provides = strings(data, "provides");
+    let requires = strings(data, "requires");
     let s = data
         .get_or_nil("stats")
         .try_to::<VarDictionary>()
@@ -188,8 +180,21 @@ fn part_from(id: String, data: &VarDictionary) -> PartDef {
         id,
         slot,
         provides,
+        requires,
         stats,
     }
+}
+
+fn strings(data: &VarDictionary, key: &str) -> Vec<String> {
+    data.get_or_nil(key)
+        .try_to::<VarArray>()
+        .map(|a| {
+            a.iter_shared()
+                .filter_map(|v| v.try_to::<GString>().ok())
+                .map(|s| s.to_string())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn stats_to(s: &BuildStats) -> VarDictionary {

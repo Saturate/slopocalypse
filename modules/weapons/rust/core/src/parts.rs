@@ -4,7 +4,8 @@
 
 use std::collections::BTreeMap;
 
-/// Slots every working gun needs filled.
+/// Slots a gun needs filled when its receiver does not say (a rifle); a receiver's own
+/// `requires` replaces this (a pistol has no separate grip).
 pub const REQUIRED_SLOTS: [&str; 4] = ["receiver", "barrel", "grip", "magazine"];
 /// Ergonomics that leaves the receiver's ADS time unchanged; more is faster.
 pub const NEUTRAL_ERGONOMICS: f64 = 50.0;
@@ -42,6 +43,8 @@ pub struct PartDef {
     pub slot: String,
     /// Slots this part makes available for other parts.
     pub provides: Vec<String>,
+    /// Receivers only: slots that must be filled for a working gun, besides the receiver.
+    pub requires: Vec<String>,
     pub stats: PartStats,
 }
 
@@ -128,11 +131,16 @@ pub fn assemble(
             });
         }
     }
-    for slot in REQUIRED_SLOTS {
-        if !build.contains_key(slot) {
-            errors.push(BuildError::Missing {
-                slot: slot.to_string(),
-            });
+    let receiver = build.get("receiver").and_then(|id| catalogue.get(id));
+    let required: Vec<String> = match receiver {
+        Some(r) if !r.requires.is_empty() => std::iter::once("receiver".to_string())
+            .chain(r.requires.iter().cloned())
+            .collect(),
+        _ => REQUIRED_SLOTS.iter().map(|s| s.to_string()).collect(),
+    };
+    for slot in required {
+        if !build.contains_key(&slot) {
+            errors.push(BuildError::Missing { slot });
         }
     }
     if !errors.is_empty() {
@@ -178,6 +186,7 @@ mod tests {
             id: id.into(),
             slot: slot.into(),
             provides: provides.iter().map(|s| s.to_string()).collect(),
+            requires: Vec::new(),
             stats,
         };
         (id.into(), def)
@@ -366,6 +375,46 @@ mod tests {
         // rcv 30 + grip 10 + stock 10 = 50, neutral: the receiver's own ADS time.
         let stats = assemble(&catalogue(), &standard()).expect("valid");
         assert!((stats.ads_seconds - 0.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_receiver_can_name_its_own_required_slots() {
+        let mut cat = catalogue();
+        let (id, mut pistol) = part(
+            "pistol",
+            "receiver",
+            &["slide", "pmag"],
+            PartStats::default(),
+        );
+        pistol.requires = vec!["slide".into(), "pmag".into()];
+        cat.insert(id, pistol);
+        cat.extend([
+            part("slide", "slide", &[], PartStats::default()),
+            part(
+                "pmag",
+                "pmag",
+                &[],
+                PartStats {
+                    magazine: Some(15),
+                    ..Default::default()
+                },
+            ),
+        ]);
+        let ok = build(&[("receiver", "pistol"), ("slide", "slide"), ("pmag", "pmag")]);
+        assert_eq!(
+            assemble(&cat, &ok)
+                .expect("no grip or barrel needed")
+                .magazine,
+            15
+        );
+        let missing = build(&[("receiver", "pistol"), ("slide", "slide")]);
+        let errors = assemble(&cat, &missing).expect_err("no magazine");
+        assert_eq!(
+            errors,
+            vec![BuildError::Missing {
+                slot: "pmag".into()
+            }]
+        );
     }
 
     #[test]
