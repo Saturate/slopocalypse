@@ -33,7 +33,7 @@ func _on_player_spawned(p: Dictionary) -> void:
 	var player: PlayerController = p["player"]
 	# Every instance assembles the same default build for now; per-player loadouts come
 	# with the modding screen (#66), when the server will send each player's build.
-	var build_name := GunAssembly.default_build()
+	var build_name := GunAssembly.chosen_build()
 	var assembled := GunAssembly.assemble_named(build_name)
 	if not assembled["ok"]:
 		Log.error(&"weapons", "build %s does not work: %s" % [build_name, assembled["errors"]])
@@ -57,10 +57,18 @@ func _on_player_spawned(p: Dictionary) -> void:
 		if sight != null:
 			sight.set_meta(&"zoom", float(rifle.stats.get("ads_zoom", 1.0)))
 			sight.set_meta(&"ads_seconds", float(rifle.stats.get("ads_seconds", 0.2)))
+			sight.set_meta(&"magnification", float(rifle.stats.get("magnification", 1.0)))
 		socket.add_child(held)
 	if DisplayServer.get_name() == "headless":
 		return
 	if p.get("local", false):
+		var held_rifle := ShotEffects.held_rifle(player)
+		if held_rifle != null and held_rifle.get_node_or_null("Lens") != null:
+			var scope := ScopeView.new()
+			scope.name = "ScopeView"
+			scope.player = player
+			scope.gun = held_rifle
+			player.add_child(scope)
 		var feedback := ShotFeedback.new()
 		feedback.name = "ShotFeedback"
 		feedback.local_player = player

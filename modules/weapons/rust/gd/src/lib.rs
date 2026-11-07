@@ -170,6 +170,7 @@ fn part_from(id: String, data: &VarDictionary) -> PartDef {
         // JSON numbers arrive as floats; capacities are whole rounds.
         magazine: num(&s, "magazine").map(|m| m.max(0.0).round() as u32),
         zoom: num(&s, "zoom"),
+        magnification: num(&s, "magnification"),
         ergonomics: num(&s, "ergonomics").unwrap_or(0.0),
         weight: num(&s, "weight").unwrap_or(0.0),
         recoil_pct: num(&s, "recoil_pct").unwrap_or(0.0),
@@ -186,7 +187,7 @@ fn part_from(id: String, data: &VarDictionary) -> PartDef {
 
 fn stats_to(s: &BuildStats) -> VarDictionary {
     let mut d = VarDictionary::new();
-    let fields: [(&str, f64); 12] = [
+    let fields: [(&str, f64); 13] = [
         ("rounds_per_minute", s.rounds_per_minute),
         ("damage", s.damage),
         ("spread_degrees", s.spread_degrees),
@@ -197,6 +198,7 @@ fn stats_to(s: &BuildStats) -> VarDictionary {
         ("range", s.range),
         ("magazine", f64::from(s.magazine)),
         ("ads_zoom", s.zoom),
+        ("magnification", s.magnification),
         ("ergonomics", s.ergonomics),
         ("weight", s.weight),
     ];

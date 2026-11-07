@@ -21,6 +21,16 @@
       "muzzle": "muz_comp",
       "optic": "opt_holo"
     },
+    "ar_dmr": {
+      "receiver": "rcv_ar",
+      "barrel": "bar_ar_14",
+      "handguard": "hg_ar_long",
+      "stock": "stk_ar_std",
+      "grip": "grp_ar_std",
+      "magazine": "mag_ar_30",
+      "muzzle": "muz_comp",
+      "optic": "opt_scope_4x"
+    },
     "ar_heavy": {
       "receiver": "rcv_ar",
       "barrel": "bar_ar_14",
@@ -156,6 +166,19 @@
       "provides": [],
       "markers": { "Sight": [0.0, 0.036, 0.035] },
       "stats": { "zoom": 1.25, "ergonomics": -1.0, "weight": 0.15 }
+    },
+    "opt_scope_4x": {
+      "name": "4x scope",
+      "slot": "optic",
+      "mesh": "optic_scope",
+      "provides": [],
+      "markers": {
+        "Sight": [0.0, 0.045, 0.135],
+        "Lens": [0.0, 0.045, 0.1335],
+        "Objective": [0.0, 0.045, -0.17]
+      },
+      "marker_meta": { "Sight": { "eye_relief": 0.06 } },
+      "stats": { "zoom": 1.1, "magnification": 4.0, "ergonomics": -9.0, "weight": 0.55 }
     },
     "opt_holo": {
       "name": "Window holo sight",

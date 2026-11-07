@@ -2,7 +2,7 @@ extends Node3D
 ## Capture setup: every gun build from parts.json laid side by side on a plain, seen from
 ## the right, so a reviewer can check parts sit on their mounts and builds read differently.
 
-const SPACING := 0.42
+const SPACING := 0.36
 
 
 func _ready() -> void:
@@ -30,6 +30,7 @@ func _ready() -> void:
 	var camera := Camera3D.new()
 	camera.fov = 45.0
 	add_child(camera)
-	camera.position = Vector3(1.9, -0.42, -0.1)
-	camera.look_at(Vector3(0, -0.42, -0.1))
+	var middle := -SPACING * (names.size() - 1) / 2.0
+	camera.position = Vector3(2.1, middle, -0.1)
+	camera.look_at(Vector3(0, middle, -0.1))
 	camera.current = true

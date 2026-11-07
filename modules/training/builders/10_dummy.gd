@@ -56,6 +56,7 @@ func _initialize() -> void:
 	label.pixel_size = 0.004
 	label.outline_size = 16
 	label.no_depth_test = true
+	label.layers = RenderLayers.bit(RenderLayers.MAIN_VIEW_ONLY)
 	root.add_child(label)
 
 	root.set_script(load("res://modules/training/scripts/dummy_target.gd"))
