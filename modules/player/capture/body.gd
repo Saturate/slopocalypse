@@ -13,6 +13,10 @@ var _ticks := 0
 func _ready() -> void:
 	# Voxel terrain streams in; wait for the spawn area before dropping anything onto it.
 	await VoxelWorld.add_and_wait(self, WORLD)
+	# The chase camera would end up inside trees; this capture is about the body.
+	var scenery := find_child("Scenery", true, false) as Node3D
+	if scenery != null:
+		scenery.visible = false
 	_player = (load(PLAYER) as PackedScene).instantiate()
 	add_child(_player)
 	_player.global_position = Vector3(0.0, 0.1, 6.0)

@@ -13,4 +13,4 @@ static func shadows_only(body: Node) -> void:
 
 ## Where a held weapon mounts on the body.
 static func weapon_socket(player: Node) -> Node3D:
-	return player.get_node_or_null("Body/Hips/Spine/Chest/WeaponSocket")
+	return player.get_node_or_null("Body/Skeleton/WeaponAttachment/WeaponSocket")
