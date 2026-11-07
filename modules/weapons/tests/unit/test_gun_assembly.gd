@@ -59,3 +59,24 @@ func test_markers_come_from_the_outermost_part() -> void:
 	# The suppressor's end, beyond where the bare barrel would end.
 	assert_float((muzzles[0] as Node3D).global_position.z).is_less(-0.75)
 	assert_int(model.find_children("Sight", "Marker3D", true, false).size()).is_equal(1)
+
+
+func test_every_build_has_battlebit_level_detail() -> void:
+	# The spec's budget for one assembled gun: detailed enough to read rails and slots up
+	# close, cheap enough for four players and their kit.
+	for name: String in GunAssembly.build_names():
+		var total := 0
+		for slot: String in GunAssembly.build(name):
+			var part: Dictionary = GunAssembly.catalogue()[GunAssembly.build(name)[slot]]
+			total += GunPartMeshes.triangles(GunPartMeshes.mesh(part["mesh"]))
+		assert_int(total).override_failure_message("%s has %d triangles" % [name, total]).is_between(2000, 6000)
+
+
+func test_optics_have_glass_to_look_through() -> void:
+	for id in ["optic_reddot", "optic_holo"]:
+		var m := GunPartMeshes.mesh(id)
+		var see_through := false
+		for s in m.get_surface_count():
+			var mat := m.surface_get_material(s) as BaseMaterial3D
+			see_through = see_through or mat.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED
+		assert_bool(see_through).override_failure_message(id).is_true()
