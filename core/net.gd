@@ -287,7 +287,8 @@ func _watch_empty(delta: float) -> void:
 
 ## One line describing the session, for tools and tests. `moved` is the furthest any player
 ## stands from the world origin (the spawn), `shots` the weapon.fired events seen here,
-## `driven` the furthest any vehicle is from where it spawned.
+## `driven` the furthest any vehicle is from where it spawned, `ammo` the local player's
+## rounds (group `held_weapons`, method `ammo()`).
 func report() -> String:
 	var players := get_tree().get_nodes_in_group(&"players")
 	# The server owns every player body, so "local" means the player spawned for this peer.
@@ -302,7 +303,14 @@ func report() -> String:
 	for v: Node in get_tree().get_nodes_in_group(&"vehicles"):
 		var start: Vector3 = v.get_meta(&"spawn_position", (v as Node3D).global_position)
 		driven = maxf(driven, (v as Node3D).global_position.distance_to(start))
-	return "NET-REPORT mode=%s peer=%d peers=%d players=%d local_players=%d moved=%.1f shots=%d driven=%.1f" % [Mode.keys()[mode], me, multiplayer.get_peers().size(), players.size(), local.size(), moved, _shots, driven]
+	# The local player's rounds as this instance shows them (-1 without one): a client only
+	# knows what the server tells it.
+	var ammo := -1
+	for w: Node in get_tree().get_nodes_in_group(&"held_weapons"):
+		var holder: Variant = w.get(&"holder")
+		if mode != Mode.SERVER and holder is Node and int((holder as Node).get_meta(&"peer_id", 0)) == me and w.has_method(&"ammo"):
+			ammo = int(w.call(&"ammo"))
+	return "NET-REPORT mode=%s peer=%d peers=%d players=%d local_players=%d moved=%.1f shots=%d driven=%.1f ammo=%d" % [Mode.keys()[mode], me, multiplayer.get_peers().size(), players.size(), local.size(), moved, _shots, driven, ammo]
 
 
 var _shots := 0

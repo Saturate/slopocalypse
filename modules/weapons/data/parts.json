@@ -172,11 +172,7 @@
       "slot": "optic",
       "mesh": "optic_scope",
       "provides": [],
-      "markers": {
-        "Sight": [0.0, 0.045, 0.135],
-        "Lens": [0.0, 0.045, 0.1335],
-        "Objective": [0.0, 0.045, -0.17]
-      },
+      "markers": { "Sight": [0.0, 0.045, 0.135] },
       "marker_meta": { "Sight": { "eye_relief": 0.06 } },
       "stats": { "zoom": 1.1, "magnification": 4.0, "ergonomics": -9.0, "weight": 0.55 }
     },

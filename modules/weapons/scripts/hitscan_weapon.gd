@@ -33,11 +33,17 @@ var holder: PlayerController
 var rules := WeaponRules.new()
 
 var _recoil_rng := RandomNumberGenerator.new()
+## On a client, the server's word on this gun's magazine; the rules only run on the server.
+var _synced_ammo := -1
+var _synced_reloading := false
+var _sent := Vector2i(-1, -1)
 ## Recoil applied to the view that has not yet been pulled back.
 var _recoil_debt := Vector2.ZERO
 
 
 func _ready() -> void:
+	# Net's session report reads the local player's rounds through this group.
+	add_to_group(&"held_weapons")
 	var data: Variant = Data.load_json(CONFIG)
 	if not data is Dictionary or not (data as Dictionary).has(weapon_id):
 		Log.error(&"weapons", "%s: no weapon '%s'" % [CONFIG, weapon_id])
@@ -51,14 +57,24 @@ func _ready() -> void:
 	rules.setup(stats["rounds_per_minute"], int(stats["magazine"]), stats["reload_seconds"], deg_to_rad(stats["spread_degrees"]), get_instance_id())
 
 
+## Rounds left. Clients show what the server last told them; only the server fires.
 func ammo() -> int:
+	if not multiplayer.is_server() and _synced_ammo >= 0:
+		return _synced_ammo
 	return rules.ammo()
+
+
+func is_reloading() -> bool:
+	if not multiplayer.is_server() and _synced_ammo >= 0:
+		return _synced_reloading
+	return rules.is_reloading()
 
 
 func _physics_process(delta: float) -> void:
 	rules.tick(delta)
 	if holder == null:
 		return
+	_sync_magazine()
 	var intent := holder.intent()
 	if intent.consume_reload():
 		request_reload()
@@ -66,6 +82,28 @@ func _physics_process(delta: float) -> void:
 		request_fire(global_transform.origin, -global_transform.basis.z)
 	else:
 		_recover_recoil(delta)
+
+
+## Server: tells the owning client about its magazine whenever it changes, so their ammo
+## counter and RELOADING are right. Without this a client only knows its own copy, which
+## never fires.
+func _sync_magazine() -> void:
+	if not multiplayer.is_server() or multiplayer.multiplayer_peer is OfflineMultiplayerPeer:
+		return
+	var owner_peer := int(holder.get_meta(&"peer_id", 1))
+	if owner_peer == multiplayer.get_unique_id() or not multiplayer.get_peers().has(owner_peer):
+		return
+	var now := Vector2i(rules.ammo(), 1 if rules.is_reloading() else 0)
+	if now == _sent:
+		return
+	_sent = now
+	_receive_magazine.rpc_id(owner_peer, now.x, now.y == 1)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _receive_magazine(rounds: int, reloading: bool) -> void:
+	_synced_ammo = rounds
+	_synced_reloading = reloading
 
 
 ## Between bursts the view drifts back toward where it was aimed, so tapping stays on

@@ -2,9 +2,9 @@ class_name PlayerBody
 extends RefCounted
 ## Helpers for the third-person body scene (player_body.tscn).
 
-## Shoulder shift for your own view, in the shoulders' space: right, down and a little
-## forward, so the rifle sits lower right and its sight no longer fills the screen.
-const FIRST_PERSON_OFFSET := Vector3(0.07, -0.12, -0.08)
+## Where your own rifle's sight sits at the hip, in the camera's space: lower right and
+## out in front, pointing where you look.
+const FIRST_PERSON_HIP := Vector3(0.09, -0.115, -0.3)
 
 
 ## First-person view of your own body: the torso, legs and head only cast a shadow (the
@@ -24,7 +24,7 @@ static func first_person(body: Node) -> void:
 		arms.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var aim := body.get_node_or_null("Skeleton/Aim")
 	if aim != null:
-		aim.set(&"view_offset", FIRST_PERSON_OFFSET)
+		aim.set(&"hip_sight", FIRST_PERSON_HIP)
 
 
 ## Where a held weapon mounts on the body.
