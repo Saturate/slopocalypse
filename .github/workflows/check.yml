@@ -44,5 +44,7 @@ jobs:
 
       - run: node tools/get-godot.ts
 
+      - run: node tools/get-addons.ts
+
       - name: Full gate
         run: node tools/check.ts --full
