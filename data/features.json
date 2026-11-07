@@ -6,6 +6,7 @@
     "car": true,
     "weapons": true,
     "training": true,
-    "drones": true
+    "drones": true,
+    "inventory": true
   }
 }

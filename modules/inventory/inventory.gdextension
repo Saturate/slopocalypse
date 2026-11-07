@@ -1,0 +1,16 @@
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.7
+reloadable = true
+
+[libraries]
+windows.debug.x86_64 = "res://modules/inventory/bin/windows/debug/inventory_gd.dll"
+windows.release.x86_64 = "res://modules/inventory/bin/windows/release/inventory_gd.dll"
+windows.debug.arm64 = "res://modules/inventory/bin/windows/debug/inventory_gd.dll"
+windows.release.arm64 = "res://modules/inventory/bin/windows/release/inventory_gd.dll"
+linux.debug.x86_64 = "res://modules/inventory/bin/linux/debug/libinventory_gd.so"
+linux.release.x86_64 = "res://modules/inventory/bin/linux/release/libinventory_gd.so"
+linux.debug.arm64 = "res://modules/inventory/bin/linux/debug/libinventory_gd.so"
+linux.release.arm64 = "res://modules/inventory/bin/linux/release/libinventory_gd.so"
+macos.debug = "res://modules/inventory/bin/macos/debug/libinventory_gd.dylib"
+macos.release = "res://modules/inventory/bin/macos/release/libinventory_gd.dylib"
