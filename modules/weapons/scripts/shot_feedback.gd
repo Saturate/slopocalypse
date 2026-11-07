@@ -31,9 +31,8 @@ func _exit_tree() -> void:
 
 func _process(delta: float) -> void:
 	_hit_timer = maxf(_hit_timer - delta, 0.0)
-	# A swapped build replaces the weapon; follow the one the player carries now.
-	if _weapon == null or not is_instance_valid(_weapon) or _weapon.is_queued_for_deletion():
-		_weapon = _carried()
+	# Follow the drawn gun: a swap replaces it, switching changes it.
+	_weapon = _carried()
 	if _weapon != null:
 		_ammo.text = "RELOADING" if _weapon.is_reloading() else "%d" % _weapon.ammo()
 	_hud.queue_redraw()
@@ -43,7 +42,7 @@ func _carried() -> HitscanWeapon:
 	if local_player == null:
 		return null
 	for child in local_player.get_node("Head/Camera").get_children():
-		if child is HitscanWeapon and not child.is_queued_for_deletion():
+		if child is HitscanWeapon and (child as HitscanWeapon).active and not child.is_queued_for_deletion():
 			return child
 	return null
 

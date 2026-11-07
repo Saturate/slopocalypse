@@ -23,6 +23,9 @@ var _air := 0.0
 var _slide := 0.0
 var _ads := 0.0
 var _camera: Node3D
+## The first-person hip point the body was set up with; zero in third person.
+var _default_hip := Vector3.ZERO
+var _hip_read := false
 
 
 ## How far into aiming down sights the body is, 0 to 1. The camera reads it for its zoom.
@@ -90,6 +93,15 @@ func _update_ads(delta: float) -> void:
 	if sight != null:
 		relief = float(sight.get_meta(&"eye_relief", relief))
 	_aim.set(&"eye_relief", relief)
+	if not _hip_read:
+		_hip_read = true
+		_default_hip = _aim.get(&"hip_sight")
+	# First person only: a gun can ask to be held elsewhere at the hip (a pistol, further out).
+	if _default_hip != Vector3.ZERO:
+		var hip := _default_hip
+		if sight != null and sight.has_meta(&"hip_sight"):
+			hip = sight.get_meta(&"hip_sight")
+		_aim.set(&"hip_sight", hip)
 	if sight != null:
 		# The sight in the space of the bone the weapon hangs from (the socket's parent is
 		# that bone's attachment). Both globals are from this frame, so the lag cancels out.

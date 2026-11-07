@@ -42,6 +42,8 @@
     "jump": ["Space"],
     "interact": ["E"],
     "reload": ["R"],
-    "charge": ["G"]
+    "charge": ["G"],
+    "weapon_1": ["1"],
+    "weapon_2": ["2"]
   }
 }

@@ -30,6 +30,10 @@ const REQUIRED := {
 var stats: Dictionary = {}
 ## The player carrying this weapon. Set by the weapons module when it equips.
 var holder: PlayerController
+## Only the drawn weapon fires; the other keeps its magazine and waits.
+var active := true
+## One shot per trigger pull (pistols) instead of firing while held.
+var semi_auto := false
 var rules := WeaponRules.new()
 
 var _recoil_rng := RandomNumberGenerator.new()
@@ -37,6 +41,8 @@ var _recoil_rng := RandomNumberGenerator.new()
 var _synced_ammo := -1
 var _synced_reloading := false
 var _sent := Vector2i(-1, -1)
+var _draw_left := 0.0
+var _trigger_was_down := false
 ## Recoil applied to the view that has not yet been pulled back.
 var _recoil_debt := Vector2.ZERO
 
@@ -70,17 +76,28 @@ func is_reloading() -> bool:
 	return rules.is_reloading()
 
 
+## Drawing takes a moment before the gun can fire.
+func start_draw() -> void:
+	_draw_left = float(stats.get("draw_seconds", 0.0))
+	_trigger_was_down = true
+
+
 func _physics_process(delta: float) -> void:
 	rules.tick(delta)
 	if holder == null:
 		return
 	_sync_magazine()
+	if not active:
+		return
+	_draw_left = maxf(_draw_left - delta, 0.0)
 	var intent := holder.intent()
 	if intent.consume_reload():
 		request_reload()
-	if intent.fire:
+	var pull := intent.fire and not (semi_auto and _trigger_was_down)
+	_trigger_was_down = intent.fire
+	if pull and _draw_left <= 0.0:
 		request_fire(global_transform.origin, -global_transform.basis.z)
-	else:
+	elif not intent.fire:
 		_recover_recoil(delta)
 
 

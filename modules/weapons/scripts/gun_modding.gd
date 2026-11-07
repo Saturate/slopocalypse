@@ -5,9 +5,7 @@ extends RefCounted
 ## (dropping parts that lose their mount), and comparing two builds' stats. Every part in
 ## the catalogue is offered until inventory decides what a player owns.
 
-## Slots in the order the screen lists them.
-const SLOTS: Array[String] = ["receiver", "barrel", "handguard", "stock", "grip", "magazine", "muzzle", "optic"]
-## Mirrors weapons_core::parts::REQUIRED_SLOTS; the screen offers "none" for the rest.
+## Mirrors weapons_core::parts::REQUIRED_SLOTS, for receivers that do not name their own.
 const REQUIRED: Array[String] = ["receiver", "barrel", "grip", "magazine"]
 
 ## Stats the screen compares: key, label, format, and whether more is better.
@@ -41,8 +39,32 @@ static func display_name(part_id: String) -> String:
 	return str((GunAssembly.catalogue().get(part_id, {}) as Dictionary).get("name", part_id))
 
 
-static func is_required(slot: String) -> bool:
-	return REQUIRED.has(slot)
+## Every slot a gun on this build's receiver can have, in the order parts provide them:
+## the receiver's own slots, then the slots their parts can add (a barrel's muzzle).
+static func slots_for(build: Dictionary) -> Array[String]:
+	var out: Array[String] = ["receiver"]
+	var i := 0
+	while i < out.size():
+		var slot := out[i]
+		var sources: Array[String] = []
+		if slot == "receiver":
+			sources.append(str(build.get("receiver", "")))
+		else:
+			sources = options(slot)
+		for id in sources:
+			for provided: Variant in (GunAssembly.catalogue().get(id, {}) as Dictionary).get("provides", []):
+				if not out.has(str(provided)):
+					out.append(str(provided))
+		i += 1
+	return out
+
+
+## Whether a gun on this build's receiver must have `slot` filled.
+static func is_required(slot: String, build: Dictionary = {}) -> bool:
+	var named: Array = GunAssembly.receiver_of(build).get("requires", [])
+	if named.is_empty():
+		return REQUIRED.has(slot)
+	return slot == "receiver" or named.has(slot)
 
 
 ## True when a part in `build` provides `slot` (the receiver always is).

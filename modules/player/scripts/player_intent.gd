@@ -31,8 +31,13 @@ var aim: bool = false
 var reload: bool = false
 ## One-shot: place a demolition charge where the player aims.
 var throw: bool = false
+## One-shots: draw the first or second weapon.
+var weapon_1: bool = false
+var weapon_2: bool = false
+## The drawn weapon, 0 or 1. Set by the server from the one-shots and synced to everyone.
+var weapon_slot: int = 0
 
-const ONE_SHOTS := [&"jump", &"interact", &"reload", &"throw"]
+const ONE_SHOTS := [&"jump", &"interact", &"reload", &"throw", &"weapon_1", &"weapon_2"]
 
 
 func consume_look() -> Vector2:
@@ -56,6 +61,18 @@ func consume_interact() -> bool:
 func consume_reload() -> bool:
 	var out := reload
 	reload = false
+	return out
+
+
+func consume_weapon_1() -> bool:
+	var out := weapon_1
+	weapon_1 = false
+	return out
+
+
+func consume_weapon_2() -> bool:
+	var out := weapon_2
+	weapon_2 = false
 	return out
 
 

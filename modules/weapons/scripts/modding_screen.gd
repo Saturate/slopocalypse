@@ -25,6 +25,7 @@ var _preview_pivot: Node3D
 var _preview_gun: Node3D
 var _pickers: Dictionary[String, OptionButton] = {}
 var _stats_grid: GridContainer
+var _parts_grid: GridContainer
 var _title: Label
 var _slot_labels: Dictionary[String, Label] = {}
 var _errors: Label
@@ -65,8 +66,10 @@ func toggle() -> void:
 
 
 func open() -> void:
-	_current = weapons.call(&"build_of", int(player.get_meta(&"peer_id", 1)))
+	var slot: String = weapons.call(&"drawn_slot", player)
+	_current = weapons.call(&"build_of", int(player.get_meta(&"peer_id", 1)), slot)
 	_draft = _current.duplicate()
+	_fill_pickers()
 	_root.visible = true
 	_preview_port.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -86,7 +89,11 @@ func select(slot: String, part_id: String) -> void:
 
 
 func load_preset(build_name: String) -> void:
-	_draft = GunAssembly.build(build_name).duplicate()
+	var preset := GunAssembly.build(build_name)
+	# A preset for the other weapon (a pistol while the rifle is out) does not apply here.
+	if str(preset.get("receiver", "")) != str(_current.get("receiver", "")):
+		return
+	_draft = preset.duplicate()
 	_refresh()
 
 
@@ -112,10 +119,10 @@ func shown_stats() -> Array[Dictionary]:
 
 
 func _refresh() -> void:
-	for slot in GunModding.SLOTS:
+	for slot: String in _pickers:
 		var picker := _pickers[slot]
 		var available := GunModding.is_available(slot, _draft)
-		picker.disabled = not available or GunModding.options(slot).size() <= 1 and GunModding.is_required(slot)
+		picker.disabled = not available or GunModding.options(slot).size() <= 1 and GunModding.is_required(slot, _draft) or slot == "receiver"
 		var fitted := str(_draft.get(slot, ""))
 		for i in picker.item_count:
 			if str(picker.get_item_metadata(i)) == fitted:
@@ -138,7 +145,7 @@ func _refresh() -> void:
 		_stats_grid.add_child(_label(row["after"], 14, colour))
 		_stats_grid.add_child(_label(row["delta"], 14, colour))
 	_title.text = _build_title()
-	for slot in GunModding.SLOTS:
+	for slot: String in _pickers:
 		var changed := str(_draft.get(slot, "")) != str(_current.get(slot, ""))
 		_slot_labels[slot].text = ("> " if changed else "") + slot.capitalize()
 		_slot_labels[slot].add_theme_color_override("font_color", ACCENT if changed else TEXT)
@@ -149,6 +156,36 @@ func _refresh() -> void:
 	# Centred on its middle so it turns in place.
 	_preview_gun.position = Vector3(0, -0.02, 0.14)
 	_preview_pivot.add_child(_preview_gun)
+
+
+## One row per slot this gun can have (a rifle and a pistol have different ones), built
+## when the screen opens on the drawn gun.
+func _fill_pickers() -> void:
+	for child in _parts_grid.get_children():
+		_parts_grid.remove_child(child)
+		child.queue_free()
+	_pickers.clear()
+	_slot_labels.clear()
+	for slot in GunModding.slots_for(_current):
+		var slot_label := _label(slot.capitalize(), 15, TEXT)
+		slot_label.custom_minimum_size.x = 130
+		_slot_labels[slot] = slot_label
+		_parts_grid.add_child(slot_label)
+		var picker := OptionButton.new()
+		picker.name = "Pick_" + slot
+		picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if not GunModding.is_required(slot, _current):
+			picker.add_item(NONE)
+			picker.set_item_metadata(0, "")
+		var choices: Array[String] = GunModding.options(slot)
+		if slot == "receiver":
+			choices = [str(_current["receiver"])]
+		for id in choices:
+			picker.add_item(GunModding.display_name(id))
+			picker.set_item_metadata(picker.item_count - 1, id)
+		picker.item_selected.connect(func(i: int) -> void: select(slot, str(picker.get_item_metadata(i))))
+		_parts_grid.add_child(picker)
+		_pickers[slot] = picker
 
 
 ## The preset's name when the draft is one, otherwise a custom build.
@@ -211,28 +248,11 @@ func _build_ui() -> void:
 		presets.select(0))
 	right.add_child(presets)
 	right.add_child(_label("PARTS", 13, DIM))
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 12)
-	grid.add_theme_constant_override("v_separation", 3)
-	right.add_child(grid)
-	for slot in GunModding.SLOTS:
-		var slot_label := _label(slot.capitalize(), 15, TEXT)
-		slot_label.custom_minimum_size.x = 100
-		_slot_labels[slot] = slot_label
-		grid.add_child(slot_label)
-		var picker := OptionButton.new()
-		picker.name = "Pick_" + slot
-		picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		if not GunModding.is_required(slot):
-			picker.add_item(NONE)
-			picker.set_item_metadata(0, "")
-		for id in GunModding.options(slot):
-			picker.add_item(GunModding.display_name(id))
-			picker.set_item_metadata(picker.item_count - 1, id)
-		picker.item_selected.connect(func(i: int) -> void: select(slot, str(picker.get_item_metadata(i))))
-		grid.add_child(picker)
-		_pickers[slot] = picker
+	_parts_grid = GridContainer.new()
+	_parts_grid.columns = 2
+	_parts_grid.add_theme_constant_override("h_separation", 12)
+	_parts_grid.add_theme_constant_override("v_separation", 3)
+	right.add_child(_parts_grid)
 	_errors = _label("", 14, WORSE)
 	_errors.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	right.add_child(_errors)

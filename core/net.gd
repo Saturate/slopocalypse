@@ -308,7 +308,7 @@ func report() -> String:
 	var ammo := -1
 	for w: Node in get_tree().get_nodes_in_group(&"held_weapons"):
 		var holder: Variant = w.get(&"holder")
-		if mode != Mode.SERVER and holder is Node and int((holder as Node).get_meta(&"peer_id", 0)) == me and w.has_method(&"ammo"):
+		if mode != Mode.SERVER and holder is Node and int((holder as Node).get_meta(&"peer_id", 0)) == me and w.has_method(&"ammo") and w.get(&"active") != false:
 			ammo = int(w.call(&"ammo"))
 	return "NET-REPORT mode=%s peer=%d peers=%d players=%d local_players=%d moved=%.1f shots=%d driven=%.1f ammo=%d" % [Mode.keys()[mode], me, multiplayer.get_peers().size(), players.size(), local.size(), moved, _shots, driven, ammo]
 

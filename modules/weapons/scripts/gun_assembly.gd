@@ -45,6 +45,27 @@ static func chosen_build() -> String:
 	return default_build()
 
 
+static func default_secondary() -> String:
+	return str(_load().get("default_secondary", ""))
+
+
+## The receiver's data for a build, or empty.
+static func receiver_of(slots: Dictionary) -> Dictionary:
+	return catalogue().get(str(slots.get("receiver", "")), {})
+
+
+## Which weapon slot a build goes in, from its receiver ("primary" unless it says).
+static func weapon_slot_of(slots: Dictionary) -> String:
+	return str(receiver_of(slots).get("weapon_slot", "primary"))
+
+
+## Where the model sits relative to the hands' socket: a pistol is held further out and
+## higher than a rifle's receiver.
+static func hold_offset(slots: Dictionary) -> Vector3:
+	var receiver := receiver_of(slots)
+	return _vec(receiver["hold"]) if receiver.has("hold") else Vector3.ZERO
+
+
 ## Slot -> part id for a named build, or empty.
 static func build(build_name: String) -> Dictionary:
 	return (_load().get("builds", {}) as Dictionary).get(build_name, {})

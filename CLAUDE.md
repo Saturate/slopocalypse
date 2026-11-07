@@ -27,12 +27,12 @@ Agent tooling note: in this environment, backslashes inside Bash heredocs (inclu
 | Capture for review | `node tools/capture.ts --setup res://modules/<id>/capture/<name>.gd --out screenshots/<name>.png --frames 120 --sheet 6` (opens a window; then use the `visual-review` skill) |
 | Portable game zip | `node tools/export.ts [--connect HOST[:PORT],...]` (ships the addresses in the menu's server list; fetches export templates once, builds release, smoke-tests the exported game; output in `build/`) |
 | Dedicated server | `node tools/server.ts [--port 7777]` (headless; clients join with `-- --connect=HOST:7777`) |
-| Deploy server to your Linux box | `node tools/deploy.ts --host user@server [--port 7777] [--open-firewall]` (builds Linux on the manual `server-build` workflow, installs a systemd service over ssh; `--dry-run` prints the remote script) |
+| Deploy server to your Linux box | `node tools/deploy.ts --host user@server --zip <linux build> [--port 7777] [--open-firewall]` (installs a systemd service over ssh; `--ci` builds Linux on the `server-build` workflow instead, which spends Actions minutes; `--dry-run` prints the remote script) |
 | Server + two clients locally | `node tools/run-local.ts` |
 | Build Rust extensions | `node tools/build-rust.ts` (`--release` for exports); the gate does this before Godot imports |
 | Open editor | `tools/godot/Godot_v4.7.2-stable_win64.exe -e --path .` (Windows; other OSes use their binary in `tools/godot/`) |
 
-CI (`.github/workflows/check.yml`) is manual-only for now to save Actions minutes: `gh workflow run check`. `server-build.yml` is also manual; `tools/deploy.ts` runs it.
+CI (`.github/workflows/check.yml`) is manual-only for now to save Actions minutes: `gh workflow run check`. `server-build.yml` is also manual and only runs with `deploy.ts --ci`. Do not start workflows without the user asking: Actions minutes are limited.
 
 Planned, added by their issues: `tools/journal` (#11), `tools/soak` (#15).
 

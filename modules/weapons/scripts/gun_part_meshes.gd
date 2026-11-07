@@ -48,6 +48,14 @@ static func mesh(id: String) -> ArrayMesh:
 		"optic_reddot": built = _optic_reddot()
 		"optic_holo": built = _optic_holo()
 		"optic_scope": built = _optic_scope()
+		"pistol_frame": built = _pistol_frame()
+		"slide_std": built = _slide(0.0, false)
+		"slide_long": built = _slide(0.025, true)
+		"pistol_mag_15": built = _pistol_mag(false)
+		"pistol_mag_21": built = _pistol_mag(true)
+		"pistol_comp": built = _pistol_comp()
+		"pistol_supp": built = _pistol_supp()
+		"optic_pistol_dot": built = _optic_pistol_dot()
 	if built != null:
 		_cache[id] = built
 	return built
@@ -94,7 +102,6 @@ static func _finish(metal: SurfaceTool, poly: SurfaceTool = null, glow: SurfaceT
 		g.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		g.vertex_color_use_as_albedo = false
 		g.albedo_color = GLASS
-		g.shadow_enabled = false
 		LowPoly.finish(glass, g, out)
 	return out
 
@@ -400,3 +407,99 @@ static func _optic_scope() -> ArrayMesh:
 	var glass := LowPoly.begin()
 	LowPoly.cylinder(glass, 0.0196, 0.001, 20, _along_z(Vector3(0, axis, -0.16)), GLASS)
 	return _finish(metal, null, null, glass)
+
+
+## Polymer pistol frame: dust cover, raked grip with a beavertail, trigger guard, a short
+## accessory rail underneath. The slide sits on top (y 0 up); the grip runs down and back.
+static func _pistol_frame() -> ArrayMesh:
+	var poly := LowPoly.begin()
+	LowPoly.extrude(poly, PackedVector2Array([
+		Vector2(-0.095, 0.0), Vector2(0.062, 0.0), Vector2(0.066, -0.014), Vector2(0.074, -0.026),
+		Vector2(0.062, -0.03), Vector2(0.082, -0.112), Vector2(0.076, -0.121), Vector2(0.03, -0.121),
+		Vector2(0.026, -0.11), Vector2(0.012, -0.046), Vector2(0.006, -0.036), Vector2(-0.002, -0.017),
+		Vector2(-0.095, -0.017),
+	]), 0.028, Transform3D.IDENTITY, POLYMER)
+	# Trigger guard and trigger.
+	LowPoly.chamfer_box(poly, Vector3(0.012, 0.005, 0.05), 0.0015, _at(Vector3(0, -0.043, -0.02)), POLYMER)
+	LowPoly.chamfer_box(poly, Vector3(0.012, 0.03, 0.006), 0.0015, _at(Vector3(0, -0.03, -0.044), Vector3(0.2, 0, 0)), POLYMER)
+	LowPoly.chamfer_box(poly, Vector3(0.005, 0.02, 0.005), 0.001, _at(Vector3(0, -0.027, -0.006), Vector3(-0.3, 0, 0)), DARK)
+	# Grip texture strips following the rake, a slide stop and the magazine release.
+	for side in [-1.0, 1.0]:
+		for k in 4:
+			var y := -0.05 - k * 0.017
+			LowPoly.box(poly, Vector3(0.002, 0.007, 0.03), _at(Vector3(side * 0.0145, y, 0.045 - (y + 0.05) * 0.3), Vector3(-0.3, 0, 0)), POLYMER.darkened(0.3))
+	LowPoly.box(poly, Vector3(0.003, 0.004, 0.02), _at(Vector3(-0.0152, -0.006, -0.015)), DARK)
+	LowPoly.cylinder(poly, 0.004, 0.03, 8, _along_x(Vector3(0, -0.026, 0.012)), DARK)
+	# Accessory rail under the dust cover, teeth facing down.
+	for i in 4:
+		LowPoly.box(poly, Vector3(0.022, 0.004, 0.006), _at(Vector3(0, -0.019, -0.088 + i * 0.012)), POLYMER.darkened(0.2))
+	return _finish(null, poly)
+
+
+## Pistol slide: serrations at the back, ejection port, iron sights, the barrel's crown at
+## the front. `extra` makes it longer; `threaded` adds a barrel sticking out for a muzzle
+## device.
+static func _slide(extra: float, threaded: bool) -> ArrayMesh:
+	var metal := LowPoly.begin()
+	var front := -0.1 - extra
+	LowPoly.extrude(metal, PackedVector2Array([
+		Vector2(front, 0.0), Vector2(0.065, 0.0), Vector2(0.065, 0.026), Vector2(0.058, 0.032),
+		Vector2(front + 0.006, 0.032), Vector2(front, 0.026),
+	]), 0.026, Transform3D.IDENTITY, GUNMETAL)
+	for side in [-1.0, 1.0]:
+		for k in 5:
+			LowPoly.box(metal, Vector3(0.002, 0.02, 0.003), _at(Vector3(side * 0.0131, 0.016, 0.034 + k * 0.006)), DARK)
+	LowPoly.box(metal, Vector3(0.002, 0.01, 0.032), _at(Vector3(0.0131, 0.024, -0.012)), DARK)
+	LowPoly.chamfer_box(metal, Vector3(0.014, 0.004, 0.03), 0.001, _at(Vector3(0.0, 0.033, -0.012)), DARK)
+	# Rear sight: two posts with a notch between; front post.
+	for x in [-0.006, 0.006]:
+		LowPoly.box(metal, Vector3(0.006, 0.007, 0.008), _at(Vector3(x, 0.0355, 0.058)), DARK)
+	LowPoly.box(metal, Vector3(0.004, 0.007, 0.006), _at(Vector3(0, 0.0355, front + 0.012)), DARK)
+	if threaded:
+		LowPoly.cylinder(metal, 0.0068, 0.04, 10, _along_z(Vector3(0, 0.016, front - 0.004)), DARK)
+		for i in 3:
+			LowPoly.cylinder(metal, 0.0072, 0.002, 10, _along_z(Vector3(0, 0.016, front - 0.012 - i * 0.005)), GUNMETAL)
+	else:
+		LowPoly.cylinder(metal, 0.0068, 0.004, 10, _along_z(Vector3(0, 0.016, front - 0.001)), DARK)
+	return _finish(metal)
+
+
+## Only the baseplate shows below the grip; the extended one adds a sleeve.
+static func _pistol_mag(extended: bool) -> ArrayMesh:
+	var poly := LowPoly.begin()
+	var drop := 0.03 if extended else 0.0
+	if extended:
+		LowPoly.chamfer_box(poly, Vector3(0.026, drop + 0.004, 0.034), 0.002, _at(Vector3(0, -drop / 2.0, 0.003), Vector3(-0.3, 0, 0)), POLYMER)
+	LowPoly.chamfer_box(poly, Vector3(0.03, 0.008, 0.038), 0.002, _at(Vector3(0, -drop - 0.003, 0.004 + drop * 0.3), Vector3(-0.3, 0, 0)), DARK)
+	return _finish(null, poly)
+
+
+static func _pistol_comp() -> ArrayMesh:
+	var metal := LowPoly.begin()
+	LowPoly.chamfer_box(metal, Vector3(0.026, 0.026, 0.034), 0.004, _at(Vector3(0, 0, -0.017)), GUNMETAL)
+	for i in 2:
+		LowPoly.box(metal, Vector3(0.014, 0.002, 0.006), _at(Vector3(0, 0.0131, -0.01 - i * 0.012)), DARK)
+	LowPoly.cylinder(metal, 0.005, 0.002, 10, _along_z(Vector3(0, 0, -0.0345)), DARK)
+	return _finish(metal)
+
+
+static func _pistol_supp() -> ArrayMesh:
+	var metal := LowPoly.begin()
+	LowPoly.cylinder(metal, 0.016, 0.13, 14, _along_z(Vector3(0, 0, -0.07)), DARK)
+	LowPoly.cylinder(metal, 0.0165, 0.01, 14, _along_z(Vector3(0, 0, -0.008)), GUNMETAL)
+	LowPoly.cylinder(metal, 0.005, 0.002, 10, _along_z(Vector3(0, 0, -0.1355)), RUBBER)
+	return _finish(metal)
+
+
+## Mini red dot for a slide: a low base, an open window frame with glass, the dot.
+static func _optic_pistol_dot() -> ArrayMesh:
+	var metal := LowPoly.begin()
+	LowPoly.chamfer_box(metal, Vector3(0.024, 0.008, 0.032), 0.002, _at(Vector3(0, 0.004, 0.0)), DARK)
+	for x in [-0.0105, 0.0105]:
+		LowPoly.chamfer_box(metal, Vector3(0.003, 0.02, 0.006), 0.001, _at(Vector3(x, 0.017, -0.012)), DARK)
+	LowPoly.chamfer_box(metal, Vector3(0.024, 0.003, 0.006), 0.001, _at(Vector3(0, 0.0265, -0.012)), DARK)
+	var glow := LowPoly.begin()
+	LowPoly.chamfer_box(glow, Vector3(0.0035, 0.0035, 0.0015), 0.0006, _at(Vector3(0, 0.018, -0.006)), RETICLE)
+	var glass := LowPoly.begin()
+	LowPoly.box(glass, Vector3(0.018, 0.017, 0.001), _at(Vector3(0, 0.0175, -0.012)), GLASS)
+	return _finish(metal, null, glow, glass)
