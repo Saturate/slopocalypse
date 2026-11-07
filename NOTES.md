@@ -30,6 +30,7 @@ Running notes: playtest feedback, findings, known issues and ideas for later. De
 - Contact sheets shrink frames to 640x360, so thin HUD lines and short tracers can vanish; check HUD with a single full-size frame (`--sheet 1`).
 - The player capsule has no walk bob or sway, so movement is hard to read in captures. Arrives with weapon motion in Phase 1.
 - Solo runs through its own server process (#12), so anything not networked is missing in solo too. Remote state has no smoothing yet, so other players and the car (even your own, while driving) may look steppy, and the car responds a round trip late; driver-side car physics is the follow-up to #14.
+- Body animation (#48 rig): the walk cycle's front leg reaches forward only a little, so a single frame can look like a heel lift; crouch lean reads mild on the deep torso block; the rifle stock sits just ahead of the shoulder in run and aim down; the right hand is hidden behind the receiver from the side. Clips are generated in `05_player_body.gd`, so tune the pose functions there. No reload or throw animation yet: reload isn't replicated to other clients.
 - The solo server writes its log to `user://logs/solo-server.log` (the path is printed at startup). Look there when something works with a dedicated server but not in solo.
 
 ## Later
