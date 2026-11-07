@@ -2,6 +2,8 @@
 //! Pure Rust so the server and every client compute identical results, and so the rules are
 //! covered by fast `cargo test` without the engine.
 
+pub mod parts;
+
 /// Static stats for one weapon, loaded from data by the caller.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WeaponStats {

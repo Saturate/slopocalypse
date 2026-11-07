@@ -4,7 +4,6 @@ extends Node3D
 ## so a reviewer judges the rig and its clips, not gameplay movement.
 
 const BODY := "res://modules/player/scenes/player_body.tscn"
-const RIFLE_MESH := "res://modules/weapons/scripts/rifle_mesh.gd"
 ## Frames each state is held, at the capture's fixed 30 fps.
 const HOLD := 30
 ## [label, loco speed, crouch, air, slide, aim pitch in degrees]
@@ -48,9 +47,8 @@ func _ready() -> void:
 	add_child(body)
 	_tree = body.get_node("AnimationTree")
 	_aim = body.get_node("Skeleton/Aim")
-	var held := MeshInstance3D.new()
-	held.mesh = (load(RIFLE_MESH) as GDScript).call(&"rifle")
-	body.get_node("Skeleton/WeaponAttachment/WeaponSocket").add_child(held)
+	var gun := GunAssembly.build_model(GunAssembly.build(GunAssembly.default_build()))
+	body.get_node("Skeleton/WeaponAttachment/WeaponSocket").add_child(gun)
 
 	_label.position = Vector3(0, 2.2, 0)
 	_label.font_size = 64

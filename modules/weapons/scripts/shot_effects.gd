@@ -42,7 +42,9 @@ func _on_fired(p: Dictionary) -> void:
 	var to: Vector3 = p["to"]
 	var from: Vector3 = p["from"]
 	if held != null:
-		from = (held.get_node("Muzzle") as Node3D).global_position
+		var muzzle := held.find_child("Muzzle", true, false) as Node3D
+		if muzzle != null:
+			from = muzzle.global_position
 		if not _rest.has(held):
 			_rest[held] = held.position
 		# The rifle's nose points along -Z, so the kick pushes it back toward the shoulder.

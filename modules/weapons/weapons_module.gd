@@ -4,10 +4,6 @@ extends Node
 ## everyone else in third. Adds shot effects for all shots and the HUD for the local player.
 
 const RIFLE := "res://modules/weapons/scenes/rifle.tscn"
-## Muzzle of RifleMesh.rifle(), in the held rifle's space.
-const MUZZLE := Vector3(0.0, 0.04, -0.64)
-
-static var _held_mesh: ArrayMesh
 
 var _charge_spawner := MultiplayerSpawner.new()
 var _charges_placed := 0
@@ -35,8 +31,16 @@ func _exit_tree() -> void:
 
 func _on_player_spawned(p: Dictionary) -> void:
 	var player: PlayerController = p["player"]
+	# Every instance assembles the same default build for now; per-player loadouts come
+	# with the modding screen (#66), when the server will send each player's build.
+	var build_name := GunAssembly.default_build()
+	var assembled := GunAssembly.assemble_named(build_name)
+	if not assembled["ok"]:
+		Log.error(&"weapons", "build %s does not work: %s" % [build_name, assembled["errors"]])
+		return
 	var rifle: HitscanWeapon = (load(RIFLE) as PackedScene).instantiate()
 	rifle.holder = player
+	rifle.stats = assembled["stats"]
 	# At the camera, so shots start at the eye and follow the view.
 	player.get_node("Head/Camera").add_child(rifle)
 	var thrower := ChargeThrower.new()
@@ -46,19 +50,13 @@ func _on_player_spawned(p: Dictionary) -> void:
 	player.add_child(thrower)
 	var socket := PlayerBody.weapon_socket(player)
 	if socket != null:
-		var held := MeshInstance3D.new()
+		var held := GunAssembly.build_model(GunAssembly.build(build_name))
 		held.name = "HeldRifle"
-		held.mesh = _held_mesh_shared()
-		var muzzle := Marker3D.new()
-		muzzle.name = "Muzzle"
-		muzzle.position = MUZZLE
-		held.add_child(muzzle)
-		# Where the eye looks through the optic when aiming down sights, and how much it zooms.
-		var sight := Marker3D.new()
-		sight.name = "Sight"
-		sight.position = RifleMesh.SIGHT_EYE
-		sight.set_meta(&"zoom", float(rifle.stats.get("ads_zoom", 1.0)))
-		held.add_child(sight)
+		# The optic's eye point carries how much it zooms and how fast this gun aims.
+		var sight := held.get_node_or_null("Sight")
+		if sight != null:
+			sight.set_meta(&"zoom", float(rifle.stats.get("ads_zoom", 1.0)))
+			sight.set_meta(&"ads_seconds", float(rifle.stats.get("ads_seconds", 0.2)))
 		socket.add_child(held)
 	if DisplayServer.get_name() == "headless":
 		return
@@ -83,10 +81,3 @@ func _make_charge(data: Variant) -> Node:
 	charge.stats = info["stats"]
 	charge.position = info["position"]
 	return charge
-
-
-## Built once and shared by every player's held rifle.
-static func _held_mesh_shared() -> ArrayMesh:
-	if _held_mesh == null:
-		_held_mesh = RifleMesh.rifle()
-	return _held_mesh

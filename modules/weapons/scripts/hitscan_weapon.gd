@@ -25,6 +25,8 @@ const REQUIRED := {
 
 @export var weapon_id: String = "rifle"
 
+## Set before adding to the tree to override `weapons.json` with a gun's assembled stats
+## (fire rate, damage, magazine, recoil ...); the feel values still come from the file.
 var stats: Dictionary = {}
 ## The player carrying this weapon. Set by the weapons module when it equips.
 var holder: PlayerController
@@ -41,7 +43,7 @@ func _ready() -> void:
 		Log.error(&"weapons", "%s: no weapon '%s'" % [CONFIG, weapon_id])
 		set_physics_process(false)
 		return
-	stats = data[weapon_id]
+	stats = (data[weapon_id] as Dictionary).merged(stats, true)
 	if not Data.require(CONFIG, stats, REQUIRED):
 		set_physics_process(false)
 		return

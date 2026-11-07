@@ -23,9 +23,7 @@ func _ready() -> void:
 	var animator := PlayerBodyAnimator.new()
 	animator.player = _player
 	_player.add_child(animator)
-	var held := MeshInstance3D.new()
-	held.mesh = RifleMesh.rifle()
-	PlayerBody.weapon_socket(_player).add_child(held)
+	PlayerBody.weapon_socket(_player).add_child(GunAssembly.build_model(GunAssembly.build(GunAssembly.default_build())))
 	add_child(_camera)
 	_camera.current = true
 	_camera.fov = 50.0

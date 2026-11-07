@@ -67,7 +67,9 @@ func _process(delta: float) -> void:
 func _update_ads(delta: float) -> void:
 	var sight := _sight_marker()
 	var aiming := player.intent().aim and sight != null and not player.is_sliding()
-	var step := delta / maxf(float(player.config["ads_seconds"]), 0.01)
+	# The gun's own ADS time (from its parts' ergonomics) when it has one.
+	var seconds := float(sight.get_meta(&"ads_seconds", player.config["ads_seconds"])) if sight != null else float(player.config["ads_seconds"])
+	var step := delta / maxf(seconds, 0.01)
 	_ads = move_toward(_ads, 1.0 if aiming else 0.0, step)
 	# Smoothstep, so the sight eases onto the eye instead of arriving at full speed.
 	var eased := _ads * _ads * (3.0 - 2.0 * _ads)
