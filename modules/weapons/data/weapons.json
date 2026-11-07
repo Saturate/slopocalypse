@@ -1,4 +1,7 @@
 {
+  "bindings": {
+    "modding": ["B"]
+  },
   "rifle": {
     "damage": 25.0,
     "rounds_per_minute": 600.0,
