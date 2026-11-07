@@ -29,4 +29,4 @@ func _physics_process(_delta: float) -> void:
 	if multiplayer.is_server():
 		player.rotation.y = _yaw
 	else:
-		intent.submit.rpc_id(1, intent.move, _yaw, 0.0, false, false, intent.fire)
+		intent.submit.rpc_id(1, intent.move, _yaw, 0.0, false, false, intent.fire, false)

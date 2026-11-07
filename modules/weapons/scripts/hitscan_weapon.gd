@@ -19,6 +19,8 @@ const REQUIRED := {
 	"kick_return": TYPE_FLOAT,
 	"recoil_recovery": TYPE_FLOAT,
 	"recoil_recovery_share": TYPE_FLOAT,
+	"ads_spread_multiplier": TYPE_FLOAT,
+	"ads_zoom": TYPE_FLOAT,
 }
 
 @export var weapon_id: String = "rifle"
@@ -91,6 +93,8 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 	if not rules.try_fire():
 		return
 	var spread := rules.last_spread()
+	if holder != null and holder.intent().aim:
+		spread *= float(stats["ads_spread_multiplier"])
 	var basis := Basis.looking_at(direction)
 	var dir := (basis * Vector3(tan(spread.x), tan(spread.y), -1.0)).normalized()
 	var to := origin + dir * float(stats["range"])

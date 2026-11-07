@@ -46,9 +46,13 @@ func _on_fired(p: Dictionary) -> void:
 
 func _draw_hud() -> void:
 	var c := _hud.size / 2.0
+	# Looking through the sight, the sight is the crosshair.
+	var aiming := local_player != null and local_player.intent().aim
+	if aiming and _hit_timer <= 0.0:
+		return
 	var white := Color(1, 1, 1, 0.95)
 	var shadow := Color(0, 0, 0, 0.6)
-	for d: Vector2 in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
+	for d: Vector2 in ([] if aiming else [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]):
 		# Dark underlay keeps the crosshair readable against bright sky.
 		_hud.draw_line(c + d * 4.0, c + d * 12.0, shadow, 4.0)
 		_hud.draw_line(c + d * 4.0, c + d * 12.0, white, 2.0)

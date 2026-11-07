@@ -25,6 +25,8 @@ var jump: bool = false
 var interact: bool = false
 ## Held while the trigger is down; whatever weapon the player carries reads it.
 var fire: bool = false
+## Held while aiming down sights: slower movement, no sprint, tighter spread.
+var aim: bool = false
 ## One-shot: reload the carried weapon.
 var reload: bool = false
 ## One-shot: place a demolition charge where the player aims.
@@ -65,7 +67,7 @@ func consume_throw() -> bool:
 
 ## Client -> server, every tick.
 @rpc("any_peer", "call_remote", "unreliable_ordered")
-func submit(new_move: Vector2, yaw: float, pitch: float, new_sprint: bool, new_crouch: bool, new_fire: bool) -> void:
+func submit(new_move: Vector2, yaw: float, pitch: float, new_sprint: bool, new_crouch: bool, new_fire: bool, new_aim: bool) -> void:
 	if not _from_owner():
 		return
 	move = new_move.limit_length(1.0)
@@ -75,6 +77,7 @@ func submit(new_move: Vector2, yaw: float, pitch: float, new_sprint: bool, new_c
 	sprint = new_sprint
 	crouch = new_crouch
 	fire = new_fire
+	aim = new_aim
 
 
 ## Client -> server, once per press.

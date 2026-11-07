@@ -53,6 +53,12 @@ func _on_player_spawned(p: Dictionary) -> void:
 		muzzle.name = "Muzzle"
 		muzzle.position = MUZZLE
 		held.add_child(muzzle)
+		# Where the eye looks through the optic when aiming down sights, and how much it zooms.
+		var sight := Marker3D.new()
+		sight.name = "Sight"
+		sight.position = RifleMesh.SIGHT_EYE
+		sight.set_meta(&"zoom", float(rifle.stats.get("ads_zoom", 1.0)))
+		held.add_child(sight)
 		socket.add_child(held)
 	if DisplayServer.get_name() == "headless":
 		return

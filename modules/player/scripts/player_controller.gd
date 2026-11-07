@@ -11,6 +11,9 @@ const REQUIRED := {
 	"crouch_speed": TYPE_FLOAT,
 	"acceleration": TYPE_FLOAT,
 	"sprint_acceleration": TYPE_FLOAT,
+	"ads_speed_multiplier": TYPE_FLOAT,
+	"ads_seconds": TYPE_FLOAT,
+	"ads_eye_relief": TYPE_FLOAT,
 	"air_control": TYPE_FLOAT,
 	"jump_velocity": TYPE_FLOAT,
 	"fall_gravity_multiplier": TYPE_FLOAT,
@@ -128,8 +131,8 @@ func _physics_process(delta: float) -> void:
 
 
 func _wants_sprint() -> bool:
-	# Firing interrupts sprinting, as does moving anywhere but forward.
-	return _intent.sprint and _intent.move.y > 0.0 and not _intent.fire
+	# Firing or aiming interrupts sprinting, as does moving anywhere but forward.
+	return _intent.sprint and _intent.move.y > 0.0 and not _intent.fire and not _intent.aim
 
 
 func _step_normal(delta: float) -> void:
@@ -156,6 +159,8 @@ func _step_normal(delta: float) -> void:
 		# Building up to a sprint takes a moment; slowing down stays snappy.
 		if horizontal_speed() >= float(config["walk_speed"]) - 0.1:
 			accel = config["sprint_acceleration"]
+	if _intent.aim:
+		speed *= float(config["ads_speed_multiplier"])
 	if not is_on_floor():
 		accel *= float(config["air_control"])
 	var wish := transform.basis * Vector3(_intent.move.x, 0.0, -_intent.move.y)

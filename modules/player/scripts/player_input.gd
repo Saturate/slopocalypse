@@ -26,7 +26,10 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var motion: InputEventMouseMotion = event
-		intent.look_delta += motion.relative * sensitivity
+		# Zoomed in, the same mouse motion turns less, so aim speed feels the same on screen.
+		var camera := player.get_node("Head/Camera") as Camera3D
+		var zoom := camera.fov / float(player.config["fov"])
+		intent.look_delta += motion.relative * sensitivity * zoom
 	elif event is InputEventKey and event.is_pressed() and (event as InputEventKey).keycode == KEY_ESCAPE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	elif event is InputEventMouseButton and event.is_pressed():
@@ -50,6 +53,7 @@ func _physics_process(_delta: float) -> void:
 	intent.crouch = Input.is_action_pressed(&"crouch")
 	# The click that captures the mouse should not also fire.
 	intent.fire = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	intent.aim = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
 	for action: StringName in PlayerIntent.ONE_SHOTS:
 		var input_action := &"charge" if action == &"throw" else action
 		if Input.is_action_just_pressed(input_action):
@@ -58,4 +62,4 @@ func _physics_process(_delta: float) -> void:
 			else:
 				intent.set(action, true)
 	if _remote:
-		intent.submit.rpc_id(1, intent.move, _yaw, _pitch, intent.sprint, intent.crouch, intent.fire)
+		intent.submit.rpc_id(1, intent.move, _yaw, _pitch, intent.sprint, intent.crouch, intent.fire, intent.aim)

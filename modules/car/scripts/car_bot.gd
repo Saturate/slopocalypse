@@ -83,7 +83,7 @@ func _send_move(move: Vector2, yaw: float) -> void:
 		intent.move = move
 		player.rotation.y = yaw
 	else:
-		intent.submit.rpc_id(1, move, yaw, 0.0, false, false, false)
+		intent.submit.rpc_id(1, move, yaw, 0.0, false, false, false, false)
 
 
 func _send_interact() -> void:

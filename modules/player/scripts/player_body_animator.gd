@@ -1,8 +1,9 @@
 class_name PlayerBodyAnimator
 extends Node
 ## Client-side: feeds the third-person body's AnimationTree from the player's state (speed,
-## crouch, slide, airborne) and its aim modifier from the look pitch. The clips and the
-## blend tree come from the body builder. Cosmetic only; the server never runs it.
+## crouch, slide, airborne) and its aim modifier from the look pitch and aiming down
+## sights. The clips and the blend tree come from the body builder. Cosmetic only; the
+## server never runs it.
 
 ## How quickly blends follow the state, per second; high enough to feel immediate, low
 ## enough that a one-frame flicker (a bump while walking) does not pop the pose.
@@ -19,6 +20,19 @@ var _head: Node3D
 var _crouch := 0.0
 var _air := 0.0
 var _slide := 0.0
+var _ads := 0.0
+var _camera: Node3D
+
+
+## How far into aiming down sights the body is, 0 to 1. The camera reads it for its zoom.
+func ads_amount() -> float:
+	return _ads
+
+
+## The held weapon's sight zoom (1 = none), from the `Sight` marker's `zoom` meta.
+func sight_zoom() -> float:
+	var sight := _sight_marker()
+	return float(sight.get_meta(&"zoom", 1.0)) if sight != null else 1.0
 
 
 func _ready() -> void:
@@ -26,6 +40,7 @@ func _ready() -> void:
 	_tree = body.get_node("AnimationTree")
 	_aim = body.get_node("Skeleton/Aim")
 	_head = player.get_node("Head")
+	_camera = player.get_node("Head/Camera")
 	_tree.active = true
 
 
@@ -44,6 +59,31 @@ func _process(delta: float) -> void:
 	_tree.set(&"parameters/slide/blend_amount", _slide)
 	var pitch: float = _aim.get(&"pitch")
 	_aim.set(&"pitch", lerpf(pitch, _head.rotation.x, 1.0 - exp(-AIM_RATE * delta)))
+	_update_ads(delta)
+
+
+## Eases into and out of aiming over `ads_seconds`, and tells the aim modifier where the
+## held weapon's sight is so it can bring it to the eye.
+func _update_ads(delta: float) -> void:
+	var sight := _sight_marker()
+	var aiming := player.intent().aim and sight != null and not player.is_sliding()
+	var step := delta / maxf(float(player.config["ads_seconds"]), 0.01)
+	_ads = move_toward(_ads, 1.0 if aiming else 0.0, step)
+	# Smoothstep, so the sight eases onto the eye instead of arriving at full speed.
+	var eased := _ads * _ads * (3.0 - 2.0 * _ads)
+	_aim.set(&"ads", eased)
+	_aim.set(&"eye", _camera)
+	_aim.set(&"eye_relief", float(player.config["ads_eye_relief"]))
+	if sight != null:
+		# The sight in the space of the bone the weapon hangs from (the socket's parent is
+		# that bone's attachment). Both globals are from this frame, so the lag cancels out.
+		var socket := PlayerBody.weapon_socket(player)
+		_aim.set(&"sight", socket.transform * (socket.global_transform.affine_inverse() * sight.global_position))
+
+
+func _sight_marker() -> Node3D:
+	var socket := PlayerBody.weapon_socket(player)
+	return socket.find_child("Sight", true, false) as Node3D if socket != null else null
 
 
 ## The server and solo simulate the body and know floor contact; remote copies only get

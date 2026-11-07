@@ -26,6 +26,9 @@ properties/4/replication_mode = 2
 properties/5/path = NodePath("Intent:crouch")
 properties/5/spawn = true
 properties/5/replication_mode = 2
+properties/6/path = NodePath("Intent:aim")
+properties/6/spawn = true
+properties/6/replication_mode = 2
 
 [node name="Player" type="CharacterBody3D" unique_id=1247104626]
 script = ExtResource("1_xf3yk")

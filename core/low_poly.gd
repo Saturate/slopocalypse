@@ -9,6 +9,9 @@ extends RefCounted
 static func begin() -> SurfaceTool:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# Without this, generate_normals smooths across vertices that share a position, so
+	# cylinders and tubes come out round and soft instead of faceted.
+	st.set_smooth_group(-1)
 	return st
 
 
@@ -97,6 +100,53 @@ static func cylinder(st: SurfaceTool, radius: float, height: float, sides: int, 
 		_tri(st, Vector3(0, y0, 0), b1, b0, xf, colour)
 		if r_top > 0.0:
 			_tri(st, Vector3(0, y1, 0), t0, t1, xf, colour)
+
+
+## Open tube along local Y, centred on the origin: outer wall, inner wall and the two end
+## rings, so it can be looked through (sight housings, muzzle devices).
+static func tube(st: SurfaceTool, outer: float, inner: float, height: float, sides: int, xf: Transform3D, colour: Color) -> void:
+	var y0 := -height / 2.0
+	var y1 := height / 2.0
+	for i in sides:
+		var a0 := TAU * float(i) / sides
+		var a1 := TAU * float(i + 1) / sides
+		var d0 := Vector3(cos(a0), 0, sin(a0))
+		var d1 := Vector3(cos(a1), 0, sin(a1))
+		var out_dir := (d0 + d1).normalized()
+		var o00 := d0 * outer + Vector3(0, y0, 0)
+		var o10 := d1 * outer + Vector3(0, y0, 0)
+		var o01 := d0 * outer + Vector3(0, y1, 0)
+		var o11 := d1 * outer + Vector3(0, y1, 0)
+		var i00 := d0 * inner + Vector3(0, y0, 0)
+		var i10 := d1 * inner + Vector3(0, y0, 0)
+		var i01 := d0 * inner + Vector3(0, y1, 0)
+		var i11 := d1 * inner + Vector3(0, y1, 0)
+		_quad_facing(st, o00, o10, o11, o01, out_dir, xf, colour)
+		_quad_facing(st, i00, i10, i11, i01, -out_dir, xf, colour)
+		_quad_facing(st, o01, o11, i11, i01, Vector3.UP, xf, colour)
+		_quad_facing(st, o00, o10, i10, i00, Vector3.DOWN, xf, colour)
+
+
+static func _quad_facing(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3, facing: Vector3, xf: Transform3D, colour: Color) -> void:
+	_tri_facing(st, a, b, c, facing, xf, colour)
+	_tri_facing(st, a, c, d, facing, xf, colour)
+
+
+## Emits a triangle whose front faces along `facing`, for shapes that are not convex
+## around their origin (the inside of a tube faces inward).
+static func _tri_facing(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, facing: Vector3, xf: Transform3D, colour: Color) -> void:
+	var n := (b - a).cross(c - a)
+	if n.length_squared() < 1e-12:
+		return
+	# Clockwise from the front is front-facing, so a front face's cross product points
+	# against `facing`.
+	if n.dot(facing) > 0.0:
+		var t := b
+		b = c
+		c = t
+	for v: Vector3 in [a, b, c]:
+		st.set_color(colour)
+		st.add_vertex(xf * v)
 
 
 ## Emits a triangle facing away from the shape's own origin. Every shape here is convex

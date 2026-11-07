@@ -74,3 +74,14 @@ func test_jump_leaves_the_ground_and_comes_back() -> void:
 	assert_float(_player.global_position.y).is_greater(0.3)
 	await _frames(120)
 	assert_bool(_player.is_on_floor()).is_true()
+
+
+func test_aiming_down_sights_slows_down_and_blocks_sprint() -> void:
+	await _frames(60)
+	_player.intent().move = Vector2(0.0, 1.0)
+	_player.intent().sprint = true
+	_player.intent().aim = true
+	await _frames(90)
+	var expected: float = float(_player.config["walk_speed"]) * float(_player.config["ads_speed_multiplier"])
+	assert_bool(_player.is_sprinting()).is_false()
+	assert_float(_player.horizontal_speed()).is_equal_approx(expected, expected * 0.1)
