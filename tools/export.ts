@@ -82,9 +82,13 @@ async function main(): Promise<void> {
 
 	await ensureTemplates();
 
-	const rust = await buildRust(root, true);
-	console.log(rust.detail);
-	if (!rust.ok) throw new Error("rust release build failed");
+	// The editor that runs the import and export is a debug build and loads the debug
+	// libraries; the exported game loads the release ones. A fresh checkout (CI) has neither.
+	for (const release of [false, true]) {
+		const rust = await buildRust(root, release);
+		console.log(rust.detail);
+		if (!rust.ok) throw new Error(`rust ${release ? "release" : "debug"} build failed`);
+	}
 
 	const outDir = join(root, "build", os);
 	const exe = join(outDir, exeName(os));
