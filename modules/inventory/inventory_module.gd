@@ -43,6 +43,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"player.interact", _on_player_interact)
 	EventBus.subscribe(&"world.ready", _on_world_ready)
 	EventBus.subscribe(&"player.died", _on_player_died)
+	EventBus.subscribe(&"enemy.died", _on_enemy_died)
 	Net.peer_left.connect(_on_peer_left)
 	if DisplayServer.get_name() != "headless":
 		InputBindings.register(_data.get("bindings", {}), &"inventory")
@@ -53,6 +54,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"player.interact", _on_player_interact)
 	EventBus.unsubscribe(&"world.ready", _on_world_ready)
 	EventBus.unsubscribe(&"player.died", _on_player_died)
+	EventBus.unsubscribe(&"enemy.died", _on_enemy_died)
 	if Net.peer_left.is_connected(_on_peer_left):
 		Net.peer_left.disconnect(_on_peer_left)
 
@@ -143,11 +145,14 @@ func _on_player_spawned(p: Dictionary) -> void:
 	if multiplayer.is_server() and not _grids.has(peer):
 		var grid := _new_grid() if peer != multiplayer.get_unique_id() else _mine
 		_grids[peer] = grid
-		for item: String in _data.get("starting_kit", []):
+		# Players start with a kit; enemies carry a few random things worth killing them for.
+		var npc: bool = p.get("npc", false)
+		for item: String in (_roll_loot() if npc else Array(_data.get("starting_kit", []))):
 			var result := grid.insert(_next_uid, item)
 			if result["ok"]:
 				_next_uid += 1
-		_send(peer)
+		if not npc:
+			_send(peer)
 	if DisplayServer.get_name() != "headless" and p.get("local", false):
 		var prompt := LootPrompt.new()
 		prompt.name = "LootPrompt"
@@ -273,6 +278,34 @@ func _on_world_ready(payload: Dictionary) -> void:
 
 ## Server: dying spills the whole backpack on the ground where the player fell, for them
 ## (or a friend) to go back for.
+func _on_enemy_died(p: Dictionary) -> void:
+	_on_player_died({"player": p.get("enemy"), "position": p.get("position")})
+	# The body goes away soon; so does its empty backpack.
+	var enemy := p.get("enemy") as Node
+	if enemy != null:
+		_grids.erase(int(enemy.get_meta(&"peer_id", 0)))
+
+
+## Item ids for an enemy's pockets: a few rolls on the weighted loot table.
+func _roll_loot() -> Array:
+	var table: Dictionary = (_data.get("npc_loot", {}) as Dictionary).get("items", {})
+	var rolls: Array = (_data.get("npc_loot", {}) as Dictionary).get("rolls", [1, 2])
+	var total := 0.0
+	for id: String in table:
+		total += float(table[id])
+	var out := []
+	if total <= 0.0:
+		return out
+	for i in randi_range(int(rolls[0]), int(rolls[1])):
+		var pick := randf() * total
+		for id: String in table:
+			pick -= float(table[id])
+			if pick <= 0.0:
+				out.append(id)
+				break
+	return out
+
+
 func _on_player_died(p: Dictionary) -> void:
 	if not multiplayer.is_server():
 		return
