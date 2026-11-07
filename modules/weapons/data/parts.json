@@ -56,6 +56,7 @@
         "magazine": [0.0, -0.035, -0.04],
         "optic": [0.0, 0.082, -0.02]
       },
+      "markers": { "GripL": [-0.035, -0.04, -0.1] },
       "stats": {
         "rounds_per_minute": 600.0,
         "damage": 25.0,
@@ -91,6 +92,7 @@
       "slot": "handguard",
       "mesh": "handguard_std",
       "provides": [],
+      "markers": { "GripL": [-0.035, -0.04, -0.075] },
       "stats": { "ergonomics": 6.0, "weight": 0.3 }
     },
     "hg_ar_long": {
@@ -98,6 +100,7 @@
       "slot": "handguard",
       "mesh": "handguard_long",
       "provides": [],
+      "markers": { "GripL": [-0.035, -0.04, -0.095] },
       "stats": { "ergonomics": 3.0, "recoil_pct": -4.0, "weight": 0.45 }
     },
     "stk_ar_std": {
@@ -119,6 +122,7 @@
       "slot": "grip",
       "mesh": "grip_std",
       "provides": [],
+      "markers": { "GripR": [0.0, -0.045, 0.02] },
       "stats": { "ergonomics": 8.0, "weight": 0.08 }
     },
     "mag_ar_30": {
