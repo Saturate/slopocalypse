@@ -16,6 +16,7 @@ extends SceneTree
 const OUT := "res://modules/player/scenes/player_body.tscn"
 const PLAYER_DATA := "res://modules/player/data/player.json"
 const AIM_SCRIPT := "res://modules/player/scripts/body_aim_modifier.gd"
+const HAND_IK_SCRIPT := "res://modules/player/scripts/hand_ik_modifier.gd"
 
 ## Muted, real-world kit colours.
 const SHIRT := Color(0.3, 0.32, 0.25)
@@ -86,6 +87,11 @@ func _initialize() -> void:
 	aim.name = "Aim"
 	aim.set_script(load(AIM_SCRIPT))
 	_skel.add_child(aim)
+	# Then the hands reach for the held gun's grip points.
+	var hand_ik := SkeletonModifier3D.new()
+	hand_ik.name = "HandIK"
+	hand_ik.set_script(load(HAND_IK_SCRIPT))
+	_skel.add_child(hand_ik)
 
 	var anims := AnimationPlayer.new()
 	anims.name = "AnimationPlayer"

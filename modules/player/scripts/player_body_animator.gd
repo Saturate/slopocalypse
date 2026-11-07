@@ -16,6 +16,7 @@ var player: PlayerController
 
 var _tree: AnimationTree
 var _aim: Node
+var _hand_ik: Node
 var _head: Node3D
 var _crouch := 0.0
 var _air := 0.0
@@ -46,6 +47,7 @@ func _ready() -> void:
 	var body := player.get_node("Body")
 	_tree = body.get_node("AnimationTree")
 	_aim = body.get_node("Skeleton/Aim")
+	_hand_ik = body.get_node_or_null("Skeleton/HandIK")
 	_head = player.get_node("Head")
 	_camera = player.get_node("Head/Camera")
 	_tree.active = true
@@ -67,6 +69,7 @@ func _process(delta: float) -> void:
 	var pitch: float = _aim.get(&"pitch")
 	_aim.set(&"pitch", lerpf(pitch, _head.rotation.x, 1.0 - exp(-AIM_RATE * delta)))
 	_update_ads(delta)
+	_update_hands()
 
 
 ## Eases into and out of aiming over `ads_seconds`, and tells the aim modifier where the
@@ -92,6 +95,21 @@ func _update_ads(delta: float) -> void:
 		# that bone's attachment). Both globals are from this frame, so the lag cancels out.
 		var socket := PlayerBody.weapon_socket(player)
 		_aim.set(&"sight", socket.transform * (socket.global_transform.affine_inverse() * sight.global_position))
+
+
+## Tells the hand IK where the held gun wants each hand (its `GripR` / `GripL` markers), in
+## the Shoulders bone's space like the sight, so the hands stay on the gun as it moves.
+func _update_hands() -> void:
+	if _hand_ik == null:
+		return
+	var socket := PlayerBody.weapon_socket(player)
+	var targets := {}
+	if socket != null:
+		for side: StringName in [&"R", &"L"]:
+			var marker := socket.find_child("Grip" + String(side), true, false) as Node3D
+			if marker != null:
+				targets[side] = socket.transform * (socket.global_transform.affine_inverse() * marker.global_position)
+	_hand_ik.set(&"targets", targets)
 
 
 func _sight_marker() -> Node3D:
