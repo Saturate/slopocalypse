@@ -131,6 +131,11 @@ func _on_grid_input(event: InputEvent) -> void:
 		var mb := event as InputEventMouseButton
 		if mb.pressed:
 			pick(_cell_at(mb.position))
+		elif not Rect2(Vector2.ZERO, _grid_view.size).has_point(mb.position) and not _dragging.is_empty():
+			# Let go outside the backpack: it goes on the ground in front of you.
+			var uid := int(_dragging["uid"])
+			_dragging = {}
+			inventory.call(&"request_drop", uid)
 		else:
 			drop(_drop_cell(mb.position))
 	elif event is InputEventMouseMotion and _dragging.is_empty():
@@ -201,7 +206,7 @@ func _build_ui() -> void:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(spacer)
-	head.add_child(_label("Drag to move  ·  R turns  ·  B mods your gun  ·  Tab closes", 13, DIM))
+	head.add_child(_label("Drag to move  ·  R turns  ·  drag out to drop  ·  E picks up  ·  B mods your gun", 13, DIM))
 	var size: Vector2i = inventory.call(&"grid_size")
 	_grid_view = Control.new()
 	_grid_view.custom_minimum_size = Vector2(size * CELL)

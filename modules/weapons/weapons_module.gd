@@ -25,6 +25,7 @@ func _ready() -> void:
 	add_child(_charge_spawner)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	EventBus.subscribe(&"weapons.build_changed", _on_build_changed)
+	EventBus.subscribe(&"inventory.loot_spawned", _on_loot_spawned)
 	Net.peer_joined.connect(_on_peer_joined)
 	if DisplayServer.get_name() != "headless":
 		var data: Variant = Data.load_json(HitscanWeapon.CONFIG)
@@ -41,6 +42,7 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
 	EventBus.unsubscribe(&"weapons.build_changed", _on_build_changed)
+	EventBus.unsubscribe(&"inventory.loot_spawned", _on_loot_spawned)
 	if Net.peer_joined.is_connected(_on_peer_joined):
 		Net.peer_joined.disconnect(_on_peer_joined)
 
@@ -118,6 +120,24 @@ func server_set_build(peer: int, slots: Dictionary) -> bool:
 		return false
 	Net.server_broadcast(&"weapons.build_changed", {"peer": peer, "build": clean})
 	return true
+
+
+## A gun part lying on the ground looks like the part, lying on its side.
+func _on_loot_spawned(p: Dictionary) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var part: Dictionary = GunAssembly.catalogue().get(str(p.get("item", "")), {})
+	var loot: Node = p.get("loot")
+	if part.is_empty() or loot == null or not loot.has_method(&"set_visual"):
+		return
+	var model := MeshInstance3D.new()
+	model.mesh = GunPartMeshes.mesh(str(part.get("mesh", "")))
+	if model.mesh == null:
+		return
+	# Gun space has the part standing up; lay it on its side on the ground.
+	model.rotation = Vector3(0.0, 0.0, PI / 2.0)
+	model.position.y = 0.03
+	loot.call(&"set_visual", model)
 
 
 ## The inventory module's API when it is loaded; without it every part is free to use.
