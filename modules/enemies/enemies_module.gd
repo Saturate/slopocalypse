@@ -176,4 +176,10 @@ func _on_ground(at: Vector3) -> Vector3:
 		return at
 	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 30.0, at + Vector3.DOWN * 60.0)
 	var hit := world.direct_space_state.intersect_ray(query)
-	return hit["position"] if not hit.is_empty() else at
+	if not hit.is_empty():
+		return hit["position"]
+	# Far from players the server has no terrain loaded; the height map knows anyway.
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	if ground != null and ground.has_method(&"ground_height"):
+		return Vector3(at.x, float(ground.call(&"ground_height", at.x, at.z)), at.z)
+	return at

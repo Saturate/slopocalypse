@@ -35,6 +35,15 @@ func server_reset() -> void:
 	health = max_health
 
 
+## Server only. Returns the health actually restored (never past max, never the dead).
+func server_heal(amount: float) -> float:
+	if is_dead() or amount <= 0.0:
+		return 0.0
+	var healed := minf(amount, max_health - health)
+	health += healed
+	return healed
+
+
 ## Finds the HealthComponent on a hit collider or its ancestors; hit shapes are often
 ## children of the entity that owns the health.
 static func find_on(node: Node) -> HealthComponent:

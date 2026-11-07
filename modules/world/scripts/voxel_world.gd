@@ -23,6 +23,9 @@ func _ready() -> void:
 		return
 	var cfg: Dictionary = world["voxel"]
 	heights = TerrainHeights.new(world)
+	# Other modules place things on the ground where no terrain is loaded to raycast
+	# against (the server only streams near players): `ground_height` answers anywhere.
+	add_to_group(&"ground")
 
 	terrain = VoxelLodTerrain.new()
 	terrain.name = "VoxelTerrain"
