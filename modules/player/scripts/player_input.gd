@@ -52,6 +52,17 @@ func _process(_delta: float) -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	# A free mouse means a menu or panel is up (pause, modding): the player stands still
+	# instead of walking off while the keys are used for it.
+	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		intent.move = Vector2.ZERO
+		intent.sprint = false
+		intent.crouch = false
+		intent.fire = false
+		intent.aim = false
+		if _remote:
+			intent.submit.rpc_id(1, intent.move, _yaw, _pitch, intent.sprint, intent.crouch, intent.fire, intent.aim)
+		return
 	intent.move = Input.get_vector(&"move_left", &"move_right", &"move_back", &"move_forward")
 	intent.sprint = Input.is_action_pressed(&"sprint")
 	intent.crouch = Input.is_action_pressed(&"crouch")

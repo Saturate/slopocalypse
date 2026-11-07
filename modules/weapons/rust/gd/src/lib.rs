@@ -69,6 +69,13 @@ impl WeaponRules {
     }
 
     #[func]
+    fn start_empty_reload(&mut self) {
+        if let Some(s) = self.state.as_mut() {
+            s.start_empty_reload();
+        }
+    }
+
+    #[func]
     fn ammo(&self) -> i64 {
         self.state.as_ref().map_or(0, |s| i64::from(s.ammo()))
     }

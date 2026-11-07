@@ -97,6 +97,13 @@ impl WeaponState {
         true
     }
 
+    /// Empties the magazine and reloads, as after swapping parts: the new gun is only
+    /// ready once a full reload has passed, so a swap is never a free top-up.
+    pub fn start_empty_reload(&mut self) {
+        self.ammo = 0;
+        self.reload_left = Some(self.stats.reload_seconds);
+    }
+
     /// Uniform over the cone's disc, not its square, so corners aren't favoured.
     fn next_spread(&mut self) -> (f64, f64) {
         let r = self.stats.spread_radians * self.rng.next_unit().sqrt();
@@ -207,5 +214,15 @@ mod tests {
         let mut a = WeaponState::new(rifle(), 1);
         let mut b = WeaponState::new(rifle(), 2);
         assert_ne!(a.try_fire(), b.try_fire());
+    }
+
+    #[test]
+    fn an_empty_reload_blocks_firing_until_it_finishes() {
+        let mut w = WeaponState::new(rifle(), 1);
+        w.start_empty_reload();
+        assert!(w.try_fire().is_err());
+        w.tick(rifle().reload_seconds + 0.01);
+        assert_eq!(w.ammo(), rifle().magazine);
+        assert!(w.try_fire().is_ok());
     }
 }
