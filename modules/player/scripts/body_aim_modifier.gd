@@ -12,10 +12,11 @@ var pitch := 0.0
 ## (a child of the chest) takes the rest of its own share on top of the back's.
 const SHARES := {&"Spine": 0.1, &"Chest": 0.15, &"Shoulders": 0.75, &"Head": 0.5}
 
-## First person only: moves the shoulders (arms and rifle together) down and to the right
-## so the one rifle sits in the lower right of the view instead of against the eye. Other
-## players see the unshifted pose. Set by PlayerBody.first_person().
-var view_offset := Vector3.ZERO
+## First person only: where the sight sits in the camera's space at the hip (right, down,
+## forward). The arms and rifle are then held by the view like a view model: they turn with
+## the camera, so looking down never shows the shoulders from above. Other players see the
+## animated pose. Zero means third person. Set by PlayerBody.first_person().
+var hip_sight := Vector3.ZERO
 
 ## Aiming down sights, 0 (hip) to 1 (sight on the eye). Set by the body animator.
 var ads := 0.0
@@ -49,9 +50,12 @@ func _process_modification_with_delta(_delta: float) -> void:
 	var shoulders: int = _bones.get(&"Shoulders", -1)
 	if shoulders < 0:
 		return
-	var offset := view_offset * (1.0 - ads)
-	if ads > 0.0 and is_instance_valid(eye):
-		offset += _sight_to_eye(skeleton, shoulders) * ads
+	var offset := Vector3.ZERO
+	var on_eye := Vector3(0.0, 0.0, -eye_relief)
+	if hip_sight != Vector3.ZERO and is_instance_valid(eye):
+		offset = _sight_to(skeleton, shoulders, hip_sight.lerp(on_eye, ads), 1.0)
+	elif ads > 0.0 and is_instance_valid(eye):
+		offset = _sight_to(skeleton, shoulders, on_eye, ads) * ads
 	if offset != Vector3.ZERO:
 		skeleton.set_bone_pose_position(shoulders, skeleton.get_bone_pose_position(shoulders) + offset)
 	var head: int = _bones.get(&"Head", -1)
@@ -61,16 +65,16 @@ func _process_modification_with_delta(_delta: float) -> void:
 		skeleton.set_bone_pose_rotation(head, skeleton.get_bone_pose_rotation(head) * tilt)
 
 
-## Turns the shoulders so the rifle points exactly along the view (blended by `ads`), and
-## returns how far, in the shoulders' parent space, they must move to put the sight just in
-## front of the eye. The animation's sway and walk twist fade out as the sight settles.
-func _sight_to_eye(skeleton: Skeleton3D, shoulders: int) -> Vector3:
+## Turns the shoulders so the rifle points exactly along the view (blended by `weight`), and
+## returns how far, in the shoulders' parent space, they must move to put the sight at
+## `target`, a point in the eye's space. The animation's sway fades out by `weight`.
+func _sight_to(skeleton: Skeleton3D, shoulders: int, target_in_eye: Vector3, weight: float) -> Vector3:
 	var parent_global := skeleton.get_bone_global_pose(skeleton.get_bone_parent(shoulders))
 	var eye_xf := skeleton.global_transform.affine_inverse() * eye.global_transform
 	var aligned := (parent_global.basis.inverse() * eye_xf.basis.orthonormalized()).get_rotation_quaternion()
-	var rot := skeleton.get_bone_pose_rotation(shoulders).slerp(aligned, ads)
+	var rot := skeleton.get_bone_pose_rotation(shoulders).slerp(aligned, weight)
 	skeleton.set_bone_pose_rotation(shoulders, rot)
 	var shoulders_global := parent_global * Transform3D(Basis(rot), skeleton.get_bone_pose_position(shoulders))
-	var target := eye_xf.origin - eye_xf.basis.z.normalized() * eye_relief
+	var target := eye_xf * target_in_eye
 	var current := shoulders_global * sight
 	return parent_global.basis.inverse() * (target - current)

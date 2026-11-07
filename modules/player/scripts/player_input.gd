@@ -29,10 +29,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Zoomed in, the same mouse motion turns less, so aim speed feels the same on screen.
 		var camera := player.get_node("Head/Camera") as Camera3D
 		var zoom := camera.fov / float(player.config["fov"])
-		# Through a scope the picture is magnified far beyond the camera zoom.
-		var animator := player.get_node_or_null("BodyAnimator") as PlayerBodyAnimator
-		if animator != null:
-			zoom /= lerpf(1.0, animator.sight_magnification(), animator.ads_amount())
 		intent.look_delta += motion.relative * sensitivity * zoom
 	elif event is InputEventKey and event.is_pressed() and (event as InputEventKey).keycode == KEY_ESCAPE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

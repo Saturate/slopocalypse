@@ -12,10 +12,11 @@ export interface NetReport {
 	moved: number;
 	shots: number;
 	driven: number;
+	ammo: number;
 }
 
 export function parseReport(output: string): NetReport | undefined {
-	const m = /NET-REPORT mode=(\w+) peer=(\d+) peers=(\d+) players=(\d+) local_players=(\d+) moved=([\d.]+) shots=(\d+) driven=([\d.]+)/.exec(output);
+	const m = /NET-REPORT mode=(\w+) peer=(\d+) peers=(\d+) players=(\d+) local_players=(\d+) moved=([\d.]+) shots=(\d+) driven=([\d.]+) ammo=(-?\d+)/.exec(output);
 	if (m === null) return undefined;
 	return {
 		mode: m[1] ?? "",
@@ -26,6 +27,7 @@ export function parseReport(output: string): NetReport | undefined {
 		moved: Number(m[6]),
 		shots: Number(m[7]),
 		driven: Number(m[8]),
+		ammo: Number(m[9]),
 	};
 }
 
@@ -66,6 +68,8 @@ export async function soloSmoke(godot: string, root: string): Promise<StepResult
 		if (rep.mode !== "SOLO" || rep.peers !== 1 || rep.players !== 1 || rep.localPlayers !== 1) problems.push(`solo: wrong session shape: ${JSON.stringify(rep)}`);
 		if (rep.moved < 3.0) problems.push(`solo: player did not move through the server (moved=${rep.moved})`);
 		if (rep.shots < 1) problems.push("solo: saw no shots");
+		// The bot fires and never reloads, so a working magazine sync shows fewer than full.
+		if (rep.ammo < 0 || rep.ammo >= 30) problems.push(`solo: the game's ammo count did not follow the server (ammo=${rep.ammo})`);
 	}
 	const child = parseSoloServer(r.output);
 	if (child === undefined) {
@@ -122,6 +126,7 @@ export async function netSmoke(godot: string, root: string, port = 7791): Promis
 		if (rep.moved < 3.0) problems.push(`${name}: no player moved more than 3 m (moved=${rep.moved})`);
 		if (rep.shots < 1) problems.push(`${name}: saw no shots`);
 		if (rep.driven < 5.0) problems.push(`${name}: the car was not driven 5 m (driven=${rep.driven})`);
+		if (name === "client 1 (bot)" && (rep.ammo < 0 || rep.ammo >= 30)) problems.push(`${name}: the ammo count did not follow the server (ammo=${rep.ammo})`);
 	}
 	return problems.length > 0
 		? { ok: false, detail: problems.slice(0, 20).join("\n") }

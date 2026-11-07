@@ -89,15 +89,12 @@ func test_a_scope_magnifies_and_brings_the_eye_closer() -> void:
 	var model: Node3D = auto_free(GunAssembly.build_model(GunAssembly.build("ar_dmr")))
 	var sight := model.get_node("Sight") as Node3D
 	assert_float(float(sight.get_meta(&"eye_relief", 0.0))).is_equal(0.06)
-	# The picture is drawn on the lens and seen from the objective, out in front.
-	var lens := model.get_node("Lens") as Node3D
-	var objective := model.get_node("Objective") as Node3D
-	assert_float(objective.position.z).is_less(lens.position.z)
 
 
-func test_the_scope_camera_narrows_by_the_magnification() -> void:
-	var one := ScopeView.fov_for(0.075, 1.0)
-	assert_float(ScopeView.fov_for(0.075, 4.0)).is_equal_approx(one / 4.0, 0.001)
+
+func test_the_scope_picture_comes_up_only_near_the_eye() -> void:
+	assert_float(ScopeView.shown_for(0.3)).is_equal(0.0)
+	assert_float(ScopeView.shown_for(1.0)).is_equal(1.0)
 
 
 func test_the_carried_build_is_the_default_unless_overridden() -> void:

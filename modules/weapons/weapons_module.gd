@@ -158,7 +158,9 @@ func _equip(player: PlayerController, slots: Dictionary) -> void:
 		# The optic's eye point carries how much it zooms and how fast this gun aims.
 		var sight := held.get_node_or_null("Sight")
 		if sight != null:
-			sight.set_meta(&"zoom", float(rifle.stats.get("ads_zoom", 1.0)))
+			# A scope zooms the whole view by its magnification once it is up to the eye.
+			var magnification := float(rifle.stats.get("magnification", 1.0))
+			sight.set_meta(&"zoom", magnification if magnification > 1.0 else float(rifle.stats.get("ads_zoom", 1.0)))
 			sight.set_meta(&"ads_seconds", float(rifle.stats.get("ads_seconds", 0.2)))
 			sight.set_meta(&"magnification", float(rifle.stats.get("magnification", 1.0)))
 		socket.add_child(held)
@@ -172,7 +174,8 @@ func _update_scope(player: PlayerController) -> void:
 		player.remove_child(old)
 		old.queue_free()
 	var held := ShotEffects.held_rifle(player)
-	if held != null and held.get_node_or_null("Lens") != null:
+	var sight := held.get_node_or_null("Sight") if held != null else null
+	if sight != null and float(sight.get_meta(&"magnification", 1.0)) > 1.0:
 		var scope := ScopeView.new()
 		scope.name = "ScopeView"
 		scope.player = player

@@ -35,7 +35,7 @@ func _process(delta: float) -> void:
 	if _weapon == null or not is_instance_valid(_weapon) or _weapon.is_queued_for_deletion():
 		_weapon = _carried()
 	if _weapon != null:
-		_ammo.text = "RELOADING" if _weapon.rules.is_reloading() else "%d" % _weapon.ammo()
+		_ammo.text = "RELOADING" if _weapon.is_reloading() else "%d" % _weapon.ammo()
 	_hud.queue_redraw()
 
 
