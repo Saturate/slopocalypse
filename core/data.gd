@@ -4,8 +4,27 @@ extends Node
 ## load time, naming the file and field, instead of surfacing later as a wrong number.
 
 
+## Folder next to the exported game whose files replace the built-in data, so values can
+## be tuned without rebuilding: `tweaks/modules/enemies/data/enemies.json` replaces
+## `res://modules/enemies/data/enemies.json`. Empty (off) when running from the editor,
+## where the project files are edited directly.
+var tweaks_root := OS.get_executable_path().get_base_dir().path_join("tweaks") if OS.has_feature("template") else ""
+
+
+## The file to read for `path`: its copy in `root` if there is one, otherwise `path`.
+static func tweaked(path: String, root: String) -> String:
+	if root.is_empty() or not path.begins_with("res://"):
+		return path
+	var copy := root.path_join(path.trim_prefix("res://"))
+	return copy if FileAccess.file_exists(copy) else path
+
+
 ## Returns the parsed root object, or null after logging why.
 func load_json(path: String) -> Variant:
+	var from := tweaked(path, tweaks_root)
+	if from != path:
+		Log.info(&"data", "%s: using the tweaked copy %s" % [path, from])
+		path = from
 	if not FileAccess.file_exists(path):
 		Log.error(&"data", "%s: file not found" % path)
 		return null

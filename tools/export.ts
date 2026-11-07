@@ -4,11 +4,11 @@
 // friend just clicks. Output: build/<os>/ and build/outpost-<os>.zip.
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { argv, exit, platform } from "node:process";
 import { expectedSha512, verifySha512 } from "./lib/checksum.ts";
 import { download, extract, zipFolder } from "./lib/download.ts";
-import { exeName, hostScript, shippedServers, presetFor, presetsFile, templatesDir, type TargetOs } from "./lib/export.ts";
+import { dataFiles, exeName, hostScript, shippedServers, TWEAKS_README, presetFor, presetsFile, templatesDir, type TargetOs } from "./lib/export.ts";
 import { GODOT_NOISE, godotImport } from "./lib/gate.ts";
 import { GODOT_DIR, GODOT_VERSION, localGodot, RELEASE_URL } from "./lib/godot.ts";
 import { scanLog } from "./lib/log-scan.ts";
@@ -67,6 +67,8 @@ const README = (host: string | undefined, port: number, os: TargetOs): string =>
 		"",
 		"Controls: WASD move, mouse aim, left click fire, R reload, G charge, E interact / enter and leave the car, Space jump, Shift sprint, Ctrl or C crouch. In the car: WASD drive, Space brake.",
 		"",
+		"Tuning: copy a file from the defaults folder into tweaks (same path) and edit it; see tweaks/README.txt.",
+		"",
 		os === "windows" ? 'Windows may say "Windows protected your PC" because the game is not signed: click "More info", then "Run anyway".' : "",
 	];
 	return lines.join(os === "windows" ? "\r\n" : "\n");
@@ -110,6 +112,13 @@ async function main(): Promise<void> {
 	if (connect !== undefined) writeFileSync(join(outDir, "servers.json"), shippedServers(connect));
 	writeFileSync(join(outDir, `Host server.${ext}`), hostScript(os, port));
 	writeFileSync(join(outDir, "README.txt"), README(connect, port, os));
+	// Defaults to copy from and an empty tweaks folder: tuning without a rebuild.
+	for (const rel of dataFiles(root)) {
+		mkdirSync(dirname(join(outDir, "defaults", rel)), { recursive: true });
+		cpSync(join(root, rel), join(outDir, "defaults", rel));
+	}
+	mkdirSync(join(outDir, "tweaks"), { recursive: true });
+	writeFileSync(join(outDir, "tweaks", "README.txt"), TWEAKS_README);
 
 	if (os === hostOs()) await smokeTest(outDir, os);
 
