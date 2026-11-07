@@ -5,32 +5,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { arch, exit, platform } from "node:process";
 import { expectedSha512, verifySha512 } from "./lib/checksum.ts";
+import { download, extract } from "./lib/download.ts";
 import { assetFor, GODOT_DIR, GODOT_VERSION, localGodot, RELEASE_URL } from "./lib/godot.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const target = join(root, GODOT_DIR);
 const force = process.argv.includes("--force");
-
-async function download(url: string, dest: string): Promise<void> {
-	const res = await fetch(url);
-	if (!res.ok) {
-		throw new Error(`download failed: ${url} returned ${res.status}`);
-	}
-	writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
-}
-
-function extract(zip: string, dest: string): void {
-	// bsdtar reads zip on Windows and macOS; stock Linux tar does not, so use unzip there.
-	// On Windows call System32 tar by path: Git Bash puts GNU tar first on PATH, which treats "C:" as a remote host.
-	if (platform === "linux") {
-		execFileSync("unzip", ["-o", "-q", zip, "-d", dest], { stdio: "inherit" });
-	} else if (platform === "win32") {
-		const bsdtar = join(process.env["SystemRoot"] ?? "C:\\Windows", "System32", "tar.exe");
-		execFileSync(bsdtar, ["-xf", zip, "-C", dest], { stdio: "inherit" });
-	} else {
-		execFileSync("tar", ["-xf", zip, "-C", dest], { stdio: "inherit" });
-	}
-}
 
 async function main(): Promise<void> {
 	const exe = localGodot(root);
