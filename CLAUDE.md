@@ -25,6 +25,7 @@ Agent tooling note: in this environment, backslashes inside Bash heredocs (inclu
 | First setup | `npm ci && node tools/get-godot.ts && node tools/get-addons.ts` (Rust via rustup; the toolchain file installs the pinned version) |
 | Build scenes | `node tools/build-scenes.ts` (runs `modules/*/builders/*.gd`; commit the `.tscn` output) |
 | Capture for review | `node tools/capture.ts --setup res://modules/<id>/capture/<name>.gd --out screenshots/<name>.png --frames 120 --sheet 6` (opens a window; then use the `visual-review` skill) |
+| Portable game zip | `node tools/export.ts [--connect HOST[:PORT]]` (fetches export templates once, builds release, smoke-tests the exported game; output in `build/`) |
 | Dedicated server | `node tools/server.ts [--port 7777]` (headless; clients join with `-- --connect=HOST:7777`) |
 | Server + two clients locally | `node tools/run-local.ts` |
 | Build Rust extensions | `node tools/build-rust.ts` (`--release` for exports); the gate does this before Godot imports |
