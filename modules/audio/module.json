@@ -1,0 +1,6 @@
+{
+  "id": "audio",
+  "depends_on": [],
+  "flag": "audio",
+  "entry": "audio_module.gd"
+}

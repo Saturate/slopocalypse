@@ -8,6 +8,7 @@
     "training": true,
     "drones": true,
     "inventory": true,
-    "enemies": true
+    "enemies": true,
+    "audio": true
   }
 }
