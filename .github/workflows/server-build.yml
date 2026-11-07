@@ -38,6 +38,9 @@ jobs:
 
       - run: node tools/get-godot.ts
 
+      # gdUnit4 and the voxel terrain extension (with its Linux library) are not in git.
+      - run: node tools/get-addons.ts
+
       # The export templates are a large download; tools/export.ts verifies them either way.
       - name: Cache export templates
         uses: actions/cache@v6
