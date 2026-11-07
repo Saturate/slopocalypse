@@ -45,6 +45,7 @@ func _frames(count: int) -> void:
 
 func test_closes_in_and_orbits_at_its_radius() -> void:
 	var drone: StalkerDrone = _module.server_spawn(_target)
+	drone.postpone_dive(1000.0)
 	await _frames(60 * 12)
 	var flat := Vector2(drone.global_position.x, drone.global_position.z).length()
 	var radius: float = drone.config["orbit_radius"]
@@ -74,3 +75,18 @@ func test_a_replacement_arrives_after_one_is_destroyed() -> void:
 	await _frames(60)
 	assert_int(_module.drones().size()).is_equal(1)
 	assert_object(_module.drones()[0]).is_not_same(first)
+
+
+func test_a_dive_blows_up_on_the_player_and_hurts_them() -> void:
+	var player: Node3D = auto_free((load("res://modules/player/scenes/player.tscn") as PackedScene).instantiate())
+	add_child(player)
+	player.global_position = Vector3(30, 0.1, 30)
+	var drone: StalkerDrone = _module.server_spawn(player)
+	drone.global_position = player.global_position + Vector3(8, 6, 0)
+	await _frames(5)
+	drone.server_dive()
+	await _frames(60 * 4)
+	var health := player.get_node("Health") as HealthComponent
+	assert_float(health.health).is_less(health.max_health)
+	assert_bool(is_instance_valid(drone)).is_false()
+	assert_int(_explosions.size()).is_greater(0)
