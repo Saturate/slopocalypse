@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { joinScript, presetFor, presetsFile, templatesDir } from "./export.ts";
+import { presetFor, shippedServers, presetsFile, templatesDir } from "./export.ts";
 
 test("windows preset embeds the pack, keeps data files and drops dev-only folders", () => {
 	const p = presetFor("windows", "build/windows/Outpost.exe");
@@ -28,9 +28,7 @@ test("templates live in the self-contained editor data, per engine version", () 
 	assert.equal(templatesDir("/p/tools/godot", "4.7.2-stable").replaceAll("\\", "/"), "/p/tools/godot/editor_data/export_templates/4.7.2.stable");
 });
 
-test("join script passes the host to the game", () => {
-	const bat = joinScript("windows", "100.64.1.2:7777");
-	assert.match(bat, /Outpost\.exe" -- --connect=100\.64\.1\.2:7777/);
-	const sh = joinScript("linux", "100.64.1.2");
-	assert.match(sh, /--connect=100\.64\.1\.2/);
+test("shipped servers list every --connect address for the menu", () => {
+	const parsed: unknown = JSON.parse(shippedServers("100.64.1.2:7777, game.example.net"));
+	assert.deepEqual(parsed, { servers: ["100.64.1.2:7777", "game.example.net"] });
 });

@@ -12,20 +12,25 @@ const SHARED_PREFIXES: Array[String] = ["--flags=", "--all-optional-off"]
 
 
 ## Starts the server process. Returns its pid, or -1 when it could not be started.
-static func start(port: int, user_args: PackedStringArray, log_file: String) -> int:
+## `bind` is the address it listens on: loopback for solo, empty for every interface when
+## hosting for friends.
+static func start(port: int, user_args: PackedStringArray, log_file: String, bind: String = BIND_IP) -> int:
 	# An exported game carries its project; the editor binary needs to be told where it is.
 	var project := "" if OS.has_feature("template") else ProjectSettings.globalize_path("res://")
-	var args := server_args(port, user_args, project, log_file)
+	var args := server_args(port, user_args, project, log_file, bind)
 	return OS.create_process(OS.get_executable_path(), args)
 
 
-static func server_args(port: int, user_args: PackedStringArray, project: String, log_file: String) -> PackedStringArray:
+static func server_args(port: int, user_args: PackedStringArray, project: String, log_file: String, bind: String = BIND_IP) -> PackedStringArray:
 	var args := PackedStringArray(["--headless"])
 	if not project.is_empty():
 		args.append_array(["--path", project])
 	args.append_array(["--log-file", log_file, "--"])
-	# Bound to loopback: a solo world is not open to the network.
-	args.append_array(["--server=%d" % port, "--bind=%s" % BIND_IP, "--quit-when-empty"])
+	args.append("--server=%d" % port)
+	# Solo binds to loopback so its world is not open to the network.
+	if not bind.is_empty():
+		args.append("--bind=%s" % bind)
+	args.append("--quit-when-empty")
 	for arg in user_args:
 		for prefix in SHARED_PREFIXES:
 			if arg.begins_with(prefix):
@@ -36,9 +41,13 @@ static func server_args(port: int, user_args: PackedStringArray, project: String
 ## The first port in the solo range nothing is bound to, or -1.
 static func pick_port() -> int:
 	for port in range(FIRST_PORT, FIRST_PORT + PORT_TRIES):
-		var probe := PacketPeerUDP.new()
-		var free := probe.bind(port, BIND_IP) == OK
-		probe.close()
-		if free:
+		if is_free(port, BIND_IP):
 			return port
 	return -1
+
+
+static func is_free(port: int, bind: String = "*") -> bool:
+	var probe := PacketPeerUDP.new()
+	var free := probe.bind(port, bind) == OK
+	probe.close()
+	return free

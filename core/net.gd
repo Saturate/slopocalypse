@@ -4,7 +4,9 @@ extends Node
 ## line (after `--`):
 ##   --server[=PORT]        dedicated server: headless, no local player
 ##   --connect=HOST[:PORT]  client joining a server
-##   (nothing)              solo: Boot starts a private server process and joins it
+##   --solo                 solo without the main menu
+##   (nothing)              a windowed game shows the main menu (Solo, Host, Join); headless
+##                          or tool runs go straight to solo
 ## Server-only extras: --bind=IP and --quit-when-empty (quit once the last player leaves, or
 ## if nobody joins at all). Solo passes both.
 ## Scenes run without Boot (tests, captures) keep Godot's offline peer, which makes this
@@ -15,6 +17,8 @@ extends Node
 
 signal peer_joined(peer_id: int)
 signal peer_left(peer_id: int)
+## Fired when this instance's own connection to its server is up.
+signal connected
 
 enum Mode { SOLO, SERVER, CLIENT }
 
@@ -23,6 +27,12 @@ const MAX_CLIENTS := 8
 const SOLO_CONNECT_TRIES := 5
 ## How long a --quit-when-empty server waits for its first player before giving up.
 const FIRST_JOIN_SECONDS := 30.0
+## How long joining a server waits before saying it cannot be reached.
+const JOIN_TIMEOUT_MS := 8000
+## ENet's own defaults, restored after joining.
+const ENET_TIMEOUT_LIMIT := 32
+const ENET_TIMEOUT_MIN_MS := 5000
+const ENET_TIMEOUT_MAX_MS := 30000
 
 var mode: Mode = Mode.SOLO
 var port := DEFAULT_PORT
@@ -39,9 +49,34 @@ var _waited_for_first := 0.0
 var _report_after := -1
 var _frames := 0
 
+## A person is at the keyboard: failures go back to the menu instead of quitting or erroring.
+var interactive := false
+## Boot shows the menu instead of starting a session.
+var awaiting_menu := false
+## Why the last session ended, for the menu to show. Empty after a normal leave.
+var menu_message := ""
+## The address this instance hosts on when it hosts for friends, or 0.
+var hosting_port := 0
+
+
+## True for a windowed game started without a mode or a tool hook: that is a player who
+## wants to choose.
+static func wants_menu(args: PackedStringArray, headless: bool) -> bool:
+	if headless:
+		return false
+	for arg in args:
+		for prefix in ["--server", "--connect=", "--solo", "--bot=", "--net-report-after="]:
+			if arg.begins_with(prefix):
+				return false
+	return true
+
 
 func _ready() -> void:
-	_parse(OS.get_cmdline_user_args())
+	var args := OS.get_cmdline_user_args()
+	_parse(args)
+	var headless := DisplayServer.get_name() == "headless"
+	interactive = not headless and not Array(args).any(func(a: String) -> bool: return a.begins_with("--bot=") or a.begins_with("--net-report-after="))
+	awaiting_menu = wants_menu(args, headless)
 	match mode:
 		Mode.SERVER:
 			_start_server()
@@ -54,7 +89,10 @@ func _ready() -> void:
 		_had_peers = true
 		peer_joined.emit(id))
 	multiplayer.peer_disconnected.connect(_on_peer_left)
-	multiplayer.connected_to_server.connect(func() -> void: Log.info(&"net", "connected as peer %d" % multiplayer.get_unique_id()))
+	multiplayer.connected_to_server.connect(func() -> void:
+		Log.info(&"net", "connected as peer %d" % multiplayer.get_unique_id())
+		_restore_timeout()
+		connected.emit())
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_gone)
 
@@ -62,20 +100,86 @@ func _ready() -> void:
 ## Called by Boot when the game runs without a mode: starts a private server process on
 ## localhost and joins it like any other client.
 func start_solo() -> void:
-	if mode != Mode.SOLO:
+	if mode != Mode.SOLO or awaiting_menu:
 		return
-	port = SoloServer.pick_port()
-	if port < 0:
-		Log.error(&"net", "no free port for the solo server")
+	var p := SoloServer.pick_port()
+	if p < 0:
+		_fail("No free port for the solo server.")
 		return
+	_start_local_server(p, SoloServer.BIND_IP)
+
+
+## Like solo, but the server listens on every interface at `listen_port` so friends can join
+## this machine's address (a Tailscale IP, or a forwarded port).
+func start_host(listen_port: int) -> void:
+	if not SoloServer.is_free(listen_port):
+		_fail("Port %d is already in use. Is another server running?" % listen_port)
+		return
+	hosting_port = listen_port
+	_start_local_server(listen_port, "")
+
+
+## Joins a server by address, from the menu.
+func join(to_host: String, to_port: int) -> void:
+	mode = Mode.CLIENT
+	awaiting_menu = false
+	host = to_host
+	port = to_port
+	_connect_tries = 0
+	_start_client()
+
+
+func _start_local_server(listen_port: int, bind: String) -> void:
+	mode = Mode.SOLO
+	awaiting_menu = false
+	port = listen_port
+	host = "127.0.0.1"
+	_connect_tries = 0
 	var log_file := ProjectSettings.globalize_path("user://logs/solo-server.log")
-	solo_server_pid = SoloServer.start(port, OS.get_cmdline_user_args(), log_file)
+	solo_server_pid = SoloServer.start(port, OS.get_cmdline_user_args(), log_file, bind)
 	if solo_server_pid < 0:
-		Log.error(&"net", "could not start the solo server")
+		_fail("Could not start the local server.")
 		return
 	# Tools read this line to find the child process and its log.
 	Log.info(&"net", "solo server pid=%d port=%d log=%s" % [solo_server_pid, port, log_file])
 	_start_client()
+
+
+## Once in, ENet's patient defaults return: loading the world can stall a frame for a
+## second or two, and the short join timeout would drop the connection over it.
+func _restore_timeout() -> void:
+	var peer := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	if peer != null and mode == Mode.CLIENT:
+		peer.get_peer(1).set_timeout(ENET_TIMEOUT_LIMIT, ENET_TIMEOUT_MIN_MS, ENET_TIMEOUT_MAX_MS)
+
+
+func is_session_connected() -> bool:
+	var peer := multiplayer.multiplayer_peer
+	return peer != null and not peer is OfflineMultiplayerPeer and peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
+
+
+## Ends this instance's session and reloads Boot into the menu. A local server this game
+## started quits on its own once nobody is left on it.
+func leave(reason: String = "") -> void:
+	if multiplayer.multiplayer_peer != null and not multiplayer.multiplayer_peer is OfflineMultiplayerPeer:
+		multiplayer.multiplayer_peer.close()
+	multiplayer.multiplayer_peer = null
+	mode = Mode.SOLO
+	hosting_port = 0
+	solo_server_pid = -1
+	_connect_tries = 0
+	menu_message = reason
+	awaiting_menu = true
+	get_tree().reload_current_scene.call_deferred()
+
+
+## A session that cannot start: a player gets the menu and the reason, a tool run an error.
+func _fail(reason: String) -> void:
+	if interactive:
+		Log.warn(&"net", reason)
+		leave(reason)
+	else:
+		Log.error(&"net", reason)
 
 
 func _on_peer_left(id: int) -> void:
@@ -93,12 +197,16 @@ func _on_connection_failed() -> void:
 		Log.info(&"net", "solo server not up yet; retrying")
 		_start_client()
 		return
-	Log.error(&"net", "could not connect to %s:%d" % [host, port])
+	_fail("Could not reach %s:%d. Is the host running, and is the address right?" % [host, port])
 
 
-## There is no main menu to fall back to yet, and a client left without a server would
-## spam errors every frame, so it says why and closes.
+## A player goes back to the menu; a tool-run client left without a server would spam
+## errors every frame, so it says why and closes.
 func _on_server_gone() -> void:
+	if interactive:
+		Log.warn(&"net", "server closed the connection")
+		leave("The server closed the connection.")
+		return
 	Log.warn(&"net", "server closed the connection; quitting")
 	multiplayer.multiplayer_peer = null
 	get_tree().quit(0)
@@ -242,7 +350,11 @@ func _start_client() -> void:
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_client(host, port)
 	if err != OK:
-		Log.error(&"net", "could not start client for %s:%d (%s)" % [host, port, error_string(err)])
+		_fail("Could not connect to %s:%d (%s)." % [host, port, error_string(err)])
 		return
+	if mode == Mode.CLIENT:
+		# ENet's default gives up after about half a minute; a typo should not cost that.
+		# Measured: a failed connect takes about twice the max given here.
+		peer.get_peer(1).set_timeout(0, JOIN_TIMEOUT_MS / 4, JOIN_TIMEOUT_MS / 2)
 	multiplayer.multiplayer_peer = peer
 	Log.info(&"net", "connecting to %s:%d" % [host, port])

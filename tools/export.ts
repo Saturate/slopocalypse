@@ -1,14 +1,14 @@
 // Builds a portable game folder and zip a player can unpack and double-click.
-//   node tools/export.ts [--os windows|linux] [--connect HOST[:PORT]] [--port 7777]
-// --connect bakes a "Join" script with the host's address into the zip, so a friend never
-// types anything. Output: build/<os>/ and build/outpost-<os>.zip.
+//   node tools/export.ts [--os windows|linux] [--connect HOST[:PORT][,HOST...]] [--port 7777]
+// --connect ships those addresses in servers.json, so the menu already lists them and a
+// friend just clicks. Output: build/<os>/ and build/outpost-<os>.zip.
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { argv, exit, platform } from "node:process";
 import { expectedSha512, verifySha512 } from "./lib/checksum.ts";
 import { download, extract, zipFolder } from "./lib/download.ts";
-import { exeName, hostScript, joinScript, presetFor, presetsFile, templatesDir, type TargetOs } from "./lib/export.ts";
+import { exeName, hostScript, shippedServers, presetFor, presetsFile, templatesDir, type TargetOs } from "./lib/export.ts";
 import { GODOT_NOISE, godotImport } from "./lib/gate.ts";
 import { GODOT_DIR, GODOT_VERSION, localGodot, RELEASE_URL } from "./lib/godot.ts";
 import { scanLog } from "./lib/log-scan.ts";
@@ -60,9 +60,10 @@ const README = (host: string | undefined, port: number, os: TargetOs): string =>
 	const lines = [
 		"OUTPOST",
 		"",
-		"Play alone: double-click Outpost" + (os === "windows" ? ".exe" : "") + ".",
-		host !== undefined ? `Play with friends: double-click "Join.${ext}". It connects to ${host}.` : "Join a friend: start Outpost with  -- --connect=THEIR_ADDRESS",
-		`Host a game for friends: double-click "Host server.${ext}" and leave the window open. Friends need UDP port ${port} to reach you (Tailscale, or a forwarded port).`,
+		"Start: double-click Outpost" + (os === "windows" ? ".exe" : "") + ". The menu has Play solo, Host a game and Join a friend.",
+		host !== undefined ? `Join a friend: ${host} is already listed under Recent; click it.` : "Join a friend: paste their address under Join a friend and click Join.",
+		`Host a game: click Host a game and send friends the address the menu shows. They need to reach UDP port ${port} on your machine (Tailscale, or a forwarded port).`,
+		`A server that stays up without playing: double-click "Host server.${ext}" and leave the window open.`,
 		"",
 		"Controls: WASD move, mouse aim, left click fire, R reload, G charge, E interact / enter and leave the car, Space jump, Shift sprint, Ctrl or C crouch. In the car: WASD drive, Space brake.",
 		"",
@@ -102,7 +103,7 @@ async function main(): Promise<void> {
 	}
 
 	const ext = os === "windows" ? "bat" : "sh";
-	if (connect !== undefined) writeFileSync(join(outDir, `Join.${ext}`), joinScript(os, connect));
+	if (connect !== undefined) writeFileSync(join(outDir, "servers.json"), shippedServers(connect));
 	writeFileSync(join(outDir, `Host server.${ext}`), hostScript(os, port));
 	writeFileSync(join(outDir, "README.txt"), README(connect, port, os));
 

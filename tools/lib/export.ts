@@ -84,12 +84,11 @@ export function exeName(os: TargetOs): string {
 	return os === "windows" ? "Outpost.exe" : os === "linux" ? "Outpost.x86_64" : "Outpost.app";
 }
 
-// What a friend double-clicks to join. The address is baked in so nobody types anything.
-export function joinScript(os: TargetOs, host: string): string {
-	if (os === "windows") {
-		return `@echo off\r\ncd /d "%~dp0"\r\nstart "" "%~dp0Outpost.exe" -- --connect=${host}\r\n`;
-	}
-	return `#!/bin/sh\ncd "$(dirname "$0")"\nexec ./${exeName(os)} -- --connect=${host}\n`;
+// servers.json beside the game: the main menu lists these under Recent, so a friend's copy
+// already knows where to join. `hosts` is a comma-separated list of addresses.
+export function shippedServers(hosts: string): string {
+	const servers = hosts.split(",").map((h) => h.trim()).filter((h) => h.length > 0);
+	return JSON.stringify({ servers }, null, 2);
 }
 
 // Runs a dedicated server in a visible window, so the host can see it and close it.
