@@ -12,6 +12,9 @@ var _players: Dictionary[int, PlayerController] = {}
 var _spawn := Vector3.ZERO
 var _kill_y := -INF
 var _world_ready := false
+## Server: dead player -> seconds until they come back.
+var _respawn_in: Dictionary = {}
+var _rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
@@ -22,6 +25,8 @@ func _ready() -> void:
 	EventBus.subscribe(&"world.ready", _on_world_ready)
 	EventBus.subscribe(&"car.entered", _on_car_entered)
 	EventBus.subscribe(&"car.exited", _on_car_exited)
+	EventBus.subscribe(&"player.died", _on_player_died)
+	EventBus.subscribe(&"player.respawned", _on_player_respawned)
 	Net.peer_joined.connect(_on_peer_joined)
 	Net.peer_left.connect(_on_peer_left)
 
@@ -30,6 +35,8 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"world.ready", _on_world_ready)
 	EventBus.unsubscribe(&"car.entered", _on_car_entered)
 	EventBus.unsubscribe(&"car.exited", _on_car_exited)
+	EventBus.unsubscribe(&"player.died", _on_player_died)
+	EventBus.unsubscribe(&"player.respawned", _on_player_respawned)
 
 
 func players() -> Array[PlayerController]:
@@ -38,9 +45,16 @@ func players() -> Array[PlayerController]:
 	return out
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if not multiplayer.is_server():
 		return
+	for player: PlayerController in _respawn_in.keys():
+		if not is_instance_valid(player):
+			_respawn_in.erase(player)
+			continue
+		_respawn_in[player] = float(_respawn_in[player]) - delta
+		if float(_respawn_in[player]) <= 0.0:
+			server_respawn(player)
 	# Safety net: anyone who falls out of the world is put back at the spawn.
 	for player: PlayerController in _players.values():
 		if player.global_position.y < _kill_y:
@@ -98,7 +112,53 @@ func _spawn_player(data: Variant) -> Node:
 	return player
 
 
+## Server: a player's health ran out. Everyone sees them go down; they come back at the
+## spawn after `respawn_seconds`. Other modules react to `player.died` (the inventory drops
+## the backpack).
+func _server_died(source: Node, player: PlayerController) -> void:
+	if player.get_meta(&"dead", false):
+		return
+	Net.server_broadcast(&"player.died", {"player": player, "source": source, "position": player.global_position})
+	_respawn_in[player] = float(player.config.get("respawn_seconds", 5.0))
+
+
+## Server: brings a dead player back at full health near the spawn.
+func server_respawn(player: PlayerController) -> void:
+	_respawn_in.erase(player)
+	(player.get_node("Health") as HealthComponent).server_reset()
+	var spread := float(player.config.get("respawn_spread", 0.0))
+	player.global_position = _spawn + Vector3(_rng.randf_range(-spread, spread), 0.5, _rng.randf_range(-spread, spread))
+	player.velocity = Vector3.ZERO
+	Net.server_broadcast(&"player.respawned", {"player": player})
+
+
+## Everywhere: a dead player is hidden, cannot be hit and does not move; the camera stays
+## where they fell.
+func _on_player_died(p: Dictionary) -> void:
+	var player := p.get("player") as PlayerController
+	if player != null:
+		_set_dead(player, true)
+
+
+func _on_player_respawned(p: Dictionary) -> void:
+	var player := p.get("player") as PlayerController
+	if player != null:
+		_set_dead(player, false)
+
+
+func _set_dead(player: PlayerController, dead: bool) -> void:
+	player.set_meta(&"dead", dead)
+	(player.get_node("Body") as Node3D).visible = not dead
+	(player.get_node("Shape") as CollisionShape3D).set_deferred(&"disabled", dead)
+	if multiplayer.is_server():
+		player.set_physics_process(not dead)
+
+
 func _on_player_ready(player: PlayerController, local: bool) -> void:
+	if multiplayer.is_server():
+		var health := player.get_node_or_null("Health") as HealthComponent
+		if health != null:
+			health.died.connect(_server_died.bind(player))
 	# Other modules (weapons, world viewer, later inventory) equip players through this.
 	EventBus.publish(&"player.spawned", {"player": player, "local": local})
 	var bot := _bot_behaviour()
@@ -120,6 +180,10 @@ func _on_player_ready(player: PlayerController, local: bool) -> void:
 
 func _setup_local(player: PlayerController) -> void:
 	InputBindings.register(player.config.get("bindings", {}), &"player")
+	var hud := PlayerHud.new()
+	hud.name = "Hud"
+	hud.player = player
+	player.add_child(hud)
 	var input := PlayerInput.new()
 	input.name = "Input"
 	input.intent = player.intent()

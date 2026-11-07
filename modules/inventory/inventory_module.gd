@@ -42,6 +42,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	EventBus.subscribe(&"player.interact", _on_player_interact)
 	EventBus.subscribe(&"world.ready", _on_world_ready)
+	EventBus.subscribe(&"player.died", _on_player_died)
 	Net.peer_left.connect(_on_peer_left)
 	if DisplayServer.get_name() != "headless":
 		InputBindings.register(_data.get("bindings", {}), &"inventory")
@@ -51,6 +52,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
 	EventBus.unsubscribe(&"player.interact", _on_player_interact)
 	EventBus.unsubscribe(&"world.ready", _on_world_ready)
+	EventBus.unsubscribe(&"player.died", _on_player_died)
 	if Net.peer_left.is_connected(_on_peer_left):
 		Net.peer_left.disconnect(_on_peer_left)
 
@@ -267,6 +269,28 @@ func _on_world_ready(payload: Dictionary) -> void:
 		for i in items.size():
 			var a := TAU * i / maxf(1.0, items.size())
 			server_spawn_loot(str(items[i]), _on_ground(centre + Vector3(cos(a), 0.0, sin(a)) * PILE_RADIUS))
+
+
+## Server: dying spills the whole backpack on the ground where the player fell, for them
+## (or a friend) to go back for.
+func _on_player_died(p: Dictionary) -> void:
+	if not multiplayer.is_server():
+		return
+	var player := p.get("player") as Node3D
+	if player == null:
+		return
+	var peer := int(player.get_meta(&"peer_id", 1))
+	var grid: InventoryGrid = _grids.get(peer)
+	if grid == null:
+		return
+	var at: Vector3 = p.get("position", player.global_position)
+	var items := grid.items()
+	for i in items.size():
+		grid.remove(int(items[i]["uid"]))
+		var a := TAU * i / maxf(1.0, items.size())
+		var r := PILE_RADIUS + 0.12 * (i % 3)
+		server_spawn_loot(str(items[i]["item"]), _on_ground(at + Vector3(cos(a) * r, 0.0, sin(a) * r)))
+	_send(peer)
 
 
 func _player_of(peer: int) -> Node3D:

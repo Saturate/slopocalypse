@@ -119,3 +119,26 @@ func test_recoil_lifts_the_aim() -> void:
 	await _hold_trigger(30)
 	await _frames(2)
 	assert_float(head.rotation.x).is_greater(before)
+
+
+func test_a_teammate_in_the_way_takes_no_damage() -> void:
+	var mate: PlayerController = (load(PLAYER) as PackedScene).instantiate()
+	add_child(mate)
+	mate.global_position = Vector3(0.0, 0.0, -4.0)
+	_player.add_to_group(&"players")
+	mate.add_to_group(&"players")
+	await _frames(10)
+	_player.intent().fire = true
+	await get_tree().physics_frame
+	_player.intent().fire = false
+	await _frames(2)
+	var health := mate.get_node("Health") as HealthComponent
+	assert_float(health.health).is_equal(health.max_health)
+	mate.free()
+
+
+func test_the_dead_do_not_shoot() -> void:
+	_player.set_meta(&"dead", true)
+	await _frames(10)
+	await _hold_trigger(10)
+	assert_int(_shots.size()).is_equal(0)
