@@ -53,3 +53,15 @@ func test_wrong_type_names_field_and_types() -> void:
 	var dict: Dictionary = Data.load_json(FIX + "wrong_type.json")
 	assert_bool(Data.require(FIX + "wrong_type.json", dict, RIFLE_FIELDS)).is_false()
 	assert_str(_messages()).contains("'damage'").contains("float").contains("String")
+
+
+func test_a_tweaked_copy_replaces_the_built_in_file() -> void:
+	var root := "user://test_tweaks"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(root + "/modules/x/data"))
+	var f := FileAccess.open(root + "/modules/x/data/x.json", FileAccess.WRITE)
+	f.store_string("{}")
+	f.close()
+	assert_str(GameData.tweaked("res://modules/x/data/x.json", root)).is_equal(root + "/modules/x/data/x.json")
+	assert_str(GameData.tweaked("res://modules/y/data/y.json", root)).is_equal("res://modules/y/data/y.json")
+	assert_str(GameData.tweaked("res://modules/x/data/x.json", "")).is_equal("res://modules/x/data/x.json")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(root + "/modules/x/data/x.json"))

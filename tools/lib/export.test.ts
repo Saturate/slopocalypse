@@ -1,6 +1,7 @@
 import { test } from "node:test";
+import { join } from "node:path";
 import assert from "node:assert/strict";
-import { presetFor, shippedServers, presetsFile, templatesDir } from "./export.ts";
+import { dataFiles, presetFor, shippedServers, presetsFile, templatesDir } from "./export.ts";
 
 test("windows preset embeds the pack, keeps data files and drops dev-only folders", () => {
 	const p = presetFor("windows", "build/windows/Outpost.exe");
@@ -31,4 +32,11 @@ test("templates live in the self-contained editor data, per engine version", () 
 test("shipped servers list every --connect address for the menu", () => {
 	const parsed: unknown = JSON.parse(shippedServers("100.64.1.2:7777, game.example.net"));
 	assert.deepEqual(parsed, { servers: ["100.64.1.2:7777", "game.example.net"] });
+});
+
+test("the tunable data files are the root and module data folders", () => {
+	const files = dataFiles(join(import.meta.dirname, "..", ".."));
+	assert.ok(files.includes("data/features.json"), files.join(", "));
+	assert.ok(files.includes("modules/enemies/data/enemies.json"), files.join(", "));
+	assert.ok(files.every((f) => f.endsWith(".json") && !f.includes("\\")));
 });

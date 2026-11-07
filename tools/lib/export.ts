@@ -1,3 +1,4 @@
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export type TargetOs = "windows" | "linux" | "macos";
@@ -83,6 +84,35 @@ export function templatesDir(godotDir: string, version: string): string {
 export function exeName(os: TargetOs): string {
 	return os === "windows" ? "Outpost.exe" : os === "linux" ? "Outpost.x86_64" : "Outpost.app";
 }
+
+// Gameplay data files a player can tune: data/*.json and modules/<id>/data/*.json,
+// relative to the project root with forward slashes.
+export function dataFiles(root: string): string[] {
+	const out: string[] = [];
+	const addDir = (rel: string): void => {
+		const dir = join(root, rel);
+		if (!existsSync(dir)) return;
+		for (const f of readdirSync(dir).sort()) if (f.endsWith(".json")) out.push(`${rel}/${f}`);
+	};
+	addDir("data");
+	const modules = join(root, "modules");
+	if (existsSync(modules)) for (const m of readdirSync(modules).sort()) addDir(`modules/${m}/data`);
+	return out;
+}
+
+export const TWEAKS_README = [
+	"Tuning the game without rebuilding it",
+	"",
+	"Every gameplay number lives in a JSON file. The game's own copies are in the defaults folder.",
+	"To change one: copy the file from defaults into this tweaks folder at the same path,",
+	"edit it, and start the game again. For example:",
+	"  defaults/modules/enemies/data/enemies.json  ->  tweaks/modules/enemies/data/enemies.json",
+	"",
+	"The copy here replaces the built-in file completely. Delete it to go back to the default.",
+	"In multiplayer the server's numbers decide damage, health, enemies and loot, so tweak on",
+	"the machine that hosts; give friends the same tweaks folder so guns and parts match.",
+	"",
+].join("\r\n");
 
 // servers.json beside the game: the main menu lists these under Recent, so a friend's copy
 // already knows where to join. `hosts` is a comma-separated list of addresses.
