@@ -16,7 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          lfs: false
+          # The exported game ships the world textures, which live in LFS (about 20 MB).
+          lfs: true
 
       - uses: actions/setup-node@v7
         with:
