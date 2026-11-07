@@ -1,0 +1,6 @@
+{
+  "id": "enemies",
+  "depends_on": ["world", "player", "weapons"],
+  "flag": "enemies",
+  "entry": "enemies_module.gd"
+}

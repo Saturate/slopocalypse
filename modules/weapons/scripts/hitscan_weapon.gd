@@ -193,11 +193,22 @@ func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_pat
 	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "collider": collider, "damage": damage})
 
 
+## Same side (players with players, enemies with enemies) and friendly fire off.
 func _is_teammate(target: Node) -> bool:
-	if holder == null or target == holder or not target.is_in_group(&"players") or not holder.is_in_group(&"players"):
+	if holder == null or target == holder:
+		return false
+	var mine := team_of(holder)
+	if mine.is_empty() or mine != team_of(target):
 		return false
 	var data: Variant = Data.load_json(CONFIG)
 	return not (data is Dictionary and bool((data as Dictionary).get("friendly_fire", false)))
+
+
+## A body's side: its `team` meta, or "players" for players; empty for anything else.
+static func team_of(node: Node) -> String:
+	if node.has_meta(&"team"):
+		return str(node.get_meta(&"team"))
+	return "players" if node.is_in_group(&"players") else ""
 
 
 ## True on the one instance whose player is holding this weapon (solo, or that client).

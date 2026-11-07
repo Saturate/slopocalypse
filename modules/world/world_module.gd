@@ -73,6 +73,10 @@ func _ground_hit(at: Vector3) -> bool:
 
 
 func _on_player_spawned(p: Dictionary) -> void:
+	# Enemies need terrain under them where the game runs (the server); clients only
+	# stream around their own players.
+	if p.get("npc", false) and not multiplayer.is_server():
+		return
 	var player: Node3D = p["player"]
 	player.add_child(_voxels.make_viewer())
 
