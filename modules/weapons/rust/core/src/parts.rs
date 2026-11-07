@@ -11,7 +11,8 @@ pub const NEUTRAL_ERGONOMICS: f64 = 50.0;
 
 /// What one part changes. Base values (`Some`) replace the gun's value and come from the
 /// part that owns them (receiver: fire rate, damage, spread, recoil, reload, ADS time;
-/// barrel: range; magazine: capacity; optic: zoom). The rest add up across all parts.
+/// barrel: range; magazine: capacity; optic: zoom and magnification). The rest add up
+/// across all parts.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PartStats {
     pub rounds_per_minute: Option<f64>,
@@ -23,7 +24,10 @@ pub struct PartStats {
     pub ads_seconds: Option<f64>,
     pub range: Option<f64>,
     pub magazine: Option<u32>,
+    /// How much the main view zooms while aiming (red dots: a little).
     pub zoom: Option<f64>,
+    /// How much a scope's lens magnifies, seen picture in picture; 1 for open sights.
+    pub magnification: Option<f64>,
     pub ergonomics: f64,
     pub weight: f64,
     /// Percent changes, summed over parts: -10 means 10% less.
@@ -54,6 +58,7 @@ pub struct BuildStats {
     pub range: f64,
     pub magazine: u32,
     pub zoom: f64,
+    pub magnification: f64,
     pub ergonomics: f64,
     pub weight: f64,
 }
@@ -158,6 +163,7 @@ fn combine(parts: &[&PartDef]) -> BuildStats {
         range: base(|s| s.range, 100.0),
         magazine: parts.iter().find_map(|p| p.stats.magazine).unwrap_or(0),
         zoom: base(|s| s.zoom, 1.0),
+        magnification: base(|s| s.magnification, 1.0),
         ergonomics,
         weight: sum(|s| s.weight),
     }
@@ -281,6 +287,17 @@ mod tests {
                     ..Default::default()
                 },
             ),
+            part(
+                "scope",
+                "optic",
+                &[],
+                PartStats {
+                    zoom: Some(1.1),
+                    magnification: Some(4.0),
+                    weight: 0.5,
+                    ..Default::default()
+                },
+            ),
         ])
     }
 
@@ -349,6 +366,20 @@ mod tests {
         // rcv 30 + grip 10 + stock 10 = 50, neutral: the receiver's own ADS time.
         let stats = assemble(&catalogue(), &standard()).expect("valid");
         assert!((stats.ads_seconds - 0.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn open_sights_do_not_magnify_and_a_scope_does() {
+        let mut b = standard();
+        b.insert("optic".into(), "dot".into());
+        assert_eq!(
+            assemble(&catalogue(), &b).expect("valid").magnification,
+            1.0
+        );
+        b.insert("optic".into(), "scope".into());
+        let stats = assemble(&catalogue(), &b).expect("valid");
+        assert_eq!(stats.magnification, 4.0);
+        assert_eq!(stats.zoom, 1.1);
     }
 
     #[test]

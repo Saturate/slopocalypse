@@ -7,6 +7,8 @@ extends RefCounted
 const DATA := "res://modules/weapons/data/parts.json"
 
 static var _data: Dictionary = {}
+## Set by captures and tests to equip a build without command-line arguments.
+static var override_build := ""
 
 
 static func _load() -> Dictionary:
@@ -29,6 +31,20 @@ static func default_build() -> String:
 	return str(_load().get("default_build", ""))
 
 
+## The build everyone carries: the default, or `--build=NAME` on the command line (a dev
+## hook to try builds until the modding screen picks per player; solo passes it on to its
+## server so stats match).
+static func chosen_build() -> String:
+	if not override_build.is_empty():
+		return override_build
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--build="):
+			var wanted := arg.trim_prefix("--build=")
+			if build_names().has(wanted):
+				return wanted
+	return default_build()
+
+
 ## Slot -> part id for a named build, or empty.
 static func build(build_name: String) -> Dictionary:
 	return (_load().get("builds", {}) as Dictionary).get(build_name, {})
@@ -45,7 +61,8 @@ static func assemble_named(build_name: String) -> Dictionary:
 ## The visible gun: the receiver at the origin, every other part on the mount its parent
 ## part provides, one MeshInstance3D per slot named after it. Markers (`Sight`, `Muzzle`)
 ## come from the outermost part that has them, so a suppressor's muzzle wins over the
-## barrel's.
+## barrel's; that part's `marker_meta` for the marker becomes its meta (a scope's eye
+## relief on its `Sight`).
 static func build_model(slots: Dictionary) -> Node3D:
 	var parts := catalogue()
 	var root := Node3D.new()
@@ -76,7 +93,7 @@ static func build_model(slots: Dictionary) -> Node3D:
 		for marker: String in part_markers:
 			var at: Vector3 = xf * _vec(part_markers[marker])
 			if not markers.has(marker) or int(markers[marker][1]) < depth:
-				markers[marker] = [at, depth]
+				markers[marker] = [at, depth, (part.get("marker_meta", {}) as Dictionary).get(marker, {})]
 		var mounts: Dictionary = part.get("mounts", {})
 		for child_slot: String in part.get("provides", []):
 			if slots.has(child_slot) and mounts.has(child_slot) and not placed.has(child_slot):
@@ -85,6 +102,9 @@ static func build_model(slots: Dictionary) -> Node3D:
 		var node := Marker3D.new()
 		node.name = marker
 		node.position = markers[marker][0]
+		var meta: Dictionary = markers[marker][2]
+		for key: String in meta:
+			node.set_meta(StringName(key), meta[key])
 		root.add_child(node)
 	return root
 

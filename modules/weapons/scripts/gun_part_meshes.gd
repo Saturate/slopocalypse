@@ -18,6 +18,10 @@ const GLASS := Color(0.75, 0.85, 0.88, 0.07)
 ## Picatinny-style teeth: one every this many metres along a rail.
 const RAIL_PITCH := 0.01
 const RAIL_WIDTH := 0.021
+## Scope geometry the data's markers must match: bore axis height above the rail, and
+## where the eyepiece's rear face is.
+const SCOPE_AXIS_Y := 0.045
+const SCOPE_EYEPIECE_Z := 0.135
 
 static var _cache: Dictionary[String, ArrayMesh] = {}
 
@@ -43,6 +47,7 @@ static func mesh(id: String) -> ArrayMesh:
 		"muzzle_supp": built = _muzzle_supp()
 		"optic_reddot": built = _optic_reddot()
 		"optic_holo": built = _optic_holo()
+		"optic_scope": built = _optic_scope()
 	if built != null:
 		_cache[id] = built
 	return built
@@ -362,3 +367,36 @@ static func _optic_holo() -> ArrayMesh:
 	var glass := LowPoly.begin()
 	LowPoly.box(glass, Vector3(0.042, 0.04, 0.0015), _at(Vector3(0, 0.035, -0.026)), GLASS)
 	return _finish(metal, null, glow, glass)
+
+
+## A fixed-power scope on two rings: objective bell in front, eyepiece behind, turrets on
+## top and right. The eyepiece is left dark; the scope view draws the magnified picture on
+## a lens there (see ScopeView), so the mesh only frames it.
+static func _optic_scope() -> ArrayMesh:
+	var metal := LowPoly.begin()
+	var axis := SCOPE_AXIS_Y
+	for z in [-0.035, 0.045]:
+		_clamp(metal, 0.022, z)
+		LowPoly.chamfer_box(metal, Vector3(0.012, axis - 0.012, 0.016), 0.002, _at(Vector3(0, (axis + 0.004) / 2.0, z)), DARK)
+		LowPoly.tube(metal, 0.0165, 0.0127, 0.016, 16, _along_z(Vector3(0, axis, z)), DARK)
+	LowPoly.cylinder(metal, 0.0127, 0.16, 16, _along_z(Vector3(0, axis, 0.0)), GUNMETAL)
+	# Objective: a cone out to the bell, then the bell itself, open at the front.
+	LowPoly.cylinder(metal, 0.0127, 0.035, 16, _along_z(Vector3(0, axis, -0.0975)), GUNMETAL, 0.021)
+	LowPoly.tube(metal, 0.022, 0.0195, 0.05, 20, _along_z(Vector3(0, axis, -0.14)), GUNMETAL)
+	LowPoly.tube(metal, 0.0228, 0.0195, 0.006, 20, _along_z(Vector3(0, axis, -0.163)), DARK)
+	# Eyepiece: a short cone and a rubber eyecup.
+	LowPoly.cylinder(metal, 0.0127, 0.02, 16, _along_z(Vector3(0, axis, 0.09)), GUNMETAL, 0.023)
+	# Dark inside, so its inner wall never shows as a bright ring around the picture.
+	LowPoly.tube(metal, 0.0235, 0.021, 0.035, 24, _along_z(Vector3(0, axis, SCOPE_EYEPIECE_Z - 0.0175)), RUBBER)
+	LowPoly.tube(metal, 0.024, 0.021, 0.008, 24, _along_z(Vector3(0, axis, SCOPE_EYEPIECE_Z - 0.004)), RUBBER)
+	# Turrets: elevation on top, windage on the right, with caps.
+	LowPoly.cylinder(metal, 0.009, 0.016, 12, Transform3D(Basis.IDENTITY, Vector3(0, axis + 0.018, 0.005)), GUNMETAL)
+	LowPoly.cylinder(metal, 0.0095, 0.005, 12, Transform3D(Basis.IDENTITY, Vector3(0, axis + 0.026, 0.005)), DARK)
+	LowPoly.cylinder(metal, 0.009, 0.016, 12, _along_x(Vector3(0.018, axis, 0.005)), GUNMETAL)
+	LowPoly.cylinder(metal, 0.0095, 0.005, 12, _along_x(Vector3(0.026, axis, 0.005)), DARK)
+	LowPoly.chamfer_box(metal, Vector3(0.026, 0.026, 0.022), 0.004, _at(Vector3(0, axis, 0.005)), GUNMETAL)
+	# Behind the lens, so the tube never shows through where the picture is not drawn.
+	LowPoly.cylinder(metal, 0.0211, 0.002, 24, _along_z(Vector3(0, axis, SCOPE_EYEPIECE_Z - 0.012)), RUBBER)
+	var glass := LowPoly.begin()
+	LowPoly.cylinder(glass, 0.0196, 0.001, 20, _along_z(Vector3(0, axis, -0.16)), GLASS)
+	return _finish(metal, null, null, glass)

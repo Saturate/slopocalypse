@@ -35,6 +35,13 @@ func sight_zoom() -> float:
 	return float(sight.get_meta(&"zoom", 1.0)) if sight != null else 1.0
 
 
+## How much the held weapon's scope magnifies (1 for open sights), from the `Sight`
+## marker's `magnification` meta. Aiming turns slower through a scope by this much.
+func sight_magnification() -> float:
+	var sight := _sight_marker()
+	return float(sight.get_meta(&"magnification", 1.0)) if sight != null else 1.0
+
+
 func _ready() -> void:
 	var body := player.get_node("Body")
 	_tree = body.get_node("AnimationTree")
@@ -75,7 +82,11 @@ func _update_ads(delta: float) -> void:
 	var eased := _ads * _ads * (3.0 - 2.0 * _ads)
 	_aim.set(&"ads", eased)
 	_aim.set(&"eye", _camera)
-	_aim.set(&"eye_relief", float(player.config["ads_eye_relief"]))
+	# Scopes sit closer to the eye than open sights; the optic says how close.
+	var relief := float(player.config["ads_eye_relief"])
+	if sight != null:
+		relief = float(sight.get_meta(&"eye_relief", relief))
+	_aim.set(&"eye_relief", relief)
 	if sight != null:
 		# The sight in the space of the bone the weapon hangs from (the socket's parent is
 		# that bone's attachment). Both globals are from this frame, so the lag cancels out.
