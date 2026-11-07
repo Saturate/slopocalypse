@@ -1,0 +1,54 @@
+name: server-build
+
+# Builds the Linux game (the dedicated server runs it with --headless) and uploads it for
+# tools/deploy.ts. Manual only: run by deploy.ts or `gh workflow run server-build.yml`.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: server-build
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: rustup show active-toolchain
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: npm ci
+
+      - name: Cache Godot
+        uses: actions/cache@v6
+        with:
+          path: tools/godot
+          key: godot-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/lib/godot.ts') }}
+
+      - run: node tools/get-godot.ts
+
+      # The export templates are a large download; tools/export.ts verifies them either way.
+      - name: Cache export templates
+        uses: actions/cache@v6
+        with:
+          path: tools/godot/editor_data/export_templates
+          key: godot-templates-${{ hashFiles('tools/lib/godot.ts') }}
+
+      # Exports and smoke-tests the exported Linux game in solo with the bot.
+      - run: node tools/export.ts --os linux
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: outpost-linux
+          path: build/linux/
+          retention-days: 7
