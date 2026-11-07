@@ -1,0 +1,19 @@
+{
+  "volume_db": {
+    "rifle": -2.0,
+    "pistol": -4.0,
+    "suppressed": -10.0,
+    "impact": -12.0,
+    "hit": -6.0,
+    "explosion": 2.0,
+    "footstep": -16.0,
+    "reload": -10.0,
+    "pickup": -10.0,
+    "hurt": -6.0,
+    "wind": -28.0
+  },
+  "shot_range": 320.0,
+  "footstep_range": 28.0,
+  "step_length": 2.0,
+  "max_voices": 48
+}
