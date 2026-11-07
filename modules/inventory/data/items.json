@@ -3,6 +3,11 @@
     "inventory": ["Tab"]
   },
   "grid": [10, 6],
+  "loot": [
+    { "at": [3.0, -4.0], "items": ["muz_flash", "grp_ar_std", "mag_ar_30"] },
+    { "at": [-4.0, -3.0], "items": ["opt_reddot", "stk_ar_std", "mag_pistol_15"] },
+    { "at": [6.0, 3.0], "items": ["hg_ar_std", "bar_ar_14", "sld_pistol_std"] }
+  ],
   "starting_kit": [
     "opt_scope_4x", "opt_holo", "muz_comp", "muz_supp", "mag_ar_45", "stk_ar_light",
     "bar_ar_10", "hg_ar_long", "sld_pistol_long", "mag_pistol_21", "muz_pistol_comp",

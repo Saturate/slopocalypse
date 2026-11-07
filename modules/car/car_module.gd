@@ -92,9 +92,13 @@ func _spawn_car(data: Variant) -> Node:
 
 
 func _on_player_interact(payload: Dictionary) -> void:
+	# One press does one thing: something else (picking up loot) may have claimed it.
+	if payload.get("handled", false):
+		return
 	var who: Node3D = payload["player"]
 	for car in _cars:
 		if car.can_enter(who):
+			payload["handled"] = true
 			car.enter(who)
 			return
 
