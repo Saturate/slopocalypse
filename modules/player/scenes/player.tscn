@@ -1,8 +1,9 @@
 [gd_scene format=3]
 
-[ext_resource type="Script" path="res://modules/player/scripts/player_controller.gd" id="1_xf3yk"]
-[ext_resource type="PackedScene" path="res://modules/player/scenes/player_body.tscn" id="2_21ri4"]
-[ext_resource type="Script" path="res://modules/player/scripts/player_intent.gd" id="3_b37s4"]
+[ext_resource type="Script" path="res://modules/player/scripts/player_controller.gd" id="1_21ri4"]
+[ext_resource type="PackedScene" path="res://modules/player/scenes/player_body.tscn" id="2_b37s4"]
+[ext_resource type="Script" path="res://core/components/health_component.gd" id="3_18anc"]
+[ext_resource type="Script" path="res://modules/player/scripts/player_intent.gd" id="4_n7jmn"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1856a1"]
 resource_local_to_scene = true
@@ -32,9 +33,12 @@ properties/6/replication_mode = 2
 properties/7/path = NodePath("Intent:weapon_slot")
 properties/7/spawn = true
 properties/7/replication_mode = 2
+properties/8/path = NodePath("Health:health")
+properties/8/spawn = true
+properties/8/replication_mode = 2
 
 [node name="Player" type="CharacterBody3D" unique_id=1247104626]
-script = ExtResource("1_xf3yk")
+script = ExtResource("1_21ri4")
 intent_path = NodePath("Intent")
 head_path = NodePath("Head")
 shape_path = NodePath("Shape")
@@ -42,15 +46,18 @@ shape_path = NodePath("Shape")
 [node name="Shape" type="CollisionShape3D" parent="." unique_id=1282515539]
 shape = SubResource("CapsuleShape3D_1856a1")
 
-[node name="Body" type="Node3D" parent="." unique_id=1990518768 instance=ExtResource("2_21ri4")]
+[node name="Body" type="Node3D" parent="." unique_id=1990518768 instance=ExtResource("2_b37s4")]
 
 [node name="Head" type="Node3D" parent="." unique_id=1990723380]
 
 [node name="Camera" type="Camera3D" parent="Head" unique_id=937005551]
 fov = 80.0
 
+[node name="Health" type="Node" parent="." unique_id=1086772632]
+script = ExtResource("3_18anc")
+
 [node name="Intent" type="Node" parent="." unique_id=1137256308]
-script = ExtResource("3_b37s4")
+script = ExtResource("4_n7jmn")
 
 [node name="NetSync" type="MultiplayerSynchronizer" parent="." unique_id=684271526]
 replication_config = SubResource("SceneReplicationConfig_3d7912")

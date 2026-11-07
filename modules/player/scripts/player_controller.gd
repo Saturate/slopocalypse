@@ -35,6 +35,8 @@ const REQUIRED := {
 	"eye_offset": TYPE_FLOAT,
 	"radius": TYPE_FLOAT,
 	"mouse_sensitivity": TYPE_FLOAT,
+	"max_health": TYPE_FLOAT,
+	"respawn_seconds": TYPE_FLOAT,
 }
 const PITCH_LIMIT := deg_to_rad(89.0)
 
@@ -76,6 +78,10 @@ func _ready() -> void:
 		set_physics_process(false)
 		return
 	_apply_height(config["stand_height"])
+	var health := get_node_or_null("Health") as HealthComponent
+	if health != null:
+		health.max_health = config["max_health"]
+		health.server_reset()
 
 
 func intent() -> PlayerIntent:

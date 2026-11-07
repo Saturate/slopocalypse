@@ -2,6 +2,7 @@
   "bindings": {
     "modding": ["B"]
   },
+  "friendly_fire": false,
   "rifle": {
     "damage": 25.0,
     "rounds_per_minute": 600.0,

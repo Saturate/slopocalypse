@@ -147,6 +147,8 @@ func request_reload() -> void:
 
 ## Server only: applies fire rules, traces the shot and damages what it hits.
 func server_fire(origin: Vector3, direction: Vector3) -> void:
+	if holder != null and holder.get_meta(&"dead", false):
+		return
 	if not rules.try_fire():
 		return
 	var spread := rules.last_spread()
@@ -168,6 +170,9 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 		hit_point = hit["position"]
 		collider = hit["collider"]
 		var health := HealthComponent.find_on(collider as Node) if collider is Node else null
+		# Co-op: players do not hurt each other unless the data says so.
+		if health != null and _is_teammate(health.get_parent()):
+			health = null
 		if health != null:
 			damage = health.server_apply_damage(stats["damage"], holder)
 			target = health.get_parent()
@@ -186,6 +191,13 @@ func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_pat
 	_play_shot_effects()
 	# `collider` lets other modules react to what was hit (the world digs into terrain).
 	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "collider": collider, "damage": damage})
+
+
+func _is_teammate(target: Node) -> bool:
+	if holder == null or target == holder or not target.is_in_group(&"players") or not holder.is_in_group(&"players"):
+		return false
+	var data: Variant = Data.load_json(CONFIG)
+	return not (data is Dictionary and bool((data as Dictionary).get("friendly_fire", false)))
 
 
 ## True on the one instance whose player is holding this weapon (solo, or that client).
