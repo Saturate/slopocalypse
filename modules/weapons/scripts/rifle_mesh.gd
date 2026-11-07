@@ -8,6 +8,13 @@ const DARK := Color(0.08, 0.08, 0.09)
 const POLYMER := Color(0.14, 0.14, 0.15)
 const FURNITURE := Color(0.55, 0.47, 0.33)
 
+## Red dot housing: the line of sight runs along -Z at this height through its centre.
+const SIGHT_HEIGHT := 0.118
+const SIGHT_CENTRE_Z := -0.02
+const SIGHT_LENGTH := 0.07
+## Where the eye looks through the sight from, at the rear of the housing.
+const SIGHT_EYE := Vector3(0, SIGHT_HEIGHT, SIGHT_CENTRE_Z + SIGHT_LENGTH / 2.0)
+
 
 static func _at(pos: Vector3, rot: Vector3 = Vector3.ZERO) -> Transform3D:
 	return Transform3D(Basis.from_euler(rot), pos)
@@ -27,7 +34,8 @@ static func rifle() -> ArrayMesh:
 	LowPoly.cylinder(metal, 0.018, 0.06, 8, _along_z(Vector3(0, 0.04, -0.6)), GUNMETAL)
 	LowPoly.chamfer_box(metal, Vector3(0.008, 0.035, 0.012), 0.002, _at(Vector3(0, 0.1, -0.38)), DARK)
 	LowPoly.chamfer_box(metal, Vector3(0.03, 0.02, 0.05), 0.004, _at(Vector3(0, 0.09, -0.02)), DARK)
-	LowPoly.cylinder(metal, 0.024, 0.1, 10, _along_z(Vector3(0, 0.118, -0.02)), DARK)
+	# Red dot: an open housing to look through, the dot near its front lens.
+	LowPoly.tube(metal, 0.023, 0.0205, SIGHT_LENGTH, 20, _along_z(Vector3(0, SIGHT_HEIGHT, SIGHT_CENTRE_Z)), DARK)
 	LowPoly.chamfer_box(metal, Vector3(0.022, 0.012, 0.035), 0.003, _at(Vector3(0, 0.072, 0.15)), DARK)
 	LowPoly.chamfer_box(metal, Vector3(0.004, 0.026, 0.07), 0.001, _at(Vector3(0.031, 0.042, 0.0)), DARK)
 	# Vent slots along both sides of the handguard.
@@ -51,10 +59,10 @@ static func rifle() -> ArrayMesh:
 
 	# The red dot glows so it reads at a glance.
 	var dot := LowPoly.begin()
-	LowPoly.chamfer_box(dot, Vector3(0.006, 0.006, 0.004), 0.001, _at(Vector3(0, 0.118, -0.068)), Color(1.0, 0.15, 0.1))
+	LowPoly.chamfer_box(dot, Vector3(0.004, 0.004, 0.002), 0.0008, _at(Vector3(0, SIGHT_HEIGHT, SIGHT_CENTRE_Z - SIGHT_LENGTH * 0.35)), Color(1.0, 0.15, 0.1))
 	var glow := LowPoly.material(0.3)
 	glow.emission_enabled = true
 	glow.emission = Color(1.0, 0.1, 0.05)
-	glow.emission_energy_multiplier = 4.0
+	glow.emission_energy_multiplier = 1.6
 	LowPoly.finish(dot, glow, mesh)
 	return mesh
