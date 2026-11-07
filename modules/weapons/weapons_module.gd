@@ -67,6 +67,7 @@ func _on_player_spawned(p: Dictionary) -> void:
 	var modding := ModdingScreen.new()
 	modding.name = "ModdingScreen"
 	modding.weapons = self
+	modding.peer = int(player.get_meta(&"peer_id", 1))
 	modding.player = player
 	add_child(modding)
 
@@ -111,8 +112,71 @@ func server_set_build(peer: int, slots: Dictionary) -> bool:
 	if not result["ok"]:
 		Log.warn(&"weapons", "peer %d: build refused: %s" % [peer, ", ".join(result["errors"])])
 		return false
+	var why := _swap_parts(peer, build_of(peer, GunAssembly.weapon_slot_of(clean)), clean)
+	if not why.is_empty():
+		Log.warn(&"weapons", "peer %d: build refused: %s" % [peer, why])
+		return false
 	Net.server_broadcast(&"weapons.build_changed", {"peer": peer, "build": clean})
 	return true
+
+
+## The inventory module's API when it is loaded; without it every part is free to use.
+func inventory() -> Node:
+	return get_tree().get_first_node_in_group(&"inventory_api")
+
+
+## Parts the change from `before` to `after` puts on the gun (they must come from the
+## inventory) and takes off (they go back into it).
+static func part_changes(before: Dictionary, after: Dictionary) -> Dictionary:
+	var fitted: Array[String] = []
+	var removed: Array[String] = []
+	var slots := before.keys()
+	for slot: Variant in after:
+		if not slots.has(slot):
+			slots.append(slot)
+	for slot: Variant in slots:
+		var was := str(before.get(slot, ""))
+		var now := str(after.get(slot, ""))
+		if was == now:
+			continue
+		if not now.is_empty():
+			fitted.append(now)
+		if not was.is_empty():
+			removed.append(was)
+	return {"fitted": fitted, "removed": removed}
+
+
+## Server: takes the parts a build change fits out of the inventory and puts the removed
+## ones back. Returns why it cannot (a part not owned, no room for what comes off), having
+## changed nothing; "" when done.
+func _swap_parts(peer: int, before: Dictionary, after: Dictionary) -> String:
+	var inv := inventory()
+	if inv == null:
+		return ""
+	var changes := part_changes(before, after)
+	var fitted: Array[String] = changes["fitted"]
+	var removed: Array[String] = changes["removed"]
+	var needed := {}
+	for part in fitted:
+		needed[part] = int(needed.get(part, 0)) + 1
+	for part: String in needed:
+		if int(inv.call(&"count", peer, part)) < int(needed[part]):
+			return "does not own %s" % part
+	var taken: Array[String] = []
+	for part in fitted:
+		inv.call(&"server_take", peer, part)
+		taken.append(part)
+	var given: Array[String] = []
+	for part in removed:
+		if not inv.call(&"server_give", peer, part):
+			# Undo: what came off goes back on, what was fitted goes back in the bag.
+			for g in given:
+				inv.call(&"server_take", peer, g)
+			for t in taken:
+				inv.call(&"server_give", peer, t)
+			return "no room in the inventory for %s" % part
+		given.append(part)
+	return ""
 
 
 ## Everywhere, from the server's broadcast or a late-join catch-up: remember the build and

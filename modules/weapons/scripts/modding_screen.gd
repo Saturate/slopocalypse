@@ -18,6 +18,7 @@ const NONE := "(none)"
 
 var weapons: Node
 var player: PlayerController
+var peer := 1
 
 var _root: Control
 var _preview_port: SubViewport
@@ -105,6 +106,17 @@ func apply() -> void:
 	close()
 
 
+## Parts offered for `slot`: what is fitted now plus what the inventory holds (every part
+## when there is no inventory module).
+func owned_options(slot: String) -> Array[String]:
+	var inv: Node = weapons.call(&"inventory")
+	var out: Array[String] = []
+	for id in GunModding.options(slot):
+		if inv == null or id == str(_current.get(slot, "")) or int(inv.call(&"count", peer, id)) > 0:
+			out.append(id)
+	return out
+
+
 func draft() -> Dictionary:
 	return _draft
 
@@ -177,7 +189,7 @@ func _fill_pickers() -> void:
 		if not GunModding.is_required(slot, _current):
 			picker.add_item(NONE)
 			picker.set_item_metadata(0, "")
-		var choices: Array[String] = GunModding.options(slot)
+		var choices := owned_options(slot)
 		if slot == "receiver":
 			choices = [str(_current["receiver"])]
 		for id in choices:
@@ -259,7 +271,8 @@ func _build_ui() -> void:
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right.add_child(spacer)
-	right.add_child(_label("Swapping parts empties the magazine.", 13, DIM))
+	right.add_child(_label("Parts come from your backpack (Tab); removed ones go back in it.
+Swapping parts empties the magazine.", 13, DIM))
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 8)
 	right.add_child(buttons)

@@ -19,6 +19,8 @@ var _mine: InventoryGrid
 
 
 func _ready() -> void:
+	# Other modules find the API through this group instead of a path into this module.
+	add_to_group(&"inventory_api")
 	var parsed: Variant = Data.load_json(ITEMS)
 	_data = parsed if parsed is Dictionary else {}
 	var items: Dictionary = _data.get("items", {})
