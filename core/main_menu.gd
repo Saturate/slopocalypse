@@ -77,16 +77,15 @@ func _ready() -> void:
 	col.add_child(_label("OUTPOST", 46, ACCENT))
 	col.add_child(_label("Co-op survival for friends", 16, DIM))
 
-	var name_row := HBoxContainer.new()
-	name_row.add_child(_label("Your name", 15, LABEL))
+	col.add_child(_gap())
+	col.add_child(_label("YOUR NAME", 14, LABEL))
 	_name = LineEdit.new()
 	_name.name = "Name"
 	_name.text = PlayerProfile.load_from(profile_path).name
 	_name.max_length = 16
-	_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_name.custom_minimum_size.y = 40
 	_name.text_changed.connect(func(_t: String) -> void: _message.visible = false)
-	name_row.add_child(_name)
-	col.add_child(name_row)
+	col.add_child(_name)
 	col.add_child(_label("Servers keep your gear under this name.", 14, LABEL))
 	col.add_child(_gap())
 
