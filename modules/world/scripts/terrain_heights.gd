@@ -40,5 +40,18 @@ func height_at(x: float, z: float) -> float:
 	return _noise.get_noise_2d(x, z) * amplitude * blend
 
 
+## The untouched heights as a float texture covering the world, `res` texels a side, for
+## the terrain shader (it shows dirt wherever the surface sits below these).
+func bake(res: int) -> ImageTexture:
+	var img := Image.create(res, res, false, Image.FORMAT_RF)
+	var half := size / 2.0
+	for py in res:
+		for px in res:
+			var x := -half + (px + 0.5) * size / res
+			var z := -half + (py + 0.5) * size / res
+			img.set_pixel(px, py, Color(height_at(x, z), 0.0, 0.0))
+	return ImageTexture.create_from_image(img)
+
+
 func spacing() -> float:
 	return size / float(resolution - 1)

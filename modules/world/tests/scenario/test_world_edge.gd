@@ -1,6 +1,6 @@
 extends GdUnitTestSuite
-## Nobody leaves the world: walls stop walkers at the edge, and anything that still gets
-## out below the kill height is put back at the spawn.
+## Nobody leaves the world: walls stop walkers at the edge, and anyone who still gets under
+## the ground is put back on top.
 
 const WORLD := "res://modules/world/scenes/world.tscn"
 const PLAYER := "res://modules/player/scenes/player.tscn"
@@ -47,15 +47,18 @@ func test_walking_into_the_edge_stops_at_the_wall() -> void:
 	assert_float(player.global_position.z).is_greater(-half)
 
 
-func test_falling_out_of_the_world_respawns_at_the_spawn() -> void:
+func test_falling_through_the_ground_puts_you_back_on_top_where_you_were() -> void:
 	var module: Node = auto_free((load(PLAYER_MODULE) as GDScript).new())
 	add_child(module)
-	var spawn := Vector3(1.0, 2.0, 3.0)
-	EventBus.publish(&"world.ready", {"spawn": spawn, "kill_y": -40.0})
+	EventBus.publish(&"world.ready", {"spawn": Vector3(1.0, 2.0, 3.0), "kill_y": -40.0, "rescue_depth": 6.0})
 	var player: PlayerController = module.players()[0]
+	var voxels: VoxelWorld = _world.get_node("Terrain")
+	var ground := voxels.ground_height(30.0, -20.0)
 	Log.begin_capture()
-	player.global_position = Vector3(0.0, -100.0, 0.0)
+	player.global_position = Vector3(30.0, ground - 10.0, -20.0)
 	await _frames(2)
 	var log_text := LogCapture.text(Log.end_capture())
-	assert_float(player.global_position.distance_to(spawn)).is_less(1.0)
-	assert_str(log_text).contains("fell out of the world")
+	assert_vector(player.global_position).is_equal_approx(Vector3(30.0, ground + 1.0, -20.0), Vector3.ONE * 0.05)
+	assert_str(log_text).contains("fell through the ground")
+	# Held there until the terrain under them has collision, not dropped through it again.
+	assert_bool(player.is_physics_processing()).is_false()

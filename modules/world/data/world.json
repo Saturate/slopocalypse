@@ -7,6 +7,7 @@
   "flat_radius": 12.0,
   "flat_blend": 20.0,
   "kill_y": -40.0,
+  "rescue_depth": 6.0,
   "cover": [
     { "x": 8.0, "z": -10.0, "w": 4.0, "h": 2.0, "d": 1.0 },
     { "x": -12.0, "z": -6.0, "w": 1.0, "h": 1.2, "d": 6.0 },
@@ -20,7 +21,8 @@
     "view_distance": 256.0,
     "lod_count": 4.0,
     "lod_distance": 48.0,
-    "depth": 64.0
+    "depth": 64.0,
+    "max_dig_depth": 3.0
   },
   "biomes": {
     "seed": 77.0,

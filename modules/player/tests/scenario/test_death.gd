@@ -36,6 +36,15 @@ func test_running_out_of_health_kills_and_respawn_restores() -> void:
 	assert_bool(player.get_meta(&"dead", true)).is_false()
 	assert_float(health.health).is_equal(health.max_health)
 	assert_float(Vector2(player.global_position.x, player.global_position.z).length()).is_less(10.0)
+	# Held still until there is ground under the spawn, then free to move.
+	assert_bool(player.is_physics_processing()).is_false()
+	var floor_body: StaticBody3D = auto_free(StaticBody3D.new())
+	var shape := CollisionShape3D.new()
+	shape.shape = WorldBoundaryShape3D.new()
+	floor_body.add_child(shape)
+	add_child(floor_body)
+	for i in 3:
+		await get_tree().physics_frame
 	assert_bool(player.is_physics_processing()).is_true()
 
 
