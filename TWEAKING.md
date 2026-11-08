@@ -38,6 +38,7 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | Drone | `modules/drones/data/drones.json` | `max_health`, `speed`, `orbit_*` (attack orbit), `calm_orbit_*` (how it circles before anyone provokes it), `aim_cone_degrees`, `aim_range`, `aim_seconds` (how long someone aims down sights at it before it turns angry), `calm_after_seconds`, `respawn_seconds`, `max_drones`, `dive_*`, `crash_*` |
 | Car handling | `modules/car/data/car.json` | `engine_force`, `top_speed`, `brake_force`, `max_steer_degrees`, `suspension_*`, `friction_slip` |
 | Sound volumes and ranges | `modules/audio/data/audio.json` | `volume_db` (per sound, in dB: `-6` is about half as loud), `shot_range`, `footstep_range`, `rotor_range`, `rotor_angry_pitch`, `rotor_angry_db` (the drone hum) |
+| Headshots | `modules/weapons/data/weapons.json` | `headshot.kills` (teams a headshot kills outright, `"enemies"` for guards), `headshot.multiplier` (damage times this for everyone else) |
 | Training dummies | `modules/training/data/training.json` | `max_health`, `respawn_seconds`, `dummies` |
 | Saving: where, how often | `modules/persistence/data/persistence.json` | `file` (the save; `--save=PATH` on the server wins), `autosave_seconds`, `hold_seconds` (how long a returning player waits in the air for ground) |
 | The map: length, width, hills | `modules/world/data/world.json` | `length`, `width`, `behind` (metres behind the spawn), `height_amplitude`, `noise_frequency`, `seed`, `cover` |

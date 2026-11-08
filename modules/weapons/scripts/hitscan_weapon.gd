@@ -30,6 +30,8 @@ const REQUIRED := {
 var stats: Dictionary = {}
 ## The player carrying this weapon. Set by the weapons module when it equips.
 var holder: PlayerController
+## How far below the eyes a hit still counts as the head (chin and neck).
+const HEAD_BELOW_EYES := 0.22
 ## Only the drawn weapon fires; the other keeps its magazine and waits.
 var active := true
 ## One shot per trigger pull (pistols) instead of firing while held.
@@ -174,8 +176,8 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 		if health != null and _is_teammate(health.get_parent()):
 			health = null
 		if health != null:
-			damage = health.server_apply_damage(stats["damage"], holder)
 			target = health.get_parent()
+			damage = health.server_apply_damage(_damage_for(target, hit_point, health), holder)
 	var target_path := String(target.get_path()) if target != null else ""
 	var collider_path := String((collider as Node).get_path()) if collider is Node else ""
 	# Decided here; replayed everywhere (this instance included) for effects and craters.
@@ -191,6 +193,28 @@ func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_pat
 	_play_shot_effects()
 	# `collider` lets other modules react to what was hit (the world digs into terrain).
 	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "collider": collider, "damage": damage})
+
+
+## A shot's damage: the gun's, unless it hit the head. Headshots kill the teams listed in
+## weapons.json `headshot.kills` outright (guards, for now: no helmets yet) and multiply
+## the damage for everyone else.
+func _damage_for(target: Node, hit_point: Vector3, health: HealthComponent) -> float:
+	var damage: float = stats["damage"]
+	if not is_headshot(target, hit_point):
+		return damage
+	var data: Variant = Data.load_json(CONFIG)
+	var rules_cfg: Dictionary = (data as Dictionary).get("headshot", {}) if data is Dictionary else {}
+	if team_of(target) in (rules_cfg.get("kills", []) as Array):
+		return maxf(health.health, damage)
+	return damage * float(rules_cfg.get("multiplier", 1.0))
+
+
+## True when `point` is at head height on the body: from a little below its eyes (its
+## `Head` node, which follows crouching) up. Bullets stop on the body's capsule surface, so
+## height is what tells a head from a chest, not distance to the eyes.
+static func is_headshot(target: Node, point: Vector3) -> bool:
+	var head := target.get_node_or_null("Head") as Node3D if target != null else null
+	return head != null and point.y >= head.global_position.y - HEAD_BELOW_EYES
 
 
 ## Same side (players with players, enemies with enemies) and friendly fire off.

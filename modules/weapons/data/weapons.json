@@ -3,6 +3,7 @@
     "modding": ["B"]
   },
   "friendly_fire": false,
+  "headshot": { "kills": ["enemies"], "multiplier": 2.0 },
   "rifle": {
     "damage": 25.0,
     "rounds_per_minute": 600.0,
