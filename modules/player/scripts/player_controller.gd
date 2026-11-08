@@ -32,6 +32,9 @@ const REQUIRED := {
 	"slide_friction": TYPE_FLOAT,
 	"stand_height": TYPE_FLOAT,
 	"crouch_height": TYPE_FLOAT,
+	"lean_offset": TYPE_FLOAT,
+	"lean_degrees": TYPE_FLOAT,
+	"lean_seconds": TYPE_FLOAT,
 	"eye_offset": TYPE_FLOAT,
 	"radius": TYPE_FLOAT,
 	"mouse_sensitivity": TYPE_FLOAT,
@@ -51,10 +54,14 @@ var mode: Mode = Mode.NORMAL
 
 var _intent: PlayerIntent
 var _head: Node3D
+## A leaning head keeps this far from walls.
+const LEAN_CLEARANCE := 0.15
 var _capsule: CapsuleShape3D
 var _shape_node: CollisionShape3D
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var _was_crouching := false
+## -1 (full left) to 1 (full right), eased toward the intent's lean.
+var _lean := 0.0
 
 # Traversal (mantle and vault) runs along a scripted path instead of physics.
 var _path_t := 0.0
@@ -134,6 +141,31 @@ func _physics_process(delta: float) -> void:
 		_:
 			_step_normal(delta)
 	_was_crouching = _intent.crouch
+
+
+## How far the player leans, -1 (left) to 1 (right). The body animator rolls the spine by it.
+func lean_amount() -> float:
+	return _lean
+
+
+## Every instance, every frame: the head moves sideways and rolls with the lean, stopping
+## short of walls so nobody peeks through one. On the server this moves the eye shots
+## come from; clients ease toward the same synced lean.
+func _process(delta: float) -> void:
+	if _head == null or config.is_empty():
+		return
+	var want := float(_intent.lean) if mode == Mode.NORMAL and not is_sprinting() else 0.0
+	_lean = move_toward(_lean, want, delta / maxf(float(config["lean_seconds"]), 0.01))
+	var offset := _lean * float(config["lean_offset"])
+	if absf(offset) > 0.01 and is_inside_tree():
+		var from := global_transform * Vector3(0.0, _head.position.y, 0.0)
+		var side := global_basis.x.normalized() * signf(offset)
+		var query := PhysicsRayQueryParameters3D.create(from, from + side * (absf(offset) + LEAN_CLEARANCE), PhysicsLayers.SOLID, [get_rid()])
+		var hit := get_world_3d().direct_space_state.intersect_ray(query)
+		if not hit.is_empty():
+			offset = signf(offset) * maxf(from.distance_to(hit["position"]) - LEAN_CLEARANCE, 0.0)
+	_head.position.x = offset
+	_head.rotation.z = -_lean * deg_to_rad(float(config["lean_degrees"]))
 
 
 func _wants_sprint() -> bool:

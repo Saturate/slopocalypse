@@ -47,6 +47,7 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | Trees, rocks, grass | `modules/world/data/world.json` | `scatter`: `trees_per_hectare`, `rocks_per_hectare`, `grass_per_m2`, `variants` (how many different models of each), `load_distance` (how far ahead scenery appears), `tree_detail_distance`, `grass_distance` |
 | Craters and falling through | `modules/world/data/world.json` | `voxel.max_dig_depth` (deepest a crater goes under the ground), `rescue_depth` (this far under the ground counts as fallen through: you are put back on top) |
 | Voxel ground detail | `modules/world/data/world.json` | `voxel.lods` (`[[metres, voxel size], ...]`: finer blocks close by), `voxel.load_distance`, `voxel.collision_distance`, `voxel.builds_per_frame` (more loads ground faster but can hitch) |
+| Leaning (Q / E) | `modules/player/data/player.json` | `lean_offset` (how far the eye moves, metres), `lean_degrees` (camera tilt), `lean_body_degrees` (how far others see the body tilt), `lean_seconds` |
 | Waiting for ground | `modules/player/data/player.json` | `hold_seconds` (a respawned or rescued player is held still until there is ground under them, at most this long) |
 
 ## Good first tweaks

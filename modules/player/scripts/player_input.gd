@@ -54,14 +54,16 @@ func _physics_process(_delta: float) -> void:
 		intent.move = Vector2.ZERO
 		intent.sprint = false
 		intent.crouch = false
+		intent.lean = 0
 		intent.fire = false
 		intent.aim = false
 		if _remote:
-			intent.submit.rpc_id(1, intent.move, _yaw, _pitch, intent.sprint, intent.crouch, intent.fire, intent.aim)
+			intent.submit.rpc_id(1, intent.move, _yaw, _pitch, intent.sprint, intent.crouch, intent.fire, intent.aim, intent.lean)
 		return
 	intent.move = Input.get_vector(&"move_left", &"move_right", &"move_back", &"move_forward")
 	intent.sprint = Input.is_action_pressed(&"sprint")
 	intent.crouch = Input.is_action_pressed(&"crouch")
+	intent.lean = int(Input.is_action_pressed(&"lean_right")) - int(Input.is_action_pressed(&"lean_left"))
 	# The click that captures the mouse should not also fire.
 	intent.fire = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	intent.aim = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
@@ -73,4 +75,4 @@ func _physics_process(_delta: float) -> void:
 			else:
 				intent.set(action, true)
 	if _remote:
-		intent.submit.rpc_id(1, intent.move, _yaw, _pitch, intent.sprint, intent.crouch, intent.fire, intent.aim)
+		intent.submit.rpc_id(1, intent.move, _yaw, _pitch, intent.sprint, intent.crouch, intent.fire, intent.aim, intent.lean)

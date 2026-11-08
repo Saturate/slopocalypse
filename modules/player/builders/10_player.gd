@@ -45,7 +45,7 @@ func _initialize() -> void:
 	root.set("shape_path", NodePath("Shape"))
 	# Server -> clients: where the player is and what they're doing, for remote players'
 	# bodies and animation. The local client overrides its own aim every frame.
-	root.add_child(NetSync.make([".:position", ".:rotation", "Head:rotation", ".:velocity"], [".:mode", "Intent:crouch", "Intent:aim", "Intent:weapon_slot", "Health:health"]))
+	root.add_child(NetSync.make([".:position", ".:rotation", "Head:rotation", ".:velocity"], [".:mode", "Intent:crouch", "Intent:lean", "Intent:aim", "Intent:weapon_slot", "Health:health"]))
 
 	var result := SceneBuilder.pack_and_save(root, OUT)
 	root.free()

@@ -27,15 +27,18 @@ properties/4/replication_mode = 2
 properties/5/path = NodePath("Intent:crouch")
 properties/5/spawn = true
 properties/5/replication_mode = 2
-properties/6/path = NodePath("Intent:aim")
+properties/6/path = NodePath("Intent:lean")
 properties/6/spawn = true
 properties/6/replication_mode = 2
-properties/7/path = NodePath("Intent:weapon_slot")
+properties/7/path = NodePath("Intent:aim")
 properties/7/spawn = true
 properties/7/replication_mode = 2
-properties/8/path = NodePath("Health:health")
+properties/8/path = NodePath("Intent:weapon_slot")
 properties/8/spawn = true
 properties/8/replication_mode = 2
+properties/9/path = NodePath("Health:health")
+properties/9/spawn = true
+properties/9/replication_mode = 2
 
 [node name="Player" type="CharacterBody3D" unique_id=1247104626]
 script = ExtResource("1_21ri4")

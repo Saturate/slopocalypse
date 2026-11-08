@@ -6,6 +6,9 @@ extends SkeletonModifier3D
 
 ## Radians, positive looks up, the same sign as the camera Head node's X rotation.
 var pitch := 0.0
+## Radians of sideways lean, positive to the right. Shared by spine and chest.
+var lean := 0.0
+const LEAN_SHARES := {&"Spine": 0.45, &"Chest": 0.55}
 
 ## How the pitch is shared out. Spine, chest and shoulders add up to the full pitch, so the
 ## rifle on the shoulders points at the aim while the back only bends a little; the head
@@ -46,7 +49,12 @@ func _process_modification_with_delta(_delta: float) -> void:
 		if i < 0:
 			continue
 		var tilt := Quaternion(Vector3.RIGHT, pitch * float(SHARES[bone]))
-		skeleton.set_bone_pose_rotation(i, skeleton.get_bone_pose_rotation(i) * tilt)
+		# Lean rolls about the body's forward axis (skeleton -Z), taken into this bone's own
+		# space: the bones' local axes don't line up with the body, and rolling about a local
+		# axis twisted the torso instead of tilting it.
+		var forward := (skeleton.get_bone_global_pose(i).basis.inverse() * Vector3.FORWARD).normalized()
+		var roll := Quaternion(forward, lean * float(LEAN_SHARES.get(bone, 0.0)))
+		skeleton.set_bone_pose_rotation(i, skeleton.get_bone_pose_rotation(i) * roll * tilt)
 	var shoulders: int = _bones.get(&"Shoulders", -1)
 	if shoulders < 0:
 		return
