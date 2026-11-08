@@ -5,7 +5,7 @@
     "player": true,
     "car": true,
     "weapons": true,
-    "training": true,
+    "training": false,
     "drones": true,
     "inventory": true,
     "enemies": true,

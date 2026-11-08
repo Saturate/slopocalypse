@@ -11,6 +11,8 @@ extends Node
 ## Talks to the inventory and weapons through their API groups, and works without them.
 ## `--save=PATH` picks the file, `--no-save` turns saving off for tool runs.
 
+## A saved spot this far under the ground is inside it: the world changed since the save.
+const BURIED_DEPTH := 1.0
 const CONFIG := "res://modules/persistence/data/persistence.json"
 const FIELDS := {"file": TYPE_STRING, "autosave_seconds": TYPE_FLOAT, "hold_seconds": TYPE_FLOAT}
 ## A save that lives only as long as the server (tests).
@@ -182,6 +184,11 @@ func _restore(peer: int, saved: Dictionary) -> void:
 	# Saved dead (or never placed): they start over at the spawn like a respawn would.
 	if player == null or not at is Vector3 or float(saved.get("health", 0.0)) <= 0.0:
 		return
+	# The world may have changed under the spot since (a mountain where the road was):
+	# a spot now inside the ground starts them at the spawn instead, gear and all.
+	if _buried(at as Vector3):
+		Log.info(&"persistence", "%s's saved spot is under the ground now; starting at the spawn" % name_of(peer))
+		return
 	(player.get_node("Health") as HealthComponent).server_set(float(saved["health"]))
 	player.global_position = (at as Vector3) + Vector3.UP * 0.2
 	player.velocity = Vector3.ZERO
@@ -189,6 +196,14 @@ func _restore(peer: int, saved: Dictionary) -> void:
 	# until it is instead of falling through.
 	player.set_physics_process(false)
 	_holding[player] = float(config.get("hold_seconds", 10.0))
+
+
+## Under the untouched ground by more than BURIED_DEPTH, asking the world's height function.
+func _buried(at: Vector3) -> bool:
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	if ground == null or not ground.has_method(&"ground_height"):
+		return false
+	return at.y < float(ground.call(&"ground_height", at.x, at.z)) - BURIED_DEPTH
 
 
 func _hold_until_grounded(delta: float) -> void:

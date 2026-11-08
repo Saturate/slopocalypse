@@ -8,6 +8,8 @@ extends Node
 ## `server_world_state` / `server_restore_world` hand the state out and take it back.
 
 ## Ground probes start this far over the untouched ground, or over the point itself.
+## Saved loot this far under the ground is inside it (the world changed since the save).
+const BURIED_DEPTH := 1.0
 const PROBE_ABOVE_GROUND := 3.0
 const PROBE_ABOVE_SELF := 1.5
 const ITEMS := "res://modules/inventory/data/items.json"
@@ -621,8 +623,13 @@ func server_world_state() -> Dictionary:
 func server_restore_world(state: Dictionary) -> void:
 	for node: Node in get_tree().get_nodes_in_group(&"loot"):
 		node.queue_free()
+	var ground := get_tree().get_first_node_in_group(&"ground")
 	for saved: Dictionary in state.get("loot", []):
-		server_spawn_loot(str(saved.get("item", "")), saved.get("position", Vector3.ZERO))
+		var at: Vector3 = saved.get("position", Vector3.ZERO)
+		# The world may have changed since the save; loot now inside the ground is gone.
+		if ground != null and ground.has_method(&"ground_height") and at.y < float(ground.call(&"ground_height", at.x, at.z)) - BURIED_DEPTH:
+			continue
+		server_spawn_loot(str(saved.get("item", "")), at)
 	for saved: Dictionary in state.get("crates", []):
 		var i := int(saved.get("index", -1))
 		if i < 0 or i >= _crates.size() or not is_instance_valid(_crates[i]):
