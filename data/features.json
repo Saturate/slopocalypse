@@ -11,6 +11,7 @@
     "enemies": true,
     "audio": true,
     "persistence": true,
-    "voxkit": true
+    "voxkit": true,
+    "daytime": true
   }
 }

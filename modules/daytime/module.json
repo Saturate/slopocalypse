@@ -1,0 +1,6 @@
+{
+  "id": "daytime",
+  "depends_on": ["world"],
+  "flag": "daytime",
+  "entry": "daytime_module.gd"
+}
