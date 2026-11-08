@@ -10,6 +10,7 @@
     "inventory": true,
     "enemies": true,
     "audio": true,
-    "persistence": true
+    "persistence": true,
+    "voxkit": true
   }
 }

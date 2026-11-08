@@ -387,6 +387,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "voxkit_core"
+version = "0.1.0"
+
+[[package]]
+name = "voxkit_gd"
+version = "0.1.0"
+dependencies = [
+ "godot",
+ "voxkit_core",
+]
+
+[[package]]
 name = "wasm-bindgen"
 version = "0.2.130"
 source = "registry+https://github.com/rust-lang/crates.io-index"
