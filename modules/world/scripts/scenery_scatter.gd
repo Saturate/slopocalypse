@@ -18,7 +18,8 @@ const CHUNK := 64.0
 ## Chunks split across the width into cells, so distance culling works per cell.
 const CELL := 64.0
 const GRASS_CELL := 32.0
-const ROAD_PIECE := 16.0
+## Longest road face before it is bent, in metres.
+const ROAD_BEND_STEP := 1.0
 ## The smoothed terrain sags a little past a dug sphere's edge, and the shader shows that
 ## fringe as dirt, so grass clears slightly wider than the hole.
 const GRASS_CLEAR_MARGIN := 0.4
@@ -387,50 +388,36 @@ func clear_grass(center: Vector3, radius: float) -> void:
 					mm.set_instance_transform(k, Transform3D(Basis().scaled(Vector3.ZERO), local))
 
 
-## The road's voxel pieces for this chunk, following the path and its elevation. The car
-## drives on the terrain levelled just under them.
+## The road through this chunk: one straight voxel stretch, then bent along the road's curve
+## and slope vertex by vertex, so it has no joints, no steps on climbs and no staircase
+## edges on bends. Faces are kept short so the bend follows the curve. The car drives on
+## the terrain levelled just under it.
 func _add_road(node: Node3D, i: int, span: Vector2) -> void:
 	var road := _heights.road
 	if road == null:
 		return
-	var gen := VoxRoad.new()
-	var z := span.y
-	var piece := 0
-	while z > span.x + 0.01:
-		var z1 := maxf(z - ROAD_PIECE, span.x)
-		var mid := (z + z1) / 2.0
-		var cx := road.x_at(mid)
-		# Each piece is tilted to its slope, so a climb is a smooth ramp rather than a
-		# staircase of voxel rows; the path only carries what bends away from that line.
-		var y_mid := road.height_at(mid)
-		var grade := (road.height_at(z) - road.height_at(z1)) / maxf(z - z1, 0.01)
-		var low := INF
-		var high := -INF
-		var spread := 0.0
-		for k in range(0, int(ROAD_PIECE) + 1):
-			var lz := lerpf(z1, z, k / ROAD_PIECE) - mid
-			var bend := road.height_at(mid + lz) - (y_mid + grade * lz)
-			low = minf(low, bend)
-			high = maxf(high, bend)
-			spread = maxf(spread, absf(road.x_at(mid + lz) - cx))
-		var p := {
-			"seed": hash([_seed, i, piece]),
-			"length": z - z1,
-			"voxel": ROAD_VOXEL,
-			"spread": spread + 0.5,
-			"rise": high - low,
-			"z_phase": mid,
-			"x_of": func(lz: float) -> float: return road.x_at(mid + lz) - cx,
-			"y_of": func(lz: float) -> float: return road.height_at(mid + lz) - (y_mid + grade * lz) - low,
-		}
-		var inst := MeshInstance3D.new()
-		inst.mesh = VoxGenerator.to_mesh(gen.build(p))
-		# Local +z climbs by `grade`; the bed sinks into the ground and the surface stands a
-		# few centimetres proud.
-		inst.transform = Transform3D(Basis(Vector3.RIGHT, -atan(grade)), Vector3(cx, y_mid + low - VoxRoad.BED - VoxRoad.SURFACE + 0.03, mid))
-		node.add_child(inst)
-		z = z1
-		piece += 1
+	var length := span.y - span.x
+	var mid := (span.x + span.y) / 2.0
+	var model := VoxRoad.new().build({"seed": hash([_seed, i]), "length": length, "voxel": ROAD_VOXEL, "z_phase": mid})
+	var arrays := model.mesh_arrays_bendable(int(ROAD_BEND_STEP / ROAD_VOXEL))
+	if arrays.is_empty():
+		return
+	var cx := road.x_at(mid)
+	var lift := VoxRoad.BED + VoxRoad.SURFACE - 0.03
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	for k in vertices.size():
+		var v := vertices[k]
+		var z := mid + v.z
+		# The bed sinks into the ground; the surface stands a few centimetres proud.
+		vertices[k] = Vector3(road.x_at(z) - cx + v.x, road.height_at(z) + v.y - lift, v.z)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.surface_set_material(0, VoxGenerator.material())
+	var inst := MeshInstance3D.new()
+	inst.mesh = mesh
+	inst.position = Vector3(cx, 0.0, mid)
+	node.add_child(inst)
 
 
 func _grass_mesh() -> Mesh:
