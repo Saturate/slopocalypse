@@ -12,8 +12,11 @@ const ARMS := {
 ## Wrist targets in the Shoulders bone's space, per side (&"R", &"L"); a side without one
 ## keeps its animated pose. Set every frame by the body animator from the gun's markers.
 var targets: Dictionary = {}
-## How strongly elbows are pulled down, in metres of pole offset.
-const ELBOW_DROP := 0.25
+## Which way each elbow points, in skeleton space (the body faces -Z, its right is +X):
+## the trigger arm out to the side and back, the support arm down under the gun. Fixed, not taken from the current
+## elbow: that is last frame's answer, and feeding it back let the arm flip between two
+## solutions from one frame to the next while the gun kicked ("arms flying off").
+const ELBOW_POLES := {&"R": Vector3(1.0, 0.05, 0.45), &"L": Vector3(-0.35, -1.0, 0.1)}
 
 var _bones: Dictionary = {}
 var _shoulders := -1
@@ -36,11 +39,11 @@ func _process_modification_with_delta(_delta: float) -> void:
 	for side: StringName in targets:
 		var ids: Array[int] = _bones.get(side, [])
 		if ids.size() == 3 and not ids.has(-1):
-			_solve(skeleton, ids, shoulders * (targets[side] as Vector3))
+			_solve(skeleton, ids, shoulders * (targets[side] as Vector3), ELBOW_POLES[side])
 
 
 ## Two-bone IK in skeleton space. Limbs run along their bones' +Y.
-func _solve(skeleton: Skeleton3D, ids: Array[int], target: Vector3) -> void:
+func _solve(skeleton: Skeleton3D, ids: Array[int], target: Vector3, pole: Vector3) -> void:
 	var upper := skeleton.get_bone_global_pose(ids[0])
 	var lower := skeleton.get_bone_global_pose(ids[1])
 	var hand := skeleton.get_bone_global_pose(ids[2])
@@ -52,9 +55,6 @@ func _solve(skeleton: Skeleton3D, ids: Array[int], target: Vector3) -> void:
 	if to_target.length_squared() < 1e-8:
 		return
 	var dir := to_target.normalized()
-	# Bend toward where the elbow already is, so arms keep the pose's character, nudged
-	# down so reaching up for a pistol does not wing the elbows out above the shoulders.
-	var pole := (lower.origin - s) + Vector3.DOWN * ELBOW_DROP
 	var side := (pole - dir * pole.dot(dir))
 	if side.length_squared() < 1e-8:
 		side = Vector3.DOWN - dir * Vector3.DOWN.dot(dir)
@@ -73,7 +73,11 @@ func _aim_bone(skeleton: Skeleton3D, i: int, global: Transform3D, at: Vector3) -
 	var to_dir := (at - global.origin).normalized()
 	if from_dir.is_equal_approx(to_dir) or to_dir.is_zero_approx():
 		return
-	var turned := Basis(Quaternion(from_dir, to_dir)) * global.basis
+	var turn := Quaternion(from_dir, to_dir)
+	if from_dir.dot(to_dir) < -0.999:
+		# Opposite directions: any axis across the bone works; the arc constructor has none.
+		turn = Quaternion(global.basis.x.normalized(), PI)
+	var turned := Basis(turn) * global.basis
 	var parent := skeleton.get_bone_parent(i)
 	var parent_basis := skeleton.get_bone_global_pose(parent).basis if parent >= 0 else Basis.IDENTITY
 	skeleton.set_bone_pose_rotation(i, (parent_basis.inverse() * turned).orthonormalized().get_rotation_quaternion())
