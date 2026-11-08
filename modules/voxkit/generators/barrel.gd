@@ -33,7 +33,7 @@ func build(values: Dictionary) -> VoxelModel:
 	var h: float = p["height"]
 	var v: float = p["voxel"]
 	var paint: Color = COLOURS[int(p["paint"])]
-	var m := VoxelModel.new()
+	var m := new_model()
 	m.setup(Vector3(r * 2.0 + v * 6.0, h + v * 3.0, r * 2.0 + v * 6.0), v)
 	m.fill_cylinder(Vector3.ZERO, r, h, paint, 0.08, seed)
 	var rings := int(p["rings"])

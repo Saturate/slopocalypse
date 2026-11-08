@@ -11,7 +11,7 @@ const PANEL_WIDTH := 340
 const SCENE_LABEL := "Roadside scene"
 const GROUND := Color(0.36, 0.42, 0.25)
 
-var pixel_filter := true
+var pixel_filter := false
 var pixel_size := 3
 var outlines := true
 var levels := 14.0
@@ -29,6 +29,7 @@ var _models: Node3D
 var _camera: OrbitCamera
 var _filter: ShaderMaterial
 var _post: MeshInstance3D
+var _env: Environment
 
 
 func _ready() -> void:
@@ -121,6 +122,9 @@ func _side_panel() -> Control:
 	reset.pressed.connect(func() -> void: select(_index))
 	col.add_child(reset)
 	col.add_child(_label("VIEW", 13, MainMenu.LABEL))
+	col.add_child(_slider_row("Colour noise", 0.0, 1.5, 0.05, VoxGenerator.colour_noise, func(v: float) -> void:
+		VoxGenerator.colour_noise = v
+		_dirty = true))
 	col.add_child(_check("Pixel filter", pixel_filter, func(on: bool) -> void:
 		pixel_filter = on
 		_apply_view()))
@@ -173,6 +177,7 @@ func _viewport_view() -> Control:
 	e.fog_density = 0.004
 	e.fog_light_color = Color(0.7, 0.75, 0.8)
 	env.environment = e
+	_env = e
 	_viewport.add_child(env)
 	var sun := DirectionalLight3D.new()
 	sun.rotation = Vector3(deg_to_rad(-48.0), deg_to_rad(35.0), 0.0)
@@ -217,8 +222,12 @@ func _apply_view() -> void:
 		return
 	_view.stretch_shrink = pixel_size if pixel_filter else 1
 	_viewport.msaa_3d = Viewport.MSAA_DISABLED if pixel_filter else Viewport.MSAA_4X
-	_post.visible = pixel_filter
+	# Grainy at low resolution; soft and useful at full.
+	_env.ssao_enabled = not pixel_filter
+	_post.visible = pixel_filter or outlines
 	_filter.set_shader_parameter("outlines", outlines)
+	_filter.set_shader_parameter("posterize", pixel_filter)
+	_filter.set_shader_parameter("rim_light", pixel_filter)
 	_filter.set_shader_parameter("levels", levels)
 
 

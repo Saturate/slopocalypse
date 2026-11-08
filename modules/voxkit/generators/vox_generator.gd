@@ -9,6 +9,9 @@ extends RefCounted
 ## and `options` (a list of labels) makes it a choice whose value is the index.
 
 static var _material: StandardMaterial3D
+## How much of each generator's per-voxel colour variation to keep (the library's "Colour
+## noise"): lower reads cleaner from a distance, where each voxel is only a few pixels.
+static var colour_noise := 0.6
 
 
 func title() -> String:
@@ -35,6 +38,13 @@ func with_defaults(p: Dictionary) -> Dictionary:
 	var out := defaults()
 	out.merge(p, true)
 	return out
+
+
+## A fresh model with the current colour noise; generators start from this.
+static func new_model() -> VoxelModel:
+	var m := VoxelModel.new()
+	m.set_jitter_scale(colour_noise)
+	return m
 
 
 static func param(key: String, label: String, lo: float, hi: float, step: float, value: float) -> Dictionary:

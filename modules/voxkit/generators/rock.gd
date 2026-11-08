@@ -29,7 +29,7 @@ func build(values: Dictionary) -> VoxelModel:
 	var w: float = p["width"]
 	var h: float = w * float(p["height"])
 	var bumps: float = p["bumps"]
-	var m := VoxelModel.new()
+	var m := new_model()
 	m.setup(Vector3(w * (1.3 + bumps * 2.0), h * (1.2 + bumps * 2.0) + 0.2, w * (1.3 + bumps * 2.0)), p["voxel"])
 	var colour := GREY.lerp(SANDSTONE, float(p["tone"]))
 	# Centred low so the ground cuts the bottom off flat.
