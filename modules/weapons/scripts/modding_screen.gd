@@ -33,12 +33,21 @@ var _errors: Label
 var _apply: Button
 var _current: Dictionary = {}
 var _draft: Dictionary = {}
+## Applied and waiting for the server to change the gun or say why not.
+var _waiting := false
 
 
 func _ready() -> void:
 	layer = 40
 	_build_ui()
 	_root.visible = false
+	EventBus.subscribe(&"weapons.build_changed", _on_build_changed)
+	EventBus.subscribe(&"weapons.build_refused", _on_build_refused)
+
+
+func _exit_tree() -> void:
+	EventBus.unsubscribe(&"weapons.build_changed", _on_build_changed)
+	EventBus.unsubscribe(&"weapons.build_refused", _on_build_refused)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -98,12 +107,47 @@ func load_preset(build_name: String) -> void:
 	_refresh()
 
 
+## Sends the draft to the server and stays open until it answers: the gun changing closes
+## the screen, a refusal shows why.
 func apply() -> void:
 	var result := WeaponBuild.assemble(GunAssembly.catalogue(), _draft)
-	if not result["ok"]:
+	if not result["ok"] or not missing_parts().is_empty():
 		return
+	_waiting = true
+	_apply.disabled = true
 	weapons.call(&"request_build", _draft.duplicate())
-	close()
+
+
+## Names of parts the draft needs that are neither on the gun now nor in the backpack (a
+## preset can ask for parts you don't have).
+func missing_parts() -> Array[String]:
+	var out: Array[String] = []
+	var inv: Node = weapons.call(&"inventory")
+	if inv == null:
+		return out
+	var fitted: Array = (weapons.call(&"part_changes", _current, _draft) as Dictionary)["fitted"]
+	var needed := {}
+	for part: String in fitted:
+		needed[part] = int(needed.get(part, 0)) + 1
+	for part: String in needed:
+		if int(inv.call(&"count", peer, part)) < int(needed[part]):
+			out.append(str((GunAssembly.catalogue().get(part, {}) as Dictionary).get("name", part)))
+	return out
+
+
+func _on_build_changed(p: Dictionary) -> void:
+	if int(p.get("peer", 0)) == peer and _waiting:
+		_waiting = false
+		close()
+
+
+func _on_build_refused(p: Dictionary) -> void:
+	if not _waiting:
+		return
+	_waiting = false
+	_refresh()
+	_errors.text = "Not applied: %s" % str(p.get("reason", ""))
+	_errors.visible = true
 
 
 ## Parts offered for `slot`: what is fitted now plus what the inventory holds (every part
@@ -140,9 +184,15 @@ func _refresh() -> void:
 			if str(picker.get_item_metadata(i)) == fitted:
 				picker.select(i)
 	var result := WeaponBuild.assemble(GunAssembly.catalogue(), _draft)
-	_apply.disabled = not result["ok"] or _draft == _current
-	_errors.text = "" if result["ok"] else "\n".join(result["errors"])
-	_errors.visible = not result["ok"]
+	var missing := missing_parts()
+	_apply.disabled = not result["ok"] or _draft == _current or not missing.is_empty() or _waiting
+	if not result["ok"]:
+		_errors.text = "\n".join(result["errors"])
+	elif not missing.is_empty():
+		_errors.text = "Not in your backpack: %s" % ", ".join(missing)
+	else:
+		_errors.text = ""
+	_errors.visible = not _errors.text.is_empty()
 	for child in _stats_grid.get_children():
 		_stats_grid.remove_child(child)
 		child.queue_free()

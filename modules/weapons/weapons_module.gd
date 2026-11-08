@@ -114,14 +114,29 @@ func server_set_build(peer: int, slots: Dictionary) -> bool:
 			clean[slot] = slots[slot]
 	var result := WeaponBuild.assemble(GunAssembly.catalogue(), clean)
 	if not result["ok"]:
-		Log.warn(&"weapons", "peer %d: build refused: %s" % [peer, ", ".join(result["errors"])])
+		_refuse(peer, ", ".join(result["errors"]))
 		return false
 	var why := _swap_parts(peer, build_of(peer, GunAssembly.weapon_slot_of(clean)), clean)
 	if not why.is_empty():
-		Log.warn(&"weapons", "peer %d: build refused: %s" % [peer, why])
+		_refuse(peer, why)
 		return false
 	Net.server_broadcast(&"weapons.build_changed", {"peer": peer, "build": clean})
 	return true
+
+
+## Server: logs a refused build and tells the player why, so the modding screen can show it
+## instead of the change silently not happening.
+func _refuse(peer: int, why: String) -> void:
+	Log.warn(&"weapons", "peer %d: build refused: %s" % [peer, why])
+	if peer == multiplayer.get_unique_id():
+		_build_refused(why)
+	elif peer in multiplayer.get_peers():
+		_build_refused.rpc_id(peer, why)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _build_refused(why: String) -> void:
+	EventBus.publish(&"weapons.build_refused", {"reason": why})
 
 
 ## Server: the builds `peer` changed from the defaults, `{weapon_slot: {part_slot: part}}`,
@@ -202,7 +217,7 @@ func _swap_parts(peer: int, before: Dictionary, after: Dictionary) -> String:
 		needed[part] = int(needed.get(part, 0)) + 1
 	for part: String in needed:
 		if int(inv.call(&"count", peer, part)) < int(needed[part]):
-			return "does not own %s" % part
+			return "%s is not in your backpack" % str((GunAssembly.catalogue().get(part, {}) as Dictionary).get("name", part))
 	var taken: Array[String] = []
 	for part in fitted:
 		inv.call(&"server_take", peer, part)
