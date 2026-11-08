@@ -6,12 +6,18 @@ extends Node
 ## falls out of the world.
 
 const SCENE := "res://modules/player/scenes/player.tscn"
+## How far down a held player looks for ground before letting go.
+const GROUND_PROBE := 40.0
 
 var _spawner := MultiplayerSpawner.new()
 var _players: Dictionary[int, PlayerController] = {}
 var _spawn := Vector3.ZERO
 var _kill_y := -INF
+## How far under the untouched ground (digging can't go this deep) counts as fallen through.
+var _rescue_depth := INF
 var _world_ready := false
+## Server: players held still until there is ground under them -> seconds left to wait.
+var _holding: Dictionary = {}
 ## Server: dead player -> seconds until they come back.
 var _respawn_in: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
@@ -55,17 +61,60 @@ func _physics_process(delta: float) -> void:
 		_respawn_in[player] = float(_respawn_in[player]) - delta
 		if float(_respawn_in[player]) <= 0.0:
 			server_respawn(player)
-	# Safety net: anyone who falls out of the world is put back at the spawn.
+	_release_grounded(delta)
+	# Safety net: anyone who slips under the terrain is lifted back on top where they were and
+	# held there until its collision is in. Parked, held and dead players don't move.
 	for player: PlayerController in _players.values():
-		if player.global_position.y < _kill_y:
-			Log.warn(&"player", "fell out of the world at %s, respawning" % player.global_position)
-			player.global_position = _spawn
+		if not player.is_physics_processing() or not player.can_process():
+			continue
+		var at := player.global_position
+		var ground := _ground_height(at)
+		if at.y < ground - _rescue_depth or at.y < _kill_y:
+			Log.warn(&"player", "fell through the ground at %s, putting them back on top" % at)
+			player.global_position = Vector3(at.x, ground + 1.0, at.z)
 			player.velocity = Vector3.ZERO
+			server_hold(player)
+
+
+## Server: freezes a player in place until a ray finds ground under them (or `hold_seconds`
+## pass), so nobody drops through terrain whose collision is still being built.
+func server_hold(player: PlayerController) -> void:
+	player.set_physics_process(false)
+	_holding[player] = float(player.config.get("hold_seconds", 10.0))
+
+
+func _release_grounded(delta: float) -> void:
+	for player: PlayerController in _holding.keys():
+		if not is_instance_valid(player):
+			_holding.erase(player)
+			continue
+		_holding[player] = float(_holding[player]) - delta
+		if _has_ground(player) or float(_holding[player]) <= 0.0:
+			_holding.erase(player)
+			if not player.get_meta(&"dead", false):
+				player.set_physics_process(true)
+
+
+func _has_ground(player: PlayerController) -> bool:
+	var at := player.global_position
+	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP, at + Vector3.DOWN * GROUND_PROBE)
+	query.exclude = [player.get_rid()]
+	return not player.get_world_3d().direct_space_state.intersect_ray(query).is_empty()
+
+
+## The untouched ground under a point, from the world's height function (it answers even
+## where no terrain is loaded); the spawn height when there is no world.
+func _ground_height(at: Vector3) -> float:
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	if ground == null:
+		return _spawn.y
+	return float(ground.call(&"ground_height", at.x, at.z))
 
 
 func _on_world_ready(payload: Dictionary) -> void:
 	_spawn = payload["spawn"]
 	_kill_y = payload.get("kill_y", -INF)
+	_rescue_depth = payload.get("rescue_depth", INF)
 	_world_ready = true
 	if not multiplayer.is_server():
 		return
@@ -130,6 +179,7 @@ func server_respawn(player: PlayerController) -> void:
 	player.global_position = _spawn + Vector3(_rng.randf_range(-spread, spread), 0.5, _rng.randf_range(-spread, spread))
 	player.velocity = Vector3.ZERO
 	Net.server_broadcast(&"player.respawned", {"player": player})
+	server_hold(player)
 
 
 ## Everywhere: a dead player is hidden, cannot be hit and does not move; the camera stays

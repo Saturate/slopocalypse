@@ -5,10 +5,13 @@ extends Node
 const SCENE := "res://modules/car/scenes/box_car.tscn"
 ## Beside the spawn pad, on flat ground, nose pointing away from the player.
 const SPAWN_OFFSET := Vector3(5.0, 1.0, -3.0)
+## Same height above the ground a car is spawned at.
+const LIFT_HEIGHT := 1.0
 
 var _cars: Array[CarController] = []
 var _spawn := Vector3.ZERO
 var _kill_y := -INF
+var _rescue_depth := INF
 var _spawner := MultiplayerSpawner.new()
 var _bot: CarBot
 
@@ -23,10 +26,14 @@ func _physics_process(_delta: float) -> void:
 	for car in _cars:
 		if car.freeze:
 			_release_when_grounded(car)
-		# Safety net: a car that falls out of the world comes back upright beside the spawn.
+		# Safety net: a car that slips under the terrain comes back upright on top where it
+		# was, frozen until its ground has collision; one lost entirely goes to the spawn.
 		elif car.global_position.y < _kill_y:
 			Log.warn(&"car", "fell out of the world at %s, respawning" % car.global_position)
 			_place(car)
+		elif car.global_position.y < _ground_height(car.global_position) - _rescue_depth:
+			Log.warn(&"car", "fell through the ground at %s, putting it back on top" % car.global_position)
+			_lift(car)
 
 
 ## Puts a car at its spawn, frozen until there is ground under it. Voxel collision is built
@@ -37,6 +44,24 @@ func _place(car: CarController) -> void:
 	car.linear_velocity = Vector3.ZERO
 	car.angular_velocity = Vector3.ZERO
 	car.freeze = true
+
+
+## Puts a car back on top of the ground where it is, upright, keeping its heading.
+func _lift(car: CarController) -> void:
+	var at := car.global_position
+	var heading := car.global_transform.basis.z
+	heading.y = 0.0
+	var basis := Basis.looking_at(-heading.normalized()) if heading.length() > 0.01 else Basis.IDENTITY
+	car.global_transform = Transform3D(basis, Vector3(at.x, _ground_height(at) + LIFT_HEIGHT, at.z))
+	car.linear_velocity = Vector3.ZERO
+	car.angular_velocity = Vector3.ZERO
+	car.freeze = true
+
+
+## The untouched ground height from the world module (answers where no terrain is loaded).
+func _ground_height(at: Vector3) -> float:
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	return float(ground.call(&"ground_height", at.x, at.z)) if ground != null else _spawn.y
 
 
 func _release_when_grounded(car: CarController) -> void:
@@ -70,6 +95,7 @@ func _exit_tree() -> void:
 func _on_world_ready(payload: Dictionary) -> void:
 	_spawn = payload["spawn"]
 	_kill_y = payload.get("kill_y", -INF)
+	_rescue_depth = payload.get("rescue_depth", INF)
 	if DisplayServer.get_name() != "headless":
 		InputBindings.register(CarController.bindings(), &"car")
 	if multiplayer.is_server():

@@ -24,11 +24,13 @@ func test_feature_flags_carry_over_but_client_only_args_do_not() -> void:
 
 
 func test_picks_a_port_nothing_else_is_bound_to() -> void:
+	# Take whichever port is free first: a running solo game may already hold FIRST_PORT.
+	var first := SoloServer.pick_port()
 	var taken := PacketPeerUDP.new()
-	assert_int(taken.bind(SoloServer.FIRST_PORT, "127.0.0.1")).is_equal(OK)
+	assert_int(taken.bind(first, "127.0.0.1")).is_equal(OK)
 	var port := SoloServer.pick_port()
 	taken.close()
-	assert_int(port).is_not_equal(SoloServer.FIRST_PORT)
+	assert_int(port).is_not_equal(first)
 	assert_int(port).is_between(SoloServer.FIRST_PORT, SoloServer.FIRST_PORT + SoloServer.PORT_TRIES)
 
 

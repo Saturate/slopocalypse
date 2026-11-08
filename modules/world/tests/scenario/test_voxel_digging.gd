@@ -51,3 +51,20 @@ func test_players_standing_on_the_terrain_do_not_fall_through() -> void:
 		await get_tree().physics_frame
 	assert_bool(player.is_on_floor()).is_true()
 	assert_float(player.global_position.y).is_equal_approx(0.0, 0.3)
+
+
+func test_digging_stops_at_the_deepest_a_crater_may_go() -> void:
+	var spot := Vector3(-3, 0, 3)
+	var deepest := _voxels.ground_height(spot.x, spot.z) - _voxels.max_dig_depth
+	for i in 8:
+		_voxels.server_dig(spot + Vector3.DOWN * float(i) * 2.0, 2.0)
+	assert_float(_sdf(Vector3(spot.x, deepest + 1.0, spot.z))).is_greater(0.0)
+	assert_float(_sdf(Vector3(spot.x, deepest - 1.0, spot.z))).is_less(0.0)
+
+
+func test_a_dig_says_where_the_hole_went() -> void:
+	var holes: Array[Vector3] = []
+	_voxels.dug.connect(func(center: Vector3, _radius: float) -> void: holes.append(center))
+	_voxels.server_dig(Vector3(4, -50, 4), 1.0)
+	assert_int(holes.size()).is_equal(1)
+	assert_float(holes[0].y).is_equal_approx(_voxels.ground_height(4, 4) - _voxels.max_dig_depth + 1.0, 0.01)

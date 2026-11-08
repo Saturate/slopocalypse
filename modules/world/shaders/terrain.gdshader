@@ -26,6 +26,11 @@ uniform float normal_strength = 0.9;
 // Baked by Biomes: R forest, G dry, B rock, covering the whole world.
 uniform sampler2D biome_map : hint_default_black, filter_linear, repeat_disable;
 uniform float world_size = 256.0;
+// Baked by TerrainHeights: the untouched ground height. Anything dug below it is bare dirt.
+uniform sampler2D ground_map : hint_default_black, filter_linear, repeat_disable;
+uniform float ground_size = 256.0;
+uniform float dug_start = 0.12;
+uniform float dug_full = 0.35;
 
 varying vec3 world_pos;
 varying vec3 world_normal;
@@ -98,6 +103,11 @@ void fragment() {
 	float dirt_line = dirt_start + rocky * 0.08 + forest * 0.04;
 	float w_grass = smoothstep(dirt_line - 0.05, dirt_line + 0.05, up);
 	float w_rock = 1.0 - smoothstep(rock_line - 0.06, rock_line + 0.06, up);
+	// Craters and shot-up ground lose their grass and rock and show the soil underneath.
+	float below = texture(ground_map, world_pos.xz / ground_size + 0.5).r - world_pos.y;
+	float dug = smoothstep(dug_start, dug_full, below);
+	w_grass *= 1.0 - dug;
+	w_rock *= 1.0 - dug;
 	float w_dirt = clamp(1.0 - w_grass - w_rock, 0.0, 1.0);
 
 	Surface g = top(grass_albedo, grass_normal, grass_rough, grass_scale);

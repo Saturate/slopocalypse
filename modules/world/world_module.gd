@@ -17,14 +17,15 @@ var _waited := 0.0
 
 func _ready() -> void:
 	var data: Variant = Data.load_json(CONFIG)
-	if not data is Dictionary or not Data.require(CONFIG, data, {"kill_y": TYPE_FLOAT}):
+	if not data is Dictionary or not Data.require(CONFIG, data, {"kill_y": TYPE_FLOAT, "rescue_depth": TYPE_FLOAT}):
 		return
 	var scene: PackedScene = load(SCENE)
 	var world := scene.instantiate()
 	add_child(world)
 	_voxels = world.get_node("Terrain")
+	_voxels.dug.connect((world.get_node("Scenery") as SceneryScatter).clear_grass)
 	var spawn: Marker3D = world.get_node("SpawnPoint")
-	_announcement = {"spawn": spawn.global_position, "kill_y": data["kill_y"]}
+	_announcement = {"spawn": spawn.global_position, "kill_y": data["kill_y"], "rescue_depth": data["rescue_depth"]}
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.subscribe(&"explosion", _on_explosion)

@@ -41,6 +41,8 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | Training dummies | `modules/training/data/training.json` | `max_health`, `respawn_seconds`, `dummies` |
 | Saving: where, how often | `modules/persistence/data/persistence.json` | `file` (the save; `--save=PATH` on the server wins), `autosave_seconds`, `hold_seconds` (how long a returning player waits in the air for ground) |
 | The map: size, hills, trees, cover | `modules/world/data/world.json` | `size`, `height_amplitude`, `noise_frequency`, `seed`, `scatter`, `cover` |
+| Craters and falling through | `modules/world/data/world.json` | `voxel.max_dig_depth` (deepest a crater goes under the ground), `rescue_depth` (this far under the ground counts as fallen through: you are put back on top) |
+| Waiting for ground | `modules/player/data/player.json` | `hold_seconds` (a respawned or rescued player is held still until there is ground under them, at most this long) |
 
 ## Good first tweaks
 

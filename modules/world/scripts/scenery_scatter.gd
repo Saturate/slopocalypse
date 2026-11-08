@@ -13,6 +13,16 @@ var _heights: TerrainHeights
 var _biomes: Biomes
 var _rng := RandomNumberGenerator.new()
 var _visual := DisplayServer.get_name() != "headless"
+## Grass, and its tufts bucketed by GRASS_CELL so a dig only checks the tufts near it.
+var _grass: MultiMesh
+var _grass_cells: Dictionary[Vector2i, PackedInt32Array] = {}
+
+const GRASS_CELL := 8.0
+## The smoothed terrain sags a little past a dug sphere's edge, and the shader shows that
+## fringe as dirt, so grass clears slightly wider than the hole.
+const GRASS_CLEAR_MARGIN := 0.4
+## Rocks whose top is lower than this above the ground get no collision; feet clear them.
+const STEP_OVER_HEIGHT := 0.3
 
 
 func _ready() -> void:
@@ -139,6 +149,8 @@ func _typed_colours(a: Array) -> Array[Color]:
 func _place_rocks(count: int, cfg: Dictionary, collision: StaticBody3D) -> void:
 	var transforms: Array[Transform3D] = []
 	var colours: Array[Color] = []
+	var rock_mesh := _rock_mesh()
+	var rock_points := _unique_points(rock_mesh)
 	# Boulder fields on rocky ground, a few stones scattered elsewhere.
 	var rock_weight := func(x: float, z: float) -> float:
 		return 0.05 + _biomes.rock(x, z) * 0.95
@@ -153,14 +165,25 @@ func _place_rocks(count: int, cfg: Dictionary, collision: StaticBody3D) -> void:
 		transforms.append(Transform3D(basis, at + Vector3.DOWN * size * 0.15))
 		var grey := _rng.randf_range(0.38, 0.52)
 		colours.append(Color(grey, grey * 0.98, grey * 0.95) * 2.0)
+		# Collision is the rock's own hull, so nobody bumps into or stands on air over it.
+		# Stones lower than a step get none: you walk over them.
+		var hull := PackedVector3Array()
+		var top := -INF
+		for point in rock_points:
+			var p := basis * point
+			hull.append(p)
+			top = maxf(top, p.y)
+		var rock_at := at + Vector3.DOWN * size * 0.15
+		if rock_at.y + top - at.y < STEP_OVER_HEIGHT:
+			continue
 		var shape := CollisionShape3D.new()
-		var sphere := SphereShape3D.new()
-		sphere.radius = size * 0.45
-		shape.shape = sphere
-		shape.position = at + Vector3.UP * size * 0.15
+		var convex := ConvexPolygonShape3D.new()
+		convex.points = hull
+		shape.shape = convex
+		shape.position = rock_at
 		collision.add_child(shape)
 	if _visual:
-		_multimesh("Rocks", _rock_mesh(), transforms, colours)
+		_multimesh("Rocks", rock_mesh, transforms, colours)
 
 
 func _place_grass(count: int, cfg: Dictionary) -> void:
@@ -179,11 +202,43 @@ func _place_grass(count: int, cfg: Dictionary) -> void:
 		var green := Color(0.3, 0.36, 0.18).lerp(Color(0.44, 0.45, 0.25), _rng.randf())
 		colours.append(green.lerp(Color(0.62, 0.55, 0.32), _biomes.dry(x, z) * 0.85))
 	var mm := _multimesh("Grass", _grass_mesh(), transforms, colours)
+	_grass = mm.multimesh
+	for i in transforms.size():
+		var cell := _grass_cell(transforms[i].origin)
+		if not _grass_cells.has(cell):
+			_grass_cells[cell] = PackedInt32Array()
+		_grass_cells[cell].append(i)
 	mm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# Grass far away is noise; fade it out with distance to keep the horizon clean.
 	mm.visibility_range_end = 70.0
 	mm.visibility_range_end_margin = 10.0
 	mm.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+
+
+func _grass_cell(at: Vector3) -> Vector2i:
+	return Vector2i(floori(at.x / GRASS_CELL), floori(at.z / GRASS_CELL))
+
+
+## Removes the grass a dug sphere took the ground out from under, so it doesn't float.
+func clear_grass(center: Vector3, radius: float) -> void:
+	if _grass == null:
+		return
+	var reach := radius + GRASS_CLEAR_MARGIN
+	var low := _grass_cell(center - Vector3.ONE * reach)
+	var high := _grass_cell(center + Vector3.ONE * reach)
+	for cx in range(low.x, high.x + 1):
+		for cz in range(low.y, high.y + 1):
+			var cell := Vector2i(cx, cz)
+			if not _grass_cells.has(cell):
+				continue
+			var keep := PackedInt32Array()
+			for i in _grass_cells[cell]:
+				if _grass.get_instance_transform(i).origin.distance_to(center) < radius + GRASS_CLEAR_MARGIN:
+					# A zero basis draws nothing; MultiMesh has no way to drop one instance.
+					_grass.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), center))
+				else:
+					keep.append(i)
+			_grass_cells[cell] = keep
 
 
 func _multimesh(node_name: String, mesh: Mesh, transforms: Array[Transform3D], colours: Array[Color]) -> MultiMeshInstance3D:
@@ -279,6 +334,13 @@ func _canopy_tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, inside: Ve
 		st.add_vertex(v)
 
 
+func _unique_points(mesh: Mesh) -> PackedVector3Array:
+	var seen: Dictionary[Vector3, bool] = {}
+	for v: Vector3 in mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
+		seen[v.snappedf(0.0001)] = true
+	return PackedVector3Array(seen.keys())
+
+
 func _rock_mesh() -> Mesh:
 	var sphere := SphereMesh.new()
 	sphere.radius = 0.5
@@ -292,8 +354,10 @@ func _rock_mesh() -> Mesh:
 	st.deindex()
 	st.generate_normals()
 	var out := st.commit()
-	# Same CC0 rock as the cliffs, tinted per instance so no two rocks match exactly.
-	out.surface_set_material(0, WorldMaterials.triplanar("Rock030", Color.WHITE, 1.5, true))
+	# Same CC0 rock as the cliffs, tinted per instance so no two rocks match exactly. The
+	# server only needs the shape for collision.
+	if _visual:
+		out.surface_set_material(0, WorldMaterials.triplanar("Rock030", Color.WHITE, 1.5, true))
 	return out
 
 
