@@ -10,8 +10,8 @@ var _player: PlayerController
 
 
 func before_test() -> void:
-	_world = (load(WORLD) as PackedScene).instantiate()
-	add_child(_world)
+	# Like the game, wait for the spawn's terrain before putting anyone on it.
+	_world = await VoxelWorld.add_and_wait(self, WORLD)
 	_player = (load(PLAYER) as PackedScene).instantiate()
 	add_child(_player)
 	_player.global_position = Vector3(0.0, 3.0, 0.0)
@@ -27,6 +27,15 @@ func _frames(count: int) -> void:
 		await get_tree().physics_frame
 
 
+## Terrain streams in at its own pace; measuring before the player has landed is a flake.
+func _landed() -> void:
+	for i in 600:
+		if _player.is_on_floor():
+			break
+		await get_tree().physics_frame
+	await _frames(10)
+
+
 func test_lands_and_stays_on_terrain() -> void:
 	await _frames(300)
 	assert_bool(_player.is_on_floor()).is_true()
@@ -35,7 +44,7 @@ func test_lands_and_stays_on_terrain() -> void:
 
 
 func test_walks_forward_at_tuned_speed() -> void:
-	await _frames(60)
+	await _landed()
 	var start := _player.global_position
 	_player.intent().move = Vector2(0.0, 1.0)
 	await _frames(60)
@@ -46,7 +55,7 @@ func test_walks_forward_at_tuned_speed() -> void:
 
 
 func test_sprint_is_faster_than_walk() -> void:
-	await _frames(60)
+	await _landed()
 	_player.intent().move = Vector2(0.0, 1.0)
 	_player.intent().sprint = true
 	await _frames(60)
@@ -55,7 +64,7 @@ func test_sprint_is_faster_than_walk() -> void:
 
 
 func test_crouch_lowers_the_head_and_slows_down() -> void:
-	await _frames(60)
+	await _landed()
 	var head: Node3D = _player.get_node("Head")
 	var standing_eye := head.position.y
 	_player.intent().crouch = true

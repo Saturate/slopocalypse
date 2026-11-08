@@ -17,8 +17,8 @@ var _max_height := INF
 func _init(terrain_heights: TerrainHeights = null) -> void:
 	heights = terrain_heights
 	if heights != null:
-		_min_height = -heights.amplitude - 1.0
-		_max_height = heights.amplitude + 1.0
+		_min_height = -heights.max_amplitude() - 1.0
+		_max_height = heights.max_amplitude() + 1.0
 
 
 func _get_used_channels_mask() -> int:

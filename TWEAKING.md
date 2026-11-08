@@ -40,7 +40,10 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | Sound volumes and ranges | `modules/audio/data/audio.json` | `volume_db` (per sound, in dB: `-6` is about half as loud), `shot_range`, `footstep_range` |
 | Training dummies | `modules/training/data/training.json` | `max_health`, `respawn_seconds`, `dummies` |
 | Saving: where, how often | `modules/persistence/data/persistence.json` | `file` (the save; `--save=PATH` on the server wins), `autosave_seconds`, `hold_seconds` (how long a returning player waits in the air for ground) |
-| The map: size, hills, trees, cover | `modules/world/data/world.json` | `size`, `height_amplitude`, `noise_frequency`, `seed`, `scatter`, `cover` |
+| The map: length, width, hills | `modules/world/data/world.json` | `length`, `width`, `behind` (metres behind the spawn), `height_amplitude`, `noise_frequency`, `seed`, `cover` |
+| The road | `modules/world/data/world.json` | `road`: `offset` (how far beside the spawn it starts), `half_width`, `blend` (how wide the levelled ground beside it is), `wander` and `wander_frequency` (how much it winds), `smoothing`, `max_grade` (steepest climb per metre) |
+| Biomes down the road | `modules/world/data/world.json` | `stages`: a list of `{at: metres down the road, forest, dry, rock, hills}`; values blend between neighbouring stages |
+| Trees, rocks, grass | `modules/world/data/world.json` | `scatter`: `trees_per_hectare`, `rocks_per_hectare`, `grass_per_m2`, `variants` (how many different models of each), `load_distance` (how far ahead scenery appears), `tree_detail_distance`, `grass_distance` |
 | Craters and falling through | `modules/world/data/world.json` | `voxel.max_dig_depth` (deepest a crater goes under the ground), `rescue_depth` (this far under the ground counts as fallen through: you are put back on top) |
 | Waiting for ground | `modules/player/data/player.json` | `hold_seconds` (a respawned or rescued player is held still until there is ground under them, at most this long) |
 

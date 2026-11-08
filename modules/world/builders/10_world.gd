@@ -101,7 +101,7 @@ func _initialize() -> void:
 		cover_root.add_child(_cover_box(index, item, heights, palette[index % palette.size()]))
 		index += 1
 
-	root.add_child(_boundary(heights.size))
+	root.add_child(_boundary(heights.extent()))
 
 	var spawn := Marker3D.new()
 	spawn.name = "SpawnPoint"
@@ -117,19 +117,24 @@ func _initialize() -> void:
 	quit(0)
 
 
-## Invisible walls just inside the chunk edge so nobody walks or drives off the world.
-func _boundary(size: float) -> StaticBody3D:
+## Invisible walls just inside the world's edge so nobody walks or drives off it.
+func _boundary(area: Rect2) -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.name = "Boundary"
-	var half := size / 2.0 - 1.0
+	var inset := 1.0
+	var left := area.position.x + inset
+	var right := area.end.x - inset
+	var far := area.position.y + inset
+	var near := area.end.y - inset
+	var mid := area.get_center()
 	# Tall enough to reach well below the voxel depth, so nothing slips under the wall.
 	var height := 400.0
 	var thickness := 2.0
 	var walls := [
-		["North", Vector3(0.0, 0.0, -half), Vector3(size, height, thickness)],
-		["South", Vector3(0.0, 0.0, half), Vector3(size, height, thickness)],
-		["West", Vector3(-half, 0.0, 0.0), Vector3(thickness, height, size)],
-		["East", Vector3(half, 0.0, 0.0), Vector3(thickness, height, size)],
+		["North", Vector3(mid.x, 0.0, far), Vector3(area.size.x, height, thickness)],
+		["South", Vector3(mid.x, 0.0, near), Vector3(area.size.x, height, thickness)],
+		["West", Vector3(left, 0.0, mid.y), Vector3(thickness, height, area.size.y)],
+		["East", Vector3(right, 0.0, mid.y), Vector3(thickness, height, area.size.y)],
 	]
 	for w: Array in walls:
 		var shape := CollisionShape3D.new()

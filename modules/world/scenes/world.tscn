@@ -127,16 +127,16 @@ size = Vector3(0.4, 1, 3)
 size = Vector3(0.4, 1, 3)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_bfafee"]
-size = Vector3(256, 400, 2)
+size = Vector3(384, 400, 2)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_48d36"]
-size = Vector3(256, 400, 2)
+size = Vector3(384, 400, 2)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_cbeb26"]
-size = Vector3(2, 400, 256)
+size = Vector3(2, 400, 3000)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_1bf2d0"]
-size = Vector3(2, 400, 256)
+size = Vector3(2, 400, 3000)
 
 [node name="World" type="Node3D" unique_id=241444173]
 
@@ -161,7 +161,7 @@ environment = SubResource("Environment_c83369")
 [node name="Cover" type="Node3D" parent="." unique_id=1263814881]
 
 [node name="Cover0" type="StaticBody3D" parent="Cover" unique_id=1227156898]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0.7078516, -10)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0.72359335, -10)
 
 [node name="Mesh" type="MeshInstance3D" parent="Cover/Cover0" unique_id=1940076702]
 mesh = SubResource("BoxMesh_4c5ac5")
@@ -170,7 +170,7 @@ mesh = SubResource("BoxMesh_4c5ac5")
 shape = SubResource("BoxShape3D_71242d")
 
 [node name="Cover1" type="StaticBody3D" parent="Cover" unique_id=1227156899]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0.23774865, -6)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0.2501936, -6)
 
 [node name="Mesh" type="MeshInstance3D" parent="Cover/Cover1" unique_id=1979212095]
 mesh = SubResource("BoxMesh_a91006")
@@ -179,7 +179,7 @@ mesh = SubResource("BoxMesh_a91006")
 shape = SubResource("BoxShape3D_d02dae")
 
 [node name="Cover2" type="StaticBody3D" parent="Cover" unique_id=1227156900]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0.5776401, 14)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0.5521121, 14)
 
 [node name="Mesh" type="MeshInstance3D" parent="Cover/Cover2" unique_id=2018347488]
 mesh = SubResource("BoxMesh_5c547")
@@ -188,7 +188,7 @@ mesh = SubResource("BoxMesh_5c547")
 shape = SubResource("BoxShape3D_2f372f")
 
 [node name="Cover3" type="StaticBody3D" parent="Cover" unique_id=1227156901]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -20, -1.4761263, 18)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -20, -0.9409011, 18)
 
 [node name="Mesh" type="MeshInstance3D" parent="Cover/Cover3" unique_id=2057482881]
 mesh = SubResource("BoxMesh_627a88")
@@ -197,7 +197,7 @@ mesh = SubResource("BoxMesh_627a88")
 shape = SubResource("BoxShape3D_8e40b0")
 
 [node name="Cover4" type="StaticBody3D" parent="Cover" unique_id=1227156902]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 3.6213255, 4)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 3.4182339, 4)
 
 [node name="Mesh" type="MeshInstance3D" parent="Cover/Cover4" unique_id=2096618274]
 mesh = SubResource("BoxMesh_bf2fc9")
@@ -226,19 +226,19 @@ shape = SubResource("BoxShape3D_ab5d33")
 [node name="Boundary" type="StaticBody3D" parent="." unique_id=886081222]
 
 [node name="North" type="CollisionShape3D" parent="Boundary" unique_id=746408035]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -127)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -2935)
 shape = SubResource("BoxShape3D_bfafee")
 
 [node name="South" type="CollisionShape3D" parent="Boundary" unique_id=752340907]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 127)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 63)
 shape = SubResource("BoxShape3D_48d36")
 
 [node name="West" type="CollisionShape3D" parent="Boundary" unique_id=933984667]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -127, 0, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -191, 0, -1436)
 shape = SubResource("BoxShape3D_cbeb26")
 
 [node name="East" type="CollisionShape3D" parent="Boundary" unique_id=933333445]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 127, 0, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 191, 0, -1436)
 shape = SubResource("BoxShape3D_1bf2d0")
 
 [node name="SpawnPoint" type="Marker3D" parent="." unique_id=973275349]

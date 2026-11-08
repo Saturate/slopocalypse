@@ -4,6 +4,8 @@ extends Node3D
 ## generated from TerrainHeights.
 
 const SHADER := "res://modules/world/shaders/terrain.gdshader"
+## Resolution of the baked ground height the shader compares against (dirt in craters).
+const GROUND_MAP_METRES := 2.0
 const VOXEL_REQUIRED := {"view_distance": TYPE_FLOAT, "lod_count": TYPE_FLOAT, "lod_distance": TYPE_FLOAT, "depth": TYPE_FLOAT, "max_dig_depth": TYPE_FLOAT}
 
 ## A hole was dug (after clamping), so grass over it can go.
@@ -36,9 +38,9 @@ func _ready() -> void:
 	terrain.name = "VoxelTerrain"
 	terrain.generator = VoxelHeightGenerator.new(heights)
 	terrain.mesher = VoxelMesherTransvoxel.new()
-	var half := int(heights.size / 2.0)
+	var area := heights.extent()
 	var depth := int(cfg["depth"])
-	terrain.voxel_bounds = AABB(Vector3(-half, -depth, -half), Vector3(half * 2, depth * 2, half * 2))
+	terrain.voxel_bounds = AABB(Vector3(area.position.x, -depth, area.position.y), Vector3(area.size.x, depth * 2, area.size.y))
 	terrain.view_distance = int(cfg["view_distance"])
 	terrain.lod_count = int(cfg["lod_count"])
 	terrain.lod_distance = cfg["lod_distance"]
@@ -65,11 +67,12 @@ func _terrain_material() -> ShaderMaterial:
 		return mat
 	var data: Dictionary = Data.load_json(config_path)
 	if data.has("biomes") and Data.require(config_path + " biomes", data["biomes"], Biomes.REQUIRED):
-		mat.set_shader_parameter("biome_map", Biomes.new(data["biomes"]).bake(heights.size))
-		mat.set_shader_parameter("world_size", heights.size)
+		var biomes_cfg: Dictionary = data["biomes"]
+		mat.set_shader_parameter("biome_map", Biomes.new(biomes_cfg, heights.stages).bake(heights.extent(), biomes_cfg["map_metres_per_texel"]))
 	# The untouched ground height, so anything dug below it shows as bare dirt.
-	mat.set_shader_parameter("ground_map", heights.bake(int(heights.size)))
-	mat.set_shader_parameter("ground_size", heights.size)
+	mat.set_shader_parameter("ground_map", heights.bake(GROUND_MAP_METRES))
+	mat.set_shader_parameter("map_origin", heights.extent().position)
+	mat.set_shader_parameter("map_size", heights.extent().size)
 	for layer in [["grass", "Grass004"], ["dirt", "Ground037"], ["rock", "Rock030"]]:
 		var base := "res://modules/world/textures/%s/%s_1K-JPG_" % [layer[1], layer[1]]
 		mat.set_shader_parameter(layer[0] + "_albedo", load(base + "Color.jpg"))

@@ -25,10 +25,11 @@ uniform float rock_start = 0.6;
 uniform float normal_strength = 0.9;
 // Baked by Biomes: R forest, G dry, B rock, covering the whole world.
 uniform sampler2D biome_map : hint_default_black, filter_linear, repeat_disable;
-uniform float world_size = 256.0;
+// Both maps cover the world's footprint: x and z from map_origin over map_size.
+uniform vec2 map_origin = vec2(-128.0);
+uniform vec2 map_size = vec2(256.0);
 // Baked by TerrainHeights: the untouched ground height. Anything dug below it is bare dirt.
 uniform sampler2D ground_map : hint_default_black, filter_linear, repeat_disable;
-uniform float ground_size = 256.0;
 uniform float dug_start = 0.12;
 uniform float dug_full = 0.35;
 
@@ -46,8 +47,14 @@ float noise(vec2 p) {
 	return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
 }
 
+// How far the drawn terrain tucks under the road (collision is untouched).
+uniform float road_dip = 0.45;
+
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float on_road = texture(ground_map, (world_pos.xz - map_origin) / map_size).g;
+	VERTEX.y -= on_road * road_dip;
+	world_pos.y -= on_road * road_dip;
 	world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 }
 
@@ -93,7 +100,7 @@ Surface top(sampler2D alb, sampler2D nrm, sampler2D rgh, float scale) {
 }
 
 void fragment() {
-	vec3 biome = texture(biome_map, world_pos.xz / world_size + 0.5).rgb;
+	vec3 biome = texture(biome_map, (world_pos.xz - map_origin) / map_size).rgb;
 	float forest = biome.r;
 	float rocky = biome.b;
 	float breakup = noise(world_pos.xz * 0.15) * 0.12 + noise(world_pos.xz * 0.9) * 0.05;
@@ -104,7 +111,7 @@ void fragment() {
 	float w_grass = smoothstep(dirt_line - 0.05, dirt_line + 0.05, up);
 	float w_rock = 1.0 - smoothstep(rock_line - 0.06, rock_line + 0.06, up);
 	// Craters and shot-up ground lose their grass and rock and show the soil underneath.
-	float below = texture(ground_map, world_pos.xz / ground_size + 0.5).r - world_pos.y;
+	float below = texture(ground_map, (world_pos.xz - map_origin) / map_size).r - world_pos.y;
 	float dug = smoothstep(dug_start, dug_full, below);
 	w_grass *= 1.0 - dug;
 	w_rock *= 1.0 - dug;
