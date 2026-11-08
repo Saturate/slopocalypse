@@ -4,9 +4,18 @@ extends Node
 ## reloads this scene, which frees the modules and brings the menu back.
 
 const MODULES_ROOT := "res://modules"
+## The voxel kit's asset library, if that module is there and on.
+const LIBRARY := "res://modules/voxkit/library/asset_library.gd"
+
+## `--library` opens the library straight away, once per launch (Back then goes to the menu).
+static var _library_from_args := OS.get_cmdline_user_args().has("--library")
 
 
 func _ready() -> void:
+	if _library_from_args and _library_available():
+		_library_from_args = false
+		_show_library()
+		return
 	if Net.awaiting_menu:
 		_show_menu()
 		return
@@ -20,12 +29,29 @@ func _show_menu() -> void:
 	var menu := MainMenu.new()
 	menu.name = "MainMenu"
 	menu.message = Net.menu_message
+	menu.has_library = _library_available()
 	add_child(menu)
 	menu.solo_requested.connect(func() -> void: _begin(menu, func() -> void:
 		Net.awaiting_menu = false
 		Net.start_solo()))
 	menu.host_requested.connect(func(port: int) -> void: _begin(menu, Net.start_host.bind(port)))
 	menu.join_requested.connect(func(host: String, port: int) -> void: _begin(menu, Net.join.bind(host, port)))
+	menu.library_requested.connect(func() -> void:
+		menu.queue_free()
+		_show_library())
+
+
+static func _library_available() -> bool:
+	return Features.is_enabled(&"voxkit") and ResourceLoader.exists(LIBRARY)
+
+
+## Client only, no session: leaving it reloads this scene, which shows the menu again.
+func _show_library() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	var library: Control = (load(LIBRARY) as GDScript).new()
+	library.name = "AssetLibrary"
+	library.connect(&"closed", func() -> void: get_tree().reload_current_scene())
+	add_child(library)
 
 
 func _begin(menu: MainMenu, start: Callable) -> void:

@@ -1,0 +1,16 @@
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.7
+reloadable = true
+
+[libraries]
+windows.debug.x86_64 = "res://modules/voxkit/bin/windows/debug/voxkit_gd.dll"
+windows.release.x86_64 = "res://modules/voxkit/bin/windows/release/voxkit_gd.dll"
+windows.debug.arm64 = "res://modules/voxkit/bin/windows/debug/voxkit_gd.dll"
+windows.release.arm64 = "res://modules/voxkit/bin/windows/release/voxkit_gd.dll"
+linux.debug.x86_64 = "res://modules/voxkit/bin/linux/debug/libvoxkit_gd.so"
+linux.release.x86_64 = "res://modules/voxkit/bin/linux/release/libvoxkit_gd.so"
+linux.debug.arm64 = "res://modules/voxkit/bin/linux/debug/libvoxkit_gd.so"
+linux.release.arm64 = "res://modules/voxkit/bin/linux/release/libvoxkit_gd.so"
+macos.debug = "res://modules/voxkit/bin/macos/debug/libvoxkit_gd.dylib"
+macos.release = "res://modules/voxkit/bin/macos/release/libvoxkit_gd.dylib"

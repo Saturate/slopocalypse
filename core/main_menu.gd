@@ -7,6 +7,7 @@ extends Control
 signal solo_requested
 signal host_requested(port: int)
 signal join_requested(host: String, port: int)
+signal library_requested
 
 const BG := Color(0.07, 0.08, 0.08)
 const PANEL := Color(0.12, 0.13, 0.12, 0.96)
@@ -26,6 +27,8 @@ var message := ""
 var servers: ServerList
 var save_path := ServerList.SAVE_PATH
 var profile_path := PlayerProfile.FILE
+## Set by boot when the asset library module is there; shows its button.
+var has_library := false
 
 var _name: LineEdit
 var _address: LineEdit
@@ -160,11 +163,20 @@ func _ready() -> void:
 		b.pressed.connect(func() -> void: _join(address))
 		recent.add_child(b)
 	col.add_child(_gap())
+	var bottom := HBoxContainer.new()
+	if has_library:
+		var library := _button(&"Library", "Asset library", func() -> void: library_requested.emit())
+		library.custom_minimum_size = Vector2(150, 34)
+		library.add_theme_font_size_override("font_size", 15)
+		bottom.add_child(library)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bottom.add_child(spacer)
 	var quit := _button(&"Quit", "Quit", func() -> void: get_tree().quit(0))
 	quit.custom_minimum_size = Vector2(120, 34)
-	quit.size_flags_horizontal = Control.SIZE_SHRINK_END
 	quit.add_theme_font_size_override("font_size", 15)
-	col.add_child(quit)
+	bottom.add_child(quit)
+	col.add_child(bottom)
 
 
 func button(id: StringName) -> Button:
