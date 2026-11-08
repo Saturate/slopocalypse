@@ -26,7 +26,7 @@ Agent tooling note: in this environment, backslashes inside Bash heredocs (inclu
 | Build scenes | `node tools/build-scenes.ts` (runs `modules/*/builders/*.gd`; commit the `.tscn` output) |
 | Capture for review | `node tools/capture.ts --setup res://modules/<id>/capture/<name>.gd --out screenshots/<name>.png --frames 120 --sheet 6` (opens a window; then use the `visual-review` skill) |
 | Portable game zip | `node tools/export.ts [--connect HOST[:PORT],...]` (ships the addresses in the menu's server list; fetches export templates once, builds release, smoke-tests the exported game; output in `build/`) |
-| Dedicated server | `node tools/server.ts [--port 7777]` (headless; clients join with `-- --connect=HOST:7777`) |
+| Dedicated server | `node tools/server.ts [--port 7777]` (headless; clients join with `-- --connect=HOST:7777`; saves to `user://saves/world.db`, `-- --save=PATH` or `--no-save` to change that) |
 | Deploy server to your Linux box | `node tools/deploy.ts --host user@server --zip <linux build> [--port 7777] [--open-firewall]` (installs a systemd service over ssh; `--ci` builds Linux on the `server-build` workflow instead, which spends Actions minutes; `--dry-run` prints the remote script) |
 | Server + two clients locally | `node tools/run-local.ts` |
 | Build Rust extensions | `node tools/build-rust.ts` (`--release` for exports); the gate does this before Godot imports |
@@ -57,7 +57,7 @@ Planned, added by their issues: `tools/journal` (#11), `tools/soak` (#15).
 | `Log` | `core/log.gd` | `Log.info(&"category", "message")`; `warn`, `error` push to the engine log. Tests that expect errors wrap them in `Log.begin_capture()` / `Log.end_capture()` and read them with `LogCapture.text()`. |
 | `Data` | `core/data.gd` | `Data.load_json(path)` and `Data.require(path, dict, {field: TYPE_*})`. JSON numbers are always `TYPE_FLOAT`. |
 | `Features` | `core/features.gd` | `Features.is_enabled(&"flag")`. Flags in `data/features.json`; per run `-- --flags=car:off` or `-- --all-optional-off`. |
-| `Net` | `core/net.gd` | Session mode from the command line: `--server[=PORT]`, `--connect=HOST[:PORT]`, `--solo`; a windowed run with none of these (and no `--bot`/`--net-report-after`) shows the main menu (`core/main_menu.gd`). `Net.leave(reason)` returns to it. `Net.has_local_player()`, `Net.local_peer_id()`, `peer_joined` / `peer_left`. Server-spawned things go through a `MultiplayerSpawner` in their module. |
+| `Net` | `core/net.gd` | Session mode from the command line: `--server[=PORT]`, `--connect=HOST[:PORT]`, `--solo`; a windowed run with none of these (and no `--bot`/`--net-report-after`) shows the main menu (`core/main_menu.gd`). `Net.leave(reason)` returns to it. Clients say who they are on connect (`PlayerProfile`: name plus per-install key, `--name=` overrides); the server emits `peer_joined` only after that and `Net.identity_of(peer)` returns it; `peer_leaving` fires before `peer_left`, `stopping` before a server quits on its own, `Net.server_kick(peer, reason)` sends someone back to the menu. `Net.has_local_player()`, `Net.local_peer_id()`, `peer_joined` / `peer_left`. Server-spawned things go through a `MultiplayerSpawner` in their module. |
 | `EventBus` | `core/event_bus.gd` | `subscribe(&"topic", handler)`, `publish(&"topic", payload)`. Topics are named `module.event`. |
 
 Shared components live in `core/components/`: `HealthComponent` (`server_apply_damage`, `died` and `damaged` signals, `HealthComponent.find_on(collider)`).
@@ -78,6 +78,7 @@ A module is `modules/<id>/module.json` (`id`, `depends_on`, `flag`, `entry`) plu
 - GitHub issues are the live task list (milestone per phase). One branch per issue, named `issue-<n>-<slug>`; commits and PRs reference the issue.
 - The merge gate is `npm run check:full` run locally; PRs are merged after it passes.
 - Write a failing test first wherever behaviour is testable. Feel is checked by playtest and recorded in `NOTES.md`.
+- Tool and test runs that start a server pass `--save=<temp file>` or `--no-save`, never the player's own world.
 - Never trust a Godot exit code alone: headless runs can exit 0 after a script error, and gdUnit4 passes tests that only `push_error`. The gate scans logs and fails on any `ERROR:`, `Error:` or `SCRIPT ERROR` line not allow-listed in `tools/lib/gate.ts`.
 - GDScript tests live in `tests/unit`, `tests/scenario`, `tests/net` (and the same under each module). The fast gate runs only `unit` folders. Godot does not deliver input events headless, so tests drive intent components, never simulated key presses.
 - Ask before: adding any dependency (npm, Cargo, Godot addon), changing architecture rules or the module layout, changing the save or journal format, `unsafe` Rust.

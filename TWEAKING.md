@@ -39,6 +39,7 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | Car handling | `modules/car/data/car.json` | `engine_force`, `top_speed`, `brake_force`, `max_steer_degrees`, `suspension_*`, `friction_slip` |
 | Sound volumes and ranges | `modules/audio/data/audio.json` | `volume_db` (per sound, in dB: `-6` is about half as loud), `shot_range`, `footstep_range` |
 | Training dummies | `modules/training/data/training.json` | `max_health`, `respawn_seconds`, `dummies` |
+| Saving: where, how often | `modules/persistence/data/persistence.json` | `file` (the save; `--save=PATH` on the server wins), `autosave_seconds`, `hold_seconds` (how long a returning player waits in the air for ground) |
 | The map: size, hills, trees, cover | `modules/world/data/world.json` | `size`, `height_amplitude`, `noise_frequency`, `seed`, `scatter`, `cover` |
 
 ## Good first tweaks
@@ -48,3 +49,7 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 - Loot too rare: raise `npc_loot.rolls` and `crates.rolls`, lower `crates.refill_seconds`.
 - Dying too costly: give a bigger `starting_kit`, or lower `respawn_seconds`.
 - Guns feel weak: raise the receiver's `damage` in `parts.json`, or lower everyone's `max_health`.
+
+## The save
+
+The server keeps everyone's gear in an SQLite file: `world.db` in the Godot user folder under `saves/` (on Windows `%APPDATA%\Godot\app_userdata\Outpost\saves\`), or wherever `--save=` points. Solo and hosted games share that one world. Open it with any SQLite viewer (DB Browser for SQLite) while the server is off to look or fix things: `players`, `player_items` and `player_builds` per name, `world_loot` and `crates` for the world. Delete the file for a fresh world. Start a server with `--no-save` to play without touching it.

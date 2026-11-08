@@ -4,7 +4,8 @@ extends Node
 ## owner gets a copy of theirs after a change, which the Tab screen shows and previews drags
 ## against. Other modules use the small API below (`count`, `server_give`, `server_take`)
 ## and the `inventory.changed` topic; item ids for weapon parts are the parts' ids.
-## Not saved yet: inventories reset when the server restarts.
+## Saving is someone else's job: `server_items_of` / `server_restore_items` and
+## `server_world_state` / `server_restore_world` hand the state out and take it back.
 
 const ITEMS := "res://modules/inventory/data/items.json"
 ## Reach for picking things up, metres from the eye, and how squarely you must face it.
@@ -25,6 +26,8 @@ var _crate_spawner := MultiplayerSpawner.new()
 ## Server: crate -> item ids inside; crate -> seconds until it refills.
 var _crate_items: Dictionary = {}
 var _crate_refill: Dictionary = {}
+## Server: crates in spawn order; a crate's index here is how a save names it.
+var _crates: Array[LootCrate] = []
 ## Server: player -> {per_second, left} while a medkit works.
 var _healing: Dictionary = {}
 ## This instance's copy of its own player's inventory (on the server, the same grid).
@@ -56,6 +59,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"enemy.died", _on_enemy_died)
 	EventBus.subscribe(&"inventory.crate_changed", _on_crate_changed)
 	Net.peer_left.connect(_on_peer_left)
+	Net.peer_joined.connect(_on_peer_joined)
 	if DisplayServer.get_name() != "headless":
 		InputBindings.register(_data.get("bindings", {}), &"inventory")
 
@@ -395,6 +399,7 @@ func server_spawn_crate(at: Vector3) -> LootCrate:
 	_loot_count += 1
 	var crate: LootCrate = _crate_spawner.spawn({"index": _loot_count, "position": at})
 	_crate_items[crate] = _roll(_data.get("crates", {}))
+	_crates.append(crate)
 	return crate
 
 
@@ -519,6 +524,111 @@ func _on_ground(at: Vector3) -> Vector3:
 
 func _on_peer_left(peer: int) -> void:
 	_grids.erase(peer)
+
+
+## Server: a friend who joins late sees which crates are already emptied.
+func _on_peer_joined(peer: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var emptied: Array[String] = []
+	for crate in _crates:
+		if is_instance_valid(crate) and crate.get_meta(&"empty", false):
+			emptied.append(String(crate.name))
+	if not emptied.is_empty():
+		_receive_emptied.rpc_id(peer, emptied)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _receive_emptied(names: Array) -> void:
+	for crate_name: Variant in names:
+		var crate := get_node_or_null(NodePath(str(crate_name))) as LootCrate
+		if crate != null:
+			crate.set_empty(true)
+
+
+## Server: `peer`'s backpack as `[{item, x, y, rotated}]`, for saving.
+func server_items_of(peer: int) -> Array:
+	var grid: InventoryGrid = _grids.get(peer)
+	var out := []
+	if grid == null:
+		return out
+	for placed: Dictionary in grid.items():
+		out.append({"item": placed["item"], "x": placed["x"], "y": placed["y"], "rotated": placed["rotated"]})
+	return out
+
+
+## Server: replaces `peer`'s backpack with saved items, each where it was. Anything that no
+## longer fits there (the grid or an item's size changed) goes in the first free spot, and
+## what has no room at all lands at the player's feet rather than vanishing.
+func server_restore_items(peer: int, items: Array) -> void:
+	var grid := _new_grid() if peer != multiplayer.get_unique_id() else _mine
+	if grid == _mine:
+		for placed: Dictionary in grid.items():
+			grid.remove(int(placed["uid"]))
+	_grids[peer] = grid
+	var spilled: Array[String] = []
+	for saved: Dictionary in items:
+		var item := str(saved.get("item", ""))
+		if item_info(item).is_empty():
+			Log.warn(&"inventory", "peer %d: dropped unknown saved item '%s'" % [peer, item])
+			continue
+		var placed := grid.place(_next_uid, item, int(saved.get("x", 0)), int(saved.get("y", 0)), bool(saved.get("rotated", false)))
+		if not placed.is_empty() and not grid.insert(_next_uid, item)["ok"]:
+			spilled.append(item)
+			continue
+		_next_uid += 1
+	var player := _player_of(peer)
+	for item in spilled:
+		if player != null:
+			server_spawn_loot(item, _on_ground(player.global_position))
+	_send(peer)
+
+
+## Server: loose loot and crate state, for saving: `{loot: [{item, position}], crates:
+## [{index, items, refill_seconds}]}`, refill_seconds -1 for a crate not waiting to refill.
+func server_world_state() -> Dictionary:
+	var loot := []
+	for node: Node in get_tree().get_nodes_in_group(&"loot"):
+		var item := node as LootItem
+		if item != null and not item.is_queued_for_deletion():
+			loot.append({"item": item.item, "position": item.global_position})
+	var crates := []
+	for i in _crates.size():
+		var crate := _crates[i]
+		if not is_instance_valid(crate):
+			continue
+		crates.append({"index": i, "items": (_crate_items.get(crate, []) as Array).duplicate(), "refill_seconds": float(_crate_refill.get(crate, -1.0))})
+	return {"loot": loot, "crates": crates}
+
+
+## Server: puts the world back as saved: the loot on the ground replaces whatever this
+## session laid out, and crates take back their contents and refill timers. Crates match by
+## spawn order; extra saved ones (fewer crates now) are ignored.
+func server_restore_world(state: Dictionary) -> void:
+	for node: Node in get_tree().get_nodes_in_group(&"loot"):
+		node.queue_free()
+	for saved: Dictionary in state.get("loot", []):
+		server_spawn_loot(str(saved.get("item", "")), saved.get("position", Vector3.ZERO))
+	for saved: Dictionary in state.get("crates", []):
+		var i := int(saved.get("index", -1))
+		if i < 0 or i >= _crates.size() or not is_instance_valid(_crates[i]):
+			continue
+		var crate := _crates[i]
+		var items: Array = []
+		for item: Variant in saved.get("items", []):
+			if not item_info(str(item)).is_empty():
+				items.append(str(item))
+		_crate_items[crate] = items
+		var refill := float(saved.get("refill_seconds", -1.0))
+		if items.is_empty() and refill < 0.0:
+			refill = float((_data.get("crates", {}) as Dictionary).get("refill_seconds", 120.0))
+		if refill >= 0.0:
+			_crate_refill[crate] = refill
+		else:
+			_crate_refill.erase(crate)
+		var empty := items.is_empty()
+		if empty != bool(crate.get_meta(&"empty", false)):
+			Net.server_broadcast(&"inventory.crate_changed", {"crate": crate, "empty": empty})
 
 
 func _new_grid() -> InventoryGrid:

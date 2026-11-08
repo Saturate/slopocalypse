@@ -2,6 +2,7 @@ extends GdUnitTestSuite
 ## The menu turns clicks into a session choice; Boot and Net act on it.
 
 const SAVED := "user://test_menu_servers.json"
+const PROFILE := "user://test_menu_profile.json"
 
 var _menu: MainMenu
 
@@ -9,14 +10,16 @@ var _menu: MainMenu
 func before_test() -> void:
 	_menu = auto_free(MainMenu.new())
 	_menu.save_path = SAVED
+	_menu.profile_path = PROFILE
 	_menu.servers = ServerList.new()
 	_menu.servers.remember("old.example:7000")
 	add_child(_menu)
 
 
 func after_test() -> void:
-	if FileAccess.file_exists(SAVED):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVED))
+	for path in [SAVED, PROFILE]:
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 
 func test_solo_asks_for_solo() -> void:
@@ -66,6 +69,7 @@ func test_a_saved_server_joins_with_one_click() -> void:
 
 func test_why_the_last_session_ended_is_shown() -> void:
 	var menu: MainMenu = auto_free(MainMenu.new())
+	menu.profile_path = PROFILE
 	menu.servers = ServerList.new()
 	menu.message = "Could not reach x:1."
 	add_child(menu)
@@ -76,3 +80,20 @@ func test_why_the_last_session_ended_is_shown() -> void:
 func test_tailscale_addresses_come_first() -> void:
 	var ranked := MainMenu.rank_addresses(PackedStringArray(["192.168.1.5", "127.0.0.1", "fe80::1", "100.70.3.4", "10.0.0.2"]))
 	assert_array(ranked).contains_exactly(["100.70.3.4", "192.168.1.5", "10.0.0.2"])
+
+
+func test_the_typed_name_is_kept_for_next_time() -> void:
+	_menu.name_field().text = "  Ranger "
+	_menu.button(&"Solo").pressed.emit()
+	assert_str(PlayerProfile.load_from(PROFILE).name).is_equal("Ranger")
+
+
+func test_a_blank_name_starts_nothing() -> void:
+	var got: Array[String] = []
+	_menu.solo_requested.connect(func() -> void: got.append("solo"))
+	_menu.join_requested.connect(func(h: String, _p: int) -> void: got.append(h))
+	_menu.name_field().text = "  "
+	_menu.button(&"Solo").pressed.emit()
+	_menu.button(&"Join").pressed.emit()
+	assert_array(got).is_empty()
+	assert_bool(_menu.message_label().visible).is_true()

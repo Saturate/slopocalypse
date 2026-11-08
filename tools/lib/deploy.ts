@@ -31,7 +31,8 @@ export function systemdUnit(t: DeployTarget): string {
 		`WorkingDirectory=${t.dir}/current`,
 		// user:// resolves under HOME; keep it inside the install folder, not a login home.
 		`Environment=HOME=${t.dir}/home`,
-		`ExecStart=${t.dir}/current/${LINUX_EXE} --headless -- --server=${t.port}`,
+		// The save sits beside the releases, so upgrades and rollbacks keep everyone's gear.
+		`ExecStart=${t.dir}/current/${LINUX_EXE} --headless -- --server=${t.port} --save=${t.dir}/saves/world.db`,
 		"Restart=on-failure",
 		"RestartSec=3",
 		"",
@@ -50,11 +51,11 @@ export function installScript(t: DeployTarget, stamp: string, tarball: string): 
 		// Root logs in without sudo; everyone else needs it for /opt and systemd.
 		'if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO="sudo"; fi',
 		`id -u ${quote(t.user)} >/dev/null 2>&1 || $SUDO useradd --system --home-dir ${dir} --shell /usr/sbin/nologin ${quote(t.user)}`,
-		`$SUDO mkdir -p ${rel} ${quote(`${t.dir}/home`)}`,
+		`$SUDO mkdir -p ${rel} ${quote(`${t.dir}/home`)} ${quote(`${t.dir}/saves`)}`,
 		`$SUDO tar -xzf ${quote(tarball)} -C ${rel}`,
 		`$SUDO chmod +x ${quote(`${t.dir}/releases/${stamp}/${LINUX_EXE}`)}`,
 		`$SUDO ln -sfn ${rel} ${quote(`${t.dir}/current`)}`,
-		`$SUDO chown -R ${quote(t.user)} ${quote(`${t.dir}/home`)}`,
+		`$SUDO chown -R ${quote(t.user)} ${quote(`${t.dir}/home`)} ${quote(`${t.dir}/saves`)}`,
 		`rm -f ${quote(tarball)}`,
 		`$SUDO tee /etc/systemd/system/${SERVICE}.service >/dev/null <<'UNIT'`,
 		systemdUnit(t).trimEnd(),
