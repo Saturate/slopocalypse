@@ -1,6 +1,6 @@
 {
   "id": "world",
-  "depends_on": [],
+  "depends_on": ["voxkit"],
   "flag": "world",
   "entry": "world_module.gd"
 }

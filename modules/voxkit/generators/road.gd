@@ -50,21 +50,29 @@ func build(values: Dictionary) -> VoxelModel:
 	var half_road := lanes * lane / 2
 	var half_all := half_road + shoulder
 	var bend := float(p["curve"]) * length * 0.25
+	# A path given by the caller (the world's road): centre x and lift y for a local z, and
+	# how far it strays, so the grid is big enough. Otherwise the curve slider's bend.
+	var x_of: Callable = p.get("x_of", func(z: float) -> float: return _offset(z, length, bend))
+	var y_of: Callable = p.get("y_of", func(_z: float) -> float: return 0.0)
+	var spread: float = p.get("spread", absf(bend))
+	var rise: float = p.get("rise", 0.0)
 	var m := new_model()
-	m.setup(Vector3(half_all * 2.0 + absf(bend) * 2.0 + v * 4.0, BED + SURFACE + v * 2.0, length), v)
+	m.setup(Vector3(half_all * 2.0 + spread * 2.0 + v * 4.0, BED + SURFACE + rise + v * 2.0, length), v)
 	var top := BED + SURFACE
 	# Row by row along the length, so the road can follow its curve.
 	var z := -length / 2
 	while z < length / 2 - 0.0001:
 		var z1 := minf(z + v, length / 2)
-		var c := _offset((z + z1) / 2, length, bend)
-		m.fill_box(Vector3(c - half_all, 0, z), Vector3(c + half_all, BED, z1), GRAVEL, 0.22, seed)
-		m.fill_box(Vector3(c - half_all, BED, z), Vector3(c - half_road, BED + SURFACE * 0.5, z1), GRAVEL, 0.22, seed + 1)
-		m.fill_box(Vector3(c + half_road, BED, z), Vector3(c + half_all, BED + SURFACE * 0.5, z1), GRAVEL, 0.22, seed + 1)
-		m.fill_box(Vector3(c - half_road, BED, z), Vector3(c + half_road, top, z1), ASPHALT, 0.07, seed + 2)
-		_markings(m, p, c, z, z1, lanes, lane, half_road, top, v)
+		var mid := (z + z1) / 2
+		var c := float(x_of.call(mid))
+		var y := float(y_of.call(mid))
+		m.fill_box(Vector3(c - half_all, 0, z), Vector3(c + half_all, y + BED, z1), GRAVEL, 0.22, seed)
+		m.fill_box(Vector3(c - half_all, y + BED, z), Vector3(c - half_road, y + BED + SURFACE * 0.5, z1), GRAVEL, 0.22, seed + 1)
+		m.fill_box(Vector3(c + half_road, y + BED, z), Vector3(c + half_all, y + BED + SURFACE * 0.5, z1), GRAVEL, 0.22, seed + 1)
+		m.fill_box(Vector3(c - half_road, y + BED, z), Vector3(c + half_road, y + top, z1), ASPHALT, 0.07, seed + 2)
+		_markings(m, p, c, z, z1, lanes, lane, half_road, y + top, v)
 		z = z1
-	_wear(m, p, rng, length, bend, half_road, top, v, seed)
+	_wear(m, p, rng, length, x_of, y_of, half_road, top, v, seed)
 	return m
 
 
@@ -82,7 +90,8 @@ func _markings(m: VoxelModel, p: Dictionary, c: float, z0: float, z1: float, lan
 		line.call(-half_road + lw, WHITE)
 		line.call(half_road - lw, WHITE)
 	var period := float(p["dash"]) + float(p["gap"])
-	var mid := (z0 + z1) / 2
+	# `z_phase` keeps dashes in step across road pieces laid end to end.
+	var mid := (z0 + z1) / 2 + float(p.get("z_phase", 0.0))
 	var in_dash := fposmod(mid, period) < float(p["dash"])
 	if lanes % 2 == 1:
 		# No centre between opposite directions to mark: dash every lane boundary instead.
@@ -109,17 +118,17 @@ func _markings(m: VoxelModel, p: Dictionary, c: float, z0: float, z1: float, lan
 			line.call(-i * lane, WHITE)
 
 
-func _wear(m: VoxelModel, p: Dictionary, rng: RandomNumberGenerator, length: float, bend: float, half_road: float, top: float, v: float, seed: int) -> void:
+func _wear(m: VoxelModel, p: Dictionary, rng: RandomNumberGenerator, length: float, x_of: Callable, y_of: Callable, half_road: float, top: float, v: float, seed: int) -> void:
 	var wear: float = p["wear"]
 	for i in int(wear * length * 0.6):
 		var z := rng.randf_range(-length / 2, length / 2)
-		var x := _offset(z, length, bend) + rng.randf_range(-half_road, half_road)
+		var x := float(x_of.call(z)) + rng.randf_range(-half_road, half_road)
 		var size := rng.randf_range(0.4, 1.6)
-		m.paint_ellipsoid(Vector3(x, top, z), Vector3(size, v * 1.5, size * rng.randf_range(0.6, 1.8)), PATCH if rng.randf() < 0.6 else ASPHALT.darkened(0.25), 0.08, seed + i)
+		m.paint_ellipsoid(Vector3(x, top + float(y_of.call(z)), z), Vector3(size, v * 1.5, size * rng.randf_range(0.6, 1.8)), PATCH if rng.randf() < 0.6 else ASPHALT.darkened(0.25), 0.08, seed + i)
 	# Cracks: short random walks carved one voxel deep.
 	for i in int(wear * length * 0.4):
 		var z := rng.randf_range(-length / 2, length / 2)
-		var at := Vector3(_offset(z, length, bend) + rng.randf_range(-half_road, half_road) * 0.9, top, z)
+		var at := Vector3(float(x_of.call(z)) + rng.randf_range(-half_road, half_road) * 0.9, top + float(y_of.call(z)), z)
 		var heading := rng.randf() * TAU
 		for s in rng.randi_range(3, 8):
 			heading += rng.randf_range(-0.8, 0.8)
@@ -128,6 +137,6 @@ func _wear(m: VoxelModel, p: Dictionary, rng: RandomNumberGenerator, length: flo
 			at = next
 	for i in int(p["potholes"]):
 		var z := rng.randf_range(-length / 2, length / 2)
-		var x := _offset(z, length, bend) + rng.randf_range(-half_road, half_road) * 0.8
+		var x := float(x_of.call(z)) + rng.randf_range(-half_road, half_road) * 0.8
 		var r := rng.randf_range(0.25, 0.6)
-		m.carve_ellipsoid(Vector3(x, top, z), Vector3(r, SURFACE * 1.6, r * rng.randf_range(0.7, 1.3)))
+		m.carve_ellipsoid(Vector3(x, top + float(y_of.call(z)), z), Vector3(r, SURFACE * 1.6, r * rng.randf_range(0.7, 1.3)))

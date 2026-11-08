@@ -51,6 +51,22 @@ func test_forests_are_never_dry() -> void:
 			assert_float(_biomes.dry(x, 10.0)).is_less(0.02)
 
 
-func test_bake_covers_the_world() -> void:
-	var tex := _biomes.bake(256.0)
-	assert_int(tex.get_width()).is_equal(128)
+func test_bake_covers_the_area_at_its_resolution() -> void:
+	var tex := _biomes.bake(Rect2(-64.0, -256.0, 128.0, 256.0), 4.0)
+	assert_int(tex.get_width()).is_equal(32)
+	assert_int(tex.get_height()).is_equal(64)
+
+
+func test_stages_move_the_biomes_down_the_road() -> void:
+	var data: Dictionary = Data.load_json(CONFIG)
+	var staged := Biomes.new(data["biomes"], RoadStages.new([{"at": 0.0, "forest": 1.0, "dry": 0.0}, {"at": 1000.0, "forest": 0.0, "dry": 1.0}]))
+	var early_forest := 0.0
+	var late_forest := 0.0
+	var late_dry := 0.0
+	for i in 200:
+		var x := -100.0 + i
+		early_forest += staged.forest(x, -10.0)
+		late_forest += staged.forest(x, -1500.0)
+		late_dry += staged.dry(x, -1500.0)
+	assert_float(early_forest).is_greater(late_forest + 20.0)
+	assert_float(late_dry).is_greater(100.0)

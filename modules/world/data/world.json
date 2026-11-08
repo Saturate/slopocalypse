@@ -1,6 +1,7 @@
 {
-  "size": 256.0,
-  "resolution": 129.0,
+  "width": 384.0,
+  "length": 3000.0,
+  "behind": 64.0,
   "height_amplitude": 12.0,
   "noise_frequency": 0.008,
   "seed": 1337.0,
@@ -8,6 +9,24 @@
   "flat_blend": 20.0,
   "kill_y": -40.0,
   "rescue_depth": 6.0,
+  "road": {
+    "offset": 22.0,
+    "half_width": 4.6,
+    "blend": 10.0,
+    "wander": 70.0,
+    "wander_frequency": 0.0025,
+    "smoothing": 60.0,
+    "max_grade": 0.12
+  },
+  "stages": [
+    { "at": 0.0, "forest": 0.6, "dry": 0.0, "rock": 0.1, "hills": 0.8 },
+    { "at": 300.0, "forest": 1.0, "dry": 0.0, "rock": 0.1, "hills": 1.0 },
+    { "at": 500.0, "forest": 0.9, "dry": 0.1, "rock": 0.1, "hills": 1.0 },
+    { "at": 900.0, "forest": 0.25, "dry": 0.2, "rock": 0.1, "hills": 0.7 },
+    { "at": 1500.0, "forest": 0.15, "dry": 1.0, "rock": 0.3, "hills": 0.9 },
+    { "at": 2100.0, "forest": 0.2, "dry": 0.4, "rock": 1.0, "hills": 2.2 },
+    { "at": 3000.0, "forest": 0.35, "dry": 0.1, "rock": 1.0, "hills": 2.8 }
+  ],
   "cover": [
     { "x": 8.0, "z": -10.0, "w": 4.0, "h": 2.0, "d": 1.0 },
     { "x": -12.0, "z": -6.0, "w": 1.0, "h": 1.2, "d": 6.0 },
@@ -31,14 +50,20 @@
     "dry_frequency": 0.01,
     "rock_frequency": 0.018,
     "rock_threshold": 0.66,
-    "map_resolution": 128.0
+    "map_metres_per_texel": 4.0
   },
   "scatter": {
     "seed": 2024.0,
-    "trees": 1000.0,
-    "rocks": 900.0,
-    "grass": 60000.0,
+    "trees_per_hectare": 80.0,
+    "rocks_per_hectare": 18.0,
+    "grass_per_m2": 0.5,
     "clear_radius": 14.0,
-    "max_steepness": 0.45
+    "max_steepness": 0.45,
+    "road_clearance": 2.5,
+    "load_distance": 260.0,
+    "collision_distance": 96.0,
+    "grass_distance": 60.0,
+    "tree_detail_distance": 70.0,
+    "variants": 4.0
   }
 }

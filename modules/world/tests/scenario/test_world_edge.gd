@@ -27,8 +27,9 @@ func test_walking_into_the_edge_stops_at_the_wall() -> void:
 	var player: PlayerController = auto_free((load(PLAYER) as PackedScene).instantiate())
 	add_child(player)
 	var data: Dictionary = Data.load_json("res://modules/world/data/world.json")
-	var half: float = float(data["size"]) / 2.0
-	# Near the north edge, facing north (-Z), sprinting outwards. This tests the walls, not voxel streaming (test_voxel_digging covers that), so give the
+	# The far end of the road, where the world stops.
+	var far: float = float(data["behind"]) - float(data["length"])
+	# Near the far end, facing down the road (-Z), sprinting outwards. This tests the walls, not voxel streaming (test_voxel_digging covers that), so give the
 	# player a flat floor near the edge instead of waiting for terrain to stream in there.
 	var floor_y := 60.0
 	var floor_body: StaticBody3D = auto_free(StaticBody3D.new())
@@ -38,13 +39,13 @@ func test_walking_into_the_edge_stops_at_the_wall() -> void:
 	floor_shape.shape = floor_box
 	floor_body.add_child(floor_shape)
 	add_child(floor_body)
-	floor_body.global_position = Vector3(0.0, floor_y - 0.5, -(half - 10.0))
-	player.global_position = Vector3(0.0, floor_y + 0.2, -(half - 10.0))
+	floor_body.global_position = Vector3(0.0, floor_y - 0.5, far + 10.0)
+	player.global_position = Vector3(0.0, floor_y + 0.2, far + 10.0)
 	await _frames(30)
 	player.intent().move = Vector2(0.0, 1.0)
 	player.intent().sprint = true
 	await _frames(240)
-	assert_float(player.global_position.z).is_greater(-half)
+	assert_float(player.global_position.z).is_greater(far)
 
 
 func test_falling_through_the_ground_puts_you_back_on_top_where_you_were() -> void:
