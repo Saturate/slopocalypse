@@ -186,7 +186,9 @@ func play_flat(sound: String) -> AudioStreamPlayer:
 
 ## Too many sounds at once (a firefight) and the oldest give way.
 func _room() -> bool:
-	_voices = _voices.filter(func(v: Node) -> bool: return is_instance_valid(v) and not v.is_queued_for_deletion())
+	# Freed voices are no longer Nodes, so the lambda takes a Variant, and filter() returns
+	# an untyped Array that has to go back in through assign().
+	_voices.assign(_voices.filter(func(v: Variant) -> bool: return is_instance_valid(v) and not (v as Node).is_queued_for_deletion()))
 	while _voices.size() >= int(config.get("max_voices", 48)):
 		var oldest: Node = _voices.pop_front()
 		oldest.queue_free()
