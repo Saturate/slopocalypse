@@ -8,6 +8,10 @@ extends RefCounted
 ## side of the spawn and wandering from side to side once it is clear of it. Its elevation
 ## follows the land, smoothed and held to `max_grade` so the car never meets a wall.
 
+## The road runs dead straight this far past the spawn (out of the start tunnel) before it
+## starts to wander.
+const STRAIGHT := 30.0
+
 const REQUIRED := {"offset": TYPE_FLOAT, "half_width": TYPE_FLOAT, "blend": TYPE_FLOAT, "wander": TYPE_FLOAT, "wander_frequency": TYPE_FLOAT, "smoothing": TYPE_FLOAT, "max_grade": TYPE_FLOAT}
 
 var half_width: float
@@ -35,7 +39,7 @@ func _init(config: Dictionary, z_start: float, z_end: float, natural: Callable, 
 	for i in count:
 		var z := z_start - i
 		# Straight past the spawn, then free to wander.
-		var free := smoothstep(0.0, 150.0, -z)
+		var free := smoothstep(STRAIGHT, STRAIGHT + 150.0, -z)
 		var x := offset + noise.get_noise_1d(z) * wander * free
 		_xs[i] = x
 		raw[i] = float(natural.call(x, z))
@@ -77,6 +81,11 @@ func _sample(values: PackedFloat32Array, z: float) -> float:
 	return lerpf(values[i], values[j], f - i)
 
 
+## Where the road begins (it runs from here towards -z).
+func z_start() -> float:
+	return _z_start
+
+
 func x_at(z: float) -> float:
 	return _sample(_xs, z)
 
@@ -85,6 +94,9 @@ func height_at(z: float) -> float:
 	return _sample(_ys, z)
 
 
-## Sideways distance from the centre line; good enough for a road that bends gently.
+## Sideways distance from the centre line; good enough for a road that bends gently. There
+## is no road behind its start.
 func distance(x: float, z: float) -> float:
+	if z > _z_start:
+		return INF
 	return absf(x - x_at(z))

@@ -31,6 +31,9 @@ const ROCK_VOXEL := 0.1
 const ROAD_VOXEL := 0.1
 ## Rocks whose top is lower than this above the ground get no collision; feet clear them.
 const STEP_OVER_HEIGHT := 0.3
+## Trees, rocks and grass keep this far from the start tunnel: the ground over it is the
+## trench floor, so anything put there would stand inside the tunnel.
+const TUNNEL_CLEARANCE := 2.0
 
 var _heights: TerrainHeights
 var _biomes: Biomes
@@ -214,6 +217,8 @@ func _spot(rng: RandomNumberGenerator, area: Rect2, weight: Callable) -> Variant
 		var z := rng.randf_range(area.position.y, area.end.y)
 		if Vector2(x, z).length() < float(_cfg["clear_radius"]):
 			continue
+		if _heights.in_tunnel(x, z, TUNNEL_CLEARANCE):
+			continue
 		if _heights.road != null and _heights.road.distance(x, z) < _heights.road.half_width + float(_cfg["road_clearance"]):
 			continue
 		if rng.randf() > float(weight.call(x, z)):
@@ -367,6 +372,8 @@ func _add_grass(node: Node3D, rng: RandomNumberGenerator, area: Rect2) -> void:
 			continue
 		if _heights.road != null and _heights.road.distance(x, z) < _heights.road.half_width + 0.5:
 			continue
+		if _heights.in_tunnel(x, z, TUNNEL_CLEARANCE):
+			continue
 		var at := Vector3(x, _heights.height_at(x, z), z)
 		if _in_old_dig(at):
 			continue
@@ -423,6 +430,10 @@ func clear_grass(center: Vector3, radius: float) -> void:
 func _add_road(node: Node3D, i: int, span: Vector2) -> void:
 	var road := _heights.road
 	if road == null:
+		return
+	# No road behind where it starts (in the start tunnel, at the cave-in).
+	span.y = minf(span.y, road.z_start())
+	if span.y - span.x < 1.0:
 		return
 	var length := span.y - span.x
 	var mid := (span.x + span.y) / 2.0

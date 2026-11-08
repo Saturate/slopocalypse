@@ -3,13 +3,15 @@ extends Node
 ## the keyboard and camera to the car while they drive.
 
 const SCENE := "res://modules/car/scenes/box_car.tscn"
-## Beside the spawn pad, on flat ground, nose pointing away from the player.
+## Beside the spawn, when the world names no car spot.
 const SPAWN_OFFSET := Vector3(5.0, 1.0, -3.0)
 ## Same height above the ground a car is spawned at.
 const LIFT_HEIGHT := 1.0
 
 var _cars: Array[CarController] = []
 var _spawn := Vector3.ZERO
+## Where a car starts and goes back to when it is lost.
+var _home := Transform3D(Basis.IDENTITY, SPAWN_OFFSET)
 var _kill_y := -INF
 var _rescue_depth := INF
 var _spawner := MultiplayerSpawner.new()
@@ -40,7 +42,7 @@ func _physics_process(_delta: float) -> void:
 ## per 16 m block and can arrive after the spawn point's own block, so a car placed beside
 ## the spawn could otherwise drop through before its ground exists.
 func _place(car: CarController) -> void:
-	car.global_transform = Transform3D(Basis.IDENTITY, _spawn + SPAWN_OFFSET)
+	car.global_transform = _home
 	car.linear_velocity = Vector3.ZERO
 	car.angular_velocity = Vector3.ZERO
 	car.freeze = true
@@ -94,12 +96,13 @@ func _exit_tree() -> void:
 
 func _on_world_ready(payload: Dictionary) -> void:
 	_spawn = payload["spawn"]
+	_home = payload.get("car", Transform3D(Basis.IDENTITY, _spawn + SPAWN_OFFSET))
 	_kill_y = payload.get("kill_y", -INF)
 	_rescue_depth = payload.get("rescue_depth", INF)
 	if DisplayServer.get_name() != "headless":
 		InputBindings.register(CarController.bindings(), &"car")
 	if multiplayer.is_server():
-		_spawner.spawn({"index": _cars.size(), "position": _spawn + SPAWN_OFFSET})
+		_spawner.spawn({"index": _cars.size(), "transform": _home})
 
 
 ## Runs on the server and, through the spawner, on every client.
@@ -107,9 +110,9 @@ func _spawn_car(data: Variant) -> Node:
 	var info: Dictionary = data
 	var car: CarController = (load(SCENE) as PackedScene).instantiate()
 	car.name = "Car%d" % int(info["index"])
-	car.position = info["position"]
+	car.transform = info["transform"]
 	car.add_to_group(&"vehicles")
-	car.set_meta(&"spawn_position", info["position"])
+	car.set_meta(&"spawn_position", (info["transform"] as Transform3D).origin)
 	# Frozen until the server finds ground under it. Client copies stay frozen for good:
 	# they only show the transform the server syncs.
 	car.freeze = true

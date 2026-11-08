@@ -25,6 +25,7 @@ const STONE := Color(0.5, 0.49, 0.46)
 const ROCK := Color(0.45, 0.44, 0.42)
 const SOIL := Color(0.42, 0.31, 0.2)
 const DIRT := Color(0.38, 0.28, 0.18)
+const GRAVEL := Color(0.3, 0.29, 0.27)
 
 ## A hole was dug (after clamping), so grass over it can go.
 signal dug(center: Vector3, radius: float)
@@ -294,7 +295,7 @@ func _replace_tile(key: Vector2i, voxel: float) -> void:
 	colours.resize(cc * cc)
 	for j in cc:
 		for i in cc:
-			colours[j * cc + i] = _ground_colour(key.x * TILE + i * COLOUR_SPACING, key.y * TILE + j * COLOUR_SPACING)
+			colours[j * cc + i] = ground_colour(key.x * TILE + i * COLOUR_SPACING, key.y * TILE + j * COLOUR_SPACING)
 	var arrays := VoxelGround.tile_arrays(_sample(key, spacing), cn, spacing, colours, cc, int(TILE / voxel), voxel, STEEP_SLOPE, ROCK, SOIL, SKIRT, hash(key))
 	var inst := MeshInstance3D.new()
 	if not arrays.is_empty():
@@ -309,7 +310,11 @@ func _replace_tile(key: Vector2i, voxel: float) -> void:
 	_tile_voxel[key] = voxel
 
 
-func _ground_colour(x: float, z: float) -> Color:
+## The colour the ground's top gets at x/z (before steep slopes turn it to bare rock).
+func ground_colour(x: float, z: float) -> Color:
+	# The tunnel's floor under its road shows through potholes: gravel, not grass.
+	if heights != null and heights.in_tunnel(x, z, 1.0):
+		return GRAVEL
 	if _biomes == null:
 		return GRASS
 	var c := GRASS.lerp(STRAW, _biomes.dry(x, z))

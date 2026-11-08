@@ -25,7 +25,17 @@ func _ready() -> void:
 	_voxels = world.get_node("Terrain")
 	_voxels.dug.connect((world.get_node("Scenery") as SceneryScatter).clear_grass)
 	var spawn: Marker3D = world.get_node("SpawnPoint")
-	_announcement = {"spawn": spawn.global_position, "kill_y": data["kill_y"], "rescue_depth": data["rescue_depth"]}
+	var car: Marker3D = world.get_node("CarSpawn")
+	# `front` and `forward`: players start inside the tunnel, so things spread "around the
+	# spawn" (crates, enemies) go around the road just outside it, on the open side.
+	_announcement = {
+		"spawn": spawn.global_position,
+		"car": car.global_transform,
+		"front": Vector3(car.global_position.x, spawn.global_position.y, car.global_position.z),
+		"forward": Vector3.FORWARD,
+		"kill_y": data["kill_y"],
+		"rescue_depth": data["rescue_depth"],
+	}
 	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.subscribe(&"explosion", _on_explosion)
 

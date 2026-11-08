@@ -5,6 +5,9 @@ extends Node
 ## fills their backpack) and drop it when they die; squads come back over time so the map
 ## never empties.
 
+## Ground probes start this far over the untouched ground, or over the point itself.
+const PROBE_ABOVE_GROUND := 3.0
+const PROBE_ABOVE_SELF := 1.5
 const SCENE := "res://modules/player/scenes/player.tscn"
 const CONFIG := "res://modules/enemies/data/enemies.json"
 const REQUIRED := {
@@ -25,6 +28,8 @@ var _spawner := MultiplayerSpawner.new()
 var _spawned := 0
 var _spawn := Vector3.ZERO
 var _world_ready := false
+## The open side of the spawn (zero when every direction is open).
+var _forward := Vector3.ZERO
 var _next_squad_in := -1.0
 var _rng := RandomNumberGenerator.new()
 
@@ -53,7 +58,9 @@ func enemies() -> Array[Node]:
 
 
 func _on_world_ready(payload: Dictionary) -> void:
-	_spawn = payload.get("spawn", Vector3.ZERO)
+	# Squads come from the open side: around the road outside the start tunnel, ahead of it.
+	_spawn = payload.get("front", payload.get("spawn", Vector3.ZERO))
+	_forward = payload.get("forward", Vector3.ZERO)
 	_world_ready = true
 	if multiplayer.is_server():
 		_next_squad_in = float(config["first_spawn_seconds"])
@@ -79,6 +86,8 @@ func server_spawn_squad(size: int, centre: Variant = null) -> Array[Node]:
 	else:
 		var ring: Array = config["spawn_distance"]
 		var a := _rng.randf() * TAU
+		if _forward != Vector3.ZERO:
+			a = atan2(_forward.z, _forward.x) + _rng.randf_range(-PI / 2.0, PI / 2.0)
 		at = _spawn + Vector3(cos(a), 0.0, sin(a)) * _rng.randf_range(float(ring[0]), float(ring[1]))
 	var out: Array[Node] = []
 	for i in size:
@@ -174,7 +183,13 @@ func _on_ground(at: Vector3) -> Vector3:
 	var world := get_viewport().find_world_3d()
 	if world == null:
 		return at
-	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 30.0, at + Vector3.DOWN * 60.0, PhysicsLayers.SOLID)
+	# From just over the ground (or over `at` when that is higher, e.g. on a roof), not from
+	# high above: under a roof, like in the start tunnel, that would land on the roof.
+	var from_y := at.y + 30.0
+	var ground_node := get_tree().get_first_node_in_group(&"ground")
+	if ground_node != null and ground_node.has_method(&"ground_height"):
+		from_y = maxf(at.y + PROBE_ABOVE_SELF, float(ground_node.call(&"ground_height", at.x, at.z)) + PROBE_ABOVE_GROUND)
+	var query := PhysicsRayQueryParameters3D.create(Vector3(at.x, from_y, at.z), at + Vector3.DOWN * 60.0, PhysicsLayers.SOLID)
 	var hit := world.direct_space_state.intersect_ray(query)
 	if not hit.is_empty():
 		return hit["position"]

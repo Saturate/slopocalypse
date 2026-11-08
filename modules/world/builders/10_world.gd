@@ -23,6 +23,13 @@ func _initialize() -> void:
 	terrain.set("config_path", CONFIG)
 	root.add_child(terrain)
 
+	# The tunnel the road (and the players) come out of; built at runtime from world.json.
+	var tunnel := Node3D.new()
+	tunnel.name = "StartTunnel"
+	tunnel.set_script(load("res://modules/world/scripts/start_tunnel.gd"))
+	tunnel.set("config_path", CONFIG)
+	root.add_child(tunnel)
+
 	var scenery := Node3D.new()
 	scenery.name = "Scenery"
 	scenery.set_script(load("res://modules/world/scripts/scenery_scatter.gd"))
@@ -107,6 +114,19 @@ func _initialize() -> void:
 	spawn.name = "SpawnPoint"
 	spawn.position = Vector3(0.0, heights.height_at(0.0, 0.0) + 1.0, 0.0)
 	root.add_child(spawn)
+
+	# The car waits on the road just outside the tunnel, nose down the road (cars drive along
+	# their +Z, the road runs along -Z).
+	var car := Marker3D.new()
+	car.name = "CarSpawn"
+	var car_z := 0.0
+	var car_side := 0.0
+	if heights.has_tunnel():
+		car_z = float(heights.start["portal_z"]) - float(heights.start["car_distance"])
+		car_side = float(heights.start["car_side"])
+	var car_x := (heights.road.x_at(car_z) if heights.road != null else 0.0) + car_side
+	car.transform = Transform3D(Basis(Vector3.UP, PI), Vector3(car_x, heights.height_at(car_x, car_z) + 1.0, car_z))
+	root.add_child(car)
 
 	var result := SceneBuilder.pack_and_save(root, OUT)
 	root.free()

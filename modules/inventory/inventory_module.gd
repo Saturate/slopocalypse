@@ -7,6 +7,9 @@ extends Node
 ## Saving is someone else's job: `server_items_of` / `server_restore_items` and
 ## `server_world_state` / `server_restore_world` hand the state out and take it back.
 
+## Ground probes start this far over the untouched ground, or over the point itself.
+const PROBE_ABOVE_GROUND := 3.0
+const PROBE_ABOVE_SELF := 1.5
 const ITEMS := "res://modules/inventory/data/items.json"
 ## Reach for picking things up, metres from the eye, and how squarely you must face it.
 const PICKUP_RANGE := 2.6
@@ -322,14 +325,19 @@ func _on_world_ready(payload: Dictionary) -> void:
 	if not multiplayer.is_server():
 		return
 	var spawn: Vector3 = payload.get("spawn", Vector3.ZERO)
+	# Crates spread around the road outside the start tunnel, on its open side.
+	var front: Vector3 = payload.get("front", spawn)
+	var forward: Vector3 = payload.get("forward", Vector3.ZERO)
 	var crates: Dictionary = _data.get("crates", {})
 	var place := RandomNumberGenerator.new()
 	place.seed = int(crates.get("seed", 1))
 	var ring: Array = crates.get("distance", [10.0, 100.0])
 	for i in int(crates.get("count", 0)):
 		var a := place.randf() * TAU
+		if forward != Vector3.ZERO:
+			a = atan2(forward.z, forward.x) + (a / TAU - 0.5) * PI
 		var d := place.randf_range(float(ring[0]), float(ring[1]))
-		server_spawn_crate(_on_ground(spawn + Vector3(cos(a), 0.0, sin(a)) * d))
+		server_spawn_crate(_on_ground(front + Vector3(cos(a), 0.0, sin(a)) * d))
 	for pile: Dictionary in _data.get("loot", []):
 		var offset: Array = pile.get("at", [0, 0])
 		var centre := spawn + Vector3(float(offset[0]), 0.0, float(offset[1]))
@@ -505,7 +513,13 @@ func _on_ground(at: Vector3) -> Vector3:
 	var world := get_viewport().find_world_3d()
 	if world == null:
 		return at
-	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 20.0, at + Vector3.DOWN * 40.0, PhysicsLayers.SOLID)
+	# From just over the ground (or over `at` when that is higher, e.g. on a roof), not from
+	# high above: under a roof, like in the start tunnel, that would land on the roof.
+	var from_y := at.y + 20.0
+	var ground_node := get_tree().get_first_node_in_group(&"ground")
+	if ground_node != null and ground_node.has_method(&"ground_height"):
+		from_y = maxf(at.y + PROBE_ABOVE_SELF, float(ground_node.call(&"ground_height", at.x, at.z)) + PROBE_ABOVE_GROUND)
+	var query := PhysicsRayQueryParameters3D.create(Vector3(at.x, from_y, at.z), at + Vector3.DOWN * 40.0, PhysicsLayers.SOLID)
 	query.collide_with_areas = false
 	var exclude: Array[RID] = []
 	for node: Node in get_tree().get_nodes_in_group(&"players"):
