@@ -100,3 +100,20 @@ func test_without_a_driver_the_car_ignores_throttle() -> void:
 	_car.intent().throttle = 1.0
 	await _frames(120)
 	assert_float(_car.speed()).is_less(0.5)
+
+
+func test_full_lock_at_speed_does_not_roll_it() -> void:
+	await _settle_and_drive()
+	_car.intent().throttle = 1.0
+	await _frames(360)
+	_car.intent().steer = 1.0
+	await _frames(180)
+	assert_float(_car.global_transform.basis.y.y).is_greater(0.8)
+
+
+func test_a_car_on_its_roof_rights_itself() -> void:
+	await _frames(30)
+	_car.global_transform = Transform3D(Basis(Vector3.BACK, PI), Vector3(0.0, 2.0, 0.0))
+	await _frames(int((float(_car.config["flip_seconds"]) + 1.5) * 60.0))
+	await _frames(60)
+	assert_float(_car.global_transform.basis.y.y).is_greater(0.9)

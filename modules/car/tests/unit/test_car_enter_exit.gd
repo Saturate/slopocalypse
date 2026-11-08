@@ -42,8 +42,11 @@ func test_cannot_enter_from_far_away() -> void:
 	assert_bool(_car.can_enter(_person_at(Vector3(20.0, 0.0, 0.0)))).is_false()
 
 
-func test_cannot_enter_an_occupied_car() -> void:
-	_car.enter(_person_at(Vector3(1.0, 0.0, 0.0)))
+func test_cannot_enter_a_full_car_or_get_in_twice() -> void:
+	var first := _person_at(Vector3(1.0, 0.0, 0.0))
+	_car.enter(first)
+	assert_bool(_car.can_enter(first)).is_false()
+	_car.enter(_person_at(Vector3(-1.0, 0.0, 0.0)))
 	assert_bool(_car.can_enter(_person_at(Vector3(1.5, 0.0, 0.0)))).is_false()
 
 
@@ -104,3 +107,58 @@ func test_nobody_drives_an_empty_car() -> void:
 	_car.intent().submit(1.0, 0.0, false)
 	Log.end_capture()
 	assert_float(_car.intent().throttle).is_equal(0.0)
+
+
+func test_a_second_person_takes_the_passenger_seat() -> void:
+	var first := _person_at(Vector3(1.0, 0.0, 0.0))
+	var second := _person_at(Vector3(-1.0, 0.0, 0.0))
+	_car.enter(first)
+	assert_bool(_car.can_enter(second)).is_true()
+	_car.enter(second)
+	assert_object(_car.driver).is_same(first)
+	assert_object(_car.passenger).is_same(second)
+	assert_bool(_car.can_enter(_person_at(Vector3(0.0, 0.0, 2.0)))).is_false()
+
+
+func test_each_seat_gets_out_by_its_own_door() -> void:
+	var first := _person_at(Vector3(1.0, 0.0, 0.0))
+	var second := _person_at(Vector3(-1.0, 0.0, 0.0))
+	_car.enter(first)
+	_car.enter(second)
+	_car.exit_car(second)
+	assert_object(_car.passenger).is_null()
+	assert_object(_car.driver).is_same(first)
+	var out: Vector3 = _events[2]["position"]
+	# Driver's door is on the car's left (+X facing +Z), the passenger's on the right.
+	assert_float(_car.to_local(out).x).is_less(-1.0)
+	_car.exit_car(first)
+	assert_float(_car.to_local(_events[3]["position"]).x).is_greater(1.0)
+
+
+func test_a_blocked_door_lets_you_out_the_other_side() -> void:
+	await get_tree().physics_frame
+	var wall: StaticBody3D = auto_free(StaticBody3D.new())
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(1.0, 4.0, 6.0)
+	shape.shape = box
+	wall.add_child(shape)
+	add_child(wall)
+	wall.global_position = _car.to_global(Vector3(2.2, 0.0, 0.0))
+	await get_tree().physics_frame
+	var who := _person_at(Vector3(1.0, 0.0, 0.0))
+	_car.enter(who)
+	_car.exit_car()
+	assert_float(_car.to_local(_events[1]["position"]).x).is_less(-1.0)
+
+
+func test_the_passenger_can_get_out_while_the_driver_stays() -> void:
+	var first := _person_at(Vector3(1.0, 0.0, 0.0))
+	var second := _person_at(Vector3(-1.0, 0.0, 0.0))
+	_car.enter(first)
+	_car.enter(second)
+	_car.intent().passenger_exit = true
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	assert_object(_car.passenger).is_null()
+	assert_object(_car.driver).is_same(first)

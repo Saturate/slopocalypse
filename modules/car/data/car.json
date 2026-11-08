@@ -1,7 +1,5 @@
 {
   "mass": 900.0,
-  "body_size": [1.8, 0.8, 4.0],
-  "body_height": 0.7,
   "wheel_radius": 0.38,
   "wheel_width": 0.3,
   "wheel_x": 0.85,
@@ -13,14 +11,14 @@
   "suspension_max_force": 12000.0,
   "damping_compression": 2.5,
   "damping_relaxation": 3.5,
-  "friction_slip": 3.5,
-  "roll_influence": 0.1,
-  "engine_force": 2200.0,
+  "friction_slip": 4.5,
+  "roll_influence": 0.05,
+  "engine_force": 2600.0,
   "reverse_force": 700.0,
-  "brake_force": 40.0,
-  "top_speed": 22.0,
+  "brake_force": 55.0,
+  "top_speed": 26.0,
   "max_steer_degrees": 30.0,
-  "steer_speed": 3.0,
+  "steer_speed": 2.5,
   "enter_distance": 3.5,
   "bindings": {
     "car_throttle": ["W"],
@@ -28,6 +26,28 @@
     "car_left": ["A"],
     "car_right": ["D"],
     "car_brake": ["Space"],
-    "car_exit": ["E"]
+    "car_exit": ["F"]
+  },
+  "length": 4.2,
+  "width": 1.9,
+  "high_speed_steer_share": 0.35,
+  "downforce": 5.0,
+  "flip_seconds": 2.5,
+  "camera": {
+    "distance": 6.5,
+    "height": 2.4,
+    "look_height": 1.1,
+    "look_ahead": 4.0,
+    "follow_rate": 10.0,
+    "fov": 72.0,
+    "fov_at_top_speed": 86.0,
+    "orbit_sensitivity": 0.004,
+    "orbit_return_seconds": 1.5,
+    "clearance": 0.3
+  },
+  "looks": {
+    "paint": 0.0,
+    "wear": 0.5,
+    "seed": 3.0
   }
 }
