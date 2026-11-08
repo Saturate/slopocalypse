@@ -231,6 +231,13 @@ impl Grid {
     /// Greedy meshing: faces between a filled cell and air, merged into rectangles of the same
     /// colour on each slice.
     pub fn mesh(&self) -> Mesh {
+        self.mesh_max_run(usize::MAX)
+    }
+
+    /// Like `mesh`, but no merged face is longer than `max_run` cells along z, so the mesh
+    /// can be bent afterwards (a road following its curve) without faces cutting corners.
+    pub fn mesh_max_run(&self, max_run: usize) -> Mesh {
+        let max_run = max_run.max(1);
         let mut out = Mesh::default();
         let n = [self.nx, self.ny, self.nz];
         let o = self.origin();
@@ -267,12 +274,15 @@ impl Grid {
                                 i += 1;
                                 continue;
                             }
+                            // Along z (axis 2) runs are capped; u or v may be z.
+                            let cap_u = if u == 2 { max_run } else { usize::MAX };
+                            let cap_v = if v == 2 { max_run } else { usize::MAX };
                             let mut w = 1;
-                            while i + w < n[u] && mask[j * n[u] + i + w] == c {
+                            while i + w < n[u] && w < cap_u && mask[j * n[u] + i + w] == c {
                                 w += 1;
                             }
                             let mut h = 1;
-                            'grow: while j + h < n[v] {
+                            'grow: while j + h < n[v] && h < cap_v {
                                 for k in 0..w {
                                     if mask[(j + h) * n[u] + i + k] != c {
                                         break 'grow;
@@ -433,6 +443,15 @@ mod tests {
 
     fn fill(c: Colour) -> Op {
         Op::Fill(Paint::solid(c))
+    }
+
+    #[test]
+    fn capped_runs_split_long_faces_along_z() {
+        let mut g = Grid::new([0.4, 0.4, 4.0], 0.1);
+        g.fill_box([-0.2, 0.0, -2.0], [0.2, 0.2, 2.0], fill(RED));
+        assert_eq!(g.mesh().quad_count(), 6);
+        // 40 cells long, at most 10 per face: top, bottom and both sides split in four.
+        assert_eq!(g.mesh_max_run(10).quad_count(), 2 + 4 * 4);
     }
 
     #[test]

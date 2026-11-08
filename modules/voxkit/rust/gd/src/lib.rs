@@ -195,6 +195,16 @@ impl VoxelModel {
 
     /// Arrays for `ArrayMesh.add_surface_from_arrays` (vertex, normal, colour, index), or an
     /// empty array when nothing is filled.
+    /// Like `mesh_arrays`, with no face longer than `max_run` cells along z, for meshes that
+    /// get bent afterwards.
+    #[func]
+    fn mesh_arrays_bendable(&self, max_run: i64) -> VarArray {
+        let Some(grid) = self.grid.as_ref() else {
+            return VarArray::new();
+        };
+        arrays_of(&grid.mesh_max_run(max_run.max(1) as usize))
+    }
+
     #[func]
     fn mesh_arrays(&self) -> VarArray {
         let Some(grid) = self.grid.as_ref() else {
