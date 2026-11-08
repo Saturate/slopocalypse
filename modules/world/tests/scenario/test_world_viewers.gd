@@ -1,33 +1,48 @@
 extends GdUnitTestSuite
-## Terrain collision only exists near a VoxelViewer, so everything that moves around on its
-## own must carry one: players, and cars while someone drives them (the driver's viewer
-## stays with their parked body). A car without one fell out of the world in a playtest.
+## Every player, enemy and vehicle gets solid ground under it at the same time. The old
+## terrain kept collision around one viewer only, so whoever wasn't it fell through (the car
+## and the player both did in playtests).
 
-const MODULE := "res://modules/world/world_module.gd"
+const WORLD := "res://modules/world/scenes/world.tscn"
 
-var _module: Node
+var _world: Node3D
+var _voxels: VoxelWorld
 
 
 func before_test() -> void:
-	_module = (load(MODULE) as GDScript).new()
-	add_child(_module)
+	_world = await VoxelWorld.add_and_wait(self, WORLD)
+	_voxels = _world.get_node("Terrain")
 
 
 func after_test() -> void:
-	_module.free()
+	_world.free()
 
 
-func test_spawned_players_get_a_viewer() -> void:
-	var player: Node3D = auto_free(Node3D.new())
-	add_child(player)
-	EventBus.publish(&"player.spawned", {"player": player, "local": true})
-	assert_object(player.get_node_or_null("VoxelViewer")).is_not_null()
+func _follower(group: StringName, at: Vector3) -> Node3D:
+	var n: Node3D = auto_free(Node3D.new())
+	n.add_to_group(group)
+	add_child(n)
+	n.global_position = at
+	return n
 
 
-func test_driven_cars_get_a_viewer_once() -> void:
-	var car: Node3D = auto_free(Node3D.new())
-	add_child(car)
-	EventBus.publish(&"car.entered", {"car": car, "player": null})
-	EventBus.publish(&"car.entered", {"car": car, "player": null})
-	var viewers := car.get_children().filter(func(c: Node) -> bool: return c is VoxelViewer)
-	assert_int(viewers.size()).is_equal(1)
+func test_ground_is_solid_under_everyone_at_once() -> void:
+	var places := [Vector3(-94, 0, -13), Vector3(40, 0, -700), Vector3(-60, 0, -1500)]
+	_follower(&"players", places[0])
+	_follower(&"vehicles", places[1])
+	_follower(&"enemies", places[2])
+	for i in 300:
+		await get_tree().process_frame
+	for p: Vector3 in places + [Vector3.ZERO]:
+		assert_bool(_voxels.is_ready_at(p)).override_failure_message("no ground at %s" % p).is_true()
+
+
+func test_ground_far_from_everyone_is_let_go() -> void:
+	var walker := _follower(&"players", Vector3(0, 0, -800))
+	for i in 200:
+		await get_tree().process_frame
+	assert_bool(_voxels.is_ready_at(Vector3(0, 0, -800))).is_true()
+	walker.global_position = Vector3(0, 0, -1600)
+	for i in 300:
+		await get_tree().process_frame
+	assert_bool(_voxels.is_ready_at(Vector3(0, 0, -800))).is_false()

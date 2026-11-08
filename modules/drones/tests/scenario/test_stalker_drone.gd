@@ -43,8 +43,9 @@ func _frames(count: int) -> void:
 		await get_tree().physics_frame
 
 
-func test_closes_in_and_orbits_at_its_radius() -> void:
+func test_an_angry_drone_closes_in_and_orbits_at_its_attack_radius() -> void:
 	var drone: StalkerDrone = _module.server_spawn(_target)
+	drone.server_anger(_target)
 	drone.postpone_dive(1000.0)
 	await _frames(60 * 12)
 	var flat := Vector2(drone.global_position.x, drone.global_position.z).length()
@@ -90,3 +91,62 @@ func test_a_dive_blows_up_on_the_player_and_hurts_them() -> void:
 	assert_float(health.health).is_less(health.max_health)
 	assert_bool(is_instance_valid(drone)).is_false()
 	assert_int(_explosions.size()).is_greater(0)
+
+
+func test_a_calm_drone_circles_wide_and_never_dives() -> void:
+	var drone: StalkerDrone = _module.server_spawn(_target)
+	var dived := false
+	for i in 60 * 20:
+		await get_tree().physics_frame
+		dived = dived or drone.is_diving()
+	assert_bool(drone.is_angry()).is_false()
+	assert_bool(dived).is_false()
+	var flat := Vector2(drone.global_position.x, drone.global_position.z).length()
+	assert_float(flat).is_between(float(drone.config["calm_orbit_radius"]) - 5.0, float(drone.config["calm_orbit_radius"]) + 5.0)
+
+
+func test_shooting_it_makes_it_angry() -> void:
+	var drone: StalkerDrone = _module.server_spawn(_target)
+	await _frames(5)
+	drone.health().server_apply_damage(5.0)
+	assert_bool(drone.is_angry()).is_true()
+
+
+func _shooter_facing(drone: StalkerDrone, aim: bool) -> PlayerController:
+	var player: PlayerController = auto_free((load("res://modules/player/scenes/player.tscn") as PackedScene).instantiate())
+	player.add_to_group(&"players")
+	add_child(player)
+	player.set_physics_process(false)
+	player.global_position = Vector3(0, 0, 40)
+	var head := player.get_node("Head") as Node3D
+	drone.global_position = head.global_position + Vector3(0, 0, -30)
+	drone.set_physics_process(false)
+	player.intent().aim = aim
+	return player
+
+
+func test_holding_it_in_your_sights_makes_it_angry_and_it_comes_for_you() -> void:
+	var drone: StalkerDrone = _module.server_spawn(_target)
+	await _frames(2)
+	var player := _shooter_facing(drone, true)
+	for i in 40:
+		drone.call(&"_watch_sights", 1.0 / 60.0)
+	assert_bool(drone.is_angry()).is_true()
+	assert_object(drone.target).is_same(player)
+
+
+func test_looking_its_way_without_aiming_leaves_it_calm() -> void:
+	var drone: StalkerDrone = _module.server_spawn(_target)
+	await _frames(2)
+	_shooter_facing(drone, false)
+	for i in 120:
+		drone.call(&"_watch_sights", 1.0 / 60.0)
+	assert_bool(drone.is_angry()).is_false()
+
+
+func test_left_alone_it_calms_down() -> void:
+	var drone: StalkerDrone = _module.server_spawn(_target)
+	drone.config["calm_after_seconds"] = 0.5
+	drone.server_anger(_target)
+	await _frames(60)
+	assert_bool(drone.is_angry()).is_false()

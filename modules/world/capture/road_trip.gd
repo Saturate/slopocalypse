@@ -43,3 +43,4 @@ func _go(stop: int) -> void:
 	_camera.look_at(ahead)
 	# Build everything around the new spot at once instead of a chunk a frame.
 	_scatter.update_around([at], INF)
+	(_scatter.get_parent().get_node("Terrain") as VoxelWorld).update_around([at], INF)

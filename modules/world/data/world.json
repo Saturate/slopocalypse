@@ -37,11 +37,11 @@
     { "x": 6.0, "z": 5.0, "w": 0.4, "h": 1.0, "d": 3.0 }
   ],
   "voxel": {
-    "view_distance": 256.0,
-    "lod_count": 4.0,
-    "lod_distance": 48.0,
-    "depth": 64.0,
-    "max_dig_depth": 3.0
+    "max_dig_depth": 3.0,
+    "collision_distance": 96.0,
+    "load_distance": 300.0,
+    "builds_per_frame": 2.0,
+    "lods": [[48.0, 0.25], [110.0, 0.5], [200.0, 1.0], [300.0, 2.0]]
   },
   "biomes": {
     "seed": 77.0,

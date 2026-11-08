@@ -35,9 +35,9 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | Enemy difficulty | `modules/enemies/data/enemies.json` | `max_health`, `reaction_seconds`, `aim_error_degrees` (`[at first, once settled]`), `aim_settle_seconds`, `damage_scale`, `burst_shots`, `burst_pause_seconds` |
 | Enemy senses | `modules/enemies/data/enemies.json` | `sight_range`, `sight_cone_degrees`, `hearing_range`, `chase_seconds`, `forget_seconds` |
 | Enemy look | `modules/enemies/data/enemies.json` | `uniform_tint` (`[r, g, b]`, 0 to 1) |
-| Drone | `modules/drones/data/drones.json` | `max_health`, `speed`, `orbit_*`, `respawn_seconds`, `max_drones`, `dive_*`, `crash_*` |
+| Drone | `modules/drones/data/drones.json` | `max_health`, `speed`, `orbit_*` (attack orbit), `calm_orbit_*` (how it circles before anyone provokes it), `aim_cone_degrees`, `aim_range`, `aim_seconds` (how long someone aims down sights at it before it turns angry), `calm_after_seconds`, `respawn_seconds`, `max_drones`, `dive_*`, `crash_*` |
 | Car handling | `modules/car/data/car.json` | `engine_force`, `top_speed`, `brake_force`, `max_steer_degrees`, `suspension_*`, `friction_slip` |
-| Sound volumes and ranges | `modules/audio/data/audio.json` | `volume_db` (per sound, in dB: `-6` is about half as loud), `shot_range`, `footstep_range` |
+| Sound volumes and ranges | `modules/audio/data/audio.json` | `volume_db` (per sound, in dB: `-6` is about half as loud), `shot_range`, `footstep_range`, `rotor_range`, `rotor_angry_pitch`, `rotor_angry_db` (the drone hum) |
 | Training dummies | `modules/training/data/training.json` | `max_health`, `respawn_seconds`, `dummies` |
 | Saving: where, how often | `modules/persistence/data/persistence.json` | `file` (the save; `--save=PATH` on the server wins), `autosave_seconds`, `hold_seconds` (how long a returning player waits in the air for ground) |
 | The map: length, width, hills | `modules/world/data/world.json` | `length`, `width`, `behind` (metres behind the spawn), `height_amplitude`, `noise_frequency`, `seed`, `cover` |
@@ -45,6 +45,7 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | Biomes down the road | `modules/world/data/world.json` | `stages`: a list of `{at: metres down the road, forest, dry, rock, hills}`; values blend between neighbouring stages |
 | Trees, rocks, grass | `modules/world/data/world.json` | `scatter`: `trees_per_hectare`, `rocks_per_hectare`, `grass_per_m2`, `variants` (how many different models of each), `load_distance` (how far ahead scenery appears), `tree_detail_distance`, `grass_distance` |
 | Craters and falling through | `modules/world/data/world.json` | `voxel.max_dig_depth` (deepest a crater goes under the ground), `rescue_depth` (this far under the ground counts as fallen through: you are put back on top) |
+| Voxel ground detail | `modules/world/data/world.json` | `voxel.lods` (`[[metres, voxel size], ...]`: finer blocks close by), `voxel.load_distance`, `voxel.collision_distance`, `voxel.builds_per_frame` (more loads ground faster but can hitch) |
 | Waiting for ground | `modules/player/data/player.json` | `hold_seconds` (a respawned or rescued player is held still until there is ground under them, at most this long) |
 
 ## Good first tweaks

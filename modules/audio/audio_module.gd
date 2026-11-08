@@ -27,6 +27,8 @@ func _ready() -> void:
 	EventBus.subscribe(&"weapon.fired", _on_fired)
 	EventBus.subscribe(&"explosion", _on_explosion)
 	EventBus.subscribe(&"drone.diving", _on_drone_diving)
+	EventBus.subscribe(&"drone.spawned", _on_drone_spawned)
+	EventBus.subscribe(&"drone.mood", _on_drone_mood)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	EventBus.subscribe(&"inventory.changed", _on_inventory_changed)
 	var wind := AudioStreamPlayer.new()
@@ -43,6 +45,8 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"weapon.fired", _on_fired)
 	EventBus.unsubscribe(&"explosion", _on_explosion)
 	EventBus.unsubscribe(&"drone.diving", _on_drone_diving)
+	EventBus.unsubscribe(&"drone.spawned", _on_drone_spawned)
+	EventBus.unsubscribe(&"drone.mood", _on_drone_mood)
 	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
 	EventBus.unsubscribe(&"inventory.changed", _on_inventory_changed)
 
@@ -85,6 +89,32 @@ func _on_drone_diving(p: Dictionary) -> void:
 	var sound := play_at("dive", drone.global_position, 200.0)
 	if sound != null:
 		sound.reparent(drone)
+
+
+## Every drone hums wherever it flies, so you hear one before you see it.
+func _on_drone_spawned(p: Dictionary) -> void:
+	var drone := p.get("drone") as Node3D
+	if drone == null or drone.get_node_or_null("Hum") != null:
+		return
+	var hum := AudioStreamPlayer3D.new()
+	hum.name = "Hum"
+	hum.stream = SoundBank.get_sound("rotor")
+	hum.volume_db = _volume("rotor")
+	hum.max_distance = float(config.get("rotor_range", 140.0))
+	hum.unit_size = 6.0
+	hum.autoplay = true
+	drone.add_child(hum)
+
+
+## Angry drones whine higher and louder.
+func _on_drone_mood(p: Dictionary) -> void:
+	var drone := p.get("drone") as Node3D
+	var hum := drone.get_node_or_null("Hum") as AudioStreamPlayer3D if drone != null else null
+	if hum == null:
+		return
+	var angry := bool(p.get("angry", false))
+	hum.pitch_scale = float(config.get("rotor_angry_pitch", 1.3)) if angry else 1.0
+	hum.volume_db = _volume("rotor") + (float(config.get("rotor_angry_db", 5.0)) if angry else 0.0)
 
 
 func _on_player_spawned(p: Dictionary) -> void:
