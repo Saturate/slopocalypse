@@ -1,4 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join as pathJoin } from "node:path";
 import { GODOT_NOISE, type StepResult } from "./gate.ts";
 import { scanLog } from "./log-scan.ts";
 import { run, type ProcResult } from "./proc.ts";
@@ -58,7 +60,8 @@ const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 // make the round trip, the server's own log must be clean, and the server must not outlive
 // the game.
 export async function soloSmoke(godot: string, root: string): Promise<StepResult> {
-	const r = await run(godot, ["--headless", "--path", root, "--", "--net-report-after=900", "--bot=walk"], { cwd: root, timeoutMs: 120_000 });
+	// --no-save: a test must never touch the player's own solo world.
+	const r = await run(godot, ["--headless", "--path", root, "--", "--net-report-after=900", "--bot=walk", "--no-save"], { cwd: root, timeoutMs: 120_000 });
 	const problems: string[] = [];
 	for (const line of scanLog(r.output, GODOT_NOISE)) problems.push(`solo: ${line}`);
 	if (r.timedOut) problems.push("solo: timed out");
@@ -97,7 +100,8 @@ export async function netSmoke(godot: string, root: string, port = 7791): Promis
 	const base = ["--headless", "--path", root, "--"];
 	// Clients report at ~900 frames and stay connected; the server reports at 1300 while it
 	// still has both, then quits, which closes the clients.
-	const server = run(godot, [...base, `--server=${port}`, "--net-report-after=1300"], { cwd: root, timeoutMs: 150_000 });
+	const saves = mkdtempSync(pathJoin(tmpdir(), "outpost-net-"));
+	const server = run(godot, [...base, `--server=${port}`, "--net-report-after=1300", `--save=${pathJoin(saves, "world.db")}`], { cwd: root, timeoutMs: 150_000 });
 	// Let the server open its port and load the world before clients knock.
 	await delay(4000);
 	const join = `--connect=127.0.0.1:${port}`;
@@ -106,6 +110,7 @@ export async function netSmoke(godot: string, root: string, port = 7791): Promis
 		run(godot, [...base, join, "--net-report-after=900", "--bot=drive"], { cwd: root, timeoutMs: 150_000 }),
 	];
 	const results: [string, ProcResult][] = [["server", await server], ["client 1 (bot)", await clients[0]!], ["client 2", await clients[1]!]];
+	rmSync(saves, { recursive: true, force: true });
 
 	const problems: string[] = [];
 	for (const [name, r] of results) {
@@ -131,4 +136,47 @@ export async function netSmoke(godot: string, root: string, port = 7791): Promis
 	return problems.length > 0
 		? { ok: false, detail: problems.slice(0, 20).join("\n") }
 		: { ok: true, detail: "server + 2 clients: walking, shooting and driving reach the server and everyone else" };
+}
+
+// Progress survives a server restart: a named bot walks off and the server stops (saving on
+// the way out); a second server on the same file must put the same name back where it was,
+// without that client moving at all.
+export async function saveSmoke(godot: string, root: string, port = 7793): Promise<StepResult> {
+	const base = ["--headless", "--path", root, "--"];
+	const saves = mkdtempSync(pathJoin(tmpdir(), "outpost-save-"));
+	const save = `--save=${pathJoin(saves, "world.db")}`;
+	const address = `--connect=127.0.0.1:${port}`;
+	const problems: string[] = [];
+	const check = (name: string, r: ProcResult): void => {
+		for (const line of scanLog(r.output, GODOT_NOISE)) problems.push(`${name}: ${line}`);
+		if (r.timedOut) problems.push(`${name}: timed out`);
+	};
+	try {
+		const first = run(godot, [...base, `--server=${port}`, "--net-report-after=1100", save], { cwd: root, timeoutMs: 150_000 });
+		await delay(4000);
+		const walker = await run(godot, [...base, address, "--net-report-after=900", "--bot=walk", "--name=Saver"], { cwd: root, timeoutMs: 150_000 });
+		const firstServer = await first;
+		check("first server", firstServer);
+		check("walking client", walker);
+		// The server reports in the same frame it stops and saves; the bot keeps walking
+		// until then, so its own report is from earlier.
+		const walked = parseReport(firstServer.output)?.moved ?? 0;
+		if (walked < 3.0) problems.push(`first server: Saver did not get 3 m from the spawn (moved=${walked})`);
+
+		const second = run(godot, [...base, `--server=${port}`, "--net-report-after=700", save], { cwd: root, timeoutMs: 150_000 });
+		await delay(4000);
+		const back = await run(godot, [...base, address, "--net-report-after=400", "--name=Saver"], { cwd: root, timeoutMs: 150_000 });
+		const secondServer = await second;
+		check("second server", secondServer);
+		check("returning client", back);
+		if (!secondServer.output.includes("Saver is back")) problems.push("second server: did not recognise Saver from the save");
+		const rep = parseReport(back.output);
+		if (rep === undefined) problems.push("returning client: no NET-REPORT line");
+		else if (Math.abs(rep.moved - walked) > 1.5) problems.push(`returning client: not put back where it left (moved=${rep.moved}, left at ${walked})`);
+	} finally {
+		rmSync(saves, { recursive: true, force: true });
+	}
+	return problems.length > 0
+		? { ok: false, detail: problems.slice(0, 20).join("\n") }
+		: { ok: true, detail: "a named player's spot survives a server restart" };
 }

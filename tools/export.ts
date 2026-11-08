@@ -133,7 +133,7 @@ async function main(): Promise<void> {
 // executable and the bot must move and shoot through it.
 async function smokeTest(outDir: string, os: TargetOs): Promise<void> {
 	const exe = join(outDir, os === "windows" ? "Outpost.console.exe" : exeName(os));
-	const r = await run(exe, ["--headless", "--", "--net-report-after=600", "--bot=walk"], { cwd: outDir, timeoutMs: 120_000 });
+	const r = await run(exe, ["--headless", "--", "--net-report-after=600", "--bot=walk", "--no-save"], { cwd: outDir, timeoutMs: 120_000 });
 	const rep = parseReport(r.output);
 	const problems = scanLog(r.output, GODOT_NOISE);
 	if (r.timedOut) problems.push("timed out");

@@ -1,7 +1,7 @@
 class_name MainMenu
 extends Control
-## The first screen of a windowed game: play solo, host for friends, or join a server by
-## address. It only turns clicks into a choice; Boot starts the session. Built in code
+## The first screen of a windowed game: your name, then play solo, host for friends, or join
+## a server by address. The name is what a server saves your progress under. It only turns clicks into a choice; Boot starts the session. Built in code
 ## because it lives in core, which loads before any module and has no builder pipeline.
 
 signal solo_requested
@@ -25,7 +25,9 @@ const SHOWN_SERVERS := 4
 var message := ""
 var servers: ServerList
 var save_path := ServerList.SAVE_PATH
+var profile_path := PlayerProfile.FILE
 
+var _name: LineEdit
 var _address: LineEdit
 var _port: LineEdit
 var _message: Label
@@ -75,12 +77,28 @@ func _ready() -> void:
 	col.add_child(_label("OUTPOST", 46, ACCENT))
 	col.add_child(_label("Co-op survival for friends", 16, DIM))
 
-	var solo := _button(&"Solo", "Play solo", func() -> void: solo_requested.emit(), true)
+	col.add_child(_gap())
+	col.add_child(_label("YOUR NAME", 14, LABEL))
+	_name = LineEdit.new()
+	_name.name = "Name"
+	_name.text = PlayerProfile.load_from(profile_path).name
+	_name.max_length = 16
+	_name.custom_minimum_size.y = 40
+	_name.text_changed.connect(func(_t: String) -> void: _message.visible = false)
+	col.add_child(_name)
+	col.add_child(_label("Servers keep your gear under this name.", 14, LABEL))
+	col.add_child(_gap())
+
+	var solo := _button(&"Solo", "Play solo", func() -> void:
+		if _keep_name():
+			solo_requested.emit(), true)
 	col.add_child(solo)
 	col.add_child(_gap())
 
 	col.add_child(_label("PLAY WITH FRIENDS", 14, LABEL))
-	var host := _button(&"Host", "Host a game", func() -> void: host_requested.emit(_port_value()))
+	var host := _button(&"Host", "Host a game", func() -> void:
+		if _keep_name():
+			host_requested.emit(_port_value()))
 	col.add_child(host)
 	var info_row := HBoxContainer.new()
 	var mine := rank_addresses(IP.get_local_addresses())
@@ -157,11 +175,30 @@ func address_field() -> LineEdit:
 	return _address
 
 
+func name_field() -> LineEdit:
+	return _name
+
+
+## Saves the typed name for the next join; false (with a message) if it is blank.
+func _keep_name() -> bool:
+	var typed := _name.text.strip_edges()
+	if typed.is_empty():
+		_show("Type a name first: servers keep your gear under it.")
+		return false
+	var profile := PlayerProfile.load_from(profile_path)
+	if profile.name != typed:
+		profile.name = typed
+		profile.save(profile_path)
+	return true
+
+
 func message_label() -> Label:
 	return _message
 
 
 func _join(text: String) -> void:
+	if not _keep_name():
+		return
 	var a := ServerList.parse_address(text)
 	if not a["ok"]:
 		_show("That does not look like an address. Use host or host:port, e.g. 100.101.102.103.")

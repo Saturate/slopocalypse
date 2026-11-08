@@ -35,6 +35,12 @@ func server_reset() -> void:
 	health = max_health
 
 
+## Server only: sets health outright (a saved player coming back), with no damage or death
+## signals. Clamped to (0, max]: nobody is restored dead.
+func server_set(amount: float) -> void:
+	health = clampf(amount, minf(1.0, max_health), max_health)
+
+
 ## Server only. Returns the health actually restored (never past max, never the dead).
 func server_heal(amount: float) -> float:
 	if is_dead() or amount <= 0.0:

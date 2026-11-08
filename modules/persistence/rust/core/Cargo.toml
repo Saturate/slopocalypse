@@ -1,0 +1,13 @@
+[package]
+name = "persistence_core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Bundled: SQLite is compiled in, so the server needs no system library on any OS.
+rusqlite = { version = "=0.40.2", features = ["bundled"] }
+
+[lints]
+workspace = true

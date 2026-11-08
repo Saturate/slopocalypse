@@ -12,11 +12,20 @@ extends Node
 ## Scenes run without Boot (tests, captures) keep Godot's offline peer, which makes this
 ## instance peer 1 and the server.
 ##
+## Players say who they are right after connecting (`PlayerProfile`: a name and a per-install
+## key). The server announces a peer with `peer_joined` only once it has, so everything
+## downstream can ask `identity_of(peer)`; one that stays silent is dropped.
+##
 ## Test hook: --net-report-after=FRAMES prints a NET-REPORT line and quits, so tools can
 ## check a session from the outside.
 
+## Server: a peer connected and said who they are.
 signal peer_joined(peer_id: int)
+## Server: a peer is gone, but nothing has forgotten them yet (last chance to save them).
+signal peer_leaving(peer_id: int)
 signal peer_left(peer_id: int)
+## About to quit on its own (the last player left, a test hook): last chance to save.
+signal stopping
 ## Fired when this instance's own connection to its server is up.
 signal connected
 
@@ -33,6 +42,12 @@ const JOIN_TIMEOUT_MS := 8000
 const ENET_TIMEOUT_LIMIT := 32
 const ENET_TIMEOUT_MIN_MS := 5000
 const ENET_TIMEOUT_MAX_MS := 30000
+## How long a connected peer has to say who they are before the server drops them.
+const HELLO_SECONDS := 10.0
+## How long a kicked peer has to receive the reason before the line is cut.
+const KICK_SECONDS := 0.5
+const MAX_NAME_LENGTH := 32
+const MAX_KEY_LENGTH := 64
 
 var mode: Mode = Mode.SOLO
 var port := DEFAULT_PORT
@@ -48,6 +63,12 @@ var _waited_for_first := 0.0
 
 var _report_after := -1
 var _frames := 0
+
+## Server: peer -> {name, key} once they said hello; peer -> seconds waited until then.
+var _identities: Dictionary = {}
+var _unnamed: Dictionary = {}
+## Client: why the server sent us away, shown when the connection drops.
+var _kick_reason := ""
 
 ## A person is at the keyboard: failures go back to the menu instead of quitting or erroring.
 var interactive := false
@@ -85,13 +106,15 @@ func _ready() -> void:
 		_:
 			Log.info(&"net", "solo session")
 	multiplayer.peer_connected.connect(func(id: int) -> void:
-		Log.info(&"net", "peer %d joined" % id)
+		Log.info(&"net", "peer %d connected" % id)
 		_had_peers = true
-		peer_joined.emit(id))
+		if multiplayer.is_server():
+			_unnamed[id] = 0.0)
 	multiplayer.peer_disconnected.connect(_on_peer_left)
 	multiplayer.connected_to_server.connect(func() -> void:
 		Log.info(&"net", "connected as peer %d" % multiplayer.get_unique_id())
 		_restore_timeout()
+		_say_hello()
 		connected.emit())
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_gone)
@@ -168,6 +191,9 @@ func leave(reason: String = "") -> void:
 	hosting_port = 0
 	solo_server_pid = -1
 	_connect_tries = 0
+	_identities.clear()
+	_unnamed.clear()
+	_kick_reason = ""
 	menu_message = reason
 	awaiting_menu = true
 	get_tree().reload_current_scene.call_deferred()
@@ -183,11 +209,17 @@ func _fail(reason: String) -> void:
 
 
 func _on_peer_left(id: int) -> void:
-	Log.info(&"net", "peer %d left" % id)
-	peer_left.emit(id)
+	_unnamed.erase(id)
+	if not _identities.has(id):
+		Log.info(&"net", "peer %d left before saying who they are" % id)
+	else:
+		Log.info(&"net", "peer %d (%s) left" % [id, _identities[id]["name"]])
+		peer_leaving.emit(id)
+		peer_left.emit(id)
+		_identities.erase(id)
 	if _quit_when_empty and _had_peers and multiplayer.get_peers().is_empty():
 		Log.info(&"net", "last player left; server quitting")
-		get_tree().quit(0)
+		_stop()
 
 
 ## A solo server needs a moment to start before it accepts, so solo retries a few times.
@@ -203,11 +235,12 @@ func _on_connection_failed() -> void:
 ## A player goes back to the menu; a tool-run client left without a server would spam
 ## errors every frame, so it says why and closes.
 func _on_server_gone() -> void:
+	var why := _kick_reason if not _kick_reason.is_empty() else "The server closed the connection."
 	if interactive:
-		Log.warn(&"net", "server closed the connection")
-		leave("The server closed the connection.")
+		Log.warn(&"net", "server closed the connection: %s" % why)
+		leave(why)
 		return
-	Log.warn(&"net", "server closed the connection; quitting")
+	Log.warn(&"net", "server closed the connection (%s); quitting" % why)
 	multiplayer.multiplayer_peer = null
 	get_tree().quit(0)
 
@@ -251,6 +284,65 @@ func _decode(encoded: Dictionary) -> Dictionary:
 	return out
 
 
+func _stop() -> void:
+	stopping.emit()
+	get_tree().quit(0)
+
+
+## Client: tells the server who this is. Tool runs without `--name=` join as a guest so
+## two of them on one machine do not share a name.
+func _say_hello() -> void:
+	var profile := PlayerProfile.load_from()
+	var fallback := profile.name if interactive else "Guest%d" % (multiplayer.get_unique_id() % 100000)
+	_hello.rpc_id(1, PlayerProfile.name_from_args(OS.get_cmdline_user_args(), fallback), profile.key)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _hello(player_name: String, key: String) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	if not multiplayer.is_server() or not _unnamed.has(peer):
+		return
+	_unnamed.erase(peer)
+	_identities[peer] = {"name": player_name.strip_edges().left(MAX_NAME_LENGTH), "key": key.left(MAX_KEY_LENGTH)}
+	Log.info(&"net", "peer %d is %s" % [peer, _identities[peer]["name"]])
+	peer_joined.emit(peer)
+
+
+## Server: who a peer said they are, `{name, key}`, or `{}` before they have.
+func identity_of(peer: int) -> Dictionary:
+	return _identities.get(peer, {})
+
+
+## Server: sends a peer away with a reason their menu shows.
+func server_kick(peer: int, reason: String) -> void:
+	if not multiplayer.get_peers().has(peer):
+		return
+	Log.info(&"net", "kicking peer %d: %s" % [peer, reason])
+	_kicked.rpc_id(peer, reason)
+	get_tree().create_timer(KICK_SECONDS).timeout.connect(func() -> void:
+		var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+		if enet != null and multiplayer.get_peers().has(peer):
+			enet.disconnect_peer(peer))
+
+
+@rpc("authority", "call_remote", "reliable")
+func _kicked(reason: String) -> void:
+	_kick_reason = reason
+
+
+func _drop_silent(delta: float) -> void:
+	if _unnamed.is_empty() or not multiplayer.is_server():
+		return
+	for peer: int in _unnamed.keys():
+		_unnamed[peer] = float(_unnamed[peer]) + delta
+		if float(_unnamed[peer]) >= HELLO_SECONDS:
+			Log.warn(&"net", "peer %d never said who they are; dropping them" % peer)
+			_unnamed.erase(peer)
+			var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+			if enet != null:
+				enet.disconnect_peer(peer)
+
+
 ## True when this instance should have a player of its own (solo or client).
 func has_local_player() -> bool:
 	return mode != Mode.SERVER
@@ -263,6 +355,7 @@ func local_peer_id() -> int:
 
 func _physics_process(delta: float) -> void:
 	_watch_empty(delta)
+	_drop_silent(delta)
 	if _report_after < 0:
 		return
 	_frames += 1
@@ -270,7 +363,7 @@ func _physics_process(delta: float) -> void:
 		print(report())
 		# Clients keep running so the server can still count them; they close when it leaves.
 		if mode != Mode.CLIENT:
-			get_tree().quit(0)
+			_stop()
 
 
 ## A solo server must not linger as an orphan. A game that crashes is timed out by ENet and
@@ -282,7 +375,7 @@ func _watch_empty(delta: float) -> void:
 	_waited_for_first += delta
 	if _waited_for_first >= FIRST_JOIN_SECONDS:
 		Log.info(&"net", "nobody joined within %d s; server quitting" % int(FIRST_JOIN_SECONDS))
-		get_tree().quit(0)
+		_stop()
 
 
 ## One line describing the session, for tools and tests. `moved` is the furthest any player

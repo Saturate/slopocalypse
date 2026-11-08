@@ -7,7 +7,7 @@ const target: DeployTarget = { dir: "/opt/outpost", port: 7777, user: "outpost",
 test("the service runs the headless server on the chosen port as its own user", () => {
 	const unit = systemdUnit({ ...target, port: 9000 });
 	assert.match(unit, /^User=outpost$/m);
-	assert.match(unit, /^ExecStart=\/opt\/outpost\/current\/Outpost\.x86_64 --headless -- --server=9000$/m);
+	assert.match(unit, /^ExecStart=\/opt\/outpost\/current\/Outpost\.x86_64 --headless -- --server=9000 --save=\/opt\/outpost\/saves\/world\.db$/m);
 	assert.match(unit, /^Restart=on-failure$/m);
 	assert.match(unit, /^Environment=HOME=\/opt\/outpost\/home$/m);
 });

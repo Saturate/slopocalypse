@@ -18,6 +18,8 @@ var _local_player: PlayerController
 
 
 func _ready() -> void:
+	# Other modules (saving) find the API through this group instead of a path.
+	add_to_group(&"weapons_api")
 	# Placed charges are created by the server and replicated, so everyone sees them blink.
 	_charge_spawner.name = "ChargeSpawner"
 	_charge_spawner.spawn_path = NodePath("..")
@@ -120,6 +122,25 @@ func server_set_build(peer: int, slots: Dictionary) -> bool:
 		return false
 	Net.server_broadcast(&"weapons.build_changed", {"peer": peer, "build": clean})
 	return true
+
+
+## Server: the builds `peer` changed from the defaults, `{weapon_slot: {part_slot: part}}`,
+## for saving. Slots left at the default are not listed, so they follow the data.
+func server_builds_of(peer: int) -> Dictionary:
+	return (_builds.get(peer, {}) as Dictionary).duplicate(true)
+
+
+## Server: gives `peer` back saved builds without touching their inventory (the parts were
+## on the gun when it was saved). A build the current parts data no longer assembles is
+## skipped, leaving that slot at its default.
+func server_restore_builds(peer: int, builds: Dictionary) -> void:
+	for weapon_slot: Variant in builds:
+		var slots: Dictionary = builds[weapon_slot] if builds[weapon_slot] is Dictionary else {}
+		var result := WeaponBuild.assemble(GunAssembly.catalogue(), slots)
+		if not result["ok"]:
+			Log.warn(&"weapons", "peer %d: saved %s build no longer assembles (%s); using the default" % [peer, weapon_slot, ", ".join(result["errors"])])
+			continue
+		Net.server_broadcast(&"weapons.build_changed", {"peer": peer, "build": slots})
 
 
 ## A gun part lying on the ground looks like the part, lying on its side.

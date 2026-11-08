@@ -1,0 +1,6 @@
+{
+  "id": "persistence",
+  "depends_on": ["player"],
+  "flag": "persistence",
+  "entry": "persistence_module.gd"
+}
