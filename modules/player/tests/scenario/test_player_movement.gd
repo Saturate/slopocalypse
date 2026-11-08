@@ -94,3 +94,33 @@ func test_aiming_down_sights_slows_down_and_blocks_sprint() -> void:
 	var expected: float = float(_player.config["walk_speed"]) * float(_player.config["ads_speed_multiplier"])
 	assert_bool(_player.is_sprinting()).is_false()
 	assert_float(_player.horizontal_speed()).is_equal_approx(expected, expected * 0.1)
+
+
+func test_leaning_moves_the_eye_out_to_the_side() -> void:
+	await _landed()
+	_player.intent().lean = 1
+	await _frames(30)
+	var head := _player.get_node("Head") as Node3D
+	assert_float(head.position.x).is_greater(0.25)
+	assert_float(head.rotation.z).is_less(0.0)
+	_player.intent().lean = -1
+	await _frames(40)
+	assert_float(head.position.x).is_less(-0.25)
+
+
+func test_leaning_into_a_wall_stops_short_of_it() -> void:
+	await _landed()
+	var wall: StaticBody3D = auto_free(StaticBody3D.new())
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(0.2, 3.0, 3.0)
+	shape.shape = box
+	wall.add_child(shape)
+	add_child(wall)
+	# Just to the player's right (+X while facing -Z), closer than a full lean.
+	wall.global_position = _player.global_position + _player.global_basis.x * 0.45 + Vector3.UP * 1.5
+	await _frames(2)
+	_player.intent().lean = 1
+	await _frames(30)
+	var head := _player.get_node("Head") as Node3D
+	assert_float(head.position.x).is_less(0.25)

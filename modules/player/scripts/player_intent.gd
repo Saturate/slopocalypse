@@ -19,6 +19,8 @@ var look_pitch: float = 0.0
 var remote_look: bool = false
 var sprint: bool = false
 var crouch: bool = false
+## -1 leaning left, 1 leaning right, 0 upright (held keys).
+var lean: int = 0
 ## One-shot: set when jump is pressed, cleared by the controller after it acts on it.
 var jump: bool = false
 ## One-shot: use whatever is in front of the player (enter a car, later loot and doors).
@@ -84,7 +86,7 @@ func consume_throw() -> bool:
 
 ## Client -> server, every tick.
 @rpc("any_peer", "call_remote", "unreliable_ordered")
-func submit(new_move: Vector2, yaw: float, pitch: float, new_sprint: bool, new_crouch: bool, new_fire: bool, new_aim: bool) -> void:
+func submit(new_move: Vector2, yaw: float, pitch: float, new_sprint: bool, new_crouch: bool, new_fire: bool, new_aim: bool, new_lean: int = 0) -> void:
 	if not _from_owner():
 		return
 	move = new_move.limit_length(1.0)
@@ -95,6 +97,7 @@ func submit(new_move: Vector2, yaw: float, pitch: float, new_sprint: bool, new_c
 	crouch = new_crouch
 	fire = new_fire
 	aim = new_aim
+	lean = clampi(new_lean, -1, 1)
 
 
 ## Client -> server, once per press.

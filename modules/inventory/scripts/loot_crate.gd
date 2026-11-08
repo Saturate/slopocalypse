@@ -1,6 +1,6 @@
 class_name LootCrate
 extends StaticBody3D
-## A supply crate somewhere on the map. Searching it (E) moves what it holds into the
+## A supply crate somewhere on the map. Searching it (F) moves what it holds into the
 ## searcher's backpack as far as it fits; the server keeps the contents and refills an
 ## empty crate after a while. Solid, so it is also something to hide behind.
 

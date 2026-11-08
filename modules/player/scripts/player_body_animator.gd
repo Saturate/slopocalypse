@@ -71,6 +71,8 @@ func _process(delta: float) -> void:
 	_tree.set(&"parameters/slide/blend_amount", _slide)
 	var pitch: float = _aim.get(&"pitch")
 	_aim.set(&"pitch", lerpf(pitch, _head.rotation.x, 1.0 - exp(-AIM_RATE * delta)))
+	# The body rolls further than the camera so the visible head ends up where the eye went.
+	_aim.set(&"lean", player.lean_amount() * deg_to_rad(float(player.config.get("lean_body_degrees", 0.0))))
 	_update_ads(delta)
 	_update_hands()
 
