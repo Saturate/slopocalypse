@@ -57,7 +57,7 @@ func _process(delta: float) -> void:
 
 func _ground_hit(at: Vector3) -> bool:
 	var space := get_viewport().find_world_3d().direct_space_state
-	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 20.0, at + Vector3.DOWN * 40.0)
+	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 20.0, at + Vector3.DOWN * 40.0, PhysicsLayers.SOLID)
 	return not space.intersect_ray(query).is_empty()
 
 

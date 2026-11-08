@@ -162,7 +162,8 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 	var exclude: Array[RID] = []
 	if holder != null:
 		exclude.append(holder.get_rid())
-	var query := PhysicsRayQueryParameters3D.create(origin, to, 0xFFFFFFFF, exclude)
+	# Bullets go through leaves (they only block sight) and stop at anything solid.
+	var query := PhysicsRayQueryParameters3D.create(origin, to, PhysicsLayers.BULLETS, exclude)
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)
 	var hit_point := to
 	var damage := 0.0

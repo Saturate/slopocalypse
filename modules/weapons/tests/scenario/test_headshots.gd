@@ -66,3 +66,19 @@ func test_only_points_near_the_eyes_count_as_the_head() -> void:
 	var head := (_guard.get_node("Head") as Node3D).global_position
 	assert_bool(HitscanWeapon.is_headshot(_guard, head + Vector3.UP * 0.1)).is_true()
 	assert_bool(HitscanWeapon.is_headshot(_guard, head + Vector3.DOWN * 0.6)).is_false()
+
+
+func test_bullets_go_through_leaves() -> void:
+	var leaves := StaticBody3D.new()
+	leaves.collision_layer = PhysicsLayers.SIGHT
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(4.0, 4.0, 1.0)
+	shape.shape = box
+	leaves.add_child(shape)
+	add_child(leaves)
+	leaves.global_position = Vector3(0, 1.5, -3)
+	var health := _guard.get_node("Health") as HealthComponent
+	await _shoot_at(_guard.global_position + Vector3.UP * 1.0)
+	leaves.free()
+	assert_float(health.health).is_less(health.max_health)
