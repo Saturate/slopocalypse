@@ -18,5 +18,11 @@
   "dive_seconds": 4.0,
   "dive_trigger_radius": 1.7,
   "dive_blast_radius": 3.5,
-  "dive_damage": 55.0
+  "dive_damage": 55.0,
+  "calm_orbit_radius": 34.0,
+  "calm_orbit_height": 16.0,
+  "aim_cone_degrees": 6.0,
+  "aim_range": 160.0,
+  "aim_seconds": 0.4,
+  "calm_after_seconds": 40.0
 }

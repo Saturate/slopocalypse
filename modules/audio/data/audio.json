@@ -11,8 +11,12 @@
     "pickup": -10.0,
     "hurt": -6.0,
     "wind": -28.0,
-    "dive": -2.0
+    "dive": -2.0,
+    "rotor": -8.0
   },
+  "rotor_range": 140.0,
+  "rotor_angry_pitch": 1.3,
+  "rotor_angry_db": 5.0,
   "shot_range": 320.0,
   "footstep_range": 28.0,
   "step_length": 2.0,

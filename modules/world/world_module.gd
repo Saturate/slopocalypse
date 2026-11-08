@@ -1,7 +1,7 @@
 extends Node
-## Loads the world, waits until the terrain around the spawn has collision, then announces
-## it. Also owns terrain-side reactions: players get a voxel viewer so terrain streams around
-## them, and shots that hit the ground dig a small crater.
+## Loads the world, waits until the ground around the spawn has collision, then announces
+## it. Also owns terrain-side reactions: shots that hit the ground dig a small crater, and
+## explosions a big one. The ground follows players, enemies and vehicles on its own.
 
 const SCENE := "res://modules/world/scenes/world.tscn"
 const CONFIG := "res://modules/world/data/world.json"
@@ -26,23 +26,11 @@ func _ready() -> void:
 	_voxels.dug.connect((world.get_node("Scenery") as SceneryScatter).clear_grass)
 	var spawn: Marker3D = world.get_node("SpawnPoint")
 	_announcement = {"spawn": spawn.global_position, "kill_y": data["kill_y"], "rescue_depth": data["rescue_depth"]}
-	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.subscribe(&"explosion", _on_explosion)
-	EventBus.subscribe(&"car.entered", _on_car_entered)
-
-
-## The driver's own viewer stays with their parked body, so a car driven away would leave
-## terrain collision behind and fall through. Driven cars carry a viewer too.
-func _on_car_entered(p: Dictionary) -> void:
-	var car: Node3D = p["car"]
-	if car.get_node_or_null("VoxelViewer") == null:
-		car.add_child(_voxels.make_viewer())
 
 
 func _exit_tree() -> void:
-	EventBus.unsubscribe(&"car.entered", _on_car_entered)
-	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
 	EventBus.unsubscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.unsubscribe(&"explosion", _on_explosion)
 
@@ -73,15 +61,7 @@ func _ground_hit(at: Vector3) -> bool:
 	return not space.intersect_ray(query).is_empty()
 
 
-func _on_player_spawned(p: Dictionary) -> void:
-	# Enemies need terrain under them where the game runs (the server); clients only
-	# stream around their own players.
-	if p.get("npc", false) and not multiplayer.is_server():
-		return
-	var player: Node3D = p["player"]
-	player.add_child(_voxels.make_viewer())
-
-
 func _on_weapon_fired(p: Dictionary) -> void:
-	if p.get("collider") is VoxelLodTerrain and float(p.get("damage", 0.0)) == 0.0:
+	var hit: Variant = p.get("collider")
+	if hit is Node and (hit as Node).is_in_group(&"terrain") and float(p.get("damage", 0.0)) == 0.0:
 		_voxels.server_dig(p["to"], BULLET_CRATER_RADIUS)

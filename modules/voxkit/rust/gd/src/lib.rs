@@ -7,7 +7,8 @@
 
 use godot::classes::mesh::ArrayType;
 use godot::prelude::*;
-use voxkit_core::{Colour, Grid, Op, Paint};
+use voxkit_core::heightfield::{self, Tile};
+use voxkit_core::{Colour, Grid, Mesh, Op, Paint};
 
 struct VoxkitExtension;
 
@@ -199,29 +200,7 @@ impl VoxelModel {
         let Some(grid) = self.grid.as_ref() else {
             return VarArray::new();
         };
-        let mesh = grid.mesh();
-        if mesh.indices.is_empty() {
-            return VarArray::new();
-        }
-        let vertices: PackedVector3Array = mesh
-            .positions
-            .iter()
-            .map(|p| Vector3::new(p[0], p[1], p[2]))
-            .collect();
-        let normals: PackedVector3Array = mesh
-            .normals
-            .iter()
-            .map(|n| Vector3::new(n[0], n[1], n[2]))
-            .collect();
-        let colours: PackedColorArray = mesh.colours.iter().map(|&c| to_color(c)).collect();
-        let indices: PackedInt32Array = mesh.indices.iter().map(|&i| i as i32).collect();
-        let mut arrays = VarArray::new();
-        arrays.resize(ArrayType::MAX.ord() as usize, &Variant::nil());
-        arrays.set(ArrayType::VERTEX.ord() as usize, &vertices.to_variant());
-        arrays.set(ArrayType::NORMAL.ord() as usize, &normals.to_variant());
-        arrays.set(ArrayType::COLOR.ord() as usize, &colours.to_variant());
-        arrays.set(ArrayType::INDEX.ord() as usize, &indices.to_variant());
-        arrays
+        arrays_of(&grid.mesh())
     }
 }
 
@@ -252,4 +231,92 @@ fn paint(c: Color, jitter: f32, seed: i64) -> Paint {
 fn to_color(c: Colour) -> Color {
     let ch = |shift: u32| ((c >> shift) & 0xFF) as f32 / 255.0;
     Color::from_rgb(ch(16), ch(8), ch(0))
+}
+
+/// Arrays for `ArrayMesh.add_surface_from_arrays`, or empty when there is nothing to draw.
+fn arrays_of(mesh: &Mesh) -> VarArray {
+    if mesh.indices.is_empty() {
+        return VarArray::new();
+    }
+    let vertices: PackedVector3Array = mesh
+        .positions
+        .iter()
+        .map(|p| Vector3::new(p[0], p[1], p[2]))
+        .collect();
+    let normals: PackedVector3Array = mesh
+        .normals
+        .iter()
+        .map(|n| Vector3::new(n[0], n[1], n[2]))
+        .collect();
+    let colours: PackedColorArray = mesh.colours.iter().map(|&c| to_color(c)).collect();
+    let indices: PackedInt32Array = mesh.indices.iter().map(|&i| i as i32).collect();
+    let mut arrays = VarArray::new();
+    arrays.resize(ArrayType::MAX.ord() as usize, &Variant::nil());
+    arrays.set(ArrayType::VERTEX.ord() as usize, &vertices.to_variant());
+    arrays.set(ArrayType::NORMAL.ord() as usize, &normals.to_variant());
+    arrays.set(ArrayType::COLOR.ord() as usize, &colours.to_variant());
+    arrays.set(ArrayType::INDEX.ord() as usize, &indices.to_variant());
+    arrays
+}
+
+fn colour_of(c: Color) -> Colour {
+    paint(c, 0.0, 0).colour
+}
+
+/// Voxel ground tiles: `VoxelGround.tile_arrays(...)` turns coarse heights and colours over a
+/// tile into blocky columns (see voxkit_core::heightfield). Stateless.
+#[derive(GodotClass)]
+#[class(init, base = RefCounted)]
+struct VoxelGround {
+    base: Base<RefCounted>,
+}
+
+#[godot_api]
+impl VoxelGround {
+    /// `heights` is `cn` x `cn` (row-major by z), `spacing` metres apart; `colours` is
+    /// `cc` x `cc` over the same tile; the tile is `n` columns of `voxel` metres a side.
+    /// Returns mesh arrays in tile-local metres.
+    #[func]
+    #[allow(clippy::too_many_arguments)]
+    fn tile_arrays(
+        heights: PackedFloat32Array,
+        cn: i64,
+        spacing: f32,
+        colours: PackedColorArray,
+        cc: i64,
+        n: i64,
+        voxel: f32,
+        steep_slope: f32,
+        steep: Color,
+        side: Color,
+        skirt: f32,
+        seed: i64,
+    ) -> VarArray {
+        let (cn, cc, n) = (
+            cn.max(2) as usize,
+            cc.max(2) as usize,
+            n.clamp(1, 1024) as usize,
+        );
+        if heights.len() < cn * cn || colours.len() < cc * cc {
+            godot_error!("VoxelGround: heights or colours shorter than the grid");
+            return VarArray::new();
+        }
+        let hs = heights.as_slice().to_vec();
+        let cs: Vec<Colour> = colours.as_slice().iter().map(|&c| colour_of(c)).collect();
+        let tile = Tile {
+            heights: &hs,
+            cn,
+            spacing,
+            colours: &cs,
+            cc,
+            n,
+            voxel: voxel.max(0.01),
+            steep_slope,
+            steep: colour_of(steep),
+            side: colour_of(side),
+            skirt,
+            seed: seed as u32,
+        };
+        arrays_of(&heightfield::mesh(&tile))
+    }
 }

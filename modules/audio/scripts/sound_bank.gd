@@ -28,6 +28,9 @@ static func get_sound(sound: String) -> AudioStreamWAV:
 		"wind":
 			samples = _wind()
 			looped = true
+		"rotor":
+			samples = _rotor()
+			looped = true
 	if samples.is_empty():
 		return null
 	var stream := _to_wav(samples, looped)
@@ -127,6 +130,22 @@ static func _dive() -> PackedFloat32Array:
 		phase += TAU * hz / RATE
 		var buzz := sin(phase) + 0.4 * sin(phase * 2.0) + 0.25 * signf(sin(phase * 0.5))
 		out.append(buzz * 0.35 * minf(1.0, t * 6.0))
+	return out
+
+
+## A drone's rotors: a buzzing tone with its harmonics, chopped by the blades, over a hiss.
+## Every frequency is a whole number of cycles in the one-second loop, so it never clicks.
+static func _rotor() -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	var rng := _rng(10)
+	var lp := 0.0
+	var a := _one_pole(2400.0)
+	for i in RATE:
+		var t := float(i) / RATE
+		var tone := sin(TAU * 170.0 * t) + 0.5 * sin(TAU * 340.0 * t) + 0.25 * sin(TAU * 510.0 * t)
+		var chop := 0.7 + 0.3 * sin(TAU * 34.0 * t)
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * a
+		out.append((tone * 0.28 * chop + lp * 0.35) * 0.8)
 	return out
 
 
