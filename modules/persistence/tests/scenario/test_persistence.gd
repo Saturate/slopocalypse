@@ -119,3 +119,39 @@ func test_the_world_keeps_its_loot_and_emptied_crates() -> void:
 	assert_bool(crate.get_meta(&"empty", false)).is_true()
 	assert_array(_inventory.call(&"crate_contents", crate)).is_empty()
 	remove_child(player)
+
+
+## Ground that is 30 m high past x = 50 (as if a mountain now stood there) and 0 elsewhere.
+func _add_ground() -> Node:
+	var script := GDScript.new()
+	script.source_code = "extends Node\nfunc ground_height(x: float, _z: float) -> float:\n\treturn 30.0 if x > 50.0 else 0.0\n"
+	script.reload()
+	var ground: Node = auto_free(Node.new())
+	ground.set_script(script)
+	ground.add_to_group(&"ground")
+	add_child(ground)
+	return ground
+
+
+## Playtest: the world changed under a saved spot (a mountain went up where the road was),
+## and the returning player was put inside it.
+func test_a_saved_spot_now_under_the_ground_starts_you_at_the_spawn() -> void:
+	_add_ground()
+	var first := _spawn(91, Vector3(60.0, 2.0, 5.0))
+	assert_bool(_saves.call(&"server_admit", 91, "Scout", "key-s")).is_true()
+	assert_bool(_inventory.call(&"server_give", 91, "medkit")).is_true()
+	var kits: int = _inventory.call(&"count", 91, "medkit")
+	_leave(91, first)
+
+	var again := _spawn(92)
+	assert_bool(_saves.call(&"server_admit", 92, "scout", "key-s")).is_true()
+	assert_vector(again.global_position).is_equal(Vector3.ZERO)
+	assert_int(_inventory.call(&"count", 92, "medkit")).is_equal(kits)
+
+
+func test_saved_loot_now_under_the_ground_is_not_put_back() -> void:
+	_add_ground()
+	_inventory.call(&"server_restore_world", {"loot": [{"item": "medkit", "position": Vector3(60.0, 1.0, 0.0)}, {"item": "mag_ar_30", "position": Vector3(3.0, 0.0, 0.0)}], "crates": []})
+	await get_tree().process_frame
+	var loot := get_tree().get_nodes_in_group(&"loot").filter(func(n: Node) -> bool: return not n.is_queued_for_deletion())
+	assert_array(loot.map(func(n: Node) -> String: return (n as LootItem).item)).contains_exactly(["mag_ar_30"])
