@@ -52,7 +52,7 @@ func test_a_part_you_do_not_own_is_refused() -> void:
 	var ok: bool = _weapons.call(&"server_set_build", 32, build)
 	var entries := Log.end_capture()
 	assert_bool(ok).is_false()
-	assert_str(LogCapture.text(entries)).contains("does not own")
+	assert_str(LogCapture.text(entries)).contains("not in your backpack")
 	assert_str(_weapons.call(&"build_of", 32, "primary")["optic"]).is_equal("opt_reddot")
 
 
@@ -81,3 +81,49 @@ func test_part_changes_list_what_goes_on_and_comes_off() -> void:
 	var changes: Dictionary = (load(WEAPONS) as GDScript).call(&"part_changes", {"optic": "a", "muzzle": "m"}, {"optic": "b", "stock": "s"})
 	assert_array(changes["fitted"]).contains_exactly_in_any_order(["b", "s"])
 	assert_array(changes["removed"]).contains_exactly_in_any_order(["a", "m"])
+
+
+## Playtest: loading a preset asked for a long handguard the player didn't have; Apply sent
+## it, the server refused, and nothing said so.
+func test_a_preset_needing_parts_you_lack_says_so_and_cannot_be_applied() -> void:
+	if _inventory == null:
+		return
+	var player := _spawn(34)
+	while int(_inventory.call(&"count", 34, "hg_ar_long")) > 0:
+		_inventory.call(&"server_take", 34, "hg_ar_long")
+	var screen: ModdingScreen = auto_free(ModdingScreen.new())
+	screen.weapons = _weapons
+	screen.player = player
+	screen.peer = 34
+	add_child(screen)
+	screen.open()
+	screen.load_preset("ar_dmr")
+	assert_array(screen.missing_parts()).contains([_part_name("hg_ar_long")])
+	var before: Dictionary = _weapons.call(&"build_of", 34, "primary")
+	screen.apply()
+	await get_tree().process_frame
+	assert_dict(_weapons.call(&"build_of", 34, "primary")).is_equal(before)
+	assert_bool(screen.is_open()).is_true()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func test_a_refusal_reaches_the_player_as_an_event() -> void:
+	if _inventory == null:
+		return
+	var reasons: Array[String] = []
+	var on_refused := func(p: Dictionary) -> void: reasons.append(str(p.get("reason", "")))
+	EventBus.subscribe(&"weapons.build_refused", on_refused)
+	# Offline this instance is the server and peer 1, so its own refusal takes the local path.
+	_spawn(1)
+	_inventory.call(&"server_take", 1, "opt_holo")
+	var build: Dictionary = GunModding.with_part(_weapons.call(&"build_of", 1, "primary"), "optic", "opt_holo")
+	Log.begin_capture()
+	_weapons.call(&"server_set_build", 1, build)
+	Log.end_capture()
+	EventBus.unsubscribe(&"weapons.build_refused", on_refused)
+	assert_int(reasons.size()).is_equal(1)
+	assert_str(reasons[0]).contains("not in your backpack")
+
+
+func _part_name(id: String) -> String:
+	return str((GunAssembly.catalogue().get(id, {}) as Dictionary).get("name", id))
