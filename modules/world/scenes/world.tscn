@@ -161,7 +161,7 @@ environment = SubResource("Environment_c83369")
 [node name="Cover" type="Node3D" parent="." unique_id=1263814881]
 
 [node name="Cover0" type="StaticBody3D" parent="Cover" unique_id=1227156898]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0.72359335, -10)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0.7236266, -10)
 
 [node name="Mesh" type="MeshInstance3D" parent="Cover/Cover0" unique_id=1940076702]
 mesh = SubResource("BoxMesh_4c5ac5")
@@ -170,7 +170,7 @@ mesh = SubResource("BoxMesh_4c5ac5")
 shape = SubResource("BoxShape3D_71242d")
 
 [node name="Cover1" type="StaticBody3D" parent="Cover" unique_id=1227156899]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0.2501936, -6)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0.25018418, -6)
 
 [node name="Mesh" type="MeshInstance3D" parent="Cover/Cover1" unique_id=1979212095]
 mesh = SubResource("BoxMesh_a91006")
@@ -197,7 +197,7 @@ mesh = SubResource("BoxMesh_627a88")
 shape = SubResource("BoxShape3D_8e40b0")
 
 [node name="Cover4" type="StaticBody3D" parent="Cover" unique_id=1227156902]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 3.4182339, 4)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 3.4193885, 4)
 
 [node name="Mesh" type="MeshInstance3D" parent="Cover/Cover4" unique_id=2096618274]
 mesh = SubResource("BoxMesh_bf2fc9")

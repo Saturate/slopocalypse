@@ -400,14 +400,19 @@ func _add_road(node: Node3D, i: int, span: Vector2) -> void:
 		var z1 := maxf(z - ROAD_PIECE, span.x)
 		var mid := (z + z1) / 2.0
 		var cx := road.x_at(mid)
+		# Each piece is tilted to its slope, so a climb is a smooth ramp rather than a
+		# staircase of voxel rows; the path only carries what bends away from that line.
+		var y_mid := road.height_at(mid)
+		var grade := (road.height_at(z) - road.height_at(z1)) / maxf(z - z1, 0.01)
 		var low := INF
 		var high := -INF
 		var spread := 0.0
 		for k in range(0, int(ROAD_PIECE) + 1):
-			var zz := lerpf(z1, z, k / ROAD_PIECE)
-			low = minf(low, road.height_at(zz))
-			high = maxf(high, road.height_at(zz))
-			spread = maxf(spread, absf(road.x_at(zz) - cx))
+			var lz := lerpf(z1, z, k / ROAD_PIECE) - mid
+			var bend := road.height_at(mid + lz) - (y_mid + grade * lz)
+			low = minf(low, bend)
+			high = maxf(high, bend)
+			spread = maxf(spread, absf(road.x_at(mid + lz) - cx))
 		var p := {
 			"seed": hash([_seed, i, piece]),
 			"length": z - z1,
@@ -415,13 +420,14 @@ func _add_road(node: Node3D, i: int, span: Vector2) -> void:
 			"spread": spread + 0.5,
 			"rise": high - low,
 			"z_phase": mid,
-			"x_of": func(local_z: float) -> float: return road.x_at(mid + local_z) - cx,
-			"y_of": func(local_z: float) -> float: return road.height_at(mid + local_z) - low,
+			"x_of": func(lz: float) -> float: return road.x_at(mid + lz) - cx,
+			"y_of": func(lz: float) -> float: return road.height_at(mid + lz) - (y_mid + grade * lz) - low,
 		}
 		var inst := MeshInstance3D.new()
 		inst.mesh = VoxGenerator.to_mesh(gen.build(p))
-		# The bed sinks into the ground; the surface stands a few centimetres proud.
-		inst.position = Vector3(cx, low - VoxRoad.BED - VoxRoad.SURFACE + 0.03, mid)
+		# Local +z climbs by `grade`; the bed sinks into the ground and the surface stands a
+		# few centimetres proud.
+		inst.transform = Transform3D(Basis(Vector3.RIGHT, -atan(grade)), Vector3(cx, y_mid + low - VoxRoad.BED - VoxRoad.SURFACE + 0.03, mid))
 		node.add_child(inst)
 		z = z1
 		piece += 1

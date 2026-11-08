@@ -48,7 +48,7 @@ float noise(vec2 p) {
 }
 
 // How far the drawn terrain tucks under the road (collision is untouched).
-uniform float road_dip = 0.45;
+uniform float road_dip = 0.3;
 
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -125,7 +125,9 @@ void fragment() {
 	// of dry, khaki grass for a lived-in, less lawn-like look.
 	float tone = mix(0.82, 1.08, noise(world_pos.xz * 0.03));
 	float dry = biome.g;
-	vec3 grass_col = mix(g.albedo * grass_tint, g.albedo * vec3(0.86, 0.76, 0.46), dry * 0.8);
+	// Dry ground turns straw: the texture's detail kept as brightness, its green dropped.
+	vec3 straw = vec3(dot(g.albedo, vec3(0.333))) * vec3(1.35, 1.12, 0.62);
+	vec3 grass_col = mix(g.albedo * grass_tint, straw, dry * 0.9);
 	// Forest floor: shaded, brown needle litter showing through thin grass.
 	vec3 litter = mix(g.albedo * grass_tint * 0.6, d.albedo * vec3(0.5, 0.38, 0.26), 0.55);
 	grass_col = mix(grass_col, litter, forest * 0.85);

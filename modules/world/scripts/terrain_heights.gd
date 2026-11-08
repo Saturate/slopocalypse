@@ -107,6 +107,7 @@ func bake(metres_per_texel: float) -> ImageTexture:
 			var x := area.position.x + (px + 0.5) * area.size.x / w
 			var on_road := 0.0
 			if road != null:
-				on_road = 1.0 - smoothstep(road.half_width, road.half_width + metres_per_texel * 1.5, road.distance(x, z))
+				# Inside the road's own width only, so the dip never bares the road's sides.
+				on_road = 1.0 - smoothstep(road.half_width - 2.0, road.half_width - 0.5, road.distance(x, z))
 			img.set_pixel(px, py, Color(height_at(x, z), on_road, 0.0))
 	return ImageTexture.create_from_image(img)

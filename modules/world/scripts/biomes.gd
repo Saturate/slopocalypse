@@ -51,11 +51,12 @@ func rock(x: float, z: float) -> float:
 	return _staged(smoothstep(_rock_threshold, _rock_threshold + 0.15, n) + 0.15, "rock", z)
 
 
-## A noise field scaled by its stage weight: a weight of 1 keeps (and slightly boosts) the
-## field, 0 removes it.
+## A noise field scaled by its stage weight: a weight of 1 boosts the field and lifts it
+## everywhere (a dry stage is dry all over, not in patches), 0 removes it.
 func _staged(field: float, key: String, z: float) -> float:
-	var w := _stages.value(key, maxf(-z, 0.0), 1.0)
-	return clampf(field * (0.4 + w) - (1.0 - w) * 0.3, 0.0, 1.0)
+	# 0.6 leaves the field as it is: the weight with no stages, and the middle of the scale.
+	var w := _stages.value(key, maxf(-z, 0.0), 0.6)
+	return clampf(field * (0.4 + w) + (w - 0.6) * 0.8, 0.0, 1.0)
 
 
 ## Bakes the fields into a texture over `area` (x, z on the ground; R forest, G dry, B rock)
