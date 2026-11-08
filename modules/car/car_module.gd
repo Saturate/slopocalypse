@@ -145,16 +145,22 @@ func _on_car_entered(payload: Dictionary) -> void:
 	var input := CarInput.new()
 	input.name = "Input"
 	input.intent = car.intent()
+	input.seat = payload.get("seat", CarController.DRIVER)
 	car.add_child(input)
 	car.camera().current = true
 
 
 func _on_car_exited(payload: Dictionary) -> void:
 	var car := payload.get("car") as CarController
-	if car == null:
+	var who := payload.get("player") as Node
+	# Only when it is this instance's own player getting out: the other seat may still be
+	# ours.
+	if car == null or who == null or not _is_local(who):
 		return
 	var input := car.get_node_or_null("Input")
 	if input != null:
+		# Renamed first so getting straight back in names its new input "Input" again.
+		input.name = "InputLeaving"
 		input.queue_free()
 
 

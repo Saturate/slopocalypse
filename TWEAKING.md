@@ -36,7 +36,9 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | Enemy senses | `modules/enemies/data/enemies.json` | `sight_range`, `sight_cone_degrees`, `hearing_range`, `chase_seconds`, `forget_seconds` |
 | Enemy look | `modules/enemies/data/enemies.json` | `uniform_tint` (`[r, g, b]`, 0 to 1) |
 | Drone | `modules/drones/data/drones.json` | `max_health`, `speed`, `orbit_*` (attack orbit), `calm_orbit_*` (how it circles before anyone provokes it), `aim_cone_degrees`, `aim_range`, `aim_seconds` (how long someone aims down sights at it before it turns angry), `calm_after_seconds`, `respawn_seconds`, `max_drones`, `dive_*`, `crash_*` |
-| Car handling | `modules/car/data/car.json` | `engine_force`, `top_speed`, `brake_force`, `max_steer_degrees`, `suspension_*`, `friction_slip` |
+| Car handling | `modules/car/data/car.json` | `engine_force`, `top_speed`, `brake_force`, `max_steer_degrees`, `high_speed_steer_share` (how much of the lock is left at top speed), `downforce` (extra grip that grows with speed), `suspension_*`, `friction_slip`, `roll_influence`, `flip_seconds` (how long on its roof or side before it rights itself) |
+| Car camera | `modules/car/data/car.json` | `camera`: `distance`, `height`, `look_ahead`, `follow_rate` (higher follows tighter), `fov` and `fov_at_top_speed`, `orbit_sensitivity` (mouse), `orbit_return_seconds` (how soon it swings back behind) |
+| Car looks | `modules/car/data/car.json` | `looks`: `paint` (0 rust red, 1 army green, 2 faded blue, 3 sand, 4 primer grey), `wear` (rust and mud, 0 to 1), `seed`; plus `length`, `width` |
 | Sound volumes and ranges | `modules/audio/data/audio.json` | `volume_db` (per sound, in dB: `-6` is about half as loud), `shot_range`, `footstep_range`, `rotor_range`, `rotor_angry_pitch`, `rotor_angry_db` (the drone hum) |
 | Headshots | `modules/weapons/data/weapons.json` | `headshot.kills` (teams a headshot kills outright, `"enemies"` for guards), `headshot.multiplier` (damage times this for everyone else) |
 | Training dummies | `modules/training/data/training.json` | `max_health`, `respawn_seconds`, `dummies` |
