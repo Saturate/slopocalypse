@@ -52,6 +52,7 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | Voxel ground detail | `modules/world/data/world.json` | `voxel.lods` (`[[metres, voxel size], ...]`: finer blocks close by), `voxel.load_distance`, `voxel.collision_distance`, `voxel.builds_per_frame` (more loads ground faster but can hitch) |
 | Leaning (Q / E) | `modules/player/data/player.json` | `lean_offset` (how far the eye moves, metres), `lean_degrees` (camera tilt), `lean_body_degrees` (how far others see the body tilt), `lean_seconds` |
 | Waiting for ground | `modules/player/data/player.json` | `hold_seconds` (a respawned or rescued player is held still until there is ground under them, at most this long) |
+| Day and night | `modules/daytime/data/daytime.json` | `start_hour` (time when the server starts), `hour_seconds` (real seconds per game hour by day), `night_speed` (how many times faster the night passes), `sunrise`, `sunset`, `sun_max_elevation`, `moon_max_elevation`, `keys` (per hour: light colour and strength, sky colours, `ambient`, fog, `exposure`, `stars`) |
 
 ## Good first tweaks
 
@@ -59,6 +60,7 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 - Want more fights: raise `max_alive`, lower `squad_respawn_seconds` and `first_spawn_seconds`.
 - Loot too rare: raise `npc_loot.rolls` and `crates.rolls`, lower `crates.refill_seconds`.
 - Dying too costly: give a bigger `starting_kit`, or lower `respawn_seconds`.
+- Nights too long or too dark: raise `night_speed`, or raise `light_energy`, `ambient` and `exposure` in the night `keys`.
 - Guns feel weak: raise the receiver's `damage` in `parts.json`, or lower everyone's `max_health`.
 
 ## The save

@@ -46,6 +46,8 @@ func _initialize() -> void:
 	sun.shadow_blur = 1.2
 	sun.directional_shadow_max_distance = 160.0
 	sun.transform = Transform3D(Basis.from_euler(Vector3(deg_to_rad(-24.0), deg_to_rad(40.0), 0.0)), Vector3.ZERO)
+	# Found by the day and night cycle, which moves it and recolours the sky through the day.
+	sun.add_to_group(&"sun", true)
 	root.add_child(sun)
 
 	var env := WorldEnvironment.new()
@@ -92,6 +94,7 @@ func _initialize() -> void:
 	environment.fog_aerial_perspective = 0.4
 	environment.fog_sky_affect = 0.3
 	env.environment = environment
+	env.add_to_group(&"world_environment", true)
 	root.add_child(env)
 
 	var cover_root := Node3D.new()
