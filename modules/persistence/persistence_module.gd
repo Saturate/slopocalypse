@@ -205,7 +205,7 @@ func _hold_until_grounded(delta: float) -> void:
 
 func _has_ground(player: CharacterBody3D) -> bool:
 	var at := player.global_position
-	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP, at + Vector3.DOWN * 40.0)
+	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP, at + Vector3.DOWN * 40.0, PhysicsLayers.SOLID)
 	query.exclude = [player.get_rid()]
 	return not player.get_world_3d().direct_space_state.intersect_ray(query).is_empty()
 

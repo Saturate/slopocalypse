@@ -184,7 +184,8 @@ func _find_target() -> Node3D:
 
 
 func _clear_line(from: Vector3, to: Vector3, wanted: Node) -> bool:
-	var query := PhysicsRayQueryParameters3D.create(from, to)
+	# Sight stops at anything solid and at leaves: no shooting at someone hidden in a tree.
+	var query := PhysicsRayQueryParameters3D.create(from, to, PhysicsLayers.SOLID | PhysicsLayers.SIGHT)
 	query.exclude = [body.get_rid()]
 	var hit := body.get_world_3d().direct_space_state.intersect_ray(query)
 	if hit.is_empty():

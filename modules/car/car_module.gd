@@ -66,7 +66,7 @@ func _ground_height(at: Vector3) -> float:
 
 func _release_when_grounded(car: CarController) -> void:
 	var from := car.global_position + Vector3.UP * 2.0
-	var query := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 12.0, 0xFFFFFFFF, [car.get_rid()])
+	var query := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 12.0, PhysicsLayers.SOLID, [car.get_rid()])
 	if not car.get_world_3d().direct_space_state.intersect_ray(query).is_empty():
 		car.freeze = false
 

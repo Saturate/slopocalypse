@@ -505,7 +505,7 @@ func _on_ground(at: Vector3) -> Vector3:
 	var world := get_viewport().find_world_3d()
 	if world == null:
 		return at
-	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 20.0, at + Vector3.DOWN * 40.0)
+	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 20.0, at + Vector3.DOWN * 40.0, PhysicsLayers.SOLID)
 	query.collide_with_areas = false
 	var exclude: Array[RID] = []
 	for node: Node in get_tree().get_nodes_in_group(&"players"):

@@ -74,6 +74,28 @@ func test_a_wall_hides_the_player() -> void:
 	assert_float(health.health).is_equal(health.max_health)
 
 
+## Playtest: guards shot at players they couldn't see. Leaves only had collision at the
+## trunk, so a guard's eyes went straight through a tree's crown.
+func test_leaves_hide_the_player_too() -> void:
+	_player.global_position = Vector3(0, 0.1, -15)
+	var leaves: StaticBody3D = auto_free(StaticBody3D.new())
+	leaves.collision_layer = PhysicsLayers.SIGHT
+	leaves.collision_mask = 0
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(10.0, 6.0, 2.0)
+	shape.shape = box
+	leaves.add_child(shape)
+	add_child(leaves)
+	leaves.global_position = Vector3(0, 3, -7)
+	var enemy := await _enemy_at(Vector3(0, 0, 0))
+	await _frames(180)
+	var brain := enemy.get_node("Brain") as EnemyBrain
+	assert_object(brain.target).is_null()
+	var health := _player.get_node("Health") as HealthComponent
+	assert_float(health.health).is_equal(health.max_health)
+
+
 func test_killing_one_drops_what_it_carried() -> void:
 	if not ResourceLoader.exists(INVENTORY):
 		return

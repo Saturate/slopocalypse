@@ -97,7 +97,7 @@ func _release_grounded(delta: float) -> void:
 
 func _has_ground(player: PlayerController) -> bool:
 	var at := player.global_position
-	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP, at + Vector3.DOWN * GROUND_PROBE)
+	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP, at + Vector3.DOWN * GROUND_PROBE, PhysicsLayers.SOLID)
 	query.exclude = [player.get_rid()]
 	return not player.get_world_3d().direct_space_state.intersect_ray(query).is_empty()
 

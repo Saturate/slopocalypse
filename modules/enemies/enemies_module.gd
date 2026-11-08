@@ -174,7 +174,7 @@ func _on_ground(at: Vector3) -> Vector3:
 	var world := get_viewport().find_world_3d()
 	if world == null:
 		return at
-	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 30.0, at + Vector3.DOWN * 60.0)
+	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 30.0, at + Vector3.DOWN * 60.0, PhysicsLayers.SOLID)
 	var hit := world.direct_space_state.intersect_ray(query)
 	if not hit.is_empty():
 		return hit["position"]

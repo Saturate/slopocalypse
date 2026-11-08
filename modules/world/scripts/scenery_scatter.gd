@@ -168,7 +168,13 @@ func _make_variants() -> void:
 
 func _tree(gen: VoxGenerator, p: Dictionary) -> Dictionary:
 	var values := gen.with_defaults(p)
-	var out := {"height": float(values["height"]), "trunk": float(values["trunk"])}
+	var h := float(values["height"])
+	# Crown as (centre height, radius, length) for the sight blocker.
+	var crown := Vector3(h * 0.6, float(values.get("width", 0.3)) * h * 0.8, h * 0.75)
+	if values.has("crown"):
+		var size := float(values["crown"])
+		crown = Vector3(h - size * 0.45, size * 0.8, size * 1.4)
+	var out := {"height": h, "trunk": float(values["trunk"]), "crown": crown}
 	if _visual:
 		values["voxel"] = TREE_NEAR_VOXEL
 		out["near"] = VoxGenerator.to_mesh(gen.build(values))
@@ -246,6 +252,15 @@ func _place_trees(rng: RandomNumberGenerator, area: Rect2, collision: StaticBody
 		shape.shape = capsule
 		shape.position = at + Vector3.UP * capsule.height * 0.5
 		collision.add_child(shape)
+		# The crown hides you from guards without stopping you or your bullets.
+		var crown: Vector3 = tree["crown"]
+		var leaves := CollisionShape3D.new()
+		var ball := CapsuleShape3D.new()
+		ball.radius = crown.y * scale
+		ball.height = maxf(crown.z * scale, ball.radius * 2.0)
+		leaves.shape = ball
+		leaves.position = at + Vector3.UP * crown.x * scale
+		_sight_body(collision).add_child(leaves)
 
 
 func _place_rocks(rng: RandomNumberGenerator, area: Rect2, collision: StaticBody3D, placed: Dictionary) -> void:
@@ -271,6 +286,19 @@ func _place_rocks(rng: RandomNumberGenerator, area: Rect2, collision: StaticBody
 		shape.shape = rock["shape"]
 		shape.transform = xform
 		collision.add_child(shape)
+
+
+## The chunk's body for things that only block sight (on PhysicsLayers.SIGHT alone).
+func _sight_body(collision: StaticBody3D) -> StaticBody3D:
+	var existing := collision.get_parent().get_node_or_null("SightBlockers") as StaticBody3D
+	if existing != null:
+		return existing
+	var body := StaticBody3D.new()
+	body.name = "SightBlockers"
+	body.collision_layer = PhysicsLayers.SIGHT
+	body.collision_mask = 0
+	collision.get_parent().add_child(body)
+	return body
 
 
 func _cell_of(at: Vector3) -> Vector2i:
