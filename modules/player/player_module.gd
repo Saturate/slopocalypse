@@ -21,6 +21,8 @@ var _holding: Dictionary = {}
 ## Server: dead player -> seconds until they come back.
 var _respawn_in: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
+## Server: player -> seconds until they may go back to the spawn again.
+var _back_cooldown: Dictionary = {}
 
 
 func _ready() -> void:
@@ -33,6 +35,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"car.exited", _on_car_exited)
 	EventBus.subscribe(&"player.died", _on_player_died)
 	EventBus.subscribe(&"player.respawned", _on_player_respawned)
+	EventBus.subscribe(&"session.back_to_spawn", _on_back_to_spawn_asked)
 	Net.peer_joined.connect(_on_peer_joined)
 	Net.peer_left.connect(_on_peer_left)
 
@@ -43,6 +46,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"car.exited", _on_car_exited)
 	EventBus.unsubscribe(&"player.died", _on_player_died)
 	EventBus.unsubscribe(&"player.respawned", _on_player_respawned)
+	EventBus.unsubscribe(&"session.back_to_spawn", _on_back_to_spawn_asked)
 
 
 func players() -> Array[PlayerController]:
@@ -54,6 +58,13 @@ func players() -> Array[PlayerController]:
 func _physics_process(delta: float) -> void:
 	if not multiplayer.is_server():
 		return
+	for player: PlayerController in _back_cooldown.keys():
+		_back_cooldown[player] = float(_back_cooldown[player]) - delta
+		if float(_back_cooldown[player]) <= 0.0 or not is_instance_valid(player):
+			_back_cooldown.erase(player)
+	for player: PlayerController in _players.values():
+		if player.intent().consume_back_to_spawn():
+			server_back_to_spawn(player)
 	for player: PlayerController in _respawn_in.keys():
 		if not is_instance_valid(player):
 			_respawn_in.erase(player)
@@ -180,6 +191,41 @@ func server_respawn(player: PlayerController) -> void:
 	player.velocity = Vector3.ZERO
 	Net.server_broadcast(&"player.respawned", {"player": player})
 	server_hold(player)
+
+
+## The Esc menu's "Back to spawn" on this instance: ask for our own player.
+func _on_back_to_spawn_asked(_p: Dictionary) -> void:
+	if not Net.has_local_player():
+		return
+	var player: PlayerController = _players.get(Net.local_peer_id())
+	if player == null:
+		return
+	if multiplayer.is_server():
+		player.intent().back_to_spawn = true
+	else:
+		player.intent().submit_action.rpc_id(1, &"back_to_spawn")
+
+
+## Server: puts a living player back at the spawn (stuck, lost, wedged somewhere), health and
+## gear as they were, out of any car first. Not again for `back_to_spawn_cooldown_seconds`.
+## False when refused.
+func server_back_to_spawn(player: PlayerController) -> bool:
+	var who := str(player.name)
+	if player.get_meta(&"dead", false):
+		Log.info(&"player", "%s asked to go back to the spawn while dead; refused" % who)
+		return false
+	if _back_cooldown.has(player):
+		Log.info(&"player", "%s asked to go back to the spawn again too soon; refused" % who)
+		return false
+	_back_cooldown[player] = float(player.config.get("back_to_spawn_cooldown_seconds", 10.0))
+	# A car lets them out first (and puts them beside it); then they move.
+	EventBus.publish(&"player.back_to_spawn", {"player": player})
+	var spread := float(player.config.get("respawn_spread", 0.0))
+	player.global_position = _spawn + Vector3(_rng.randf_range(-spread, spread), 0.5, _rng.randf_range(-spread, spread))
+	player.velocity = Vector3.ZERO
+	Log.info(&"player", "%s went back to the spawn" % who)
+	server_hold(player)
+	return true
 
 
 ## Everywhere: a dead player is hidden, cannot be hit and does not move; the camera stays

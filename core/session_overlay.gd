@@ -1,8 +1,8 @@
 class_name SessionOverlay
 extends CanvasLayer
 ## Over a running session: a "connecting" card until the server answers (with Cancel, since
-## a wrong address can take a while to time out), and the Esc panel to resume, leave to the
-## menu or quit. Only added for a player at the keyboard.
+## a wrong address can take a while to time out), and the Esc panel to resume, go back to the
+## spawn, leave to the menu or quit. Only added for a player at the keyboard.
 
 ## Solo connects in a blink; the card only shows if it takes longer than this.
 const CONNECTING_DELAY := 0.6
@@ -27,6 +27,10 @@ func _ready() -> void:
 	_text(col, "PAUSED", 24, MainMenu.ACCENT)
 	_host_info = _text(col, "", 14, MainMenu.DIM)
 	_add_button(col, &"Resume", "Resume", _resume)
+	# Unstuck: the player module asks the server to put us back at the spawn.
+	_add_button(col, &"BackToSpawn", "Back to spawn", func() -> void:
+		EventBus.publish(&"session.back_to_spawn", {})
+		_resume())
 	_add_button(col, &"Leave", "Leave to menu", func() -> void: Net.leave())
 	_add_button(col, &"Quit", "Quit game", func() -> void: get_tree().quit(0))
 	_connecting.visible = false

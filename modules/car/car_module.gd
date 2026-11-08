@@ -84,6 +84,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"car.entered", _on_car_entered)
 	EventBus.subscribe(&"car.exited", _on_car_exited)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
+	EventBus.subscribe(&"player.back_to_spawn", _on_back_to_spawn)
 
 
 func _exit_tree() -> void:
@@ -92,6 +93,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"car.entered", _on_car_entered)
 	EventBus.unsubscribe(&"car.exited", _on_car_exited)
 	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
+	EventBus.unsubscribe(&"player.back_to_spawn", _on_back_to_spawn)
 
 
 func _on_world_ready(payload: Dictionary) -> void:
@@ -162,6 +164,14 @@ func _on_car_exited(payload: Dictionary) -> void:
 		# Renamed first so getting straight back in names its new input "Input" again.
 		input.name = "InputLeaving"
 		input.queue_free()
+
+
+## Server: someone going back to the spawn gets out of their car first.
+func _on_back_to_spawn(p: Dictionary) -> void:
+	var who := p.get("player") as Node3D
+	for car in _cars:
+		if car.seat_of(who) != &"":
+			car.exit_car(who)
 
 
 func _on_player_spawned(p: Dictionary) -> void:
