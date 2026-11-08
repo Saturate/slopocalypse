@@ -2,6 +2,7 @@
   "max_health": 100.0,
   "respawn_seconds": 6.0,
   "respawn_spread": 4.0,
+  "back_to_spawn_cooldown_seconds": 10.0,
   "lean_offset": 0.35,
   "lean_degrees": 14.0,
   "lean_body_degrees": 28.0,

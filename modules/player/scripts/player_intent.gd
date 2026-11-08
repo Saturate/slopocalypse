@@ -39,7 +39,15 @@ var weapon_2: bool = false
 ## The drawn weapon, 0 or 1. Set by the server from the one-shots and synced to everyone.
 var weapon_slot: int = 0
 
-const ONE_SHOTS := [&"jump", &"interact", &"reload", &"throw", &"weapon_1", &"weapon_2"]
+## One-shot: take me back to the spawn (the Esc menu).
+var back_to_spawn := false
+const ONE_SHOTS := [&"jump", &"interact", &"reload", &"throw", &"weapon_1", &"weapon_2", &"back_to_spawn"]
+
+
+func consume_back_to_spawn() -> bool:
+	var out := back_to_spawn
+	back_to_spawn = false
+	return out
 
 
 func consume_look() -> Vector2:
