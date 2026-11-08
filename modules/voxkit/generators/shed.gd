@@ -46,7 +46,7 @@ func build(values: Dictionary) -> VoxelModel:
 	var v: float = p["voxel"]
 	var rise := d * 0.5 * float(p["pitch"])
 	var wall: Color = WALLS[int(p["paint"])]
-	var m := VoxelModel.new()
+	var m := new_model()
 	m.setup(Vector3(w + OVERHANG * 2.0 + v * 4.0, wh + rise + v * 4.0 + 0.3, d + OVERHANG * 2.0 + v * 4.0), v)
 	var slab := 0.15
 	m.fill_box(Vector3(-w / 2 - 0.1, 0, -d / 2 - 0.1), Vector3(w / 2 + 0.1, slab, d / 2 + 0.1), CONCRETE, 0.1, seed)

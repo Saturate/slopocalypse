@@ -34,7 +34,7 @@ func build(values: Dictionary) -> VoxelModel:
 	var crown: float = p["crown"]
 	var trunk: float = p["trunk"]
 	var leafy: float = p["leafiness"]
-	var m := VoxelModel.new()
+	var m := new_model()
 	m.setup(Vector3(crown * 2.8 + 1.0, h + crown * 0.5 + 1.0, crown * 2.8 + 1.0), p["voxel"])
 	var fork := Vector3(rng.randf_range(-0.2, 0.2), h * 0.42, rng.randf_range(-0.2, 0.2))
 	m.fill_capsule(Vector3(0, -0.3, 0), fork, trunk * 0.5, trunk * 0.36, BARK, 0.15, seed)

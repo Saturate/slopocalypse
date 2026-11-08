@@ -1,6 +1,6 @@
 extends Node
-## Capture setup: the asset library going through every asset with the pixel filter on, then
-## the roadside scene with it off and on. One asset every 40 frames.
+## Capture setup: the asset library going through every asset in the normal view, then the
+## roadside scene with the pixel filter on and off again. One asset every 40 frames.
 
 const LIBRARY := "res://modules/voxkit/library/asset_library.gd"
 const STEP := 40
@@ -23,6 +23,6 @@ func _process(_delta: float) -> void:
 	if step <= count:
 		_library.select(step)
 	elif step == count + 1:
-		_library.set_pixel_filter(false)
-	else:
 		_library.set_pixel_filter(true)
+	else:
+		_library.set_pixel_filter(false)

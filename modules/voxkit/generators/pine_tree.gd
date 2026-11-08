@@ -32,7 +32,7 @@ func build(values: Dictionary) -> VoxelModel:
 	var h: float = p["height"]
 	var r0 := float(p["width"]) * h
 	var seed := int(p["seed"])
-	var m := VoxelModel.new()
+	var m := new_model()
 	m.setup(Vector3(r0 * 2.6 + 1.0, h + 1.0, r0 * 2.6 + 1.0), p["voxel"])
 	var trunk: float = p["trunk"]
 	m.fill_capsule(Vector3(0, -0.3, 0), Vector3(0, h * 0.97, 0), trunk * 0.5, trunk * 0.12, BARK, 0.18, seed)

@@ -1,13 +1,16 @@
 shader_type spatial;
-// Pixel-art pass over the 3D view: the viewport already renders at a fraction of the window
-// and is scaled up with nearest filtering; this adds dark outlines where depth jumps,
-// light rims on convex edges (normal changes) and a limited number of colour levels.
+// Post pass over the library's 3D view: thin dark outlines where depth jumps, and with the
+// pixel filter (the viewport rendering at a fraction of the window, scaled up crisp) also
+// light rims on edges, a limited number of colour levels and dither.
 render_mode unshaded, fog_disabled, depth_draw_never, cull_disabled;
 
 uniform sampler2D screen_tex : hint_screen_texture, filter_nearest;
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
 uniform sampler2D normal_tex : hint_normal_roughness_texture, filter_nearest;
 uniform bool outlines = true;
+// Colour levels and dither: only with the pixel filter.
+uniform bool posterize = false;
+uniform bool rim_light = false;
 uniform float outline_strength : hint_range(0.0, 1.0) = 0.55;
 uniform float rim_strength : hint_range(0.0, 1.0) = 0.25;
 uniform float levels : hint_range(2.0, 64.0) = 14.0;
@@ -46,22 +49,26 @@ void fragment() {
 			if (dn - d > d * depth_edge) {
 				edge = 1.0;
 			}
-			if (abs(dn - d) < d * depth_edge && dot(n, view_normal(uv)) < 0.7) {
+			if (rim_light && abs(dn - d) < d * depth_edge && dot(n, view_normal(uv)) < 0.7) {
 				rim = 1.0;
 			}
 		}
 		colour *= 1.0 - edge * outline_strength;
 		colour *= 1.0 + rim * (1.0 - edge) * rim_strength;
 	}
-	// Levels are cut in sRGB, where steps are even to the eye; in linear light the darks
-	// all collapse into the first step and shadows turn black or tinted.
-	vec3 srgb = pow(max(colour, vec3(0.0)), vec3(1.0 / 2.2));
-	// The sky has no depth; a dither pattern across it only reads as noise.
-	float sky = step(0.999999, 1.0 - texture(depth_tex, SCREEN_UV).x);
-	// Ordered (Bayer) dither so smooth gradients like fog break into a pixel pattern
-	// instead of hard rings.
-	ivec2 cell = ivec2(FRAGCOORD.xy) % 4;
-	float bayer = BAYER[cell.y * 4 + cell.x] / 16.0 - 0.5;
-	srgb = floor(srgb * levels + 0.5 + bayer * dither * (1.0 - sky)) / levels;
-	ALBEDO = pow(srgb, vec3(2.2));
+	if (!posterize) {
+		ALBEDO = colour;
+	} else {
+		// Levels are cut in sRGB, where steps are even to the eye; in linear light the darks
+		// all collapse into the first step and shadows turn black or tinted.
+		vec3 srgb = pow(max(colour, vec3(0.0)), vec3(1.0 / 2.2));
+		// The sky has no depth; a dither pattern across it only reads as noise.
+		float sky = step(0.999999, 1.0 - texture(depth_tex, SCREEN_UV).x);
+		// Ordered (Bayer) dither so smooth gradients like fog break into a pixel pattern
+		// instead of hard rings.
+		ivec2 cell = ivec2(FRAGCOORD.xy) % 4;
+		float bayer = BAYER[cell.y * 4 + cell.x] / 16.0 - 0.5;
+		srgb = floor(srgb * levels + 0.5 + bayer * dither * (1.0 - sky)) / levels;
+		ALBEDO = pow(srgb, vec3(2.2));
+	}
 }

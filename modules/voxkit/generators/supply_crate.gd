@@ -36,7 +36,7 @@ func build(values: Dictionary) -> VoxelModel:
 	var h: float = p["height"]
 	var d: float = p["depth"]
 	var v: float = p["voxel"]
-	var m := VoxelModel.new()
+	var m := new_model()
 	m.setup(Vector3(w + v * 4.0, h + v * 2.0, d + v * 4.0), v)
 	var board: Color = BOARD[style]
 	var frame: Color = FRAME[style]

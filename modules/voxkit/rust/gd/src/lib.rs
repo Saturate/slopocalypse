@@ -21,6 +21,9 @@ unsafe impl ExtensionLibrary for VoxkitExtension {}
 #[class(init, base = RefCounted)]
 struct VoxelModel {
     grid: Option<Grid>,
+    /// Multiplies every fill's colour jitter: 0 gives flat colours, 1 what the generator asked.
+    #[init(val = 1.0)]
+    jitter_scale: f32,
     base: Base<RefCounted>,
 }
 
@@ -35,7 +38,7 @@ impl VoxelModel {
 
     #[func]
     fn fill_box(&mut self, min: Vector3, max: Vector3, colour: Color, jitter: f32, seed: i64) {
-        self.with(|g| g.fill_box(v3(min), v3(max), Op::Fill(paint(colour, jitter, seed))));
+        self.with(|g, k| g.fill_box(v3(min), v3(max), Op::Fill(paint(colour, jitter * k, seed))));
     }
 
     #[func]
@@ -47,8 +50,12 @@ impl VoxelModel {
         jitter: f32,
         seed: i64,
     ) {
-        self.with(|g| {
-            g.fill_ellipsoid(v3(centre), v3(radii), Op::Fill(paint(colour, jitter, seed)))
+        self.with(|g, k| {
+            g.fill_ellipsoid(
+                v3(centre),
+                v3(radii),
+                Op::Fill(paint(colour, jitter * k, seed)),
+            )
         });
     }
 
@@ -64,7 +71,15 @@ impl VoxelModel {
         jitter: f32,
         seed: i64,
     ) {
-        self.with(|g| g.fill_capsule(v3(a), v3(b), ra, rb, Op::Fill(paint(colour, jitter, seed))));
+        self.with(|g, k| {
+            g.fill_capsule(
+                v3(a),
+                v3(b),
+                ra,
+                rb,
+                Op::Fill(paint(colour, jitter * k, seed)),
+            )
+        });
     }
 
     #[func]
@@ -78,12 +93,12 @@ impl VoxelModel {
         jitter: f32,
         seed: i64,
     ) {
-        self.with(|g| {
+        self.with(|g, k| {
             g.fill_cylinder(
                 v3(base),
                 radius,
                 height,
-                Op::Fill(paint(colour, jitter, seed)),
+                Op::Fill(paint(colour, jitter * k, seed)),
             )
         });
     }
@@ -103,37 +118,37 @@ impl VoxelModel {
         seed: i64,
     ) {
         let s = seed as u32;
-        self.with(|g| {
+        self.with(|g, k| {
             g.fill_blob(
                 v3(centre),
                 v3(radii),
                 bumps,
                 frequency,
                 s,
-                Op::Fill(paint(colour, jitter, seed)),
+                Op::Fill(paint(colour, jitter * k, seed)),
             )
         });
     }
 
     #[func]
     fn carve_box(&mut self, min: Vector3, max: Vector3) {
-        self.with(|g| g.fill_box(v3(min), v3(max), Op::Carve));
+        self.with(|g, _| g.fill_box(v3(min), v3(max), Op::Carve));
     }
 
     #[func]
     fn carve_ellipsoid(&mut self, centre: Vector3, radii: Vector3) {
-        self.with(|g| g.fill_ellipsoid(v3(centre), v3(radii), Op::Carve));
+        self.with(|g, _| g.fill_ellipsoid(v3(centre), v3(radii), Op::Carve));
     }
 
     #[func]
     fn carve_capsule(&mut self, a: Vector3, b: Vector3, ra: f32, rb: f32) {
-        self.with(|g| g.fill_capsule(v3(a), v3(b), ra, rb, Op::Carve));
+        self.with(|g, _| g.fill_capsule(v3(a), v3(b), ra, rb, Op::Carve));
     }
 
     /// Recolours only cells that are already filled inside the box (markings, moss, dirt).
     #[func]
     fn paint_box(&mut self, min: Vector3, max: Vector3, colour: Color, jitter: f32, seed: i64) {
-        self.with(|g| g.fill_box(v3(min), v3(max), Op::Paint(paint(colour, jitter, seed))));
+        self.with(|g, k| g.fill_box(v3(min), v3(max), Op::Paint(paint(colour, jitter * k, seed))));
     }
 
     #[func]
@@ -145,13 +160,19 @@ impl VoxelModel {
         jitter: f32,
         seed: i64,
     ) {
-        self.with(|g| {
+        self.with(|g, k| {
             g.fill_ellipsoid(
                 v3(centre),
                 v3(radii),
-                Op::Paint(paint(colour, jitter, seed)),
+                Op::Paint(paint(colour, jitter * k, seed)),
             )
         });
+    }
+
+    /// Scales the colour jitter of every fill after this call (0 = flat colours).
+    #[func]
+    fn set_jitter_scale(&mut self, scale: f32) {
+        self.jitter_scale = scale.max(0.0);
     }
 
     #[func]
@@ -205,9 +226,10 @@ impl VoxelModel {
 }
 
 impl VoxelModel {
-    fn with(&mut self, f: impl FnOnce(&mut Grid)) {
+    fn with(&mut self, f: impl FnOnce(&mut Grid, f32)) {
+        let k = self.jitter_scale;
         if let Some(g) = self.grid.as_mut() {
-            f(g);
+            f(g, k);
         } else {
             godot_error!("VoxelModel: call setup() before filling");
         }

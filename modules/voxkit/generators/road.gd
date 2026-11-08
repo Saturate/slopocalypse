@@ -50,7 +50,7 @@ func build(values: Dictionary) -> VoxelModel:
 	var half_road := lanes * lane / 2
 	var half_all := half_road + shoulder
 	var bend := float(p["curve"]) * length * 0.25
-	var m := VoxelModel.new()
+	var m := new_model()
 	m.setup(Vector3(half_all * 2.0 + absf(bend) * 2.0 + v * 4.0, BED + SURFACE + v * 2.0, length), v)
 	var top := BED + SURFACE
 	# Row by row along the length, so the road can follow its curve.
