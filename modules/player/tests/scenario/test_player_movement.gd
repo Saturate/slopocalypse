@@ -39,8 +39,9 @@ func _landed() -> void:
 func test_lands_and_stays_on_terrain() -> void:
 	await _frames(300)
 	assert_bool(_player.is_on_floor()).is_true()
-	# The spawn area is flat at height 0 and the body origin is at the feet.
-	assert_float(_player.global_position.y).is_equal_approx(0.0, 0.1)
+	# The spawn is on the tunnel floor (the road) and the body origin is at the feet.
+	var floor_y := (_world.get_node("Terrain") as VoxelWorld).ground_height(0.0, 0.0)
+	assert_float(_player.global_position.y).is_equal_approx(floor_y, 0.1)
 
 
 func test_walks_forward_at_tuned_speed() -> void:
@@ -76,11 +77,12 @@ func test_crouch_lowers_the_head_and_slows_down() -> void:
 
 
 func test_jump_leaves_the_ground_and_comes_back() -> void:
-	await _frames(60)
+	await _landed()
+	var standing := _player.global_position.y
 	_player.intent().jump = true
 	await _frames(10)
 	assert_bool(_player.is_on_floor()).is_false()
-	assert_float(_player.global_position.y).is_greater(0.3)
+	assert_float(_player.global_position.y).is_greater(standing + 0.3)
 	await _frames(120)
 	assert_bool(_player.is_on_floor()).is_true()
 

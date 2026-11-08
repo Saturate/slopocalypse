@@ -10,7 +10,7 @@
   "kill_y": -40.0,
   "rescue_depth": 6.0,
   "road": {
-    "offset": 22.0,
+    "offset": 0.0,
     "half_width": 4.6,
     "blend": 10.0,
     "wander": 70.0,
@@ -27,15 +27,19 @@
     { "at": 2100.0, "forest": 0.2, "dry": 0.4, "rock": 1.0, "hills": 2.2 },
     { "at": 3000.0, "forest": 0.35, "dry": 0.1, "rock": 1.0, "hills": 2.8 }
   ],
-  "cover": [
-    { "x": 8.0, "z": -10.0, "w": 4.0, "h": 2.0, "d": 1.0 },
-    { "x": -12.0, "z": -6.0, "w": 1.0, "h": 1.2, "d": 6.0 },
-    { "x": 3.0, "z": 14.0, "w": 6.0, "h": 1.5, "d": 1.0 },
-    { "x": -20.0, "z": 18.0, "w": 3.0, "h": 3.0, "d": 3.0 },
-    { "x": 24.0, "z": 4.0, "w": 2.0, "h": 2.5, "d": 8.0 },
-    { "x": -5.0, "z": -5.0, "w": 3.0, "h": 0.9, "d": 0.4 },
-    { "x": 6.0, "z": 5.0, "w": 0.4, "h": 1.0, "d": 3.0 }
-  ],
+  "cover": [],
+  "start": {
+    "portal_z": -12.0,
+    "tunnel_end_z": 22.0,
+    "tunnel_half_width": 5.6,
+    "tunnel_height": 5.5,
+    "collapse_length": 6.0,
+    "mountain_height": 34.0,
+    "mountain_front": 10.0,
+    "mountain_back": 22.0,
+    "car_distance": 10.0,
+    "car_side": 2.4
+  },
   "voxel": {
     "max_dig_depth": 3.0,
     "collision_distance": 96.0,
