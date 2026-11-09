@@ -1,0 +1,14 @@
+# The image builds from a clean source tree: fetched tools, build output and caches stay out.
+.git/
+.godot/
+build/
+node_modules/
+target/
+modules/*/bin/
+tools/godot/
+tools/changesetter/
+addons/zylann.voxel/
+screenshots/
+tests/reports/
+.selftest-*/
+export_presets.cfg
