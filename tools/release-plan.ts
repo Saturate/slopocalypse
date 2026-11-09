@@ -4,8 +4,8 @@
 // Prints `version=`, `tag=` lines (append them to $GITHUB_OUTPUT); prints nothing when no
 // pending changeset bumps the game.
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { argv, exit, platform } from "node:process";
 import { changesetterBin } from "./lib/changesetter.ts";
 import { parseReleasePlan, releaseNotes } from "./lib/release.ts";
@@ -17,7 +17,10 @@ if (notesFile === undefined) {
 	exit(1);
 }
 const output = execFileSync(changesetterBin(root, platform), ["release", "--dry-run", "--output", "json"], { cwd: root, encoding: "utf8" });
-const plan = parseReleasePlan(output);
+const plan = parseReleasePlan(output, (id) => {
+	const file = join(root, ".changeset", `${id}.md`);
+	return existsSync(file) ? readFileSync(file, "utf8") : undefined;
+});
 if (plan !== undefined) {
 	mkdirSync(dirname(resolve(notesFile)), { recursive: true });
 	writeFileSync(notesFile, releaseNotes(plan));

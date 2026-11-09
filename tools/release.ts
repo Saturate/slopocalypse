@@ -61,7 +61,12 @@ function preflight(): void {
 }
 
 function plan(): ReleasePlan | undefined {
-	return parseReleasePlan(capture(changesetterBin(root, platform), ["release", "--dry-run", "--output", "json"]));
+	// The changeset files say which kind of change each is, for grouping the notes; read them
+	// before the release consumes them.
+	return parseReleasePlan(capture(changesetterBin(root, platform), ["release", "--dry-run", "--output", "json"]), (id) => {
+		const file = join(root, ".changeset", `${id}.md`);
+		return existsSync(file) ? readFileSync(file, "utf8") : undefined;
+	});
 }
 
 // The tree was clean before the release started, so everything changed since is ours.
