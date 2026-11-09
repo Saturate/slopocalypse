@@ -54,6 +54,7 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | Waiting for ground | `modules/player/data/player.json` | `hold_seconds` (a respawned or rescued player is held still until there is ground under them, at most this long) |
 | Admin panel (F2) | `modules/admin/data/admin.json` | `admins` (names or player keys allowed on a server; the panel shows your key; anyone on the server's own machine is an admin when `local_is_admin`), `toggle_key`, `spawn_ahead`, `teleport_ahead`, `squad_size`, `hours` (the time buttons) |
 | Day and night | `modules/daytime/data/daytime.json` | `start_hour` (time when the server starts), `hour_seconds` (real seconds per game hour by day), `night_speed` (how many times faster the night passes), `sunrise`, `sunset`, `sun_max_elevation`, `moon_max_elevation`, `keys` (per hour: light colour and strength, sky colours, `ambient`, fog, `exposure`, `stars`) |
+| Performance log (F3) | `modules/perf/data/perf.json` | `sample_seconds` (how often a line is written to `perf/` in the game's user folder), `spike_ms` (a frame slower than this gets its own line), `warmup_seconds` (no spike lines while loading), `keep_files` (older logs are deleted), `overlay_key` |
 
 ## Good first tweaks
 
