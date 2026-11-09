@@ -45,8 +45,8 @@ const ROAD_RIM_BITES := 7
 ## A bullet this far outside a trunk's capsule still counts as hitting it (the voxel bark
 ## sticks out past the capsule).
 const TREE_HIT_SLACK := 0.5
-## How far a felled tree tips: not quite flat, as if it came to rest on its branches.
-const TREE_FALL_ANGLE := PI * 0.47
+const DIRT := Color(0.32, 0.25, 0.17)
+const ASPHALT_CHIPS := Color(0.2, 0.2, 0.21)
 ## Rocks whose top is lower than this above the ground get no collision; feet clear them.
 const STEP_OVER_HEIGHT := 0.3
 ## Trees, rocks and grass keep this far from the start tunnel: the ground over it is the
@@ -77,10 +77,8 @@ var _roads_dirty: Dictionary[int, bool] = {}
 var _trees: Dictionary[int, Array] = {}
 ## Per loaded chunk, the MultiMesh instances per tree key: {key: [near, far]}.
 var _tree_meshes: Dictionary[int, Dictionary] = {}
-## Felled trees for good: Vector2i(chunk, index) -> horizontal direction it fell.
-var _felled: Dictionary[Vector2i, Vector3] = {}
-## Server: bullets taken per standing tree.
-var _tree_hits: Dictionary[Vector2i, int] = {}
+## Bullets, cuts and falls.
+var _damage: TreeDamage
 
 
 func _ready() -> void:
@@ -93,6 +91,12 @@ func _ready() -> void:
 	if not world.has("biomes") or not Data.require(config_path + " biomes", world["biomes"], Biomes.REQUIRED):
 		return
 	_cfg = world["scatter"]
+	_damage = TreeDamage.new()
+	_damage.name = "Trees"
+	_damage.scatter = self
+	_damage.visual = _visual
+	_damage.config = _cfg
+	add_child(_damage)
 	_seed = int(_cfg["seed"])
 	_heights = TerrainHeights.new(world)
 	_biomes = Biomes.new(world["biomes"], _heights.stages)
@@ -221,6 +225,9 @@ func _tree(gen: VoxGenerator, p: Dictionary) -> Dictionary:
 	if _visual:
 		values["voxel"] = TREE_NEAR_VOXEL
 		out["near"] = VoxGenerator.to_mesh(gen.build(values))
+		# For rebuilding one tree on its own when it is cut down.
+		out["gen"] = gen
+		out["values"] = values.duplicate()
 		values["voxel"] = TREE_FAR_VOXEL
 		out["far"] = VoxGenerator.to_mesh(gen.build(values))
 	return out
@@ -251,8 +258,8 @@ func _build_chunk(i: int) -> Node3D:
 		_add_road(node, i, span)
 	for t in (_trees[i] as Array).size():
 		var id := Vector2i(i, t)
-		if _felled.has(id):
-			_fell(id, _felled[id], false)
+		if _damage.is_felled(id):
+			_damage.apply(id, false)
 	return node
 
 
@@ -318,7 +325,7 @@ func _place_trees(chunk: int, rng: RandomNumberGenerator, area: Rect2, collision
 		leaves.shape = ball
 		leaves.position = at + Vector3.UP * crown.x * scale
 		_sight_body(collision).add_child(leaves)
-		trees.append({"at": at, "xform": xform, "kind": key[0], "v": v, "key": key, "slot": slot, "trunk": shape, "leaves": leaves, "radius": capsule.radius})
+		trees.append({"at": at, "xform": xform, "kind": key[0], "v": v, "key": key, "slot": slot, "trunk": shape, "leaves": leaves, "radius": capsule.radius, "trunk_height": float(tree["height"]) * 0.6})
 
 
 func _place_rocks(rng: RandomNumberGenerator, area: Rect2, collision: StaticBody3D, placed: Dictionary) -> void:
@@ -578,7 +585,10 @@ func dig_road(center: Vector3, radius: float) -> void:
 func on_dug(center: Vector3, radius: float) -> void:
 	clear_grass(center, radius)
 	if _visual:
+		var on_road := _heights.road != null and _heights.road.distance(center.x, center.z) < _heights.road.half_width
 		dig_road(center, radius)
+		# Bigger holes throw more; a bullet's scrape throws a pinch.
+		VoxelDebris.burst(self, center + Vector3.UP * 0.3, Vector3.UP, ASPHALT_CHIPS if on_road else DIRT, clampi(int(radius * radius * 10.0), 2, 40), 3.0 + radius * 2.5)
 
 
 func _grass_mesh() -> Mesh:
@@ -603,33 +613,41 @@ func _grass_mesh() -> Mesh:
 	return out
 
 
-## Server: a bullet hit `body` at `point`. Enough hits on one trunk fell it; returns the
-## felled tree's id once it has taken enough, otherwise null.
+## Server: a bullet hit `body` at `point`. Once a trunk has taken enough, returns
+## {id, cut} for felling it; otherwise null.
 func server_shoot_tree(body: Node, point: Vector3) -> Variant:
 	var id: Variant = tree_at(body, point)
 	if not id is Vector2i:
 		return null
-	var hits := int(_tree_hits.get(id, 0)) + 1
-	_tree_hits[id] = hits
-	if hits < int(_cfg["tree_hits"]):
-		return null
-	_tree_hits.erase(id)
-	return id
+	var out: Variant = _damage.server_shoot(id, point)
+	if out is Dictionary:
+		(out as Dictionary)["id"] = id
+	return out
 
 
-## Server: the standing trees an explosion at `center` knocks down, with the way each falls.
-func server_blast_trees(center: Vector3, radius: float) -> Dictionary[Vector2i, Vector3]:
-	var out: Dictionary[Vector2i, Vector3] = {}
+## Server: the standing trees an explosion at `center` brings down, each with the way it
+## falls (away from the blast), where it is cut and the chunk the blast takes out of it.
+func server_blast_trees(center: Vector3, radius: float) -> Dictionary[Vector2i, Dictionary]:
+	var out: Dictionary[Vector2i, Dictionary] = {}
 	var reach := radius * float(_cfg["tree_blast_reach"])
 	for i: int in _trees:
 		var trees: Array = _trees[i]
 		for t in trees.size():
 			var id := Vector2i(i, t)
 			var at: Vector3 = (trees[t] as Dictionary)["at"]
-			if _felled.has(id) or at.distance_to(center) > reach:
+			if _damage.is_felled(id) or at.distance_to(center) > reach:
 				continue
-			out[id] = at - center
+			var hit := _damage.server_blast(id, center, radius)
+			hit["direction"] = at - center
+			out[id] = hit
 	return out
+
+
+## Clients: splinters and a bite where a bullet went into a trunk.
+func bite_tree(body: Node, point: Vector3, from: Vector3) -> void:
+	var id: Variant = tree_at(body, point)
+	if id is Vector2i:
+		_damage.bite(id, point, from)
 
 
 ## The standing tree whose trunk is nearest `point` in the chunk `body` belongs to, or null.
@@ -646,74 +664,58 @@ func tree_at(body: Node, point: Vector3) -> Variant:
 		var tree: Dictionary = trees[t]
 		var at: Vector3 = tree["at"]
 		var d := Vector2(point.x - at.x, point.z - at.z).length()
-		if d < float(tree["radius"]) + TREE_HIT_SLACK and d < best_d and not _felled.has(Vector2i(chunk, t)):
+		if d < float(tree["radius"]) + TREE_HIT_SLACK and d < best_d and not _damage.is_felled(Vector2i(chunk, t)):
 			best = Vector2i(chunk, t)
 			best_d = d
 	return best
 
 
-## Where a tree stands, for tests and the admin panel; null when its chunk is not loaded.
+## Where a tree stands; null when its chunk is not loaded.
 func tree_position(id: Vector2i) -> Variant:
+	var tree := tree_record(id)
+	return tree["at"] if not tree.is_empty() else null
+
+
+## A loaded tree's record ({at, xform, trunk, leaves, radius, ...}), or empty.
+func tree_record(id: Vector2i) -> Dictionary:
 	if not _trees.has(id.x) or id.y >= (_trees[id.x] as Array).size():
-		return null
-	return ((_trees[id.x] as Array)[id.y] as Dictionary)["at"]
+		return {}
+	return (_trees[id.x] as Array)[id.y]
+
+
+## The generator, its values and meshes for the kind of tree `id` is.
+func tree_variant(id: Vector2i) -> Dictionary:
+	var tree := tree_record(id)
+	return ((_pines if tree["kind"] == "pine" else _leafs) as Array)[int(tree["v"])]
 
 
 func tree_count(chunk: int) -> int:
 	return (_trees[chunk] as Array).size() if _trees.has(chunk) else 0
 
 
+func chunk_node(i: int) -> Node3D:
+	return _chunks.get(i)
+
+
+## Drops a tree's standing copy from its MultiMeshes (a zero basis draws nothing;
+## MultiMesh has no way to remove one instance).
+func hide_standing_tree(id: Vector2i) -> void:
+	var tree := tree_record(id)
+	if tree.is_empty() or not _tree_meshes.has(id.x):
+		return
+	for node: Variant in (_tree_meshes[id.x] as Dictionary).get(tree["key"], []):
+		(node as MultiMeshInstance3D).multimesh.set_instance_transform(int(tree["slot"]), Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
+
+
 func is_felled(id: Vector2i) -> bool:
-	return _felled.has(id)
+	return _damage.is_felled(id)
 
 
-func felled() -> Dictionary[Vector2i, Vector3]:
-	return _felled
+func felled() -> Dictionary[Vector2i, Dictionary]:
+	return _damage.felled()
 
 
-## Every machine: the tree `id` goes down towards `direction` and stays down. Remembered, so
-## its chunk comes back with it lying there.
-func fell_tree(id: Vector2i, direction: Vector3) -> void:
-	if _felled.has(id):
-		return
-	var flat := Vector3(direction.x, 0.0, direction.z)
-	_felled[id] = flat.normalized() if flat.length() > 0.01 else Vector3.FORWARD
-	_tree_hits.erase(id)
-	if _trees.has(id.x) and id.y < (_trees[id.x] as Array).size():
-		_fell(id, _felled[id], true)
-
-
-## Takes the standing tree out (collision and its MultiMesh copies) and, on clients, lays a
-## copy of it down, tipping over from its foot when `animate`.
-func _fell(id: Vector2i, direction: Vector3, animate: bool) -> void:
-	var tree: Dictionary = (_trees[id.x] as Array)[id.y]
-	for part: String in ["trunk", "leaves"]:
-		var shape := tree[part] as CollisionShape3D
-		if is_instance_valid(shape):
-			# Disabled now, so the same physics step stops hitting it; freed after.
-			shape.disabled = true
-			shape.queue_free()
-	if not _visual or not _tree_meshes.has(id.x):
-		return
-	var meshes: Array = (_tree_meshes[id.x] as Dictionary).get(tree["key"], [])
-	for mm_node: Variant in meshes:
-		var mm := (mm_node as MultiMeshInstance3D).multimesh
-		# A zero basis draws nothing; MultiMesh has no way to drop one instance.
-		mm.set_instance_transform(int(tree["slot"]), Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
-	var kinds := _pines if tree["kind"] == "pine" else _leafs
-	var trunk := MeshInstance3D.new()
-	trunk.name = "Felled%d" % id.y
-	trunk.mesh = (kinds[int(tree["v"])] as Dictionary)["near"]
-	trunk.visibility_range_end = float(_cfg["load_distance"])
-	_chunks[id.x].add_child(trunk)
-	var xform: Transform3D = tree["xform"]
-	var axis := Vector3.UP.cross(direction).normalized()
-	var tip := func(t: float) -> void:
-		trunk.transform = Transform3D(Basis(axis, TREE_FALL_ANGLE * t) * xform.basis, xform.origin)
-	if not animate:
-		tip.call(1.0)
-		return
-	tip.call(0.0)
-	# Slow to start, then faster: it leans, then goes.
-	var tween := trunk.create_tween()
-	tween.tween_method(tip, 0.0, 1.0, float(_cfg["tree_fall_seconds"])).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+## Every machine: tree `id` is cut `cut` metres above its foot and its top falls towards
+## `direction`; `blast` is a chunk an explosion took out of it (local centre, radius).
+func fell_tree(id: Vector2i, direction: Vector3, cut: float = 1.0, blast: Vector4 = Vector4.ZERO) -> void:
+	_damage.fell(id, direction, cut, blast)

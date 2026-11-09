@@ -94,10 +94,18 @@ func _go(shot: int) -> void:
 			_trees = [_lone_tree()]
 			_look(_tree_view(16.0, 4.0), _tree_target())
 		4:
-			for id in _trees:
-				_scenery.fell_tree(id, _fall_direction())
+			# Shot through at chest height: bites first, then the cut there.
+			var tree := _trees[0]
+			var at: Vector3 = _scenery.tree_position(tree)
+			var body := _scenery.chunk_node(tree.x).get_node("Collision")
+			for n in 12:
+				var hit := at + Vector3(randf_range(-0.2, 0.2), 1.2 + randf_range(-0.15, 0.15), 0.0) - _fall_direction() * 0.25
+				_scenery.bite_tree(body, hit, hit - _fall_direction() * 10.0)
+			_scenery.fell_tree(tree, _fall_direction(), 1.2)
 		5:
-			_look(_tree_view(-16.0, 6.0), _tree_target())
+			var stump: Vector3 = _scenery.tree_position(_trees[0])
+			var eye := stump - _fall_direction() * 4.5 + _fall_direction().cross(Vector3.UP) * 2.0
+			_look(Vector3(eye.x, _voxels.ground_height(eye.x, eye.z) + 1.8, eye.z), stump + _fall_direction() * 2.0 + Vector3.UP * 0.8)
 
 
 ## Falls straight away from the road.
