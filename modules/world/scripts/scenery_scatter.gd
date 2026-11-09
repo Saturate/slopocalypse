@@ -12,7 +12,7 @@ extends Node3D
 
 @export_file("*.json") var config_path: String = "res://modules/world/data/world.json"
 
-const REQUIRED := {"seed": TYPE_FLOAT, "trees_per_hectare": TYPE_FLOAT, "rocks_per_hectare": TYPE_FLOAT, "grass_per_m2": TYPE_FLOAT, "clear_radius": TYPE_FLOAT, "max_steepness": TYPE_FLOAT, "road_clearance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "grass_distance": TYPE_FLOAT, "tree_detail_distance": TYPE_FLOAT, "variants": TYPE_FLOAT, "tree_hits": TYPE_FLOAT, "tree_blast_reach": TYPE_FLOAT, "tree_fall_seconds": TYPE_FLOAT}
+const REQUIRED := {"seed": TYPE_FLOAT, "trees_per_hectare": TYPE_FLOAT, "rocks_per_hectare": TYPE_FLOAT, "grass_per_m2": TYPE_FLOAT, "clear_radius": TYPE_FLOAT, "max_steepness": TYPE_FLOAT, "road_clearance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "grass_distance": TYPE_FLOAT, "tree_detail_distance": TYPE_FLOAT, "variants": TYPE_FLOAT, "tree_hits": TYPE_FLOAT, "tree_blast_reach": TYPE_FLOAT, "tree_fall_seconds": TYPE_FLOAT, "tree_collapse": TYPE_FLOAT, "tree_wither_seconds": TYPE_FLOAT}
 
 const CHUNK := 64.0
 ## Chunks split across the width into cells, so distance culling works per cell.
@@ -717,5 +717,15 @@ func felled() -> Dictionary[Vector2i, Dictionary]:
 
 ## Every machine: tree `id` is cut `cut` metres above its foot and its top falls towards
 ## `direction`; `blast` is a chunk an explosion took out of it (local centre, radius).
-func fell_tree(id: Vector2i, direction: Vector3, cut: float = 1.0, blast: Vector4 = Vector4.ZERO) -> void:
-	_damage.fell(id, direction, cut, blast)
+func fell_tree(id: Vector2i, direction: Vector3, cut: float = 1.0, blast: Vector4 = Vector4.ZERO, seconds_ago: float = 0.0) -> void:
+	_damage.fell(id, direction, cut, blast, seconds_ago)
+
+
+## Seconds since tree `id` fell.
+func felled_age(id: Vector2i) -> float:
+	return _damage.age(id)
+
+
+## How dry a felled tree's top is by now, 0 (green) to 1 (bare branches).
+func felled_wither(id: Vector2i) -> float:
+	return _damage.wither_of(id)

@@ -71,6 +71,8 @@
     "variants": 4.0,
     "tree_hits": 12.0,
     "tree_blast_reach": 1.6,
-    "tree_fall_seconds": 1.8
+    "tree_fall_seconds": 1.8,
+    "tree_collapse": 0.35,
+    "tree_wither_seconds": 120.0
   }
 }

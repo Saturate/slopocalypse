@@ -110,3 +110,66 @@ func test_clients_see_it_lying_down() -> void:
 	var up := fallen.transform.basis.y.normalized()
 	assert_float(up.y).is_less(0.3)
 	assert_float(up.x).is_greater(0.5)
+
+
+func _wither_seconds() -> float:
+	return float(Data.load_json(CONFIG)["scatter"]["tree_wither_seconds"])
+
+
+func _fallen(chunk: int) -> Node3D:
+	return ((_scatter.get(&"_chunks") as Dictionary)[chunk] as Node).get_node_or_null("Felled0") as Node3D
+
+
+func _fallen_top(chunk: int) -> MeshInstance3D:
+	var pivot := _fallen(chunk)
+	return pivot.get_child(0) as MeshInstance3D if pivot != null else null
+
+
+func test_the_crown_squashes_when_it_lands() -> void:
+	_make(true)
+	var chunk := _chunk_with_trees()
+	_scatter.fell_tree(Vector2i(chunk, 0), Vector3.RIGHT, 1.0)
+	for n in 6:
+		await get_tree().process_frame
+	var fall := float(Data.load_json(CONFIG)["scatter"]["tree_fall_seconds"])
+	await get_tree().create_timer(fall + TreeDamage.COLLAPSE_SECONDS + 0.3).timeout
+	# Squashed: the pivot no longer keeps its volume.
+	assert_float(_fallen(chunk).transform.basis.determinant()).is_less(0.9)
+
+
+func test_a_fallen_top_dries_out_in_steps_and_keeps_its_trunk() -> void:
+	_make(true)
+	var chunk := _chunk_with_trees()
+	var id := Vector2i(chunk, 0)
+	_scatter.fell_tree(id, Vector3.RIGHT, 1.0)
+	assert_float(_scatter.felled_wither(id)).is_equal(0.0)
+	for n in 6:
+		await get_tree().process_frame
+	var fresh := _fallen_top(chunk)
+	var fresh_mesh := fresh.mesh
+	# Pretend it fell a full wither time ago.
+	var info: Dictionary = _scatter.felled()[id]
+	info["since"] = int(info["since"]) - int(_wither_seconds() * 1000.0) - 10
+	assert_float(_scatter.felled_wither(id)).is_equal(1.0)
+	for n in 4:
+		await get_tree().process_frame
+	var top := _fallen_top(chunk)
+	assert_float(float(top.get_meta(&"wither"))).is_equal(1.0)
+	assert_object(top.mesh).is_not_same(fresh_mesh)
+	# Bare branches and trunk are still there.
+	assert_int(top.mesh.get_surface_count()).is_greater(0)
+	assert_object(((_scatter.get(&"_chunks") as Dictionary)[chunk] as Node).get_node_or_null("Stump0")).is_not_null()
+
+
+func test_a_late_joiner_sees_an_old_tree_already_dry_and_lying_still() -> void:
+	_make(true)
+	var chunk := _chunk_with_trees()
+	var id := Vector2i(chunk, 0)
+	_scatter.fell_tree(id, Vector3.RIGHT, 1.0, Vector4.ZERO, _wither_seconds() * 0.5)
+	# Halfway through drying, in steps of a third.
+	assert_float(_scatter.felled_wither(id)).is_equal_approx(1.0 / 3.0, 0.001)
+	for n in 6:
+		await get_tree().process_frame
+	# No fall animation: already on the ground.
+	assert_float(_fallen(chunk).transform.basis.y.normalized().y).is_less(0.3)
+	assert_float(float(_fallen_top(chunk).get_meta(&"wither"))).is_equal_approx(1.0 / 3.0, 0.001)

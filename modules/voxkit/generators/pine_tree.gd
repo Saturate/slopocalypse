@@ -5,6 +5,9 @@ extends VoxGenerator
 const BARK := Color(0.33, 0.22, 0.14)
 const NEEDLES := Color(0.16, 0.3, 0.17)
 const NEEDLES_LIT := Color(0.27, 0.42, 0.22)
+## Needles of a felled pine drying out, before they drop.
+const DEAD_NEEDLES := Color(0.44, 0.3, 0.15)
+const DEAD_NEEDLES_LIT := Color(0.55, 0.4, 0.21)
 const SNOW := Color(0.92, 0.94, 0.97)
 
 
@@ -21,6 +24,7 @@ func params() -> Array[Dictionary]:
 		param("width", "Width", 0.15, 0.55, 0.01, 0.3),
 		param("droop", "Droop", 0.0, 1.0, 0.05, 0.5),
 		param("snow", "Snow", 0.0, 1.0, 0.05, 0.0),
+		param("wither", "Wither", 0.0, 1.0, 0.05, 0.0),
 		voxel_param(0.04, 0.3, 0.1),
 	]
 
@@ -38,19 +42,27 @@ func build(values: Dictionary) -> VoxelModel:
 	m.fill_capsule(Vector3(0, -0.3, 0), Vector3(0, h * 0.97, 0), trunk * 0.5, trunk * 0.12, BARK, 0.18, seed)
 	var layers := int(p["layers"])
 	var droop: float = p["droop"]
+	# Withered needles go brown and drop: the layers shrink to nothing, the trunk stays.
+	var wither: float = p["wither"]
+	var needles := NEEDLES.lerp(DEAD_NEEDLES, wither)
+	var needles_lit := NEEDLES_LIT.lerp(DEAD_NEEDLES_LIT, wither)
+	var min_layer := float(p["voxel"]) * 1.5
 	var lean := Vector2(rng.randf_range(-1, 1), rng.randf_range(-1, 1)) * 0.04 * h
 	for i in layers:
 		var t := float(i) / maxf(layers - 1.0, 1.0)
 		var y := h * (0.2 + 0.74 * t)
-		var r := lerpf(r0, r0 * 0.12, pow(t, 0.9)) * rng.randf_range(0.88, 1.08)
+		var r := lerpf(r0, r0 * 0.12, pow(t, 0.9)) * rng.randf_range(0.88, 1.08) * (1.0 - wither)
+		if r < min_layer:
+			continue
 		var thick := maxf(r * 0.42, float(p["voxel"]) * 3.0)
 		var c := Vector3(lean.x * t, y, lean.y * t)
 		# The layer, its hanging skirt, then light painted on the upper side.
-		m.fill_blob(c, Vector3(r, thick, r), 0.28, 1.4, NEEDLES, 0.2, seed + i)
+		m.fill_blob(c, Vector3(r, thick, r), 0.28, 1.4, needles, 0.2, seed + i)
 		if droop > 0.0:
-			m.fill_blob(c + Vector3.DOWN * thick * 0.9, Vector3(r * (0.75 + droop * 0.35), thick * (0.25 + droop * 0.35), r * (0.75 + droop * 0.35)), 0.3, 1.8, NEEDLES, 0.2, seed + 100 + i)
-		m.paint_ellipsoid(c + Vector3.UP * thick * 0.55, Vector3(r * 0.9, thick * 0.7, r * 0.9), NEEDLES_LIT, 0.2, seed + i)
+			m.fill_blob(c + Vector3.DOWN * thick * 0.9, Vector3(r * (0.75 + droop * 0.35), thick * (0.25 + droop * 0.35), r * (0.75 + droop * 0.35)), 0.3, 1.8, needles, 0.2, seed + 100 + i)
+		m.paint_ellipsoid(c + Vector3.UP * thick * 0.55, Vector3(r * 0.9, thick * 0.7, r * 0.9), needles_lit, 0.2, seed + i)
 		if float(p["snow"]) > 0.0:
 			m.paint_ellipsoid(c + Vector3.UP * thick * (1.3 - float(p["snow"]) * 0.5), Vector3(r, thick * 0.6, r), SNOW, 0.05, seed + i)
-	m.fill_capsule(Vector3(lean.x, h * 0.9, lean.y), Vector3(lean.x, h, lean.y), r0 * 0.1, 0.02, NEEDLES_LIT, 0.15, seed)
+	if wither < 0.9:
+		m.fill_capsule(Vector3(lean.x, h * 0.9, lean.y), Vector3(lean.x, h, lean.y), r0 * 0.1, 0.02, needles_lit, 0.15, seed)
 	return m

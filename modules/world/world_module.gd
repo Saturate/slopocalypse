@@ -73,7 +73,7 @@ func _on_tree_felled(p: Dictionary) -> void:
 	_scenery.fell_tree(Vector2i(int(p["chunk"]), int(p["index"])), p["direction"], float(p.get("cut", 1.0)), p.get("blast", Vector4.ZERO))
 
 
-## Someone joining late gets every tree already down, lying where it fell.
+## Someone joining late gets every tree already down, lying where it fell, as dry as it is.
 func _on_peer_joined(peer: int) -> void:
 	if not _is_server():
 		return
@@ -83,14 +83,16 @@ func _on_peer_joined(peer: int) -> void:
 	var list: Array = []
 	for id: Vector2i in felled:
 		var info: Dictionary = felled[id]
-		list.append([id.x, id.y, info["direction"], info["cut"], info["blast"]])
+		list.append([id.x, id.y, info["direction"], info["cut"], info["blast"], _scenery.felled_age(id)])
 	_receive_felled.rpc_id(peer, list)
 
 
 @rpc("authority", "call_remote", "reliable")
 func _receive_felled(list: Array) -> void:
 	for entry: Array in list:
-		_scenery.fell_tree(Vector2i(int(entry[0]), int(entry[1])), entry[2], float(entry[3]), entry[4])
+		# At least a moment old, so it lies still instead of falling again.
+		var seconds_ago := maxf(float(entry[5]) if entry.size() > 5 else 0.0, 0.01)
+		_scenery.fell_tree(Vector2i(int(entry[0]), int(entry[1])), entry[2], float(entry[3]), entry[4], seconds_ago)
 
 
 func _process(delta: float) -> void:

@@ -1,6 +1,7 @@
 extends Node3D
 ## Capture setup: the road and trees breaking. The road before and after explosions, a
-## close look into a crater in the road, trees nearby falling, then lying where they fell.
+## close look into a crater in the road, trees nearby falling, then lying where they fell
+## and drying out to bare branches, and a close look at the broken stump.
 
 const WORLD := "res://modules/world/scenes/world.tscn"
 const FRAMES_PER_SHOT := 120
@@ -106,6 +107,22 @@ func _go(shot: int) -> void:
 			var stump: Vector3 = _scenery.tree_position(_trees[0])
 			var eye := stump - _fall_direction() * 4.5 + _fall_direction().cross(Vector3.UP) * 2.0
 			_look(Vector3(eye.x, _voxels.ground_height(eye.x, eye.z) + 1.8, eye.z), stump + _fall_direction() * 2.0 + Vector3.UP * 0.8)
+		6, 7, 8:
+			# The same fallen top drying out: a third, two thirds, then bare branches.
+			_age(_trees[0], (shot - 5) / 3.0)
+		9:
+			# Close on the stump: broken, not sawn.
+			var foot: Vector3 = _scenery.tree_position(_trees[0])
+			var side := _fall_direction().cross(Vector3.UP)
+			var eye := foot + side * 1.6 - _fall_direction() * 0.6
+			_look(Vector3(eye.x, _voxels.ground_height(eye.x, eye.z) + 1.7, eye.z), foot + Vector3.UP * 1.0)
+
+
+## Makes tree `id` look as if it fell `share` of the wither time ago.
+func _age(id: Vector2i, share: float) -> void:
+	var seconds := float(Data.load_json("res://modules/world/data/world.json")["scatter"]["tree_wither_seconds"]) * share
+	var info: Dictionary = _scenery.felled()[id]
+	info["since"] = Time.get_ticks_msec() - int(seconds * 1000.0) - 10
 
 
 ## Falls straight away from the road.
