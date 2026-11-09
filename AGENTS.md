@@ -35,6 +35,7 @@ Agent tooling note: in some agent shells on Windows (seen with Claude Code's Bas
 | Deploy server to your Linux box | `node tools/deploy.ts --host user@server --zip <linux build> [--port 7777] [--open-firewall]` (installs a systemd service over ssh; `--ci` builds Linux on the `server-build` workflow instead; `--dry-run` prints the remote script) |
 | Server Docker image | `docker build -t slopocalypse-server .` then `docker run -d -p 7777:7777/udp -v slopocalypse-data:/data slopocalypse-server` (builds the Linux export inside the container; save, logs and journals in the `/data` volume) |
 | Server + two clients locally | `node tools/run-local.ts` |
+| Inspect a running game | Start it with `-- --debug-api` (e.g. `tools/godot/Godot_v4.7.2-stable_win64.exe --path . -- --solo --debug-api`); then use the MCP server `node tools/mcp/server.ts` (registered in `.mcp.json` for Claude Code; add it as a stdio MCP server in other harnesses) for `list_games`, `game_state`, `game_perf`, `find_nodes`, `get_node`, `set_property`, `publish_event`, `screenshot`, `tail_log`. Local only, token per run; see `modules/debug_api` |
 | Voxel asset library | `node tools/library.ts` (or "Asset library" in the main menu): every voxel model the kit makes, with live parameters and the pixel filter |
 | Build Rust extensions | `node tools/build-rust.ts` (`--release` for exports); the gate does this before Godot imports |
 | Open editor | `tools/godot/Godot_v4.7.2-stable_win64.exe -e --path .` (Windows; other OSes use their binary in `tools/godot/`) |
