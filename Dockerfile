@@ -18,7 +18,16 @@ RUN --mount=type=cache,target=/src/tools/godot/editor_data/export_templates \
     --mount=type=cache,target=/usr/local/cargo/registry \
     node tools/export.ts --os linux
 
+# The Linux player zip, for tools/release.ts: docker build --target linux-zip --output type=local,dest=DIR .
+FROM scratch AS linux-zip
+COPY --from=build /src/build/slopocalypse-linux.zip /
+
 FROM debian:bookworm-slim
+ARG VERSION=dev
+LABEL org.opencontainers.image.source="https://github.com/Saturate/outpost" \
+      org.opencontainers.image.title="Slopocalypse server" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.version="${VERSION}"
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libfontconfig1 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --create-home --home-dir /data --shell /usr/sbin/nologin slopocalypse
