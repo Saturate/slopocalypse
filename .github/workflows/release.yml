@@ -1,0 +1,162 @@
+name: release
+
+# Cuts a release, started by hand: `gh workflow run release` (maintainer only).
+# changesetter bumps the version on a release branch; Windows and Linux build from it in
+# parallel; only when both builds pass does main move to the release commit, the tag and the
+# GitHub Release get made and the server image goes to ghcr.io. A failed build deletes the
+# release branch and publishes nothing. tools/release.ts does the same from a local machine.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - run: node tools/get-changesetter.ts
+
+      - id: plan
+        run: node tools/release-plan.ts build/release/notes.md >> "$GITHUB_OUTPUT"
+
+      - name: Nothing to release
+        if: steps.plan.outputs.version == ''
+        run: echo "::notice::No pending changeset bumps the game's version; nothing to release."
+
+      - id: commit
+        if: steps.plan.outputs.version != ''
+        run: |
+          tools/changesetter/changesetter release --no-commit
+          grep -q 'config/version="${{ steps.plan.outputs.version }}"' project.godot
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore(release): ${{ steps.plan.outputs.tag }}"
+          git push origin "HEAD:refs/heads/release/${{ steps.plan.outputs.tag }}"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - if: steps.plan.outputs.version != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: notes
+          path: build/release/notes.md
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.version != ''
+    strategy:
+      matrix:
+        include:
+          - os: windows
+            runner: windows-latest
+          - os: linux
+            runner: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - uses: ./.github/actions/setup
+
+      - uses: actions/cache@v6
+        with:
+          path: tools/godot/editor_data/export_templates
+          key: godot-templates-${{ hashFiles('tools/lib/godot.ts') }}
+
+      # Exports, then smoke-tests the exported game in solo with the bot.
+      - run: node tools/export.ts --os ${{ matrix.os }}
+
+      - name: Name the zip after the version
+        shell: bash
+        run: mv build/slopocalypse-${{ matrix.os }}.zip build/slopocalypse-${{ needs.prepare.outputs.version }}-${{ matrix.os }}.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zip-${{ matrix.os }}
+          path: build/slopocalypse-${{ needs.prepare.outputs.version }}-${{ matrix.os }}.zip
+          # Already compressed.
+          compression-level: 0
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      IMAGE: ghcr.io/saturate/slopocalypse-server
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # The image packages the Linux export the build job already made and smoke-tested.
+      - name: Build the server image
+        run: |
+          mkdir linux-export
+          unzip -q "dist/slopocalypse-$VERSION-linux.zip" -d linux-export
+          docker build --build-arg EXPORT=prebuilt --build-context linux-export=linux-export \
+            --build-arg VERSION="$VERSION" -t "$IMAGE:$VERSION" -t "$IMAGE:latest" .
+
+      - name: Move main to the release and tag it
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Slopocalypse $VERSION"
+          # Fails, publishing nothing, if main moved on while the builds ran.
+          git push --atomic origin "HEAD:refs/heads/main" "$TAG"
+
+      - name: GitHub Release
+        run: |
+          gh release create "$TAG" dist/*.zip --title "Slopocalypse $VERSION" --notes-file dist/notes.md
+
+      - name: Push the server image
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE:$VERSION"
+          docker push "$IMAGE:latest"
+
+      - name: Delete the release branch
+        run: git push origin --delete "release/$TAG"
+
+  cleanup:
+    needs: [prepare, build, publish]
+    if: failure() && needs.prepare.outputs.version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - run: git push origin --delete "release/${{ needs.prepare.outputs.tag }}" || true
