@@ -1,0 +1,6 @@
+{
+  "id": "debug_api",
+  "depends_on": [],
+  "flag": "debug_api",
+  "entry": "debug_api_module.gd"
+}

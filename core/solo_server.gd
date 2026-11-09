@@ -7,8 +7,9 @@ extends RefCounted
 const FIRST_PORT := 7800
 const PORT_TRIES := 50
 const BIND_IP := "127.0.0.1"
-## User arguments that shape the world and so must match on the server.
-const SHARED_PREFIXES: Array[String] = ["--flags=", "--all-optional-off", "--build=", "--save=", "--no-save"]
+## User arguments that shape the world and so must match on the server, plus --debug-api so
+## the solo server can be inspected too.
+const SHARED_PREFIXES: Array[String] = ["--flags=", "--all-optional-off", "--build=", "--save=", "--no-save", "--debug-api"]
 
 
 ## Starts the server process. Returns its pid, or -1 when it could not be started.
@@ -31,6 +32,8 @@ static func server_args(port: int, user_args: PackedStringArray, project: String
 	if not bind.is_empty():
 		args.append("--bind=%s" % bind)
 	args.append("--quit-when-empty")
+	# Godot hides its own --log-file from scripts; this copy tells the game where it logs.
+	args.append("--log-file=%s" % log_file)
 	for arg in user_args:
 		for prefix in SHARED_PREFIXES:
 			if arg.begins_with(prefix):
