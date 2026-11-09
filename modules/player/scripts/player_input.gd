@@ -6,6 +6,9 @@ extends Node
 ## On a remote client this also owns the aim: it turns the body and head itself every frame
 ## (so looking around never waits on the network) and sends the intent to the server.
 
+## One-shot actions sent by a menu button (the session overlay), not a key.
+const FROM_MENU: Array[StringName] = [&"back_to_spawn"]
+
 var intent: PlayerIntent
 var player: PlayerController
 var sensitivity: float = 0.0025
@@ -68,6 +71,9 @@ func _physics_process(_delta: float) -> void:
 	intent.fire = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	intent.aim = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
 	for action: StringName in PlayerIntent.ONE_SHOTS:
+		# Menu-only actions have no key; asking Input about them logs an error every frame.
+		if action in FROM_MENU:
+			continue
 		var input_action := &"charge" if action == &"throw" else action
 		if Input.is_action_just_pressed(input_action):
 			if _remote:
