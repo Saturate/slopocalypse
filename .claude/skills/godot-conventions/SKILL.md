@@ -1,14 +1,14 @@
 ---
 name: godot-conventions
-description: Outpost's rules for writing Godot 4.7 GDScript, scenes, modules and gdext Rust, plus the engine quirks that fail silently. Use before writing or changing any .gd, .tscn, module.json, .gdextension or modules/*/rust code in this repo, when adding a module, component, builder or test, or when a Godot run behaves oddly (exit 0 with errors, missing nodes, random ids in scene diffs, autoload not found).
+description: Slopocalypse's rules for writing Godot 4.7 GDScript, scenes, modules and gdext Rust, plus the engine quirks that fail silently. Use before writing or changing any .gd, .tscn, module.json, .gdextension or modules/*/rust code in this repo, when adding a module, component, builder or test, or when a Godot run behaves oddly (exit 0 with errors, missing nodes, random ids in scene diffs, autoload not found).
 metadata:
   author: Saturate
   version: "1.0"
 ---
 
-# Godot conventions for Outpost
+# Godot conventions for Slopocalypse
 
-Architecture rules live in `CLAUDE.md`; this skill is the how-to and the list of traps. Engine is pinned to Godot 4.7.2. When an API detail is uncertain, check the installed engine (a throwaway `-s` script printing `ClassDB.class_get_method_list(...)`) instead of recalling it. Models default to Godot 3 names; see [references/godot3-to-4.md](references/godot3-to-4.md).
+Architecture rules live in `AGENTS.md`; this skill is the how-to and the list of traps. Engine is pinned to Godot 4.7.2. When an API detail is uncertain, check the installed engine (a throwaway `-s` script printing `ClassDB.class_get_method_list(...)`) instead of recalling it. Models default to Godot 3 names; see [references/godot3-to-4.md](references/godot3-to-4.md).
 
 ## Adding a module
 

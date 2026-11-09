@@ -17,7 +17,7 @@ test("bin dir matches the paths in .gdextension files", () => {
 });
 
 test("finds cdylib crates under modules/*/rust/* and skips pure crates", () => {
-	const root = mkdtempSync(join(tmpdir(), "outpost-rust-"));
+	const root = mkdtempSync(join(tmpdir(), "slopocalypse-rust-"));
 	const crate = (mod: string, dir: string, toml: string): void => {
 		mkdirSync(join(root, "modules", mod, "rust", dir), { recursive: true });
 		writeFileSync(join(root, "modules", mod, "rust", dir, "Cargo.toml"), toml);
@@ -33,5 +33,5 @@ test("finds cdylib crates under modules/*/rust/* and skips pure crates", () => {
 });
 
 test("no modules folder means no crates", () => {
-	assert.deepEqual(findBindingCrates(mkdtempSync(join(tmpdir(), "outpost-empty-"))), []);
+	assert.deepEqual(findBindingCrates(mkdtempSync(join(tmpdir(), "slopocalypse-empty-"))), []);
 });

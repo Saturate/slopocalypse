@@ -1,4 +1,4 @@
-//! Tarkov-style grid inventory: items take a w x h block of cells, can be turned 90
+//! Grid inventory: items take a w x h block of cells, can be turned 90
 //! degrees, and may not overlap or leave the grid. Pure rules so the server (which decides)
 //! and the client (which previews a drag) agree.
 

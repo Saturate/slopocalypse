@@ -77,8 +77,8 @@ func _ready() -> void:
 	col.add_theme_constant_override("separation", 8)
 	panel.add_child(col)
 
-	col.add_child(_label("OUTPOST", 46, ACCENT))
-	col.add_child(_label("Co-op survival for friends", 16, DIM))
+	col.add_child(_label("SLOPOCALYPSE", 46, ACCENT))
+	col.add_child(_label("Solo or with friends. Built by agents, mostly.", 16, DIM))
 
 	col.add_child(_gap())
 	col.add_child(_label("YOUR NAME", 14, LABEL))

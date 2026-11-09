@@ -58,7 +58,7 @@ Running notes: playtest feedback, findings, known issues and ideas for later. De
 - Arms (#118, playtest: "arms flying off when shooting"): the hand IK chose each elbow's direction from where the elbow already was, which is last frame's answer, so with the gun held close it folded the trigger arm with the elbow down at the belt and, as each shot's kick moved the gun, jumped between solutions. Elbows now bend toward fixed directions in body space (trigger arm out and back, support arm down), so the pose is steady through bursts.
 - Headshots (#118): a hit at head height (from 0.22 m below the eyes up) on a guard kills it outright; on anyone else it multiplies the damage (`headshot` in weapons.json). No helmets yet.
 - Guard sight (#121, playtest: "guards should not shoot if there's no visible way they see you"): tree crowns now have collision on `PhysicsLayers.SIGHT`, which only guards' sight rays look at; bullets, bodies, cars and every ground-finding ray ignore it. So hiding in or behind foliage hides you, and you can still shoot through leaves.
-- Lean (#122): hold Q or E to lean left or right; interact moved from E to F (the Tarkov layout). The head moves 0.35 m out and tilts, stopping short of walls so nobody sees through one; the lean is part of the intent the server gets, so shots leave from the leaned eye, and others see the spine and chest roll. No lean while sprinting, sliding or vaulting.
+- Lean (#122): hold Q or E to lean left or right; interact moved from E to F. The head moves 0.35 m out and tilts, stopping short of walls so nobody sees through one; the lean is part of the intent the server gets, so shots leave from the leaned eye, and others see the spine and chest roll. No lean while sprinting, sliding or vaulting.
 
 ## Later
 

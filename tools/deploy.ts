@@ -1,5 +1,5 @@
 // Puts the dedicated server on a Linux machine you own and keeps it running with systemd.
-//   node tools/deploy.ts --host user@server [--port 7777] [--dir /opt/outpost] [--user outpost]
+//   node tools/deploy.ts --host user@server [--port 7777] [--dir /opt/slopocalypse] [--user slopocalypse]
 //                        [--open-firewall] (--zip build/linux-folder-or-zip | --ci) [--dry-run]
 // The Linux build needs the Rust extensions compiled for Linux, which this Windows machine
 // cannot do. Give a Linux build with --zip (built on a Linux box with
@@ -17,7 +17,7 @@ import { checkScript, installScript, LINUX_EXE, serverIsUp, type DeployTarget } 
 
 const root = resolve(import.meta.dirname, "..");
 const WORKFLOW = "server-build.yml";
-const ARTIFACT = "outpost-linux";
+const ARTIFACT = "slopocalypse-linux";
 
 function arg(name: string): string | undefined {
 	const i = argv.indexOf(`--${name}`);
@@ -49,14 +49,14 @@ function buildOnCi(): string {
 	console.log(`Waiting for run ${id} (about 10 minutes the first time, less once caches are warm)...`);
 	const watch = spawnSync("gh", ["run", "watch", id, "--exit-status", "--interval", "20"], { cwd: root, stdio: "inherit" });
 	if (watch.status !== 0) throw new Error(`the build failed: gh run view ${id} --log-failed`);
-	const dir = mkdtempSync(join(tmpdir(), "outpost-linux-"));
+	const dir = mkdtempSync(join(tmpdir(), "slopocalypse-linux-"));
 	sh("gh", ["run", "download", id, "-n", ARTIFACT, "-D", dir]);
 	return dir;
 }
 
 async function localBuild(path: string): Promise<string> {
 	if (statSync(path).isDirectory()) return path;
-	const dir = mkdtempSync(join(tmpdir(), "outpost-linux-"));
+	const dir = mkdtempSync(join(tmpdir(), "slopocalypse-linux-"));
 	await extract(path, dir);
 	return dir;
 }
@@ -65,15 +65,15 @@ async function main(): Promise<void> {
 	const host = arg("host");
 	if (host === undefined) throw new Error("missing --host user@server");
 	const target: DeployTarget = {
-		dir: arg("dir") ?? "/opt/outpost",
+		dir: arg("dir") ?? "/opt/slopocalypse",
 		port: Number(arg("port") ?? "7777"),
-		user: arg("user") ?? "outpost",
+		user: arg("user") ?? "slopocalypse",
 		keep: 3,
 		openFirewall: argv.includes("--open-firewall"),
 	};
 	if (!Number.isInteger(target.port) || target.port < 1 || target.port > 65535) throw new Error("bad --port");
 	const stamp = stampNow();
-	const remoteTar = `/tmp/outpost-${stamp}.tar.gz`;
+	const remoteTar = `/tmp/slopocalypse-${stamp}.tar.gz`;
 
 	if (argv.includes("--dry-run")) {
 		console.log(`# would copy the build to ${host}:${remoteTar}, then run:\n`);
@@ -91,11 +91,11 @@ async function main(): Promise<void> {
 	const build = zip !== undefined ? await localBuild(resolve(zip)) : buildOnCi();
 	if (!existsSync(join(build, LINUX_EXE))) throw new Error(`${build} has no ${LINUX_EXE}; files: ${readdirSync(build).join(", ")}`);
 
-	const tarball = join(mkdtempSync(join(tmpdir(), "outpost-tar-")), "outpost.tar.gz");
+	const tarball = join(mkdtempSync(join(tmpdir(), "slopocalypse-tar-")), "slopocalypse.tar.gz");
 	sh("tar", ["-czf", tarball, "-C", build, "."]);
 	console.log(`Copying to ${host}...`);
 	// scp reads "C:\..." as host "C"; a relative path from the tarball's folder avoids that.
-	const r = spawnSync("scp", ["-q", "outpost.tar.gz", `${host}:${remoteTar}`], { cwd: join(tarball, ".."), stdio: "inherit" });
+	const r = spawnSync("scp", ["-q", "slopocalypse.tar.gz", `${host}:${remoteTar}`], { cwd: join(tarball, ".."), stdio: "inherit" });
 	if (r.status !== 0) throw new Error("scp failed");
 	rmSync(join(tarball, ".."), { recursive: true, force: true });
 

@@ -1,5 +1,5 @@
 extends Node
-## Each player's inventory: a grid of items (Tarkov style) whose rules run in Rust
+## Each player's inventory: a grid of items whose rules run in Rust
 ## (`InventoryGrid`). The server holds every inventory and decides every change; each
 ## owner gets a copy of theirs after a change, which the Tab screen shows and previews drags
 ## against. Other modules use the small API below (`count`, `server_give`, `server_take`)

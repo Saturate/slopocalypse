@@ -495,7 +495,8 @@ mod tests {
 
     #[test]
     fn the_file_survives_a_restart() {
-        let dir = std::env::temp_dir().join(format!("outpost-save-test-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("slopocalypse-save-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("world.db");
         let path = path.to_str().unwrap();

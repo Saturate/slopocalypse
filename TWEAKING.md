@@ -1,4 +1,4 @@
-# Tweaking Outpost
+# Tweaking Slopocalypse
 
 Every gameplay number lives in a JSON file. Change it, start the game again, play.
 
@@ -66,4 +66,4 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 
 ## The save
 
-The server keeps everyone's gear in an SQLite file: `world.db` in the Godot user folder under `saves/` (on Windows `%APPDATA%\Godot\app_userdata\Outpost\saves\`), or wherever `--save=` points. Solo and hosted games share that one world. Open it with any SQLite viewer (DB Browser for SQLite) while the server is off to look or fix things: `players`, `player_items` and `player_builds` per name, `world_loot` and `crates` for the world. Delete the file for a fresh world. Start a server with `--no-save` to play without touching it.
+The server keeps everyone's gear in an SQLite file: `world.db` in the Godot user folder under `saves/` (on Windows `%APPDATA%\Godot\app_userdata\Slopocalypse\saves\`), or wherever `--save=` points. Solo and hosted games share that one world. Open it with any SQLite viewer (DB Browser for SQLite) while the server is off to look or fix things: `players`, `player_items` and `player_builds` per name, `world_loot` and `crates` for the world. Delete the file for a fresh world. Start a server with `--no-save` to play without touching it.

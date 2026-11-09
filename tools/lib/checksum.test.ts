@@ -21,7 +21,7 @@ test("throws when the file is missing from the sums list", () => {
 });
 
 test("accepts a file whose hash matches and rejects one that does not", async () => {
-	const dir = mkdtempSync(join(tmpdir(), "outpost-sum-"));
+	const dir = mkdtempSync(join(tmpdir(), "slopocalypse-sum-"));
 	const file = join(dir, "fake.zip");
 	writeFileSync(file, "fake archive bytes");
 	const good = createHash("sha512").update("fake archive bytes").digest("hex");

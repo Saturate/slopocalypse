@@ -100,7 +100,7 @@ export async function netSmoke(godot: string, root: string, port = 7791): Promis
 	const base = ["--headless", "--path", root, "--"];
 	// Clients report at ~900 frames and stay connected; the server reports at 1300 while it
 	// still has both, then quits, which closes the clients.
-	const saves = mkdtempSync(pathJoin(tmpdir(), "outpost-net-"));
+	const saves = mkdtempSync(pathJoin(tmpdir(), "slopocalypse-net-"));
 	const server = run(godot, [...base, `--server=${port}`, "--net-report-after=1300", `--save=${pathJoin(saves, "world.db")}`], { cwd: root, timeoutMs: 150_000 });
 	// Let the server open its port and load the world before clients knock.
 	await delay(4000);
@@ -143,7 +143,7 @@ export async function netSmoke(godot: string, root: string, port = 7791): Promis
 // without that client moving at all.
 export async function saveSmoke(godot: string, root: string, port = 7793): Promise<StepResult> {
 	const base = ["--headless", "--path", root, "--"];
-	const saves = mkdtempSync(pathJoin(tmpdir(), "outpost-save-"));
+	const saves = mkdtempSync(pathJoin(tmpdir(), "slopocalypse-save-"));
 	const save = `--save=${pathJoin(saves, "world.db")}`;
 	const address = `--connect=127.0.0.1:${port}`;
 	const problems: string[] = [];

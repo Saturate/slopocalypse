@@ -12,6 +12,10 @@ static var _library_from_args := OS.get_cmdline_user_args().has("--library")
 
 
 func _ready() -> void:
+	# Before anything reads the profile or opens a save.
+	var moved := UserDataMove.run()
+	if moved > 0:
+		Log.info(&"boot", "copied %d player files from the old Outpost folder" % moved)
 	if _library_from_args and _library_available():
 		_library_from_args = false
 		_show_library()
