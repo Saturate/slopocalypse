@@ -14,7 +14,6 @@
     "voxkit": true,
     "admin": true,
     "daytime": true,
-    "daytime": true,
     "debug_api": true,
     "perf": true
   }
