@@ -65,7 +65,7 @@ func test_the_same_chunk_gets_the_same_scenery() -> void:
 	var again: SceneryScatter = auto_free((load(SCRIPT) as GDScript).new())
 	add_child(again)
 	var positions := []
-	for chunk in again.get_children():
-		for shape in chunk.get_node("Collision").get_children():
+	for i: int in again.loaded_chunks():
+		for shape in again.chunk_node(i).get_node("Collision").get_children():
 			positions.append((shape as Node3D).global_position)
 	assert_int(positions.size()).is_equal(first.size())
