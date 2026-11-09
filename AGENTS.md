@@ -27,19 +27,19 @@ Agent tooling note: in some agent shells on Windows (seen with Claude Code's Bas
 | Tool tests only | `npm run test:tools` |
 | First setup | `npm ci && node tools/get-godot.ts && node tools/get-addons.ts && node tools/get-changesetter.ts` (Rust via rustup; the toolchain file installs the pinned version) |
 | Add a changeset | `tools/changesetter/changesetter add --package slopocalypse --bump patch -m "What changed, for players"` (`--bump none` for tooling, docs and tests; `minor` for new features) |
-| Release | `node tools/release.ts [--dry-run]` (maintainer only: changesetter bumps `config/version` and writes `CHANGELOG.md`, then it builds the Windows zip, the Linux zip and the server image, commits, tags `vX.Y.Z`, creates the GitHub Release with both zips and pushes `ghcr.io/saturate/slopocalypse-server:X.Y.Z` and `:latest`. Needs Windows, Docker and `gh auth refresh -s write:packages`. `--dry-run` builds everything and publishes nothing) |
+| Release | `gh workflow run release` (maintainer only: changesetter bumps `config/version` and writes `CHANGELOG.md` on a release branch, Windows and Linux build in parallel, then main moves to the release commit, it is tagged `vX.Y.Z`, the GitHub Release gets both zips and `ghcr.io/saturate/slopocalypse-server:X.Y.Z` and `:latest` are pushed; a failed build publishes nothing). Local fallback: `node tools/release.ts [--dry-run]` (Windows, Docker, `gh auth refresh -s write:packages`) |
 | Build scenes | `node tools/build-scenes.ts` (runs `modules/*/builders/*.gd`; commit the `.tscn` output) |
 | Capture for review | `node tools/capture.ts --setup res://modules/<id>/capture/<name>.gd --out screenshots/<name>.png --frames 120 --sheet 6` (opens a window; then follow `visual-review`) |
 | Portable game zip | `node tools/export.ts [--connect HOST[:PORT],...]` (ships the addresses in the menu's server list; fetches export templates once, builds release, smoke-tests the exported game; output in `build/`) |
 | Dedicated server | `node tools/server.ts [--port 7777]` (headless; clients join with `-- --connect=HOST:7777`; saves to `user://saves/world.db`, `-- --save=PATH` or `--no-save` to change that) |
-| Deploy server to your Linux box | `node tools/deploy.ts --host user@server --zip <linux build> [--port 7777] [--open-firewall]` (installs a systemd service over ssh; `--ci` builds Linux on the `server-build` workflow instead, which spends Actions minutes; `--dry-run` prints the remote script) |
+| Deploy server to your Linux box | `node tools/deploy.ts --host user@server --zip <linux build> [--port 7777] [--open-firewall]` (installs a systemd service over ssh; `--ci` builds Linux on the `server-build` workflow instead; `--dry-run` prints the remote script) |
 | Server Docker image | `docker build -t slopocalypse-server .` then `docker run -d -p 7777:7777/udp -v slopocalypse-data:/data slopocalypse-server` (builds the Linux export inside the container; save, logs and journals in the `/data` volume) |
 | Server + two clients locally | `node tools/run-local.ts` |
 | Voxel asset library | `node tools/library.ts` (or "Asset library" in the main menu): every voxel model the kit makes, with live parameters and the pixel filter |
 | Build Rust extensions | `node tools/build-rust.ts` (`--release` for exports); the gate does this before Godot imports |
 | Open editor | `tools/godot/Godot_v4.7.2-stable_win64.exe -e --path .` (Windows; other OSes use their binary in `tools/godot/`) |
 
-CI (`.github/workflows/check.yml`) is manual-only for now to save Actions minutes: `gh workflow run check`. `server-build.yml` is also manual and only runs with `deploy.ts --ci`. Do not start workflows without the user asking: Actions minutes are limited.
+CI: `.github/workflows/check.yml` runs the full gate on Linux, Windows and macOS for every pull request and push to main; the local `npm run check:full` stays the gate you run before pushing. `release.yml` and `server-build.yml` are manual: start them only when the maintainer asks.
 
 Planned, added by their issues: `tools/journal` (#11), `tools/soak` (#15).
 
@@ -84,9 +84,9 @@ A module is `modules/<id>/module.json` (`id`, `depends_on`, `flag`, `entry`) plu
 - Work goes spec, then plan, then build in small vertical slices with tests first, then commit and PR. The maintainer drives this with personal Claude Code skills (see `CLAUDE.md`); with any other tool, follow the same steps.
 - Specs and plans stay out of the repo; the issue holds what is agreed.
 - GitHub issues are the live task list (milestone per phase). One branch per issue, named `issue-<n>-<slug>`; commits and PRs reference the issue.
-- Every branch adds a changeset (`.changeset/*.md`, see Commands); the full gate fails without one. Write it for players, as one line of what they will notice ("Trees are cut where you shoot them"), not as a commit message. `none` for changes players never see. Never edit `config/version` or `CHANGELOG.md` by hand, and never run `release` or `tools/release.ts` unless the maintainer asks.
+- Every branch adds a changeset (`.changeset/*.md`, see Commands); the full gate fails without one. Write it for players, as one line of what they will notice ("Trees are cut where you shoot them"), not as a commit message. `none` for changes players never see. Never edit `config/version` or `CHANGELOG.md` by hand, and never run a release (`changesetter release`, `tools/release.ts` or the `release` workflow) unless the maintainer asks.
 - Agents say who they are. Every issue, PR and comment an agent writes ends with a line `Made by: <model> in <tool>, <steered by a person | on its own>` (e.g. `Made by: Claude Opus 5.5 in Claude Code, steered by a person`). Add the `by:agent` label (`by:human` when a person wrote it) if you have access; outside contributors can't set labels, so the `Made by:` line is what counts. Use the model name you actually are; if you don't know it, say so instead of guessing. Commits keep the attribution trailer your tool adds; if it adds none, add `Assisted-by: <model> in <tool>`.
-- The merge gate is `npm run check:full` run locally; PRs are merged after it passes.
+- The merge gate is `npm run check:full` run locally, then the `check` workflow green on the pull request; PRs are merged after both pass.
 - Write a failing test first wherever behaviour is testable. Feel is checked by playtest and recorded in `NOTES.md`.
 - Tool and test runs that start a server pass `--save=<temp file>` or `--no-save`, never the player's own world.
 - Never trust a Godot exit code alone: headless runs can exit 0 after a script error, and gdUnit4 passes tests that only `push_error`. The gate scans logs and fails on any `ERROR:`, `Error:` or `SCRIPT ERROR` line not allow-listed in `tools/lib/gate.ts`.

@@ -1,14 +1,19 @@
 name: check
 
-# Manual only for now: private-repo Actions minutes cost money, so the local
-# `npm run check:full` is the merge gate. Run this by hand (`gh workflow run check`)
-# for Linux and macOS evidence; macOS minutes cost ten times Linux.
+# The same full gate as `npm run check:full`, on all three desktop OSes, for every pull request
+# and push to main. Standard runners are free for public repositories.
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
   group: check-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   gate:
@@ -17,34 +22,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
         with:
-          # No LFS assets yet; turn on once tests load real art, it counts against the LFS quota.
-          lfs: false
+          # The changesets step compares with origin/main.
+          fetch-depth: 0
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-
-      # rust-toolchain.toml pins the version; rustup installs it on first use.
-      - run: rustup show active-toolchain
-
-      - uses: Swatinem/rust-cache@v2
-
-      - run: npm ci
-
-      - name: Cache Godot
-        uses: actions/cache@v6
-        with:
-          path: tools/godot
-          key: godot-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/lib/godot.ts') }}
-
-      - run: node tools/get-godot.ts
-
-      - run: node tools/get-addons.ts
+      - uses: ./.github/actions/setup
 
       - name: Full gate
         run: node tools/check.ts --full
