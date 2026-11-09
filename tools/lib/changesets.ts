@@ -8,11 +8,12 @@ import type { StepResult } from "./gate.ts";
 
 const BASE = "origin/main";
 
-function git(root: string, args: string[]): string[] {
+function hasRef(root: string, ref: string): boolean {
 	try {
-		return execFileSync("git", args, { cwd: root, encoding: "utf8" }).split(/\r?\n/).filter(Boolean);
+		execFileSync("git", ["rev-parse", "--verify", "--quiet", ref], { cwd: root, stdio: "ignore" });
+		return true;
 	} catch {
-		return [];
+		return false;
 	}
 }
 
@@ -22,12 +23,9 @@ export async function checkChangesets(root: string): Promise<StepResult> {
 	// Validates every pending changeset: frontmatter, package names, bump levels.
 	const status = await run(bin, ["status"], { cwd: root, timeoutMs: 60_000 });
 	if (status.code !== 0) return { ok: false, detail: status.output.trim() };
-	const base = git(root, ["merge-base", "HEAD", BASE])[0];
-	if (base === undefined) return { ok: true, detail: `no ${BASE} to compare with; changesets valid` };
-	// `check` fails when nothing was added, which is also true of a branch that changes nothing (main itself).
-	const changed = [...git(root, ["diff", "--name-only", base]), ...git(root, ["ls-files", "--others", "--exclude-standard"])];
-	if (changed.length === 0) return { ok: true, detail: `nothing changed since ${BASE}` };
-	// Counts committed, staged and untracked changesets added since the branch left the base.
+	if (!hasRef(root, BASE)) return { ok: true, detail: `no ${BASE} to compare with; changesets valid` };
+	// Counts committed, staged and untracked changesets added since the branch left the base,
+	// and passes when nothing changed at all.
 	const check = await run(bin, ["check", "--base", BASE], { cwd: root, timeoutMs: 60_000 });
 	if (check.code === 0) return { ok: true, detail: check.output.trim().split(/\r?\n/)[0] ?? "changeset found" };
 	return {
