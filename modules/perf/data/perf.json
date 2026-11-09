@@ -1,0 +1,7 @@
+{
+  "sample_seconds": 1.0,
+  "spike_ms": 50.0,
+  "warmup_seconds": 5.0,
+  "keep_files": 20.0,
+  "overlay_key": "F3"
+}

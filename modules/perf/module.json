@@ -1,0 +1,6 @@
+{
+  "id": "perf",
+  "depends_on": [],
+  "flag": "perf",
+  "entry": "perf_module.gd"
+}
