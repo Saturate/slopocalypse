@@ -33,6 +33,7 @@ Agent tooling note: in some agent shells on Windows (seen with Claude Code's Bas
 | Portable game zip | `node tools/export.ts [--connect HOST[:PORT],...]` (ships the addresses in the menu's server list; fetches export templates once, builds release, smoke-tests the exported game; output in `build/`) |
 | Dedicated server | `node tools/server.ts [--port 7777]` (headless; clients join with `-- --connect=HOST:7777`; saves to `user://saves/world.db`, `-- --save=PATH` or `--no-save` to change that) |
 | Deploy server to your Linux box | `node tools/deploy.ts --host user@server --zip <linux build> [--port 7777] [--open-firewall]` (installs a systemd service over ssh; `--ci` builds Linux on the `server-build` workflow instead, which spends Actions minutes; `--dry-run` prints the remote script) |
+| Server Docker image | `docker build -t slopocalypse-server .` then `docker run -d -p 7777:7777/udp -v slopocalypse-data:/data slopocalypse-server` (builds the Linux export inside the container; save, logs and journals in the `/data` volume) |
 | Server + two clients locally | `node tools/run-local.ts` |
 | Voxel asset library | `node tools/library.ts` (or "Asset library" in the main menu): every voxel model the kit makes, with live parameters and the pixel filter |
 | Build Rust extensions | `node tools/build-rust.ts` (`--release` for exports); the gate does this before Godot imports |

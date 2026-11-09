@@ -1,6 +1,6 @@
 # Slopocalypse
 
-An open-world shooter you can play solo or with friends, built almost entirely by AI agents. It's an experiment in what happens when you let them just go: we see where it ends up and where the limits are. Anyone is welcome to help, with their own hands or their own models.
+An open-world shooter you can play solo or with friends, built almost entirely by AI agents. It's an experiment in what happens when you let them just go: we see where it ends up and where the limits are. Anyone is welcome to help, with their own hands or their own models: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Right now it is a low-poly voxel world where the gear you carry out is the gear you can lose: a road through forests and mountains, a homemade car you build and mod, drones and guards, loot, outposts that keep your gear, and a dedicated server that decides everything. Where it goes next is up to the people working on it, so expect the game to change a lot.
 
@@ -10,7 +10,7 @@ Status: early and rough. Playable solo or with friends, nowhere near finished.
 
 Almost every line here was written by AI agents, with a human steering, playtesting and saying "go on". That is the point. Slopocalypse is an experiment in what happens when you let agents just build a game: how far it gets, where it falls apart, and what it takes to keep the slop contained.
 
-So expect odd code, uneven quality, features that are half there, and comments that are more confident than they should be. If you find something bad, you are welcome to fix it, by hand or with your own agent. Bad code is never a reason to feel bad about touching it.
+So expect odd code, uneven quality, features that are half there, and comments that are more confident than they should be. If you find something bad, you are welcome to fix it, by hand or with your own agent ([CONTRIBUTING.md](CONTRIBUTING.md) says how). Bad code is never a reason to feel bad about touching it.
 
 The other half of the experiment is control: how much structure does it take before agent-written code stays workable? What we use so far:
 
@@ -40,6 +40,17 @@ node tools/get-changesetter.ts   # versions and changelog
 npm run check               # builds the Rust parts, imports, runs the fast tests
 tools/godot/Godot_v4.7.2-stable_win64.exe --path .   # or your OS's binary in tools/godot/
 ```
+
+### Running a server in Docker
+
+The `Dockerfile` builds the whole dedicated server inside the container, so all you need is Docker and a checkout with the Git LFS files:
+
+```sh
+docker build -t slopocalypse-server .
+docker run -d --name slopocalypse --restart unless-stopped -p 7777:7777/udp -v slopocalypse-data:/data slopocalypse-server
+```
+
+The world save, logs and journals live in the `/data` volume, so a rebuilt image keeps everyone's gear. Players join on UDP port 7777. For another port, add `--server=PORT --save=/data/world.db` after the image name and publish that port instead. To change game values, mount a file over `/opt/slopocalypse/tweaks/<res path>` (see `TWEAKING.md`).
 
 `AGENTS.md` has every command, the architecture rules and the code style. It is written for coding agents but reads fine for people. `TWEAKING.md` lists the game values you can change without touching code.
 
