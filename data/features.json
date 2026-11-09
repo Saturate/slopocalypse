@@ -13,6 +13,7 @@
     "persistence": true,
     "voxkit": true,
     "admin": true,
-    "daytime": true
+    "daytime": true,
+    "perf": true
   }
 }

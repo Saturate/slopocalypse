@@ -16,6 +16,18 @@ var _announcement: Dictionary = {}
 var _waited := 0.0
 
 
+## Performance custom monitors this module publishes, and the method each one reads.
+const MONITORS := {&"world/scenery_chunks": &"_monitor_chunks", &"world/trees_felled": &"_monitor_felled"}
+
+
+func _monitor_chunks() -> int:
+	return _scenery.loaded_chunks().size() if is_instance_valid(_scenery) else 0
+
+
+func _monitor_felled() -> int:
+	return _scenery.felled().size() if is_instance_valid(_scenery) else 0
+
+
 func _ready() -> void:
 	var data: Variant = Data.load_json(CONFIG)
 	if not data is Dictionary or not Data.require(CONFIG, data, {"kill_y": TYPE_FLOAT, "rescue_depth": TYPE_FLOAT}):
@@ -42,9 +54,16 @@ func _ready() -> void:
 	EventBus.subscribe(&"explosion", _on_explosion)
 	EventBus.subscribe(&"world.tree_felled", _on_tree_felled)
 	Net.peer_joined.connect(_on_peer_joined)
+	# For the perf log (or anything else reading Performance): what the world is holding.
+	for monitor: StringName in MONITORS:
+		if not Performance.has_custom_monitor(monitor):
+			Performance.add_custom_monitor(monitor, Callable(self, MONITORS[monitor]))
 
 
 func _exit_tree() -> void:
+	for monitor: StringName in MONITORS:
+		if Performance.has_custom_monitor(monitor):
+			Performance.remove_custom_monitor(monitor)
 	EventBus.unsubscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.unsubscribe(&"explosion", _on_explosion)
 	EventBus.unsubscribe(&"world.tree_felled", _on_tree_felled)
