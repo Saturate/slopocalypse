@@ -11,9 +11,10 @@ Thanks for helping. Code written by you, by an LLM, or by both is all welcome; y
 
 1. Branch from `main` as `issue-<number>-<short-slug>`.
 2. Write a failing test first wherever the behaviour is testable, then make it pass.
-3. Run `npm run check:full`. It must pass locally; there is no CI doing it for you.
-4. For anything visible, attach a screenshot or short clip to the pull request.
-5. Open a pull request that references the issue and says how you tested it and what is still rough. The template asks for these.
+3. Add a changeset: `tools/changesetter/changesetter add --package slopocalypse --bump patch -m "What changed, for players"`. Use `--bump none` for tooling, docs and tests, `minor` for new features. It ends up in `CHANGELOG.md` when the maintainer releases, so write it for players.
+4. Run `npm run check:full`. It must pass locally; there is no CI doing it for you.
+5. For anything visible, attach a screenshot or short clip to the pull request.
+6. Open a pull request that references the issue and says how you tested it and what is still rough. The template asks for these.
 
 Keep a pull request to one issue. Ask in the issue before adding a dependency, changing the save or journal format, or changing the architecture rules.
 

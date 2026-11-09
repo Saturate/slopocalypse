@@ -78,7 +78,10 @@ func _ready() -> void:
 	panel.add_child(col)
 
 	col.add_child(_label("SLOPOCALYPSE", 46, ACCENT))
-	col.add_child(_label("Solo or with friends. Built by agents, mostly.", 16, DIM))
+	var version := str(ProjectSettings.get_setting("application/config/version", ""))
+	# Set by changesetter on release; a build from before the first release shows no number.
+	var tagline := "Solo or with friends. Built by agents, mostly."
+	col.add_child(_label(tagline + ("  v" + version if not version.is_empty() else ""), 16, DIM))
 
 	col.add_child(_gap())
 	col.add_child(_label("YOUR NAME", 14, LABEL))

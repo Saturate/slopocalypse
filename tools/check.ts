@@ -9,6 +9,7 @@ import { run } from "./lib/proc.ts";
 import { buildRust, hasRustCrates } from "./lib/rust.ts";
 import { buildScenes } from "./lib/scenes.ts";
 import { netSmoke, saveSmoke, soloSmoke } from "./lib/net.ts";
+import { checkChangesets } from "./lib/changesets.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const full = argv.includes("--full");
@@ -66,6 +67,8 @@ const steps: Step[] = [
 	["boot", () => bootGame(godot, root, [], /loaded modules: \S/)],
 	["boot, optional off", () => bootGame(godot, root, ["--all-optional-off"], /loaded modules: \(none\)/)],
 ];
+// Every branch says what changed for players (see AGENTS.md, Workflow).
+if (full) steps.push(["changesets", () => checkChangesets(root)]);
 // Rebuilding must not change any committed scene: a diff means a builder changed without
 // regenerating, or someone hand-edited generated output.
 if (full) {
