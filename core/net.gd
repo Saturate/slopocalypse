@@ -354,6 +354,12 @@ func local_peer_id() -> int:
 
 
 func _physics_process(delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(delta)
+	Prof.stop(&"core/net:physics", prof)
+
+
+func _physics_tick(delta: float) -> void:
 	_watch_empty(delta)
 	_drop_silent(delta)
 	if _report_after < 0:

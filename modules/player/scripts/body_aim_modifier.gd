@@ -38,6 +38,12 @@ var _bones: Dictionary[StringName, int] = {}
 
 
 func _process_modification_with_delta(_delta: float) -> void:
+	var prof := Prof.start()
+	_modify_tick(_delta)
+	Prof.stop(&"player/body_aim_modifier:frame", prof)
+
+
+func _modify_tick(_delta: float) -> void:
 	var skeleton := get_skeleton()
 	if skeleton == null:
 		return

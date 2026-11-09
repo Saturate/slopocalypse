@@ -81,6 +81,14 @@ A module is `modules/<id>/module.json` (`id`, `depends_on`, `flag`, `entry`) plu
 - Comments explain why, never what.
 - Never describe a system by naming another game ("Tarkov inventory", "DayZ hunger"), in code, comments, docs, issues or PRs. Models and people picture different things from a name. Say what the system is and specify it: the rules, numbers and behaviour (e.g. "grid inventory: items take a w x h block of cells, rotate 90 degrees, may not overlap"). When a request names a game, translate it into that kind of spec first and confirm it if the details are unclear.
 
+## Performance
+
+- Wrap new per-frame or per-tick work in a profile zone: `var t := Prof.start()` ... `Prof.stop(&"<module>/<thing>", t)` (`core/prof.gd`, about a microsecond each). Every `_process` and `_physics_process` that does real work already is, and every EventBus handler is zoned automatically as `event/<topic>/<module>`.
+- Where to look: F3 in game (newest sample and top zones), `perf/` in the game's user folder (one NDJSON line a second; slow frames get a line naming the zones that ran), `node tools/bench.ts` (scenarios against this machine's baseline, top zones per run), and `game_perf` through the debug API.
+- Godot's own `TIME_PROCESS` / `TIME_PHYSICS_PROCESS` monitors are the slowest moment in about the last second, so they are logged as `*_peak_ms`; `physics_nodes_ms` is the measured nodes' physics per tick. A headless process sleeps about 7 ms every frame, so server frame times only mean something with `--uncapped`.
+- Per-function GDScript costs: run the game from the editor (F5), then Debugger > Profiler > Start; the Visual Profiler shows CPU and GPU time per render pass. Engine or Rust hot spots need a native profiler (Superluminal, VTune, Windows Performance Recorder, `perf` on Linux); debug Rust builds carry symbols.
+- Known traps: keep spawned scenes in a member variable (the resource cache drops an unreferenced scene and reloading a generated one costs tens of ms); index anything that grows over a session (craters) by tile instead of looping over all of it.
+
 ## Workflow
 
 - Work goes spec, then plan, then build in small vertical slices with tests first, then commit and PR. The maintainer drives this with personal Claude Code skills (see `CLAUDE.md`); with any other tool, follow the same steps.

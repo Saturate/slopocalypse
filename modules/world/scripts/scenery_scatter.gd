@@ -68,6 +68,9 @@ var _grass_mesh_cached: Mesh
 var _grass_cells: Dictionary[Vector2i, MultiMeshInstance3D] = {}
 ## Every dig so far, so chunks built later leave grass out of old craters too.
 var _digs: Array[Vector4] = []
+## The same craters listed under every grass cell they (plus the clearing margin) reach,
+## so placing a blade looks at a few craters, not all of them.
+var _digs_near: Dictionary[Vector2i, Array] = {}
 ## Per loaded road piece (chunk * ROADS_PER_CHUNK + piece): {model: VoxelModel, mid: float, cx: float, mesh: MeshInstance3D}.
 var _roads: Dictionary[int, Dictionary] = {}
 ## Road chunks dug since the last frame, re-meshed once each in _process.
@@ -106,6 +109,12 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	var prof := Prof.start()
+	_process_tick(_delta)
+	Prof.stop(&"world/scenery_scatter:frame", prof)
+
+
+func _process_tick(_delta: float) -> void:
 	if _heights == null:
 		return
 	update_around(_focus_points(), BUILDS_PER_FRAME)
@@ -459,7 +468,7 @@ func _add_grass(node: Node3D, rng: RandomNumberGenerator, area: Rect2) -> void:
 
 
 func _in_old_dig(at: Vector3) -> bool:
-	for d in _digs:
+	for d: Vector4 in _digs_near.get(Vector2i(floori(at.x / GRASS_CELL), floori(at.z / GRASS_CELL)), []):
 		if at.distance_to(Vector3(d.x, d.y, d.z)) < d.w + GRASS_CLEAR_MARGIN:
 			return true
 	return false
@@ -467,12 +476,16 @@ func _in_old_dig(at: Vector3) -> bool:
 
 ## Removes the grass a dug sphere took the ground out from under, so it doesn't float.
 func clear_grass(center: Vector3, radius: float) -> void:
-	_digs.append(Vector4(center.x, center.y, center.z, radius))
+	var dig := Vector4(center.x, center.y, center.z, radius)
+	_digs.append(dig)
 	var reach := radius + GRASS_CLEAR_MARGIN
 	var low := Vector2i(floori((center.x - reach) / GRASS_CELL), floori((center.z - reach) / GRASS_CELL))
 	var high := Vector2i(floori((center.x + reach) / GRASS_CELL), floori((center.z + reach) / GRASS_CELL))
 	for cx in range(low.x, high.x + 1):
 		for cz in range(low.y, high.y + 1):
+			if not _digs_near.has(Vector2i(cx, cz)):
+				_digs_near[Vector2i(cx, cz)] = []
+			_digs_near[Vector2i(cx, cz)].append(dig)
 			var inst: MultiMeshInstance3D = _grass_cells.get(Vector2i(cx, cz))
 			if inst == null:
 				continue
@@ -507,8 +520,10 @@ func _add_road(node: Node3D, i: int, span: Vector2) -> void:
 		inst.position = Vector3(entry["cx"], 0.0, mid)
 		node.add_child(inst)
 		_roads[i * ROADS_PER_CHUNK + p] = entry
+		# Only craters that reach this piece; carving is the expensive part.
 		for d in _digs:
-			_carve_road(entry, Vector3(d.x, d.y, d.z), d.w)
+			if absf(d.z - mid) <= length / 2.0 + d.w:
+				_carve_road(entry, Vector3(d.x, d.y, d.z), d.w)
 		_mesh_road(entry)
 
 

@@ -24,6 +24,16 @@ var _rng := RandomNumberGenerator.new()
 ## Server: player -> seconds until they may go back to the spawn again.
 var _back_cooldown: Dictionary = {}
 
+## Kept loaded: Godot's resource cache lets go of a scene once nothing holds it, and loading
+## a generated scene again from text costs tens of milliseconds per spawn.
+var _packed_scene: PackedScene
+
+
+func _scene() -> PackedScene:
+	if _packed_scene == null:
+		_packed_scene = load(SCENE)
+	return _packed_scene
+
 
 func _ready() -> void:
 	_spawner.name = "Spawner"
@@ -58,6 +68,12 @@ func players() -> Array[PlayerController]:
 
 
 func _physics_process(delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(delta)
+	Prof.stop(&"player/module:physics", prof)
+
+
+func _physics_tick(delta: float) -> void:
 	if not multiplayer.is_server():
 		return
 	for player: PlayerController in _back_cooldown.keys():
@@ -160,7 +176,7 @@ func _server_spawn(peer: int) -> void:
 func _spawn_player(data: Variant) -> Node:
 	var info: Dictionary = data
 	var peer: int = info["peer"]
-	var player: PlayerController = (load(SCENE) as PackedScene).instantiate()
+	var player: PlayerController = _scene().instantiate()
 	player.name = str(peer)
 	player.position = info["position"]
 	player.set_meta(&"peer_id", peer)

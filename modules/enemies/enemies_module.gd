@@ -33,6 +33,16 @@ var _forward := Vector3.ZERO
 var _next_squad_in := -1.0
 var _rng := RandomNumberGenerator.new()
 
+## Kept loaded: Godot's resource cache lets go of a scene once nothing holds it, and loading
+## a generated scene again from text costs tens of milliseconds per spawn.
+var _packed_scene: PackedScene
+
+
+func _scene() -> PackedScene:
+	if _packed_scene == null:
+		_packed_scene = load(SCENE)
+	return _packed_scene
+
 
 func _ready() -> void:
 	_spawner.name = "Spawner"
@@ -69,6 +79,12 @@ func _on_world_ready(payload: Dictionary) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(delta)
+	Prof.stop(&"enemies/module:physics", prof)
+
+
+func _physics_tick(delta: float) -> void:
 	if not multiplayer.is_server() or not _world_ready or _next_squad_in < 0.0:
 		return
 	_next_squad_in -= delta
@@ -103,7 +119,9 @@ func server_spawn_squad(size: int, centre: Variant = null) -> Array[Node]:
 ## Runs on the server and, through the spawner, on every client.
 func _make_enemy(data: Variant) -> Node:
 	var info: Dictionary = data
-	var enemy: PlayerController = (load(SCENE) as PackedScene).instantiate()
+	var prof := Prof.start()
+	var enemy: PlayerController = _scene().instantiate()
+	Prof.stop(&"enemies/instantiate", prof)
 	enemy.name = "Enemy%d" % int(info["index"])
 	enemy.position = info["position"]
 	enemy.set_meta(&"peer_id", FIRST_ID - int(info["index"]))

@@ -13,6 +13,16 @@ var _rng := RandomNumberGenerator.new()
 var _spawner := MultiplayerSpawner.new()
 var _spawned_count := 0
 
+## Kept loaded: Godot's resource cache lets go of a scene once nothing holds it, and loading
+## a generated scene again from text costs tens of milliseconds per spawn.
+var _packed_scene: PackedScene
+
+
+func _scene() -> PackedScene:
+	if _packed_scene == null:
+		_packed_scene = load(SCENE)
+	return _packed_scene
+
 
 func _ready() -> void:
 	# The server spawns drones; the spawner replicates them to clients.
@@ -44,6 +54,12 @@ func _on_player_spawned(p: Dictionary) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(delta)
+	Prof.stop(&"drones/module:physics", prof)
+
+
+func _physics_tick(delta: float) -> void:
 	if not multiplayer.is_server() or config.is_empty():
 		return
 	# Players who left are freed objects; a typed lambda can't even receive those.
@@ -74,7 +90,7 @@ func server_spawn(target: Node3D) -> StalkerDrone:
 ## Runs on the server and, through the spawner, on every client.
 func _spawn_drone(data: Variant) -> Node:
 	var info: Dictionary = data
-	var drone: StalkerDrone = (load(SCENE) as PackedScene).instantiate()
+	var drone: StalkerDrone = _scene().instantiate()
 	drone.name = "Drone%d" % int(info["index"])
 	drone.position = info["position"]
 	return drone

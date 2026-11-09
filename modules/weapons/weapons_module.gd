@@ -16,6 +16,16 @@ var _charges_placed := 0
 var _builds: Dictionary = {}
 var _local_player: PlayerController
 
+## Kept loaded: Godot's resource cache lets go of a scene once nothing holds it, and loading
+## a generated scene again from text costs tens of milliseconds per spawn.
+var _packed_scene: PackedScene
+
+
+func _scene() -> PackedScene:
+	if _packed_scene == null:
+		_packed_scene = load(RIFLE)
+	return _packed_scene
+
 
 func _ready() -> void:
 	# Other modules (saving) find the API through this group instead of a path.
@@ -278,7 +288,7 @@ func _equip(player: PlayerController, slots: Dictionary) -> void:
 	if old != null:
 		camera.remove_child(old)
 		old.queue_free()
-	var weapon: HitscanWeapon = (load(RIFLE) as PackedScene).instantiate()
+	var weapon: HitscanWeapon = _scene().instantiate()
 	weapon.name = node_name
 	weapon.holder = player
 	weapon.stats = assembled["stats"]
@@ -341,6 +351,12 @@ func _hold(player: PlayerController, slot: String) -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(_delta)
+	Prof.stop(&"weapons/module:physics", prof)
+
+
+func _physics_tick(_delta: float) -> void:
 	for node: Node in get_tree().get_nodes_in_group(&"players"):
 		var player := node as PlayerController
 		if player == null or not player.has_node("Head/Camera"):

@@ -40,6 +40,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(_delta: float) -> void:
+	var prof := Prof.start()
+	_process_tick(_delta)
+	Prof.stop(&"player/player_input:frame", prof)
+
+
+func _process_tick(_delta: float) -> void:
 	if not _remote:
 		return
 	# Our own aim, applied locally and immediately; recoil arrives as look_delta too.
@@ -51,6 +57,12 @@ func _process(_delta: float) -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(_delta)
+	Prof.stop(&"player/player_input:physics", prof)
+
+
+func _physics_tick(_delta: float) -> void:
 	# A free mouse means a menu or panel is up (pause, modding): the player stands still
 	# instead of walking off while the keys are used for it.
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:

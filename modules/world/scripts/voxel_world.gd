@@ -18,6 +18,8 @@ const COLOUR_SPACING := 4.0
 ## Steeper than this (rise over run) shows bare rock.
 const STEEP_SLOPE := 1.1
 const SKIRT := 2.0
+## Focus points closer together than this (metres) count as one.
+const THIN_GRID := 4.0
 const GRASS := Color(0.36, 0.5, 0.22)
 const LITTER := Color(0.33, 0.29, 0.18)
 const STRAW := Color(0.7, 0.61, 0.36)
@@ -43,8 +45,15 @@ var _visual := DisplayServer.get_name() != "headless"
 var _collision: Dictionary[Vector2i, StaticBody3D] = {}
 var _tiles: Dictionary[Vector2i, MeshInstance3D] = {}
 var _tile_voxel: Dictionary[Vector2i, float] = {}
-var _digs: Array[Vector4] = []
+## Craters (x, y, z, radius), listed under every tile they reach, so a height sample only
+## looks at the few near it however many have been dug.
+var _digs_in: Dictionary[Vector2i, Array] = {}
+## Untouched ground heights per collision tile, so a crater only re-applies craters.
+var _base_heights: Dictionary[Vector2i, PackedFloat32Array] = {}
 var _material: ShaderMaterial
+## The focus tiles last time, and whether the build budget ran out then (work left to do).
+var _last_focus: Array[Vector2i] = []
+var _pending := true
 
 
 func _ready() -> void:
@@ -71,6 +80,12 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	var prof := Prof.start()
+	_process_tick(_delta)
+	Prof.stop(&"world/voxel_world:frame", prof)
+
+
+func _process_tick(_delta: float) -> void:
 	if heights == null:
 		return
 	update_around(_focus_points(), float(_cfg["builds_per_frame"]))
@@ -118,8 +133,12 @@ func ground_height(x: float, z: float) -> float:
 
 ## The ground as it is now, craters included.
 func surface_height(x: float, z: float) -> float:
-	var h := ground_height(x, z)
-	for d in _digs:
+	return _dig_into(ground_height(x, z), x, z, _digs_in.get(_tile_of(Vector3(x, 0.0, z)), []))
+
+
+## `h` lowered by any of `digs` over (x, z).
+func _dig_into(h: float, x: float, z: float, digs: Array) -> float:
+	for d: Vector4 in digs:
 		var dx := x - d.x
 		var dz := z - d.z
 		var r2 := d.w * d.w - dx * dx - dz * dz
@@ -136,12 +155,15 @@ func server_dig(at: Vector3, radius: float) -> void:
 		return
 	var floor_y := ground_height(at.x, at.z) - max_dig_depth
 	var center := Vector3(at.x, maxf(at.y, floor_y + radius), at.z)
-	_digs.append(Vector4(center.x, center.y, center.z, radius))
+	var dig := Vector4(center.x, center.y, center.z, radius)
 	var low := _tile_of(center - Vector3(radius, 0, radius))
 	var high := _tile_of(center + Vector3(radius, 0, radius))
 	for tx in range(low.x, high.x + 1):
 		for tz in range(low.y, high.y + 1):
 			var key := Vector2i(tx, tz)
+			if not _digs_in.has(key):
+				_digs_in[key] = []
+			_digs_in[key].append(dig)
 			if _collision.has(key):
 				_collision[key].queue_free()
 				_collision[key] = _build_collision(key)
@@ -151,48 +173,65 @@ func server_dig(at: Vector3, radius: float) -> void:
 
 
 func update_around(points: Array[Vector3], budget: float) -> void:
+	# Many focus points stand close together (a squad, a player in a car): one per few metres
+	# is plenty, and fewer points make every distance below cheaper.
+	points = _thin(points)
+	# Nothing moved to another tile and nothing was left to build last time: nothing to do.
+	# This runs every frame, so the common case has to be nearly free.
+	var focus := _focus_key(points)
+	if focus == _last_focus and not _pending:
+		return
+	_last_focus = focus
 	# Clients build collision too (around their camera): cheap, and the world announces
 	# itself only once the spawn is solid, on every machine.
 	var built := _update_collision(points, budget)
+	_pending = built >= budget
 	if _visual:
-		_update_tiles(points, budget - built)
+		_pending = _update_tiles(points, budget - built) or _pending
 
 
 func _update_collision(points: Array[Vector3], budget: float) -> float:
 	var reach: float = _cfg["collision_distance"]
 	var wanted := _tiles_near(points, reach)
+	var missing: Array = []
+	for key: Vector2i in wanted:
+		if not _collision.has(key):
+			missing.append([wanted[key], key])
 	var built := 0.0
-	for key: Vector2i in _sorted_by_distance(wanted.keys(), points):
-		if _collision.has(key):
-			continue
+	for entry: Array in _nearest_first(missing):
 		if built >= budget:
 			break
-		_collision[key] = _build_collision(key)
+		_collision[entry[1]] = _build_collision(entry[1])
 		built += 1.0
 	for key: Vector2i in _collision.keys():
 		if not wanted.has(key) and _distance(key, points) > reach + TILE:
 			_collision[key].queue_free()
 			_collision.erase(key)
+			_base_heights.erase(key)
 	return built
 
 
-func _update_tiles(points: Array[Vector3], budget: float) -> void:
+## Builds or re-details visible tiles; true when the budget ran out with work left.
+func _update_tiles(points: Array[Vector3], budget: float) -> bool:
 	var reach: float = _cfg["load_distance"]
 	var wanted := _tiles_near(points, reach)
+	var todo: Array = []
+	for key: Vector2i in wanted:
+		var voxel := _voxel_for(wanted[key])
+		if not (_tiles.has(key) and is_equal_approx(_tile_voxel[key], voxel)):
+			todo.append([wanted[key], key, voxel])
 	var built := 0.0
-	for key: Vector2i in _sorted_by_distance(wanted.keys(), points):
+	for entry: Array in _nearest_first(todo):
 		if built >= budget:
-			break
-		var voxel := _voxel_for(_distance(key, points))
-		if _tiles.has(key) and is_equal_approx(_tile_voxel[key], voxel):
-			continue
-		_replace_tile(key, voxel)
+			return true
+		_replace_tile(entry[1], entry[2])
 		built += 1.0
 	for key: Vector2i in _tiles.keys():
 		if not wanted.has(key) and _distance(key, points) > reach + TILE:
 			_tiles[key].queue_free()
 			_tiles.erase(key)
 			_tile_voxel.erase(key)
+	return false
 
 
 func _voxel_for(distance: float) -> float:
@@ -224,6 +263,7 @@ func _tile_of(p: Vector3) -> Vector2i:
 	return Vector2i(floori(p.x / TILE), floori(p.z / TILE))
 
 
+## Tiles within `reach` of any point: {tile: distance to the nearest point}.
 func _tiles_near(points: Array[Vector3], reach: float) -> Dictionary:
 	var area := heights.extent()
 	var out := {}
@@ -235,22 +275,49 @@ func _tiles_near(points: Array[Vector3], reach: float) -> Dictionary:
 				var key := Vector2i(tx, tz)
 				if not Rect2(tx * TILE, tz * TILE, TILE, TILE).intersects(area):
 					continue
-				if _distance(key, [p]) <= reach:
-					out[key] = true
+				var d := _distance_to(key, p)
+				if d <= reach and d < float(out.get(key, INF)):
+					out[key] = d
 	return out
 
 
 func _distance(key: Vector2i, points: Array[Vector3]) -> float:
 	var best := INF
 	for p in points:
-		var dx := maxf(maxf(key.x * TILE - p.x, p.x - (key.x + 1) * TILE), 0.0)
-		var dz := maxf(maxf(key.y * TILE - p.z, p.z - (key.y + 1) * TILE), 0.0)
-		best = minf(best, sqrt(dx * dx + dz * dz))
+		best = minf(best, _distance_to(key, p))
 	return best
 
 
-func _sorted_by_distance(keys: Array, points: Array[Vector3]) -> Array:
-	keys.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return _distance(a, points) < _distance(b, points))
+func _distance_to(key: Vector2i, p: Vector3) -> float:
+	var dx := maxf(maxf(key.x * TILE - p.x, p.x - (key.x + 1) * TILE), 0.0)
+	var dz := maxf(maxf(key.y * TILE - p.z, p.z - (key.y + 1) * TILE), 0.0)
+	return sqrt(dx * dx + dz * dz)
+
+
+## [[distance, ...], ...] sorted nearest first, distances worked out once beforehand.
+func _nearest_first(entries: Array) -> Array:
+	entries.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+	return entries
+
+
+## One point per THIN_GRID metres square: the rest add nothing at tile scale.
+func _thin(points: Array[Vector3]) -> Array[Vector3]:
+	var seen := {}
+	var out: Array[Vector3] = []
+	for p in points:
+		var cell := Vector2i(floori(p.x / THIN_GRID), floori(p.z / THIN_GRID))
+		if not seen.has(cell):
+			seen[cell] = true
+			out.append(p)
+	return out
+
+
+## Which tile each focus point is in, as one comparable value.
+func _focus_key(points: Array[Vector3]) -> Array[Vector2i]:
+	var keys: Array[Vector2i] = []
+	for p in points:
+		keys.append(_tile_of(p))
+	keys.sort()
 	return keys
 
 
@@ -267,12 +334,33 @@ func _sample(key: Vector2i, spacing: float) -> PackedFloat32Array:
 	return out
 
 
+## The collision tile's heights: the untouched ground (worked out once per tile) with the
+## tile's craters cut in.
+func _collision_heights(key: Vector2i) -> PackedFloat32Array:
+	var n := int(TILE / COLLISION_SPACING) + 1
+	if not _base_heights.has(key):
+		var base := PackedFloat32Array()
+		base.resize(n * n)
+		for j in n:
+			for i in n:
+				base[j * n + i] = ground_height(key.x * TILE + i * COLLISION_SPACING, key.y * TILE + j * COLLISION_SPACING)
+		_base_heights[key] = base
+	var out := _base_heights[key].duplicate()
+	var digs: Array = _digs_in.get(key, [])
+	if digs.is_empty():
+		return out
+	for j in n:
+		for i in n:
+			out[j * n + i] = _dig_into(out[j * n + i], key.x * TILE + i * COLLISION_SPACING, key.y * TILE + j * COLLISION_SPACING, digs)
+	return out
+
+
 func _build_collision(key: Vector2i) -> StaticBody3D:
 	var n := int(TILE / COLLISION_SPACING) + 1
 	var shape := HeightMapShape3D.new()
 	shape.map_width = n
 	shape.map_depth = n
-	shape.map_data = _sample(key, COLLISION_SPACING)
+	shape.map_data = _collision_heights(key)
 	var body := StaticBody3D.new()
 	body.name = "Ground_%d_%d" % [key.x, key.y]
 	body.add_to_group(&"terrain")

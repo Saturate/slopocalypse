@@ -117,6 +117,12 @@ func is_sprinting() -> bool:
 
 
 func _physics_process(delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(delta)
+	Prof.stop(&"player/player_controller:physics", prof)
+
+
+func _physics_tick(delta: float) -> void:
 	if _intent.consume_interact():
 		# Whoever owns the thing in front of us (car, later loot) decides what happens.
 		EventBus.publish(&"player.interact", {"player": self})
@@ -152,6 +158,12 @@ func lean_amount() -> float:
 ## short of walls so nobody peeks through one. On the server this moves the eye shots
 ## come from; clients ease toward the same synced lean.
 func _process(delta: float) -> void:
+	var prof := Prof.start()
+	_process_tick(delta)
+	Prof.stop(&"player/player_controller:frame", prof)
+
+
+func _process_tick(delta: float) -> void:
 	if _head == null or config.is_empty():
 		return
 	var want := float(_intent.lean) if mode == Mode.NORMAL and not is_sprinting() else 0.0

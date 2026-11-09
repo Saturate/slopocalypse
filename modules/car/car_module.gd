@@ -17,12 +17,28 @@ var _rescue_depth := INF
 var _spawner := MultiplayerSpawner.new()
 var _bot: CarBot
 
+## Kept loaded: Godot's resource cache lets go of a scene once nothing holds it, and loading
+## a generated scene again from text costs tens of milliseconds per spawn.
+var _packed_scene: PackedScene
+
+
+func _scene() -> PackedScene:
+	if _packed_scene == null:
+		_packed_scene = load(SCENE)
+	return _packed_scene
+
 
 func cars() -> Array[CarController]:
 	return _cars
 
 
 func _physics_process(_delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(_delta)
+	Prof.stop(&"car/module:physics", prof)
+
+
+func _physics_tick(_delta: float) -> void:
 	if not multiplayer.is_server():
 		return
 	for car in _cars:
@@ -112,7 +128,7 @@ func _on_world_ready(payload: Dictionary) -> void:
 ## Runs on the server and, through the spawner, on every client.
 func _spawn_car(data: Variant) -> Node:
 	var info: Dictionary = data
-	var car: CarController = (load(SCENE) as PackedScene).instantiate()
+	var car: CarController = _scene().instantiate()
 	car.name = "Car%d" % int(info["index"])
 	car.transform = info["transform"]
 	car.add_to_group(&"vehicles")

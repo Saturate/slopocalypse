@@ -170,6 +170,12 @@ func apply(id: Vector2i, animate: bool) -> void:
 ## One rebuild step per frame: build the stump model, mesh it; build the top, mesh it and
 ## let it fall (hiding the standing tree at that moment, so nothing flickers).
 func _process(_delta: float) -> void:
+	var prof := Prof.start()
+	_process_tick(_delta)
+	Prof.stop(&"world/tree_damage:frame", prof)
+
+
+func _process_tick(_delta: float) -> void:
 	if visual:
 		_queue_withering()
 	if _jobs.is_empty():
