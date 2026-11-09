@@ -20,11 +20,11 @@ static func start() -> int:
 
 
 static func stop(zone: StringName, started: int) -> void:
-	var spent := Time.get_ticks_usec() - started
+	var spent := maxi(Time.get_ticks_usec() - started, 0)
 	_total[zone] = _total.get(zone, 0) + spent
 	_calls[zone] = _calls.get(zone, 0) + 1
-	if spent > _worst.get(zone, 0):
-		_worst[zone] = spent
+	# Always written: a zone faster than a microsecond spends 0 and must still have an entry.
+	_worst[zone] = maxi(_worst.get(zone, 0), spent)
 	_frame[zone] = _frame.get(zone, 0) + spent
 
 
