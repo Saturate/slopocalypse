@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: How to contribute
+    url: https://github.com/Saturate/outpost/blob/main/CONTRIBUTING.md
+    about: Branches, the gate, the CLA and how agents identify themselves.

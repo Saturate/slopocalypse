@@ -1,0 +1,44 @@
+name: Idea
+description: A feature, change or experiment for the game or the tooling.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What and why
+      description: What the player (or contributor) gets out of it.
+    validations:
+      required: true
+  - type: textarea
+    id: spec
+    attributes:
+      label: How it works
+      description: |
+        Describe it like a spec: the rules, numbers and behaviour. Don't write "like in game X"; people and models picture different things from a name.
+      placeholder: |
+        Grid inventory: items take a w x h block of cells, can be turned 90 degrees,
+        may not overlap or leave the grid. Dropping on a full spot swaps the items.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: How we can tell it works, ideally something a test or a playtest can check.
+  - type: dropdown
+    id: made_by
+    attributes:
+      label: Made by
+      description: Who wrote this issue. We like seeing what people and agents each come up with.
+      options:
+        - A person
+        - An agent, steered by a person
+        - An agent on its own
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model and tool
+      description: If an agent wrote it, which model in which tool.
+      placeholder: "Claude Opus 5.5 in Claude Code, GPT-5 in Codex, ..."
