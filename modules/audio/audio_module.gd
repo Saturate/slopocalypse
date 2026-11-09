@@ -2,10 +2,12 @@ extends Node
 ## Client only: plays the game's sounds from events it hears on the bus, positioned in the
 ## world. Shots (rifle, pistol, suppressed) at the shooter, impacts where bullets land, a
 ## tick when your own shot hits, explosions, everyone's footsteps, and for your own player
-## reload clicks, a pickup blip, a thump when hurt, plus quiet wind. Never changes game
+## reload clicks, a pickup blip, a thump when hurt, plus quiet wind, birds by day and crickets at night. Never changes game
 ## state. Sounds come from SoundBank; volumes are in data/audio.json.
 
 const CONFIG := "res://modules/audio/data/audio.json"
+## Quiet enough to count as off for a looping player that keeps running.
+const SILENT_DB := -60.0
 
 ## Off on a headless server; tests switch it on.
 var enabled := DisplayServer.get_name() != "headless"
@@ -17,6 +19,11 @@ var _local: Node3D
 var _last_health := -1.0
 var _was_reloading := false
 var _last_items := -1
+## 1 by day, 0 at night, in between at dawn and dusk; from the day and night cycle, full
+## day when there is none.
+var _daylight := 1.0
+var _crickets: AudioStreamPlayer
+var _next_bird := 0.0
 
 
 func _ready() -> void:
@@ -31,12 +38,20 @@ func _ready() -> void:
 	EventBus.subscribe(&"drone.mood", _on_drone_mood)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	EventBus.subscribe(&"inventory.changed", _on_inventory_changed)
+	EventBus.subscribe(&"daytime.hour", _on_hour)
 	var wind := AudioStreamPlayer.new()
 	wind.name = "Wind"
 	wind.stream = SoundBank.get_sound("wind")
 	wind.volume_db = _volume("wind")
 	wind.autoplay = true
 	add_child(wind)
+	_crickets = AudioStreamPlayer.new()
+	_crickets.name = "Crickets"
+	_crickets.stream = SoundBank.get_sound("crickets")
+	_crickets.volume_db = SILENT_DB
+	_crickets.autoplay = true
+	add_child(_crickets)
+	_next_bird = _bird_wait()
 
 
 func _exit_tree() -> void:
@@ -49,6 +64,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"drone.mood", _on_drone_mood)
 	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
 	EventBus.unsubscribe(&"inventory.changed", _on_inventory_changed)
+	EventBus.unsubscribe(&"daytime.hour", _on_hour)
 
 
 ## Which shot sound a weapon makes: a suppressor on its build quiets it, a semi-auto gun
@@ -141,6 +157,43 @@ func _process(delta: float) -> void:
 		return
 	_footsteps(delta)
 	_own_player()
+	_ambience(delta)
+
+
+func _on_hour(p: Dictionary) -> void:
+	_daylight = clampf(float(p.get("daylight", 1.0)), 0.0, 1.0)
+
+
+## Birds by day, crickets at night, under the wind. A bird sings now and then somewhere
+## around you, a different song and pitch each time; fewer as the light goes.
+func _ambience(delta: float) -> void:
+	var cricket_db := _volume("crickets") + linear_to_db(maxf(1.0 - _daylight, 0.001))
+	_crickets.volume_db = maxf(cricket_db, SILENT_DB)
+	_next_bird -= delta
+	if _next_bird > 0.0:
+		return
+	_next_bird = _bird_wait()
+	var listener := _listener()
+	if listener == null or randf() > _daylight:
+		return
+	var birds := config.get("birds", {}) as Dictionary
+	var angle := randf() * TAU
+	var distance := randf_range(float(birds.get("distance_min", 12.0)), float(birds.get("distance_max", 45.0)))
+	var at := listener.global_position + Vector3(cos(angle) * distance, randf_range(3.0, 10.0), sin(angle) * distance)
+	var song := "bird%d" % randi_range(0, SoundBank.BIRD_VARIANTS - 1)
+	var voice := play_at(song, at, distance * 3.0, randf_range(0.85, 1.2))
+	if voice != null:
+		voice.volume_db = _volume("bird")
+
+
+func _bird_wait() -> float:
+	var birds := config.get("birds", {}) as Dictionary
+	return randf_range(float(birds.get("min_seconds", 2.0)), float(birds.get("max_seconds", 7.0)))
+
+
+## Where you hear from: the current camera.
+func _listener() -> Node3D:
+	return get_viewport().get_camera_3d()
 
 
 ## Everyone walking makes steps, a footfall every `step_length` metres on the ground.

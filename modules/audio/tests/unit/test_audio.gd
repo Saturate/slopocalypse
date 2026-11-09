@@ -5,7 +5,7 @@ const MODULE := "res://modules/audio/audio_module.gd"
 
 
 func test_every_sound_is_synthesised() -> void:
-	for sound in ["rifle", "pistol", "suppressed", "impact", "hit", "explosion", "footstep", "reload", "pickup", "hurt", "wind"]:
+	for sound in ["rifle", "pistol", "suppressed", "impact", "hit", "explosion", "footstep", "reload", "pickup", "hurt", "wind", "crickets", "bird0", "bird1", "bird2", "bird3"]:
 		var wav := SoundBank.get_sound(sound)
 		assert_object(wav).override_failure_message(sound).is_not_null()
 		assert_float(wav.get_length()).override_failure_message(sound).is_greater(0.02)
@@ -15,6 +15,46 @@ func test_every_sound_is_synthesised() -> void:
 			loud = maxi(loud, absi(wav.data.decode_s16(i)))
 		assert_int(loud).override_failure_message(sound).is_greater(2000)
 	assert_int(SoundBank.get_sound("wind").loop_mode).is_equal(AudioStreamWAV.LOOP_FORWARD)
+	assert_int(SoundBank.get_sound("crickets").loop_mode).is_equal(AudioStreamWAV.LOOP_FORWARD)
+
+
+func test_wind_is_long() -> void:
+	var wind := SoundBank.get_sound("wind")
+	# Long enough that the loop is not heard repeating.
+	assert_float(wind.get_length()).is_greater(15.0)
+
+
+func test_bird_songs_differ() -> void:
+	var lengths := {}
+	for v in SoundBank.BIRD_VARIANTS:
+		lengths[snappedf(SoundBank.get_sound("bird%d" % v).get_length(), 0.01)] = true
+	assert_int(lengths.size()).is_equal(SoundBank.BIRD_VARIANTS)
+
+
+func test_birds_sing_by_day_and_crickets_take_over_at_night() -> void:
+	var module: Node = (load(MODULE) as GDScript).new()
+	module.set(&"enabled", true)
+	add_child(auto_free(module))
+	var camera: Camera3D = auto_free(Camera3D.new())
+	add_child(camera)
+	camera.make_current()
+	var crickets := module.get_node("Crickets") as AudioStreamPlayer
+	EventBus.publish(&"daytime.hour", {"daylight": 1.0})
+	module.set(&"_next_bird", 0.0)
+	module.call(&"_ambience", 0.016)
+	assert_float(crickets.volume_db).is_less_equal(module.get(&"SILENT_DB") + 0.01)
+	var day_voices := _voices(module)
+	assert_int(day_voices).is_greater(0)
+	EventBus.publish(&"daytime.hour", {"daylight": 0.0})
+	for n in 20:
+		module.set(&"_next_bird", 0.0)
+		module.call(&"_ambience", 0.016)
+	assert_int(_voices(module)).is_equal(day_voices)
+	assert_float(crickets.volume_db).is_greater(-40.0)
+
+
+func _voices(module: Node) -> int:
+	return module.get_children().filter(func(n: Node) -> bool: return n is AudioStreamPlayer3D).size()
 
 
 func test_a_suppressor_quiets_and_a_semi_auto_is_a_pistol() -> void:

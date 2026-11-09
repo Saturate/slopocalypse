@@ -10,7 +10,9 @@
     "reload": -10.0,
     "pickup": -10.0,
     "hurt": -6.0,
-    "wind": -28.0,
+    "wind": -22.0,
+    "bird": -14.0,
+    "crickets": -24.0,
     "dive": -2.0,
     "rotor": -8.0
   },
@@ -20,5 +22,11 @@
   "shot_range": 320.0,
   "footstep_range": 28.0,
   "step_length": 2.0,
-  "max_voices": 48
+  "max_voices": 48,
+  "birds": {
+    "min_seconds": 2.5,
+    "max_seconds": 8.0,
+    "distance_min": 12.0,
+    "distance_max": 45.0
+  }
 }

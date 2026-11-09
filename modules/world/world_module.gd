@@ -11,6 +11,7 @@ const BULLET_CRATER_RADIUS := 0.35
 const SPAWN_AREA_RADIUS := 16.0
 
 var _voxels: VoxelWorld
+var _scenery: SceneryScatter
 var _announcement: Dictionary = {}
 var _waited := 0.0
 
@@ -23,7 +24,8 @@ func _ready() -> void:
 	var world := scene.instantiate()
 	add_child(world)
 	_voxels = world.get_node("Terrain")
-	_voxels.dug.connect((world.get_node("Scenery") as SceneryScatter).clear_grass)
+	_scenery = world.get_node("Scenery")
+	_voxels.dug.connect(_scenery.on_dug)
 	var spawn: Marker3D = world.get_node("SpawnPoint")
 	var car: Marker3D = world.get_node("CarSpawn")
 	# `front` and `forward`: players start inside the tunnel, so things spread "around the
@@ -38,15 +40,55 @@ func _ready() -> void:
 	}
 	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.subscribe(&"explosion", _on_explosion)
+	EventBus.subscribe(&"world.tree_felled", _on_tree_felled)
+	Net.peer_joined.connect(_on_peer_joined)
 
 
 func _exit_tree() -> void:
 	EventBus.unsubscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.unsubscribe(&"explosion", _on_explosion)
+	EventBus.unsubscribe(&"world.tree_felled", _on_tree_felled)
+	if Net.peer_joined.is_connected(_on_peer_joined):
+		Net.peer_joined.disconnect(_on_peer_joined)
 
 
 func _on_explosion(p: Dictionary) -> void:
 	_voxels.server_dig(p["position"], float(p["radius"]))
+	if _is_server():
+		var blasted := _scenery.server_blast_trees(p["position"], float(p["radius"]))
+		for id: Vector2i in blasted:
+			_broadcast_fell(id, blasted[id])
+
+
+func _is_server() -> bool:
+	return multiplayer.has_multiplayer_peer() and multiplayer.is_server()
+
+
+func _broadcast_fell(id: Vector2i, direction: Vector3) -> void:
+	Net.server_broadcast(&"world.tree_felled", {"chunk": id.x, "index": id.y, "direction": direction})
+
+
+func _on_tree_felled(p: Dictionary) -> void:
+	_scenery.fell_tree(Vector2i(int(p["chunk"]), int(p["index"])), p["direction"])
+
+
+## Someone joining late gets every tree already down, lying where it fell.
+func _on_peer_joined(peer: int) -> void:
+	if not _is_server():
+		return
+	var felled := _scenery.felled()
+	if felled.is_empty():
+		return
+	var list: Array = []
+	for id: Vector2i in felled:
+		list.append([id.x, id.y, felled[id]])
+	_receive_felled.rpc_id(peer, list)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _receive_felled(list: Array) -> void:
+	for entry: Array in list:
+		_scenery.fell_tree(Vector2i(int(entry[0]), int(entry[1])), entry[2])
 
 
 func _process(delta: float) -> void:
@@ -73,5 +115,9 @@ func _ground_hit(at: Vector3) -> bool:
 
 func _on_weapon_fired(p: Dictionary) -> void:
 	var hit: Variant = p.get("collider")
+	if hit is Node and (hit as Node).has_meta(&"chunk") and _is_server():
+		var id: Variant = _scenery.server_shoot_tree(hit, p["to"])
+		if id is Vector2i:
+			_broadcast_fell(id, (p["to"] as Vector3) - (p["from"] as Vector3))
 	if hit is Node and (hit as Node).is_in_group(&"terrain") and float(p.get("damage", 0.0)) == 0.0:
 		_voxels.server_dig(p["to"], BULLET_CRATER_RADIUS)
