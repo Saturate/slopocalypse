@@ -1,0 +1,9 @@
+{
+  "admins": [],
+  "local_is_admin": true,
+  "toggle_key": "F2",
+  "spawn_ahead": 15.0,
+  "teleport_ahead": 50.0,
+  "squad_size": 3.0,
+  "hours": [6.5, 9.0, 13.0, 18.0, 19.3, 23.0]
+}

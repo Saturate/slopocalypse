@@ -116,6 +116,7 @@ func _initialize() -> void:
 	var spawn := Marker3D.new()
 	spawn.name = "SpawnPoint"
 	spawn.position = Vector3(0.0, heights.height_at(0.0, 0.0) + 1.0, 0.0)
+	spawn.add_to_group(&"spawn_point", true)
 	root.add_child(spawn)
 
 	# The car waits on the road just outside the tunnel, nose down the road (cars drive along

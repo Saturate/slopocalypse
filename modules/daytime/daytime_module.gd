@@ -20,6 +20,7 @@ func _ready() -> void:
 		return
 	Net.peer_joined.connect(_on_peer_joined)
 	EventBus.subscribe(&"world.ready", _on_world_ready)
+	EventBus.subscribe(&"admin.set_hour", _on_admin_set_hour)
 	if DisplayServer.get_name() != "headless":
 		_lighting = DayLighting.new()
 		_lighting.name = "Lighting"
@@ -28,6 +29,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	EventBus.unsubscribe(&"world.ready", _on_world_ready)
+	EventBus.unsubscribe(&"admin.set_hour", _on_admin_set_hour)
 	if Net.peer_joined.is_connected(_on_peer_joined):
 		Net.peer_joined.disconnect(_on_peer_joined)
 
@@ -84,3 +86,7 @@ func _receive_hour(hour: float) -> void:
 	_clock.set_hour(hour)
 	if _lighting != null:
 		_lighting.apply(_clock)
+
+
+func _on_admin_set_hour(p: Dictionary) -> void:
+	server_set_hour(float(p.get("hour", 12.0)))

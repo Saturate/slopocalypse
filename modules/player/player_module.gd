@@ -36,6 +36,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"player.died", _on_player_died)
 	EventBus.subscribe(&"player.respawned", _on_player_respawned)
 	EventBus.subscribe(&"session.back_to_spawn", _on_back_to_spawn_asked)
+	EventBus.subscribe(&"admin.teleport", _on_admin_teleport)
 	Net.peer_joined.connect(_on_peer_joined)
 	Net.peer_left.connect(_on_peer_left)
 
@@ -47,6 +48,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"player.died", _on_player_died)
 	EventBus.unsubscribe(&"player.respawned", _on_player_respawned)
 	EventBus.unsubscribe(&"session.back_to_spawn", _on_back_to_spawn_asked)
+	EventBus.unsubscribe(&"admin.teleport", _on_admin_teleport)
 
 
 func players() -> Array[PlayerController]:
@@ -218,14 +220,20 @@ func server_back_to_spawn(player: PlayerController) -> bool:
 		Log.info(&"player", "%s asked to go back to the spawn again too soon; refused" % who)
 		return false
 	_back_cooldown[player] = float(player.config.get("back_to_spawn_cooldown_seconds", 10.0))
-	# A car lets them out first (and puts them beside it); then they move.
 	EventBus.publish(&"player.back_to_spawn", {"player": player})
 	var spread := float(player.config.get("respawn_spread", 0.0))
-	player.global_position = _spawn + Vector3(_rng.randf_range(-spread, spread), 0.5, _rng.randf_range(-spread, spread))
-	player.velocity = Vector3.ZERO
+	server_move_to(player, _spawn + Vector3(_rng.randf_range(-spread, spread), 0.5, _rng.randf_range(-spread, spread)))
 	Log.info(&"player", "%s went back to the spawn" % who)
-	server_hold(player)
 	return true
+
+
+## Server: moves a living player to `at` and holds them there until the ground under them
+## exists. A car lets them out first (and puts them beside it); then they move.
+func server_move_to(player: PlayerController, at: Vector3) -> void:
+	EventBus.publish(&"player.teleporting", {"player": player})
+	player.global_position = at
+	player.velocity = Vector3.ZERO
+	server_hold(player)
 
 
 ## Everywhere: a dead player is hidden, cannot be hit and does not move; the camera stays
@@ -331,3 +339,9 @@ func _bot_behaviour() -> String:
 
 func _camera(player: PlayerController) -> Camera3D:
 	return player.get_node("Head/Camera")
+
+
+func _on_admin_teleport(p: Dictionary) -> void:
+	var player := p.get("player") as PlayerController
+	if player != null and multiplayer.is_server() and not player.get_meta(&"dead", false):
+		server_move_to(player, p["position"])

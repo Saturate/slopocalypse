@@ -12,6 +12,7 @@
     "audio": true,
     "persistence": true,
     "voxkit": true,
+    "admin": true,
     "daytime": true
   }
 }

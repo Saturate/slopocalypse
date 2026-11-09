@@ -84,7 +84,8 @@ func _ready() -> void:
 	EventBus.subscribe(&"car.entered", _on_car_entered)
 	EventBus.subscribe(&"car.exited", _on_car_exited)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
-	EventBus.subscribe(&"player.back_to_spawn", _on_back_to_spawn)
+	EventBus.subscribe(&"player.teleporting", _on_teleporting)
+	EventBus.subscribe(&"admin.spawn", _on_admin_spawn)
 
 
 func _exit_tree() -> void:
@@ -93,7 +94,8 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"car.entered", _on_car_entered)
 	EventBus.unsubscribe(&"car.exited", _on_car_exited)
 	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
-	EventBus.unsubscribe(&"player.back_to_spawn", _on_back_to_spawn)
+	EventBus.unsubscribe(&"player.teleporting", _on_teleporting)
+	EventBus.unsubscribe(&"admin.spawn", _on_admin_spawn)
 
 
 func _on_world_ready(payload: Dictionary) -> void:
@@ -166,8 +168,9 @@ func _on_car_exited(payload: Dictionary) -> void:
 		input.queue_free()
 
 
-## Server: someone going back to the spawn gets out of their car first.
-func _on_back_to_spawn(p: Dictionary) -> void:
+## Server: someone being moved (back to the spawn, an admin teleport) gets out of their
+## car first.
+func _on_teleporting(p: Dictionary) -> void:
 	var who := p.get("player") as Node3D
 	for car in _cars:
 		if car.seat_of(who) != &"":
@@ -193,3 +196,14 @@ func _bot_behaviour() -> String:
 		if arg.begins_with("--bot="):
 			return arg.trim_prefix("--bot=")
 	return ""
+
+
+## Server: an admin asked for a car in front of them, nose pointing the way they face.
+func _on_admin_spawn(p: Dictionary) -> void:
+	if p.get("kind") != "car" or not multiplayer.is_server():
+		return
+	var forward: Vector3 = p.get("forward", Vector3.FORWARD)
+	# Cars drive along their +Z.
+	var basis := Basis.looking_at(-forward)
+	var at: Vector3 = p["position"]
+	_spawner.spawn({"index": _cars.size(), "transform": Transform3D(basis, at + Vector3.UP * LIFT_HEIGHT)})

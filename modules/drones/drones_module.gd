@@ -25,10 +25,12 @@ func _ready() -> void:
 		return
 	config = data
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
+	EventBus.subscribe(&"admin.spawn", _on_admin_spawn)
 
 
 func _exit_tree() -> void:
 	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
+	EventBus.unsubscribe(&"admin.spawn", _on_admin_spawn)
 
 
 func drones() -> Array[StalkerDrone]:
@@ -81,3 +83,9 @@ func _spawn_drone(data: Variant) -> Node:
 func _on_drone_destroyed(drone: StalkerDrone) -> void:
 	_drones.erase(drone)
 	_respawn_in = config["respawn_seconds"]
+
+
+## Server: an admin asked for a drone; it comes for them.
+func _on_admin_spawn(p: Dictionary) -> void:
+	if p.get("kind") == "drone" and multiplayer.is_server() and p.get("player") is Node3D:
+		server_spawn(p["player"])

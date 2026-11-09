@@ -94,7 +94,7 @@ shape = SubResource("BoxShape3D_cbeb26")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 191, 0, -1436)
 shape = SubResource("BoxShape3D_1bf2d0")
 
-[node name="SpawnPoint" type="Marker3D" parent="." unique_id=973275349]
+[node name="SpawnPoint" type="Marker3D" parent="." unique_id=973275349 groups=["spawn_point"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.74964166, 0)
 
 [node name="CarSpawn" type="Marker3D" parent="." unique_id=1652657857]
