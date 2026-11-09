@@ -178,7 +178,7 @@ func _draw_tile(placed: Dictionary, at: Vector2, w: int, h: int, font: Font, alp
 	var rect := Rect2(at + Vector2(GAP, GAP), Vector2(w * CELL - GAP * 2, h * CELL - GAP * 2))
 	_grid_view.draw_rect(rect, Color(colour.darkened(0.45), alpha))
 	_grid_view.draw_rect(rect, Color(colour, alpha), false, 1.5)
-	# Tiles carry the short name, top right as in Tarkov; the full name shows on hover.
+	# Tiles carry the short name, top right; the full name shows on hover.
 	var label := str(info.get("short", info.get("name", placed["item"])))
 	_grid_view.draw_string(font, rect.position + Vector2(4, 14), label, HORIZONTAL_ALIGNMENT_RIGHT, rect.size.x - 8, 12, Color(TEXT, alpha))
 

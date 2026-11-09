@@ -11,8 +11,8 @@ export interface DeployTarget {
 	openFirewall: boolean;
 }
 
-export const SERVICE = "outpost";
-export const LINUX_EXE = "Outpost.x86_64";
+export const SERVICE = "slopocalypse";
+export const LINUX_EXE = "Slopocalypse.x86_64";
 
 // A shell-safe single-quoted word.
 export function quote(value: string): string {
@@ -22,7 +22,7 @@ export function quote(value: string): string {
 export function systemdUnit(t: DeployTarget): string {
 	return [
 		"[Unit]",
-		"Description=Outpost dedicated server",
+		"Description=Slopocalypse dedicated server",
 		"After=network-online.target",
 		"Wants=network-online.target",
 		"",

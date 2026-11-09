@@ -20,7 +20,7 @@ async function main(): Promise<void> {
 	}
 
 	const asset = assetFor(platform, arch);
-	const work = mkdtempSync(join(tmpdir(), "outpost-godot-"));
+	const work = mkdtempSync(join(tmpdir(), "slopocalypse-godot-"));
 	try {
 		const zip = join(work, asset);
 		const sumsFile = join(work, "SHA512-SUMS.txt");

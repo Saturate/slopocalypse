@@ -1,6 +1,7 @@
 {
-  "name": "outpost-tools",
+  "name": "slopocalypse-tools",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "engines": {
     "node": ">=24"

@@ -36,11 +36,11 @@ export function presetFor(os: TargetOs, exportPath: string): Preset {
 			"debug/export_console_wrapper": 2,
 			// Needs rcedit; the default icon is fine for now.
 			"application/modify_resources": false,
-			"application/product_name": "Outpost",
+			"application/product_name": "Slopocalypse",
 			"codesign/enable": false,
 		},
 		linux: { ...common, "binary_format/architecture": "x86_64" },
-		macos: { "binary_format/architecture": "universal", "application/bundle_identifier": "dev.saturate.outpost", "codesign/codesign": 0 },
+		macos: { "binary_format/architecture": "universal", "application/bundle_identifier": "dev.saturate.slopocalypse", "codesign/codesign": 0 },
 	};
 	return { name: PLATFORMS[os], platform: PLATFORMS[os], exportPath, options: perOs[os] };
 }
@@ -82,7 +82,7 @@ export function templatesDir(godotDir: string, version: string): string {
 }
 
 export function exeName(os: TargetOs): string {
-	return os === "windows" ? "Outpost.exe" : os === "linux" ? "Outpost.x86_64" : "Outpost.app";
+	return os === "windows" ? "Slopocalypse.exe" : os === "linux" ? "Slopocalypse.x86_64" : "Slopocalypse.app";
 }
 
 // Gameplay data files a player can tune: data/*.json and modules/<id>/data/*.json,
@@ -124,7 +124,7 @@ export function shippedServers(hosts: string): string {
 // Runs a dedicated server in a visible window, so the host can see it and close it.
 export function hostScript(os: TargetOs, port: number): string {
 	if (os === "windows") {
-		return `@echo off\r\ncd /d "%~dp0"\r\n"%~dp0Outpost.console.exe" --headless -- --server=${port}\r\npause\r\n`;
+		return `@echo off\r\ncd /d "%~dp0"\r\n"%~dp0Slopocalypse.console.exe" --headless -- --server=${port}\r\npause\r\n`;
 	}
 	return `#!/bin/sh\ncd "$(dirname "$0")"\nexec ./${exeName(os)} --headless -- --server=${port}\n`;
 }

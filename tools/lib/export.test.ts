@@ -4,12 +4,12 @@ import assert from "node:assert/strict";
 import { dataFiles, presetFor, shippedServers, presetsFile, templatesDir } from "./export.ts";
 
 test("windows preset embeds the pack, keeps data files and drops dev-only folders", () => {
-	const p = presetFor("windows", "build/windows/Outpost.exe");
+	const p = presetFor("windows", "build/windows/Slopocalypse.exe");
 	assert.equal(p.platform, "Windows Desktop");
 	const text = presetsFile([p]);
 	assert.match(text, /\[preset\.0\]/);
 	assert.match(text, /platform="Windows Desktop"/);
-	assert.match(text, /export_path="build\/windows\/Outpost.exe"/);
+	assert.match(text, /export_path="build\/windows\/Slopocalypse.exe"/);
 	assert.match(text, /include_filter="[^"]*\*\.json/);
 	for (const dev of ["tests/*", "tools/*", "addons/gdUnit4/*", "modules/*/tests/*", "modules/*/builders/*", "modules/*/capture/*", "modules/*/rust/*"]) {
 		assert.ok(text.includes(dev), `exclude filter misses ${dev}`);

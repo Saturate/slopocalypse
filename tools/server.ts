@@ -8,5 +8,5 @@ import { localGodot } from "./lib/godot.ts";
 const root = resolve(import.meta.dirname, "..");
 const i = argv.indexOf("--port");
 const port = i >= 0 ? argv[i + 1] : "7777";
-console.log(`Outpost server on UDP port ${port} (Ctrl+C to stop)`);
+console.log(`Slopocalypse server on UDP port ${port} (Ctrl+C to stop)`);
 spawn(localGodot(root), ["--headless", "--path", root, "--", `--server=${port}`], { cwd: root, stdio: "inherit" });

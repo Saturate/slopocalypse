@@ -50,7 +50,7 @@ async function install(addon: Addon): Promise<void> {
 		console.log(`${addon.name} ${addon.version} already present`);
 		return;
 	}
-	const work = mkdtempSync(join(tmpdir(), "outpost-addon-"));
+	const work = mkdtempSync(join(tmpdir(), "slopocalypse-addon-"));
 	try {
 		const zip = join(work, "addon.zip");
 		console.log(`Downloading ${addon.name} ${addon.version}`);

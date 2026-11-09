@@ -1,4 +1,4 @@
-//! Guns assembled from parts in slots, Tarkov style: a receiver provides slots (barrel,
+//! Guns assembled from parts in slots: a receiver provides slots (barrel,
 //! stock, optic ...), some parts provide more (a barrel provides the muzzle slot), and
 //! every part changes the final stats. Pure rules over data so server and clients agree.
 

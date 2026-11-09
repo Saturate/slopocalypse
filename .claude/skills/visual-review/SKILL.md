@@ -1,6 +1,6 @@
 ---
 name: visual-review
-description: Captures Outpost gameplay to a PNG contact sheet and has a fresh subagent, which never sees the code, judge it against the stated goal. Use after any change that affects what the game looks like or how something moves on screen (terrain, player, car, weapons, effects, UI), when asked to "look at it", "check visually", "screenshot", or before calling a visual task done. The author of a change does not judge its visuals in the same session.
+description: Captures Slopocalypse gameplay to a PNG contact sheet and has a fresh subagent, which never sees the code, judge it against the stated goal. Use after any change that affects what the game looks like or how something moves on screen (terrain, player, car, weapons, effects, UI), when asked to "look at it", "check visually", "screenshot", or before calling a visual task done. The author of a change does not judge its visuals in the same session.
 metadata:
   author: Saturate
   version: "1.0"

@@ -1,7 +1,7 @@
 // Builds a portable game folder and zip a player can unpack and double-click.
 //   node tools/export.ts [--os windows|linux] [--connect HOST[:PORT][,HOST...]] [--port 7777]
 // --connect ships those addresses in servers.json, so the menu already lists them and a
-// friend just clicks. Output: build/<os>/ and build/outpost-<os>.zip.
+// friend just clicks. Output: build/<os>/ and build/slopocalypse-<os>.zip.
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -37,7 +37,7 @@ async function ensureTemplates(): Promise<void> {
 	const dir = templatesDir(join(root, GODOT_DIR), GODOT_VERSION);
 	if (existsSync(join(dir, "version.txt"))) return;
 	const asset = `Godot_v${GODOT_VERSION}_export_templates.tpz`;
-	const work = mkdtempSync(join(tmpdir(), "outpost-templates-"));
+	const work = mkdtempSync(join(tmpdir(), "slopocalypse-templates-"));
 	try {
 		console.log(`Downloading ${asset} (about 1 GB, once)`);
 		const tpz = join(work, asset);
@@ -58,9 +58,9 @@ async function ensureTemplates(): Promise<void> {
 const README = (host: string | undefined, port: number, os: TargetOs): string => {
 	const ext = os === "windows" ? "bat" : "sh";
 	const lines = [
-		"OUTPOST",
+		"SLOPOCALYPSE",
 		"",
-		"Start: double-click Outpost" + (os === "windows" ? ".exe" : "") + ". The menu has Play solo, Host a game and Join a friend.",
+		"Start: double-click Slopocalypse" + (os === "windows" ? ".exe" : "") + ". The menu has Play solo, Host a game and Join a friend.",
 		host !== undefined ? `Join a friend: ${host} is already listed under Recent; click it.` : "Join a friend: paste their address under Join a friend and click Join.",
 		`Host a game: click Host a game and send friends the address the menu shows. They need to reach UDP port ${port} on your machine (Tailscale, or a forwarded port).`,
 		`A server that stays up without playing: double-click "Host server.${ext}" and leave the window open.`,
@@ -122,7 +122,7 @@ async function main(): Promise<void> {
 
 	if (os === hostOs()) await smokeTest(outDir, os);
 
-	const zip = join(root, "build", `outpost-${os}.zip`);
+	const zip = join(root, "build", `slopocalypse-${os}.zip`);
 	rmSync(zip, { force: true });
 	zipFolder(outDir, zip);
 	console.log(`Files: ${readdirSync(outDir).join(", ")}`);
@@ -132,7 +132,7 @@ async function main(): Promise<void> {
 // The exported game, not the project: solo must start its own server from the exported
 // executable and the bot must move and shoot through it.
 async function smokeTest(outDir: string, os: TargetOs): Promise<void> {
-	const exe = join(outDir, os === "windows" ? "Outpost.console.exe" : exeName(os));
+	const exe = join(outDir, os === "windows" ? "Slopocalypse.console.exe" : exeName(os));
 	const r = await run(exe, ["--headless", "--", "--net-report-after=600", "--bot=walk", "--no-save"], { cwd: outDir, timeoutMs: 120_000 });
 	const rep = parseReport(r.output);
 	const problems = scanLog(r.output, GODOT_NOISE);
