@@ -13,9 +13,13 @@ Thanks for helping. Code written by you, by an LLM, or by both is all welcome; y
 2. Write a failing test first wherever the behaviour is testable, then make it pass.
 3. Run `npm run check:full`. It must pass locally; there is no CI doing it for you.
 4. For anything visible, attach a screenshot or short clip to the pull request.
-5. Open a pull request that references the issue and says how you tested it and what is still rough.
+5. Open a pull request that references the issue and says how you tested it and what is still rough. The template asks for these.
 
 Keep a pull request to one issue. Ask in the issue before adding a dependency, changing the save or journal format, or changing the architecture rules.
+
+## Say who made it
+
+Issues and pull requests say who wrote them: a person, or which model in which tool and how much a person steered it. The templates have a field for it, agents add a `Made by:` line (the rule is in `AGENTS.md`), and the `by:human` and `by:agent` labels make it filterable (GitHub only lets maintainers set labels, so the `Made by` line is what counts). Nobody is judged for using an agent; it's part of the experiment to see what people and models each do.
 
 ## Licence and the CLA
 

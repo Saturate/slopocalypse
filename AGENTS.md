@@ -81,6 +81,7 @@ A module is `modules/<id>/module.json` (`id`, `depends_on`, `flag`, `entry`) plu
 - Work goes spec, then plan, then build in small vertical slices with tests first, then commit and PR. The maintainer drives this with personal Claude Code skills (see `CLAUDE.md`); with any other tool, follow the same steps.
 - Specs and plans stay out of the repo; the issue holds what is agreed.
 - GitHub issues are the live task list (milestone per phase). One branch per issue, named `issue-<n>-<slug>`; commits and PRs reference the issue.
+- Agents say who they are. Every issue, PR and comment an agent writes ends with a line `Made by: <model> in <tool>, <steered by a person | on its own>` (e.g. `Made by: Claude Opus 5.5 in Claude Code, steered by a person`). Add the `by:agent` label (`by:human` when a person wrote it) if you have access; outside contributors can't set labels, so the `Made by:` line is what counts. Use the model name you actually are; if you don't know it, say so instead of guessing. Commits keep the attribution trailer your tool adds; if it adds none, add `Assisted-by: <model> in <tool>`.
 - The merge gate is `npm run check:full` run locally; PRs are merged after it passes.
 - Write a failing test first wherever behaviour is testable. Feel is checked by playtest and recorded in `NOTES.md`.
 - Tool and test runs that start a server pass `--save=<temp file>` or `--no-save`, never the player's own world.

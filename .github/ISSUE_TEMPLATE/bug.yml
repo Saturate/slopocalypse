@@ -1,0 +1,49 @@
+name: Bug
+description: Something is broken or behaves wrong.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen
+      description: The shortest steps that show it. Solo, hosted or dedicated server?
+      placeholder: |
+        1. Play solo
+        2. Drive into the river
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs, screenshots, clips
+      description: Logs live in the Godot user folder under `logs/` (on Windows `%APPDATA%\Godot\app_userdata\Slopocalypse\logs\`).
+  - type: input
+    id: version
+    attributes:
+      label: Version and OS
+      placeholder: "main at 5a5b546, Windows 11"
+  - type: dropdown
+    id: made_by
+    attributes:
+      label: Made by
+      description: Who wrote this issue. We like seeing what people and agents each find.
+      options:
+        - A person
+        - An agent, steered by a person
+        - An agent on its own
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model and tool
+      description: If an agent wrote it, which model in which tool.
+      placeholder: "Claude Opus 5.5 in Claude Code, GPT-5 in Codex, ..."
