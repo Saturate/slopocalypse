@@ -44,6 +44,7 @@ func _show(rec: Dictionary) -> void:
 		"process %.1f ms   physics %.1f ms" % [rec.get("process_ms", 0.0), rec.get("physics_ms", 0.0)],
 		"nodes %d   objects %d   memory %.0f MB   video %.0f MB" % [rec.get("nodes", 0), rec.get("objects", 0), rec.get("memory_mb", 0.0), rec.get("video_mb", 0.0)],
 		"draw calls %d   primitives %d" % [rec.get("draw_calls", 0), rec.get("primitives", 0)],
+		"gpu %.1f ms   render cpu %.1f ms" % [rec.get("gpu_ms", 0.0), rec.get("render_cpu_ms", 0.0)],
 	]
 	if rec.has("net_out_bytes"):
 		lines.append("net out %.1f KB/s   in %.1f KB/s   peers %d" % [rec["net_out_bytes"] / 1024.0, rec["net_in_bytes"] / 1024.0, rec.get("peers", 0)])
