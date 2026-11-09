@@ -30,3 +30,6 @@ Thumbs.db
 
 # Large third-party extensions fetched by tools/get-addons.ts
 /addons/zylann.voxel/
+
+# Benchmark results and this machine's baselines (tools/bench.ts)
+/bench/

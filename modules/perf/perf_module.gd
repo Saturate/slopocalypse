@@ -7,6 +7,8 @@ extends Node
 ## its own, at most one a second, once the warm-up is over. Clients get an overlay (F3).
 ##
 ## Other code reads the newest sample through the `perf_api` group: `latest()`, `sampled`.
+## `-- --perf-log=PATH` writes to that file instead, and `--no-vsync` turns vsync off
+## (tools/bench.ts uses both).
 
 const CONFIG := "res://modules/perf/data/perf.json"
 const REQUIRED := {"sample_seconds": TYPE_FLOAT, "spike_ms": TYPE_FLOAT, "warmup_seconds": TYPE_FLOAT, "keep_files": TYPE_FLOAT, "overlay_key": TYPE_STRING}
@@ -39,6 +41,12 @@ func _ready() -> void:
 	add_to_group(&"perf_api")
 	_open_log()
 	if DisplayServer.get_name() != "headless":
+		# The GPU's and the CPU's own time for drawing each frame: tells whether a slow frame
+		# waits on the graphics card or on the processor.
+		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
+		# Benchmarks measure the game, not the monitor's refresh rate.
+		if OS.get_cmdline_user_args().has("--no-vsync"):
+			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 		var overlay: Node = (load("res://modules/perf/scripts/perf_overlay.gd") as GDScript).new()
 		overlay.name = "Overlay"
 		overlay.set(&"perf", self)
@@ -102,6 +110,9 @@ func _sample() -> Dictionary:
 		rec["draw_calls"] = int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
 		rec["primitives"] = int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
 		rec["video_mb"] = snappedf(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0, 0.1)
+		var vp := get_viewport().get_viewport_rid()
+		rec["gpu_ms"] = snappedf(RenderingServer.viewport_get_measured_render_time_gpu(vp), 0.01)
+		rec["render_cpu_ms"] = snappedf(RenderingServer.viewport_get_measured_render_time_cpu(vp) + RenderingServer.get_frame_setup_time_cpu(), 0.01)
 	var peer: ENetMultiplayerPeer = multiplayer.multiplayer_peer as ENetMultiplayerPeer if multiplayer.has_multiplayer_peer() else null
 	if peer != null and peer.host != null:
 		# pop_statistic resets the counter, so these are bytes since the last sample.
@@ -117,6 +128,15 @@ func _sample() -> Dictionary:
 
 
 func _open_log() -> void:
+	# tools/bench.ts says exactly where to write, so it knows which file to read.
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--perf-log="):
+			_path = arg.trim_prefix("--perf-log=")
+			DirAccess.make_dir_recursive_absolute(_path.get_base_dir())
+			_file = FileAccess.open(_path, FileAccess.WRITE)
+			if _file == null:
+				Log.warn(&"perf", "cannot write %s: %s" % [_path, error_string(FileAccess.get_open_error())])
+			return
 	DirAccess.make_dir_recursive_absolute(log_dir)
 	var names: Array[String] = []
 	names.assign(DirAccess.get_files_at(log_dir))
