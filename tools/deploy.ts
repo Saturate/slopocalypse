@@ -4,7 +4,7 @@
 // The Linux build needs the Rust extensions compiled for Linux, which this Windows machine
 // cannot do. Give a Linux build with --zip (built on a Linux box with
 // `node tools/export.ts --os linux`), or --ci to run the manual `server-build` GitHub
-// workflow and download its artifact; that spends Actions minutes, so it is opt-in.
+// workflow and download its artifact; opt-in, since a local build is faster.
 // Needs ssh and scp (key login is easiest), and root or passwordless sudo on the server:
 // the install runs non-interactively, so sudo cannot ask for a password.
 import { spawnSync } from "node:child_process";
@@ -84,9 +84,9 @@ async function main(): Promise<void> {
 	}
 
 	const zip = arg("zip");
-	// GitHub Actions minutes are limited, so CI runs only when asked for by name.
+	// CI builds only when asked for by name.
 	if (zip === undefined && !argv.includes("--ci")) {
-		throw new Error("give --zip <linux build folder or zip>, or --ci to build it on the server-build GitHub workflow (uses Actions minutes)");
+		throw new Error("give --zip <linux build folder or zip>, or --ci to build it on the server-build GitHub workflow");
 	}
 	const build = zip !== undefined ? await localBuild(resolve(zip)) : buildOnCi();
 	if (!existsSync(join(build, LINUX_EXE))) throw new Error(`${build} has no ${LINUX_EXE}; files: ${readdirSync(build).join(", ")}`);

@@ -3,6 +3,9 @@
 #   docker run -d --name slopocalypse -p 7777:7777/udp -v slopocalypse-data:/data slopocalypse-server
 # The build stage exports the Linux game inside the container (Rust libraries included), so the
 # image builds the same from Windows, macOS or Linux. Needs the LFS textures checked out.
+# To package an export made elsewhere instead (the release workflow does):
+#   docker build --build-arg EXPORT=prebuilt --build-context linux-export=<unzipped linux build> .
+ARG EXPORT=build
 
 FROM rust:1.95.0-bookworm AS build
 COPY --from=node:24.11.1-bookworm-slim /usr/local/bin/node /usr/local/bin/node
@@ -22,16 +25,22 @@ RUN --mount=type=cache,target=/src/tools/godot/editor_data/export_templates \
 FROM scratch AS linux-zip
 COPY --from=build /src/build/slopocalypse-linux.zip /
 
+FROM scratch AS prebuilt
+COPY --from=linux-export / /src/build/linux
+
+FROM ${EXPORT} AS export
+
 FROM debian:bookworm-slim
 ARG VERSION=dev
-LABEL org.opencontainers.image.source="https://github.com/Saturate/outpost" \
+LABEL org.opencontainers.image.source="https://github.com/Saturate/slopocalypse" \
       org.opencontainers.image.title="Slopocalypse server" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.version="${VERSION}"
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libfontconfig1 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --create-home --home-dir /data --shell /usr/sbin/nologin slopocalypse
-COPY --from=build /src/build/linux /opt/slopocalypse
+COPY --from=export /src/build/linux /opt/slopocalypse
+RUN chmod +x /opt/slopocalypse/Slopocalypse.x86_64
 # user:// (logs, journals) resolves under HOME, so everything the server writes lands in /data.
 ENV HOME=/data
 VOLUME /data

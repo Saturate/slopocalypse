@@ -1,0 +1,48 @@
+name: setup
+description: Node, Rust, the pinned Godot and addons, and the LFS textures from a cache. Run after actions/checkout (with lfs false).
+
+runs:
+  using: composite
+  steps:
+    # LFS bandwidth is metered even on public repos; the textures rarely change, so cache them.
+    - name: List LFS objects
+      shell: bash
+      run: git lfs ls-files --long | cut -d ' ' -f1 | sort > .lfs-assets-id
+
+    - uses: actions/cache@v6
+      with:
+        path: .git/lfs
+        key: lfs-${{ hashFiles('.lfs-assets-id') }}
+
+    - name: Pull LFS objects
+      shell: bash
+      run: git lfs pull && rm .lfs-assets-id
+
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+        cache: npm
+
+    # rust-toolchain.toml pins the version; rustup installs it on first use.
+    - shell: bash
+      run: rustup show active-toolchain
+
+    - uses: Swatinem/rust-cache@v2
+
+    - shell: bash
+      run: npm ci
+
+    - uses: actions/cache@v6
+      with:
+        path: tools/godot
+        key: godot-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/lib/godot.ts') }}
+
+    - shell: bash
+      run: node tools/get-godot.ts
+
+    # gdUnit4 and the voxel terrain extension are not in git.
+    - shell: bash
+      run: node tools/get-addons.ts
+
+    - shell: bash
+      run: node tools/get-changesetter.ts
