@@ -9,6 +9,8 @@ signal died(source: Node)
 @export var max_health: float = 100.0
 
 var health: float = 0.0
+## Server: takes no damage (admin god mode).
+var invulnerable := false
 
 
 func _ready() -> void:
@@ -21,7 +23,7 @@ func is_dead() -> bool:
 
 ## Server only. Returns the damage actually dealt (clamped at zero health).
 func server_apply_damage(amount: float, source: Node = null) -> float:
-	if is_dead() or amount <= 0.0:
+	if is_dead() or amount <= 0.0 or invulnerable:
 		return 0.0
 	var dealt := minf(amount, health)
 	health -= dealt

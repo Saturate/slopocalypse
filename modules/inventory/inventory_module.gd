@@ -63,6 +63,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"player.died", _on_player_died)
 	EventBus.subscribe(&"enemy.died", _on_enemy_died)
 	EventBus.subscribe(&"inventory.crate_changed", _on_crate_changed)
+	EventBus.subscribe(&"admin.spawn", _on_admin_spawn)
 	Net.peer_left.connect(_on_peer_left)
 	Net.peer_joined.connect(_on_peer_joined)
 	if DisplayServer.get_name() != "headless":
@@ -76,6 +77,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"player.died", _on_player_died)
 	EventBus.unsubscribe(&"enemy.died", _on_enemy_died)
 	EventBus.unsubscribe(&"inventory.crate_changed", _on_crate_changed)
+	EventBus.unsubscribe(&"admin.spawn", _on_admin_spawn)
 	if Net.peer_left.is_connected(_on_peer_left):
 		Net.peer_left.disconnect(_on_peer_left)
 
@@ -676,3 +678,18 @@ func _receive(items: Array) -> void:
 	for placed: Dictionary in items:
 		_mine.place(int(placed["uid"]), str(placed["item"]), int(placed["x"]), int(placed["y"]), bool(placed["rotated"]))
 	EventBus.publish(&"inventory.changed", {"peer": multiplayer.get_unique_id()})
+
+
+## Server: an admin asked for a crate, or a roll of loot scattered on the ground.
+func _on_admin_spawn(p: Dictionary) -> void:
+	if not multiplayer.is_server():
+		return
+	var at: Vector3 = p["position"]
+	match p.get("kind"):
+		"crate":
+			server_spawn_crate(at)
+		"loot":
+			var i := 0
+			for item: String in _roll_loot():
+				server_spawn_loot(item, at + Vector3(cos(i * 1.3), 0.6, sin(i * 1.3)) * 0.8)
+				i += 1

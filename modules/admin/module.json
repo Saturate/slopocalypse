@@ -1,0 +1,6 @@
+{
+  "id": "admin",
+  "depends_on": [],
+  "flag": "admin",
+  "entry": "admin_module.gd"
+}

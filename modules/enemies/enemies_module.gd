@@ -46,11 +46,13 @@ func _ready() -> void:
 	_rng.randomize()
 	EventBus.subscribe(&"world.ready", _on_world_ready)
 	EventBus.subscribe(&"enemy.died", _on_enemy_died)
+	EventBus.subscribe(&"admin.spawn", _on_admin_spawn)
 
 
 func _exit_tree() -> void:
 	EventBus.unsubscribe(&"world.ready", _on_world_ready)
 	EventBus.unsubscribe(&"enemy.died", _on_enemy_died)
+	EventBus.unsubscribe(&"admin.spawn", _on_admin_spawn)
 
 
 func enemies() -> Array[Node]:
@@ -198,3 +200,9 @@ func _on_ground(at: Vector3) -> Vector3:
 	if ground != null and ground.has_method(&"ground_height"):
 		return Vector3(at.x, float(ground.call(&"ground_height", at.x, at.z)), at.z)
 	return at
+
+
+## Server: an admin asked for a squad in front of them.
+func _on_admin_spawn(p: Dictionary) -> void:
+	if p.get("kind") == "squad" and multiplayer.is_server():
+		server_spawn_squad(int(p.get("count", 3)), p["position"])
