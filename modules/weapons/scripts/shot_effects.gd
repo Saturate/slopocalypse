@@ -9,8 +9,10 @@ const TRACER_SECONDS := 0.1
 const IMPACT_SECONDS := 0.25
 const CONFIG := "res://modules/weapons/data/weapons.json"
 
-## Held rifle -> where it rests in the hands, so kicks always return to the same place.
-var _rest: Dictionary[Node3D, Vector3] = {}
+## Held rifle's instance id -> [rifle, where it rests in the hands], so kicks always return to
+## the same place. Keyed by id, not by the node: a rifle freed with a dead soldier's body is no
+## longer a Node3D, and a node-typed dictionary then refuses to erase it, every frame.
+var _rest: Dictionary[int, Array] = {}
 var _kick_back := 0.0
 var _kick_return := 0.0
 
@@ -35,11 +37,23 @@ func _process(delta: float) -> void:
 
 func _process_tick(delta: float) -> void:
 	var settle := 1.0 - exp(-_kick_return * delta)
-	for held: Node3D in _rest.keys():
+	for id: int in _rest.keys():
+		var held: Variant = _rest[id][0]
 		if not is_instance_valid(held):
-			_rest.erase(held)
+			_rest.erase(id)
 			continue
-		held.position = held.position.lerp(_rest[held], settle)
+		(held as Node3D).position = (held as Node3D).position.lerp(_rest[id][1], settle)
+
+
+## Remembers where a rifle rests before its first kick.
+func remember(held: Node3D) -> void:
+	if not _rest.has(held.get_instance_id()):
+		_rest[held.get_instance_id()] = [held, held.position]
+
+
+## How many rifles are settling back after a kick.
+func kicked_count() -> int:
+	return _rest.size()
 
 
 func _on_fired(p: Dictionary) -> void:
@@ -51,8 +65,7 @@ func _on_fired(p: Dictionary) -> void:
 		var muzzle := held.find_child("Muzzle", true, false) as Node3D
 		if muzzle != null:
 			from = muzzle.global_position
-		if not _rest.has(held):
-			_rest[held] = held.position
+		remember(held)
 		# The rifle's nose points along -Z, so the kick pushes it back toward the shoulder.
 		held.position.z += _kick_back
 	_spawn_tracer(from, to)
