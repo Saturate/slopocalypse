@@ -43,6 +43,12 @@ func _on_world_ready(_p: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
+	var prof := Prof.start()
+	_process_tick(delta)
+	Prof.stop(&"daytime/module:frame", prof)
+
+
+func _process_tick(delta: float) -> void:
 	_clock.advance(delta)
 	# A client still connecting has no peer yet, and asking it whether it is the server errors.
 	if multiplayer.has_multiplayer_peer() and multiplayer.is_server():

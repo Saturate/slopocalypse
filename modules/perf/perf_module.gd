@@ -7,13 +7,15 @@ extends Node
 ## its own, at most one a second, once the warm-up is over. Clients get an overlay (F3).
 ##
 ## Other code reads the newest sample through the `perf_api` group: `latest()`, `sampled`.
-## `-- --perf-log=PATH` writes to that file instead, and `--no-vsync` turns vsync off
-## (tools/bench.ts uses both).
+## `-- --perf-log=PATH` writes to that file instead, and `--uncapped` turns off vsync and the
+## idle sleep between frames, so frame times are work, not waiting (tools/bench.ts uses both).
 
 const CONFIG := "res://modules/perf/data/perf.json"
 const REQUIRED := {"sample_seconds": TYPE_FLOAT, "spike_ms": TYPE_FLOAT, "warmup_seconds": TYPE_FLOAT, "keep_files": TYPE_FLOAT, "overlay_key": TYPE_STRING}
 ## Spike lines are rate-limited to one per this many seconds.
 const SPIKE_GAP_SECONDS := 1.0
+## Zones listed on a spike line, most expensive first.
+const SPIKE_ZONES := 5
 
 signal sampled(record: Dictionary)
 
@@ -31,6 +33,10 @@ var _latest: Dictionary = {}
 ## Wall-clock time of the last frame: `delta` is clamped, scaled and fixed under --fixed-fps,
 ## so it is not what the frame really took.
 var _last_usec := 0
+## Physics tick split: when the nodes' physics began this tick, and the totals this sample.
+var _tick_began := 0
+var _nodes_usec := 0
+var _ticks := 0
 
 
 func _ready() -> void:
@@ -40,13 +46,28 @@ func _ready() -> void:
 	config = data
 	add_to_group(&"perf_api")
 	_open_log()
+	if OS.get_cmdline_user_args().has("--uncapped"):
+		# Benchmarks measure the game, not the monitor's refresh rate or the sleep a headless
+		# server takes between frames.
+		OS.low_processor_usage_mode = false
+		# A headless process sleeps this long every frame (no window can draw) regardless.
+		OS.low_processor_usage_mode_sleep_usec = 0
+		if DisplayServer.get_name() != "headless":
+			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	# Godot emits physics_frame just before nodes run their physics; a probe with the highest
+	# priority runs last. The time between is all nodes' _physics_process; the rest of the
+	# physics tick is the engine (the physics server's step, sync and callbacks).
+	get_tree().physics_frame.connect(func() -> void: _tick_began = Time.get_ticks_usec())
+	var probe := Node.new()
+	probe.name = "TickProbe"
+	probe.process_physics_priority = 2147483647
+	probe.set_script(load("res://modules/perf/scripts/tick_probe.gd"))
+	probe.set(&"perf", self)
+	add_child(probe)
 	if DisplayServer.get_name() != "headless":
 		# The GPU's and the CPU's own time for drawing each frame: tells whether a slow frame
 		# waits on the graphics card or on the processor.
 		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
-		# Benchmarks measure the game, not the monitor's refresh rate.
-		if OS.get_cmdline_user_args().has("--no-vsync"):
-			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 		var overlay: Node = (load("res://modules/perf/scripts/perf_overlay.gd") as GDScript).new()
 		overlay.name = "Overlay"
 		overlay.set(&"perf", self)
@@ -77,15 +98,24 @@ func _process(delta: float) -> void:
 	_last_usec = now
 	_uptime += delta
 	_sampler.add_frame(ms)
+	# The zones that ran since this point last frame: what the frame just measured was doing.
+	var frame_zones := Prof.take_frame(SPIKE_ZONES)
 	if ms > float(config["spike_ms"]) and _uptime > float(config["warmup_seconds"]) and _uptime - _last_spike >= SPIKE_GAP_SECONDS:
 		_last_spike = _uptime
-		_write({"t": snappedf(_uptime, 0.001), "spike_ms": snappedf(ms, 0.01), "nodes": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))})
+		_write({"t": snappedf(_uptime, 0.001), "spike_ms": snappedf(ms, 0.01), "nodes": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)), "zones": frame_zones})
 	_since_sample += delta
 	if _since_sample >= float(config["sample_seconds"]):
 		_since_sample = 0.0
 		_latest = _sample()
 		_write(_latest)
 		sampled.emit(_latest)
+
+
+## Called by the probe at the end of each physics tick's node processing.
+func physics_nodes_done() -> void:
+	if _tick_began > 0:
+		_nodes_usec += Time.get_ticks_usec() - _tick_began
+		_ticks += 1
 
 
 func _role() -> String:
@@ -100,11 +130,22 @@ func _sample() -> Dictionary:
 	for key: String in ["frame_ms_mean", "frame_ms_p95", "frame_ms_max"]:
 		rec[key] = snappedf(float(rec[key]), 0.01)
 	rec["fps"] = Performance.get_monitor(Performance.TIME_FPS)
-	rec["process_ms"] = snappedf(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, 0.01)
-	rec["physics_ms"] = snappedf(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0, 0.01)
+	# Godot's own process and physics timings are the slowest moment in roughly the last
+	# second, so they show spikes, not typical cost.
+	rec["process_peak_ms"] = snappedf(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, 0.01)
+	rec["physics_peak_ms"] = snappedf(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0, 0.01)
+	if _ticks > 0:
+		rec["physics_nodes_ms"] = snappedf(_nodes_usec / 1000.0 / _ticks, 0.01)
+		rec["physics_ticks"] = _ticks
+	_nodes_usec = 0
+	_ticks = 0
 	rec["nodes"] = int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
 	rec["objects"] = int(Performance.get_monitor(Performance.OBJECT_COUNT))
 	rec["orphans"] = int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT))
+	# What the physics engine is juggling: bodies awake, contact pairs, islands it solves.
+	rec["physics_active"] = int(Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS))
+	rec["physics_pairs"] = int(Performance.get_monitor(Performance.PHYSICS_3D_COLLISION_PAIRS))
+	rec["physics_islands"] = int(Performance.get_monitor(Performance.PHYSICS_3D_ISLAND_COUNT))
 	rec["memory_mb"] = snappedf(Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0, 0.1)
 	if DisplayServer.get_name() != "headless":
 		rec["draw_calls"] = int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
@@ -119,6 +160,10 @@ func _sample() -> Dictionary:
 		rec["net_out_bytes"] = int(peer.host.pop_statistic(ENetConnection.HOST_TOTAL_SENT_DATA))
 		rec["net_in_bytes"] = int(peer.host.pop_statistic(ENetConnection.HOST_TOTAL_RECEIVED_DATA))
 		rec["peers"] = multiplayer.get_peers().size()
+	# Our own code, by zone (see core/prof.gd): milliseconds spent in this sample window.
+	var zones := Prof.take()
+	if not zones.is_empty():
+		rec["zones"] = zones
 	var custom := {}
 	for name: StringName in Performance.get_custom_monitor_names():
 		custom[String(name)] = Performance.get_custom_monitor(name)

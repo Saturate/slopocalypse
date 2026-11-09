@@ -7,6 +7,16 @@ const CONFIG := "res://modules/training/data/training.json"
 
 var _spawner := MultiplayerSpawner.new()
 
+## Kept loaded: Godot's resource cache lets go of a scene once nothing holds it, and loading
+## a generated scene again from text costs tens of milliseconds per spawn.
+var _packed_scene: PackedScene
+
+
+func _scene() -> PackedScene:
+	if _packed_scene == null:
+		_packed_scene = load(SCENE)
+	return _packed_scene
+
 
 func _ready() -> void:
 	_spawner.name = "Spawner"
@@ -42,7 +52,7 @@ func _on_world_ready(payload: Dictionary) -> void:
 ## Runs on the server and, through the spawner, on every client.
 func _spawn_dummy(data: Variant) -> Node:
 	var info: Dictionary = data
-	var dummy: DummyTarget = (load(SCENE) as PackedScene).instantiate()
+	var dummy: DummyTarget = _scene().instantiate()
 	dummy.name = "Dummy%d" % int(info["index"])
 	dummy.position = info["position"]
 	return dummy

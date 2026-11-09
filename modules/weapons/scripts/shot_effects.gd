@@ -28,6 +28,12 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
+	var prof := Prof.start()
+	_process_tick(delta)
+	Prof.stop(&"weapons/shot_effects:frame", prof)
+
+
+func _process_tick(delta: float) -> void:
 	var settle := 1.0 - exp(-_kick_return * delta)
 	for held: Node3D in _rest.keys():
 		if not is_instance_valid(held):

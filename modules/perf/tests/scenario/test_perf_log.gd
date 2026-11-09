@@ -23,7 +23,7 @@ func test_it_logs_samples_with_engine_and_custom_numbers() -> void:
 	var lines := FileAccess.get_file_as_string(path).strip_edges().split("\n")
 	assert_int(lines.size()).is_greater_equal(1)
 	var rec: Dictionary = JSON.parse_string(lines[0])
-	for key in ["t", "role", "frames", "frame_ms_mean", "frame_ms_p95", "frame_ms_max", "fps", "physics_ms", "nodes", "memory_mb"]:
+	for key in ["t", "role", "frames", "frame_ms_mean", "frame_ms_p95", "frame_ms_max", "fps", "physics_peak_ms", "physics_nodes_ms", "nodes", "memory_mb"]:
 		assert_bool(rec.has(key)).override_failure_message("missing " + key).is_true()
 	assert_int(int(rec["frames"])).is_greater(0)
 	assert_float(float((rec["custom"] as Dictionary)["test/answer"])).is_equal(42.0)

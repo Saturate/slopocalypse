@@ -153,6 +153,12 @@ func _on_inventory_changed(_p: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
+	var prof := Prof.start()
+	_process_tick(delta)
+	Prof.stop(&"audio/module:frame", prof)
+
+
+func _process_tick(delta: float) -> void:
 	if not enabled:
 		return
 	_footsteps(delta)

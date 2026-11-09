@@ -30,6 +30,12 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
+	var prof := Prof.start()
+	_process_tick(delta)
+	Prof.stop(&"weapons/shot_feedback:frame", prof)
+
+
+func _process_tick(delta: float) -> void:
 	_hit_timer = maxf(_hit_timer - delta, 0.0)
 	# Follow the drawn gun: a swap replaces it, switching changes it.
 	_weapon = _carried()

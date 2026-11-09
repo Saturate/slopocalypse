@@ -98,6 +98,12 @@ func open(path: String) -> bool:
 
 
 func _physics_process(delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(delta)
+	Prof.stop(&"persistence/module:physics", prof)
+
+
+func _physics_tick(delta: float) -> void:
 	if not enabled:
 		return
 	_hold_until_grounded(delta)

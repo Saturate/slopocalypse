@@ -20,11 +20,19 @@ func _ready() -> void:
 	if data is Dictionary:
 		_cfg = (data as Dictionary).get("camera", {})
 		_top_speed = float((data as Dictionary).get("top_speed", 25.0))
-	if _cfg.is_empty():
+	# The car scene carries this camera everywhere, the server included; only a screen needs
+	# it every frame (tests still call place() directly).
+	if _cfg.is_empty() or DisplayServer.get_name() == "headless":
 		set_process(false)
 
 
 func _process(delta: float) -> void:
+	var prof := Prof.start()
+	_process_tick(delta)
+	Prof.stop(&"car/car_camera:frame", prof)
+
+
+func _process_tick(delta: float) -> void:
 	if not current:
 		_placed = false
 		return

@@ -161,6 +161,12 @@ func _room_at(at: Vector3) -> bool:
 
 
 func _physics_process(delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(delta)
+	Prof.stop(&"car/car_controller:physics", prof)
+
+
+func _physics_tick(delta: float) -> void:
 	if not multiplayer.is_server():
 		return
 	if driver != null and _intent.consume_exit():

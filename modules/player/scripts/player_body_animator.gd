@@ -57,6 +57,12 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	var prof := Prof.start()
+	_process_tick(delta)
+	Prof.stop(&"player/player_body_animator:frame", prof)
+
+
+func _process_tick(delta: float) -> void:
 	var blend := 1.0 - exp(-BLEND_RATE * delta)
 	var speed := player.horizontal_speed()
 	var sliding := player.is_sliding()

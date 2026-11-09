@@ -23,6 +23,12 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(delta)
+	Prof.stop(&"weapons/charge_thrower:physics", prof)
+
+
+func _physics_tick(delta: float) -> void:
 	_cooldown = maxf(_cooldown - delta, 0.0)
 	if holder.intent().consume_throw() and multiplayer.is_server():
 		var camera: Camera3D = holder.get_node("Head/Camera")

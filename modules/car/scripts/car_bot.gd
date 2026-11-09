@@ -29,6 +29,12 @@ func entered(car: CarController) -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(_delta)
+	Prof.stop(&"car/car_bot:physics", prof)
+
+
+func _physics_tick(_delta: float) -> void:
 	if not is_instance_valid(player):
 		return
 	_ticks += 1

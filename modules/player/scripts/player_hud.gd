@@ -37,6 +37,12 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
+	var prof := Prof.start()
+	_process_tick(delta)
+	Prof.stop(&"player/player_hud:frame", prof)
+
+
+func _process_tick(delta: float) -> void:
 	if _health == null:
 		return
 	if _last >= 0.0 and _health.health < _last - 0.01:

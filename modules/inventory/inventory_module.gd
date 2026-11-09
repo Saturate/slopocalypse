@@ -461,6 +461,12 @@ func _request_use(item: String) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(delta)
+	Prof.stop(&"inventory/module:physics", prof)
+
+
+func _physics_tick(delta: float) -> void:
 	if not multiplayer.is_server():
 		return
 	for player: Node in _healing.keys():

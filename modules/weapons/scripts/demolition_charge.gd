@@ -28,12 +28,24 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	var prof := Prof.start()
+	_process_tick(_delta)
+	Prof.stop(&"weapons/demolition_charge:frame", prof)
+
+
+func _process_tick(_delta: float) -> void:
 	# Blinks faster as the fuse runs down.
 	var rate := lerpf(3.0, 14.0, 1.0 - _fuse / float(stats["fuse_seconds"]))
 	_light.light_energy = 2.0 if fmod(Time.get_ticks_msec() / 1000.0 * rate, 1.0) < 0.5 else 0.0
 
 
 func _physics_process(delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(delta)
+	Prof.stop(&"weapons/demolition_charge:physics", prof)
+
+
+func _physics_tick(delta: float) -> void:
 	_fuse -= delta
 	if _fuse <= 0.0 and multiplayer.is_server():
 		server_explode()

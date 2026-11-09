@@ -21,6 +21,12 @@ func _ready() -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(_delta)
+	Prof.stop(&"player/player_bot:physics", prof)
+
+
+func _physics_tick(_delta: float) -> void:
 	_ticks += 1
 	var intent := player.intent()
 	intent.move = Vector2(0.0, 1.0)

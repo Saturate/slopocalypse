@@ -115,6 +115,12 @@ func _receive_felled(list: Array) -> void:
 
 
 func _process(delta: float) -> void:
+	var prof := Prof.start()
+	_process_tick(delta)
+	Prof.stop(&"world/module:frame", prof)
+
+
+func _process_tick(delta: float) -> void:
 	if _announcement.is_empty():
 		return
 	_waited += delta

@@ -71,6 +71,12 @@ func health() -> HealthComponent:
 
 
 func _process(delta: float) -> void:
+	var prof := Prof.start()
+	_process_tick(delta)
+	Prof.stop(&"drones/stalker_drone:frame", prof)
+
+
+func _process_tick(delta: float) -> void:
 	# Cosmetic: rotors spin (slower once downed), light blinks.
 	var spin := 40.0 if not downed else 8.0
 	for rotor in _rotors.get_children():
@@ -79,6 +85,12 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(delta)
+	Prof.stop(&"drones/stalker_drone:physics", prof)
+
+
+func _physics_tick(delta: float) -> void:
 	if not multiplayer.is_server():
 		return
 	if downed:

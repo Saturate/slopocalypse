@@ -4,6 +4,9 @@ extends CanvasLayer
 ## Set by the perf module before this enters the tree.
 var perf: Node
 
+## The most expensive zones listed.
+const ZONES_SHOWN := 6
+
 var _label: Label
 var _key: int = KEY_F3
 
@@ -41,13 +44,18 @@ func _show(rec: Dictionary) -> void:
 		return
 	var lines: Array[String] = [
 		"%d fps   frame %.1f ms  (p95 %.1f, worst %.1f)" % [int(rec.get("fps", 0)), rec.get("frame_ms_mean", 0.0), rec.get("frame_ms_p95", 0.0), rec.get("frame_ms_max", 0.0)],
-		"process %.1f ms   physics %.1f ms" % [rec.get("process_ms", 0.0), rec.get("physics_ms", 0.0)],
+		"physics %.2f ms a tick   peaks: process %.1f, physics %.1f" % [rec.get("physics_nodes_ms", 0.0), rec.get("process_peak_ms", 0.0), rec.get("physics_peak_ms", 0.0)],
 		"nodes %d   objects %d   memory %.0f MB   video %.0f MB" % [rec.get("nodes", 0), rec.get("objects", 0), rec.get("memory_mb", 0.0), rec.get("video_mb", 0.0)],
 		"draw calls %d   primitives %d" % [rec.get("draw_calls", 0), rec.get("primitives", 0)],
 		"gpu %.1f ms   render cpu %.1f ms" % [rec.get("gpu_ms", 0.0), rec.get("render_cpu_ms", 0.0)],
 	]
 	if rec.has("net_out_bytes"):
 		lines.append("net out %.1f KB/s   in %.1f KB/s   peers %d" % [rec["net_out_bytes"] / 1024.0, rec["net_in_bytes"] / 1024.0, rec.get("peers", 0)])
+	var zones: Dictionary = rec.get("zones", {})
+	var names := zones.keys()
+	names.sort_custom(func(a: String, b: String) -> bool: return float(zones[a]["ms"]) > float(zones[b]["ms"]))
+	for name: String in names.slice(0, ZONES_SHOWN):
+		lines.append("  %-34s %6.2f ms/s  worst %.2f" % [name, zones[name]["ms"], zones[name]["max_ms"]])
 	var custom: Dictionary = rec.get("custom", {})
 	for name: String in custom:
 		lines.append("%s %s" % [name, custom[name]])

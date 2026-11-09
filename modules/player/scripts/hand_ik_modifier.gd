@@ -23,6 +23,12 @@ var _shoulders := -1
 
 
 func _process_modification_with_delta(_delta: float) -> void:
+	var prof := Prof.start()
+	_modify_tick(_delta)
+	Prof.stop(&"player/hand_ik_modifier:frame", prof)
+
+
+func _modify_tick(_delta: float) -> void:
 	var skeleton := get_skeleton()
 	if skeleton == null or targets.is_empty():
 		return

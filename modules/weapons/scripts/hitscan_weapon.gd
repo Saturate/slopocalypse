@@ -85,6 +85,12 @@ func start_draw() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(delta)
+	Prof.stop(&"weapons/hitscan_weapon:physics", prof)
+
+
+func _physics_tick(delta: float) -> void:
 	rules.tick(delta)
 	if holder == null:
 		return

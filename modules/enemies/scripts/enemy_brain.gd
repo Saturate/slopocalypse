@@ -66,6 +66,12 @@ static func aim_error(seen_for: float, widest: float, tightest: float, settle_se
 
 
 func _physics_process(delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(delta)
+	Prof.stop(&"enemies/enemy_brain:physics", prof)
+
+
+func _physics_tick(delta: float) -> void:
 	var intent := body.intent()
 	if body.get_meta(&"dead", false):
 		intent.move = Vector2.ZERO

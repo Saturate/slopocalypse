@@ -13,6 +13,12 @@ var _bob := Vector3.ZERO
 
 
 func _process(delta: float) -> void:
+	var prof := Prof.start()
+	_process_tick(delta)
+	Prof.stop(&"player/player_camera_feel:frame", prof)
+
+
+func _process_tick(delta: float) -> void:
 	var cfg := player.config
 	var target_bonus: float = cfg["fov_sprint_bonus"] if (player.is_sprinting() or player.is_sliding()) else 0.0
 	_fov_bonus = lerpf(_fov_bonus, target_bonus, 1.0 - exp(-8.0 * delta))

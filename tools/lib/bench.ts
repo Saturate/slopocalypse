@@ -7,12 +7,13 @@ export interface Summary {
 	frame_ms_p95: number;
 	frame_ms_worst: number;
 	physics_ms: number;
+	physics_peak_ms: number;
 	gpu_ms: number;
 	memory_mb: number;
 	nodes: number;
 }
 
-export const METRICS: readonly (keyof Omit<Summary, "samples">)[] = ["frame_ms_mean", "frame_ms_p95", "frame_ms_worst", "physics_ms", "gpu_ms", "memory_mb", "nodes"];
+export const METRICS: readonly (keyof Omit<Summary, "samples">)[] = ["frame_ms_mean", "frame_ms_p95", "frame_ms_worst", "physics_ms", "physics_peak_ms", "gpu_ms", "memory_mb", "nodes"];
 
 // Differences smaller than this are noise however large in percent (a 0.1 ms frame doubling).
 export const FLOOR: Readonly<Record<(typeof METRICS)[number], number>> = {
@@ -20,6 +21,7 @@ export const FLOOR: Readonly<Record<(typeof METRICS)[number], number>> = {
 	frame_ms_p95: 1.0,
 	frame_ms_worst: 5.0,
 	physics_ms: 0.3,
+	physics_peak_ms: 5.0,
 	gpu_ms: 0.5,
 	memory_mb: 20,
 	nodes: 200,
@@ -56,7 +58,9 @@ export function summarise(records: readonly Record<string, unknown>[], warmupSec
 		frame_ms_mean: round(mean("frame_ms_mean")),
 		frame_ms_p95: round(mean("frame_ms_p95")),
 		frame_ms_worst: round(max("frame_ms_max")),
-		physics_ms: round(mean("physics_ms")),
+		// Nodes' physics per tick, measured by the perf module's probe.
+		physics_ms: round(mean("physics_nodes_ms")),
+		physics_peak_ms: round(mean("physics_peak_ms")),
 		gpu_ms: round(mean("gpu_ms")),
 		memory_mb: round(max("memory_mb"), 1),
 		nodes: max("nodes"),
@@ -68,6 +72,22 @@ export interface Regression {
 	baseline: number;
 	now: number;
 	change: number;
+}
+
+// Mean milliseconds per sample (per second) for each profile zone after the warm-up,
+// most expensive first.
+export function zoneCosts(records: readonly Record<string, unknown>[], warmupSeconds: number): [string, number][] {
+	const used = records.filter((r) => num(r, "t") >= warmupSeconds && num(r, "frames") > 0);
+	const totals = new Map<string, number>();
+	for (const r of used) {
+		const zones = r["zones"];
+		if (typeof zones !== "object" || zones === null) continue;
+		for (const [name, z] of Object.entries(zones)) {
+			const ms = typeof z === "object" && z !== null ? Reflect.get(z, "ms") : undefined;
+			if (typeof ms === "number") totals.set(name, (totals.get(name) ?? 0) + ms);
+		}
+	}
+	return [...totals].map(([name, ms]): [string, number] => [name, round(ms / Math.max(used.length, 1), 3)]).sort((a, b) => b[1] - a[1]);
 }
 
 export function compare(now: Summary, baseline: Summary, tolerance: number): Regression[] {

@@ -18,6 +18,12 @@ func _ready() -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(_delta)
+	Prof.stop(&"car/car_input:physics", prof)
+
+
+func _physics_tick(_delta: float) -> void:
 	var driving := seat == &"driver"
 	if driving:
 		intent.throttle = Input.get_axis(&"car_reverse", &"car_throttle")
