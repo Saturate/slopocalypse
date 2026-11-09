@@ -17,7 +17,7 @@ test("an unsupported platform is an error, not a wrong binary", () => {
 test("downloads come from the tagged GitHub release", () => {
 	assert.equal(
 		changesetterUrl(changesetterAsset("linux", "x64")),
-		"https://github.com/Saturate/changesetter/releases/download/changesetter%40v0.5.1/changesetter-x86_64-unknown-linux-gnu.tar.gz",
+		"https://github.com/Saturate/changesetter/releases/download/changesetter%40v0.5.2/changesetter-x86_64-unknown-linux-gnu.tar.gz",
 	);
 });
 
