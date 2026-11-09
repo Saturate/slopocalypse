@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 - 2026-11-09
+
+Fixed the game grinding down and closing some time after you killed soldiers: it kept trying to forget their guns every frame. Thanks to LOLIVER for the report and the logs that found it.
+
+### Internal
+
+#### Release notes group features, fixes and changes under the hood.
+
 ## 0.2.0 - 2026-11-09
 
 #### The game no longer logs script errors when some event handlers finish very quickly.
