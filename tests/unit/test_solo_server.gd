@@ -5,7 +5,7 @@ func test_args_start_a_private_headless_server_that_quits_when_empty() -> void:
 	var args := SoloServer.server_args(7801, PackedStringArray(), "C:/game", "C:/logs/solo.log")
 	assert_array(args).contains_exactly([
 		"--headless", "--path", "C:/game", "--log-file", "C:/logs/solo.log", "--",
-		"--server=7801", "--bind=127.0.0.1", "--quit-when-empty",
+		"--server=7801", "--bind=127.0.0.1", "--quit-when-empty", "--log-file=C:/logs/solo.log",
 	])
 
 
