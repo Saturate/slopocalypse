@@ -31,14 +31,14 @@ const SCENARIOS: Record<string, Scenario> = {
 	"solo-walk": {
 		what: "windowed solo game, a bot walks the road and shoots (client rendering)",
 		run: async (perfLog) => {
-			const r = await run(godot, ["--path", root, "--", "--solo", "--bot=walk", "--no-save", "--uncapped", `--net-report-after=${RUN_FRAMES}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: 240_000 });
+			const r = await run(godot, ["--path", root, "--", "--solo", "--bot=walk", "--no-save", "--uncapped", "--perf-spike-ms=20", `--net-report-after=${RUN_FRAMES}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: 240_000 });
 			if (r.timedOut) throw new Error("solo-walk timed out");
 		},
 	},
 	"solo-drive": {
 		what: "windowed solo game, a bot drives the car down the road (terrain and scenery streaming, car physics)",
 		run: async (perfLog) => {
-			const r = await run(godot, ["--path", root, "--", "--solo", "--bot=drive", "--no-save", "--uncapped", `--net-report-after=${RUN_FRAMES}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: 240_000 });
+			const r = await run(godot, ["--path", root, "--", "--solo", "--bot=drive", "--no-save", "--uncapped", "--perf-spike-ms=20", `--net-report-after=${RUN_FRAMES}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: 240_000 });
 			if (r.timedOut) throw new Error("solo-drive timed out");
 		},
 	},
@@ -50,7 +50,7 @@ const SCENARIOS: Record<string, Scenario> = {
 			// --server-flags car:off,enemies:off narrows down what costs what.
 			const flags = arg("server-flags");
 			const extra = flags === undefined ? [] : [`--flags=${flags}`];
-			const server = run(godot, [...base, `--server=${port}`, "--no-save", "--uncapped", ...extra, `--net-report-after=${RUN_FRAMES + 600}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: 300_000 });
+			const server = run(godot, [...base, `--server=${port}`, "--no-save", "--uncapped", "--perf-spike-ms=20", ...extra, `--net-report-after=${RUN_FRAMES + 600}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: 300_000 });
 			await delay(4000);
 			const clients = Array.from({ length: BOT_CLIENTS }, (_, i) =>
 				run(godot, [...base, `--connect=127.0.0.1:${port}`, i === 0 ? "--bot=drive" : "--bot=walk", `--net-report-after=${RUN_FRAMES}`, `--name=bench${i}`], { cwd: root, timeoutMs: 300_000 }),
@@ -90,8 +90,8 @@ async function main(): Promise<void> {
 			if (summary.samples === 0) throw new Error(`${name}: no samples after the ${WARMUP_SECONDS} s warm-up`);
 			const zones = zoneCosts(records, WARMUP_SECONDS);
 			console.log(`  nodes' physics per tick: ${summary.physics_ms} ms; worst moment per second (Godot's peak): physics ${summary.physics_peak_ms} ms`);
-			console.log("  most expensive zones (ms per second):");
-			for (const [zone, ms] of zones.slice(0, TOP_ZONES)) console.log(`    ${zone.padEnd(38)} ${ms.toFixed(2).padStart(8)}`);
+			console.log("  most expensive zones (microseconds per frame):");
+			for (const [zone, us] of zones.slice(0, TOP_ZONES)) console.log(`    ${zone.padEnd(38)} ${us.toFixed(1).padStart(8)}`);
 			const stamp = new Date().toISOString().replaceAll(":", "-").slice(0, 19);
 			writeFileSync(join(outDir, `${name}-${stamp}.json`), JSON.stringify({ ...summary, zones }, null, 2) + "\n");
 			// The raw log too, for digging into a run afterwards.

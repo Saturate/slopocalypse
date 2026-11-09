@@ -30,12 +30,13 @@ test("small or within-tolerance differences are not", () => {
 	assert.deepEqual(compare({ ...base, frame_ms_mean: 5 }, base, 0.15), []);
 });
 
-test("zone costs average per sample after the warm-up, most expensive first", () => {
+test("zone costs are microseconds per frame after the warm-up, most expensive first", () => {
 	const recs = parsePerfLog([
 		'{"t":1,"frames":60,"zones":{"a:physics":{"ms":99}}}',
 		'{"t":12,"frames":60,"zones":{"a:physics":{"ms":60},"b:frame":{"ms":2}}}',
 		'{"t":13,"frames":60,"zones":{"a:physics":{"ms":120}}}',
 	].join("\n"));
 	const zones = zoneCosts(recs, 10);
-	assert.deepEqual(zones, [["a:physics", 90], ["b:frame", 1]]);
+	// 60 ms over 60 frames is 1000 us a frame, 120 over 60 is 2000: 1500 on average.
+	assert.deepEqual(zones, [["a:physics", 1500], ["b:frame", 16.667]]);
 });
