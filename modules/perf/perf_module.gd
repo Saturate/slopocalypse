@@ -43,7 +43,11 @@ func _ready() -> void:
 	var data: Variant = Data.load_json(CONFIG)
 	if not data is Dictionary or not Data.require(CONFIG, data, REQUIRED):
 		return
-	config = data
+	config = data.duplicate()
+	# Benchmarks look for smaller hitches than everyday logging does.
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--perf-spike-ms="):
+			config["spike_ms"] = float(arg.trim_prefix("--perf-spike-ms="))
 	add_to_group(&"perf_api")
 	_open_log()
 	if OS.get_cmdline_user_args().has("--uncapped"):

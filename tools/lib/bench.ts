@@ -74,8 +74,9 @@ export interface Regression {
 	change: number;
 }
 
-// Mean milliseconds per sample (per second) for each profile zone after the warm-up,
-// most expensive first.
+// Mean microseconds per frame for each profile zone after the warm-up, most expensive first.
+// Per frame, not per second: an uncapped client runs hundreds of frames a second, which would
+// inflate a per-second figure for the same work.
 export function zoneCosts(records: readonly Record<string, unknown>[], warmupSeconds: number): [string, number][] {
 	const used = records.filter((r) => num(r, "t") >= warmupSeconds && num(r, "frames") > 0);
 	const totals = new Map<string, number>();
@@ -84,7 +85,7 @@ export function zoneCosts(records: readonly Record<string, unknown>[], warmupSec
 		if (typeof zones !== "object" || zones === null) continue;
 		for (const [name, z] of Object.entries(zones)) {
 			const ms = typeof z === "object" && z !== null ? Reflect.get(z, "ms") : undefined;
-			if (typeof ms === "number") totals.set(name, (totals.get(name) ?? 0) + ms);
+			if (typeof ms === "number") totals.set(name, (totals.get(name) ?? 0) + (ms * 1000) / num(r, "frames"));
 		}
 	}
 	return [...totals].map(([name, ms]): [string, number] => [name, round(ms / Math.max(used.length, 1), 3)]).sort((a, b) => b[1] - a[1]);
