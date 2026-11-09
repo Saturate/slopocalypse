@@ -1,7 +1,8 @@
 name: check
 
-# The same full gate as `npm run check:full`, on all three desktop OSes, for every pull request
-# and push to main. Standard runners are free for public repositories.
+# The same full gate as `npm run check:full`, for every pull request and push to main, on the
+# OSes the local run (Windows) can't cover. PRs merge once the local gate passes; a red run here
+# gets fixed in a follow-up. Standard runners are free for public repositories.
 on:
   pull_request:
   push:
@@ -20,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     steps:
