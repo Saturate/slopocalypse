@@ -53,6 +53,8 @@ func _process(delta: float) -> void:
 		if _since_update >= float(_clock.config["update_seconds"]):
 			_since_update = 0.0
 			_lighting.apply(_clock)
+			# Local only: sound and anything else on this machine that follows the light.
+			EventBus.publish(&"daytime.hour", {"hour": _clock.hour, "daylight": _clock.daylight()})
 
 
 ## Server: jump to `hour` everywhere at once.

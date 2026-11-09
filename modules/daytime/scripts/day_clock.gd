@@ -40,6 +40,15 @@ func is_night() -> bool:
 	return hour < float(config["sunrise"]) or hour >= float(config["sunset"])
 
 
+## 1 in full day, 0 at night, ramping over the hour around sunrise and sunset.
+func daylight() -> float:
+	var rise: float = config["sunrise"]
+	var dusk: float = config["sunset"]
+	var morning := clampf((hour - rise + 0.5), 0.0, 1.0)
+	var evening := clampf((dusk + 0.5 - hour), 0.0, 1.0)
+	return minf(morning, evening)
+
+
 ## Game hours per real second right now: the night runs `night_speed` times faster.
 func rate() -> float:
 	var per_hour := 1.0 / float(config["hour_seconds"])

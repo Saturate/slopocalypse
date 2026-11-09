@@ -22,6 +22,15 @@ func test_hours_wrap_past_midnight() -> void:
 	assert_float(_clock.hour).is_equal_approx(23.0, 0.001)
 
 
+func test_daylight_ramps_through_dawn_and_dusk() -> void:
+	_clock.set_hour(12.0)
+	assert_float(_clock.daylight()).is_equal(1.0)
+	_clock.set_hour(2.0)
+	assert_float(_clock.daylight()).is_equal(0.0)
+	_clock.set_hour(float(_clock.config["sunrise"]))
+	assert_float(_clock.daylight()).is_between(0.1, 0.9)
+
+
 func test_night_runs_faster_than_day() -> void:
 	_clock.set_hour(12.0)
 	var day := _clock.rate()

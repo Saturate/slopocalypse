@@ -12,7 +12,7 @@ extends Node3D
 
 @export_file("*.json") var config_path: String = "res://modules/world/data/world.json"
 
-const REQUIRED := {"seed": TYPE_FLOAT, "trees_per_hectare": TYPE_FLOAT, "rocks_per_hectare": TYPE_FLOAT, "grass_per_m2": TYPE_FLOAT, "clear_radius": TYPE_FLOAT, "max_steepness": TYPE_FLOAT, "road_clearance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "grass_distance": TYPE_FLOAT, "tree_detail_distance": TYPE_FLOAT, "variants": TYPE_FLOAT}
+const REQUIRED := {"seed": TYPE_FLOAT, "trees_per_hectare": TYPE_FLOAT, "rocks_per_hectare": TYPE_FLOAT, "grass_per_m2": TYPE_FLOAT, "clear_radius": TYPE_FLOAT, "max_steepness": TYPE_FLOAT, "road_clearance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "grass_distance": TYPE_FLOAT, "tree_detail_distance": TYPE_FLOAT, "variants": TYPE_FLOAT, "tree_hits": TYPE_FLOAT, "tree_blast_reach": TYPE_FLOAT, "tree_fall_seconds": TYPE_FLOAT}
 
 const CHUNK := 64.0
 ## Chunks split across the width into cells, so distance culling works per cell.
@@ -29,6 +29,24 @@ const TREE_NEAR_VOXEL := 0.15
 const TREE_FAR_VOXEL := 0.45
 const ROCK_VOXEL := 0.1
 const ROAD_VOXEL := 0.1
+## Length of one road piece, in metres; a chunk's road is cut into these.
+const ROAD_PIECE := 8.0
+## Room for every piece of a chunk in the road keys (chunk * this + piece).
+const ROADS_PER_CHUNK := 64
+## How far the road model sits into the ground: its surface ends up 3 cm proud.
+const ROAD_LIFT := VoxRoad.BED + VoxRoad.SURFACE - 0.03
+## Furthest the road's pieces reach sideways from its centre line (lanes, shoulder, kerb).
+const ROAD_REACH := 8.0
+## Width of the burnt ring round a crater in the road, and its colour.
+const ROAD_SCORCH := 0.35
+const ROAD_SCORCH_COLOUR := Color(0.09, 0.085, 0.08)
+## Smaller bites taken out round a crater's edge in the road.
+const ROAD_RIM_BITES := 7
+## A bullet this far outside a trunk's capsule still counts as hitting it (the voxel bark
+## sticks out past the capsule).
+const TREE_HIT_SLACK := 0.5
+## How far a felled tree tips: not quite flat, as if it came to rest on its branches.
+const TREE_FALL_ANGLE := PI * 0.47
 ## Rocks whose top is lower than this above the ground get no collision; feet clear them.
 const STEP_OVER_HEIGHT := 0.3
 ## Trees, rocks and grass keep this far from the start tunnel: the ground over it is the
@@ -50,6 +68,19 @@ var _grass_mesh_cached: Mesh
 var _grass_cells: Dictionary[Vector2i, MultiMeshInstance3D] = {}
 ## Every dig so far, so chunks built later leave grass out of old craters too.
 var _digs: Array[Vector4] = []
+## Per loaded road piece (chunk * ROADS_PER_CHUNK + piece): {model: VoxelModel, mid: float, cx: float, mesh: MeshInstance3D}.
+var _roads: Dictionary[int, Dictionary] = {}
+## Road chunks dug since the last frame, re-meshed once each in _process.
+var _roads_dirty: Dictionary[int, bool] = {}
+## Per loaded chunk, its trees in placement order (the same on every machine):
+## {at, xform, kind, v, key, slot, trunk, leaves, radius}.
+var _trees: Dictionary[int, Array] = {}
+## Per loaded chunk, the MultiMesh instances per tree key: {key: [near, far]}.
+var _tree_meshes: Dictionary[int, Dictionary] = {}
+## Felled trees for good: Vector2i(chunk, index) -> horizontal direction it fell.
+var _felled: Dictionary[Vector2i, Vector3] = {}
+## Server: bullets taken per standing tree.
+var _tree_hits: Dictionary[Vector2i, int] = {}
 
 
 func _ready() -> void:
@@ -74,6 +105,10 @@ func _process(_delta: float) -> void:
 	if _heights == null:
 		return
 	update_around(_focus_points(), BUILDS_PER_FRAME)
+	for i: int in _roads_dirty:
+		if _roads.has(i):
+			_mesh_road(_roads[i])
+	_roads_dirty.clear()
 
 
 ## Builds chunks near any of `points` (at most `budget` this call) and frees the ones far
@@ -150,6 +185,11 @@ func _nearest(i: int, points: Array[Vector3]) -> float:
 func _free_chunk(i: int) -> void:
 	var node: Node3D = _chunks[i]
 	_chunks.erase(i)
+	_trees.erase(i)
+	_tree_meshes.erase(i)
+	for p in ROADS_PER_CHUNK:
+		_roads.erase(i * ROADS_PER_CHUNK + p)
+		_roads_dirty.erase(i * ROADS_PER_CHUNK + p)
 	for key: Vector2i in _grass_cells.keys():
 		if _grass_cells[key].get_parent() == node:
 			_grass_cells.erase(key)
@@ -196,16 +236,23 @@ func _build_chunk(i: int) -> Node3D:
 	var area := Rect2(_heights.extent().position.x, span.x, _heights.width, CHUNK)
 	var collision := StaticBody3D.new()
 	collision.name = "Collision"
+	collision.set_meta(&"chunk", i)
 	node.add_child(collision)
 	# Per kind, variant and cell: the transforms for its MultiMesh.
 	var placed: Dictionary = {}
-	_place_trees(rng, area, collision, placed)
+	_place_trees(i, rng, area, collision, placed)
 	_place_rocks(rng, area, collision, placed)
 	if _visual:
+		var meshes := {}
 		for key: Array in placed.keys():
-			_add_instances(node, key, placed[key])
+			meshes[key] = _add_instances(node, key, placed[key])
+		_tree_meshes[i] = meshes
 		_add_grass(node, rng, area)
 		_add_road(node, i, span)
+	for t in (_trees[i] as Array).size():
+		var id := Vector2i(i, t)
+		if _felled.has(id):
+			_fell(id, _felled[id], false)
 	return node
 
 
@@ -232,7 +279,9 @@ func _spot(rng: RandomNumberGenerator, area: Rect2, weight: Callable) -> Variant
 	return null
 
 
-func _place_trees(rng: RandomNumberGenerator, area: Rect2, collision: StaticBody3D, placed: Dictionary) -> void:
+func _place_trees(chunk: int, rng: RandomNumberGenerator, area: Rect2, collision: StaticBody3D, placed: Dictionary) -> void:
+	var trees: Array[Dictionary] = []
+	_trees[chunk] = trees
 	var tries := int(float(_cfg["trees_per_hectare"]) * area.get_area() / 10000.0)
 	var weight := func(x: float, z: float) -> float:
 		# Squared so only forest cores are dense; most woodland is open enough to see through.
@@ -249,7 +298,10 @@ func _place_trees(rng: RandomNumberGenerator, area: Rect2, collision: StaticBody
 		var tree: Dictionary = kinds[v]
 		var scale := rng.randf_range(0.8, 1.2)
 		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * scale)
-		_put(placed, ["pine" if pine else "leaf", v, _cell_of(at)], Transform3D(basis, at + Vector3.DOWN * 0.2))
+		var key := ["pine" if pine else "leaf", v, _cell_of(at)]
+		var xform := Transform3D(basis, at + Vector3.DOWN * 0.2)
+		var slot := (placed[key] as Array).size() if placed.has(key) else 0
+		_put(placed, key, xform)
 		var shape := CollisionShape3D.new()
 		var capsule := CapsuleShape3D.new()
 		capsule.radius = float(tree["trunk"]) * 0.4 * scale
@@ -266,6 +318,7 @@ func _place_trees(rng: RandomNumberGenerator, area: Rect2, collision: StaticBody
 		leaves.shape = ball
 		leaves.position = at + Vector3.UP * crown.x * scale
 		_sight_body(collision).add_child(leaves)
+		trees.append({"at": at, "xform": xform, "kind": key[0], "v": v, "key": key, "slot": slot, "trunk": shape, "leaves": leaves, "radius": capsule.radius})
 
 
 func _place_rocks(rng: RandomNumberGenerator, area: Rect2, collision: StaticBody3D, placed: Dictionary) -> void:
@@ -318,7 +371,7 @@ func _put(placed: Dictionary, key: Array, xform: Transform3D) -> void:
 
 ## One MultiMesh per kind, variant and cell; trees get a detailed copy near and a coarse
 ## one far.
-func _add_instances(node: Node3D, key: Array, transforms: Array) -> void:
+func _add_instances(node: Node3D, key: Array, transforms: Array) -> Array:
 	var kind: String = key[0]
 	var v: int = key[1]
 	var cell: Vector2i = key[2]
@@ -327,7 +380,7 @@ func _add_instances(node: Node3D, key: Array, transforms: Array) -> void:
 	if kind == "rock":
 		var rock := _multimesh(node, _rocks[v]["mesh"], transforms, [], centre)
 		rock.visibility_range_end = float(_cfg["load_distance"])
-		return
+		return []
 	var tree: Dictionary = (_pines if kind == "pine" else _leafs)[v]
 	var near := _multimesh(node, tree["near"], transforms, [], centre)
 	near.visibility_range_end = detail
@@ -336,6 +389,7 @@ func _add_instances(node: Node3D, key: Array, transforms: Array) -> void:
 	far.visibility_range_begin = detail
 	far.visibility_range_begin_margin = 8.0
 	far.visibility_range_end = float(_cfg["load_distance"]) + CHUNK
+	return [near, far]
 
 
 ## Instances are stored relative to `centre`, where the node sits, so visibility ranges are
@@ -435,28 +489,96 @@ func _add_road(node: Node3D, i: int, span: Vector2) -> void:
 	span.y = minf(span.y, road.z_start())
 	if span.y - span.x < 1.0:
 		return
-	var length := span.y - span.x
-	var mid := (span.x + span.y) / 2.0
-	var model := VoxRoad.new().build({"seed": hash([_seed, i]), "length": length, "voxel": ROAD_VOXEL, "z_phase": mid})
+	# Short pieces, so a crater re-meshes only the piece it is in.
+	var pieces := ceili((span.y - span.x) / ROAD_PIECE)
+	var length := (span.y - span.x) / pieces
+	for p in pieces:
+		var mid := span.x + length * (p + 0.5)
+		var model := VoxRoad.new().build({"seed": hash([_seed, i, p]), "length": length, "voxel": ROAD_VOXEL, "z_phase": mid})
+		var inst := MeshInstance3D.new()
+		var entry := {"model": model, "mid": mid, "cx": road.x_at(mid), "half_length": length / 2.0, "mesh": inst}
+		inst.position = Vector3(entry["cx"], 0.0, mid)
+		node.add_child(inst)
+		_roads[i * ROADS_PER_CHUNK + p] = entry
+		for d in _digs:
+			_carve_road(entry, Vector3(d.x, d.y, d.z), d.w)
+		_mesh_road(entry)
+
+
+## Bends the road model along the road and puts it on its mesh instance.
+func _mesh_road(entry: Dictionary) -> void:
+	var road := _heights.road
+	var model: VoxelModel = entry["model"]
+	var inst: MeshInstance3D = entry["mesh"]
 	var arrays := model.mesh_arrays_bendable(int(ROAD_BEND_STEP / ROAD_VOXEL))
 	if arrays.is_empty():
+		inst.mesh = null
 		return
-	var cx := road.x_at(mid)
-	var lift := VoxRoad.BED + VoxRoad.SURFACE - 0.03
+	var mid: float = entry["mid"]
+	var cx: float = entry["cx"]
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	# Vertices sit on the voxel grid, so the road's line and height are looked up once per
+	# grid row instead of once per vertex (hundreds of thousands of them).
+	var start := -float(entry["half_length"]) - ROAD_VOXEL
+	var rows := ceili((float(entry["half_length"]) * 2.0 + ROAD_VOXEL * 2.0) / ROAD_VOXEL) + 1
+	var row_x := PackedFloat32Array()
+	var row_y := PackedFloat32Array()
+	row_x.resize(rows)
+	row_y.resize(rows)
+	for r in rows:
+		var z := mid + start + r * ROAD_VOXEL
+		row_x[r] = road.x_at(z) - cx
+		row_y[r] = road.height_at(z) - ROAD_LIFT
 	for k in vertices.size():
 		var v := vertices[k]
-		var z := mid + v.z
+		var r := clampi(roundi((v.z - start) / ROAD_VOXEL), 0, rows - 1)
 		# The bed sinks into the ground; the surface stands a few centimetres proud.
-		vertices[k] = Vector3(road.x_at(z) - cx + v.x, road.height_at(z) + v.y - lift, v.z)
+		vertices[k] = Vector3(row_x[r] + v.x, row_y[r] + v.y, v.z)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	mesh.surface_set_material(0, VoxGenerator.material())
-	var inst := MeshInstance3D.new()
 	inst.mesh = mesh
-	inst.position = Vector3(cx, 0.0, mid)
-	node.add_child(inst)
+
+
+## Takes a crater out of a road piece, with a scorched ring of broken asphalt round it.
+## Returns false when the crater does not reach this piece.
+func _carve_road(entry: Dictionary, center: Vector3, radius: float) -> bool:
+	var road := _heights.road
+	var mid: float = entry["mid"]
+	var local_z := center.z - mid
+	if absf(local_z) > float(entry["half_length"]) + radius:
+		return false
+	var local := Vector3(center.x - road.x_at(center.z), center.y - road.height_at(center.z) + ROAD_LIFT, local_z)
+	if absf(local.x) > ROAD_REACH + radius or local.y - radius > ROAD_LIFT + 0.5:
+		return false
+	var model: VoxelModel = entry["model"]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(center)
+	model.paint_ellipsoid(local, Vector3.ONE * (radius + ROAD_SCORCH), ROAD_SCORCH_COLOUR, 0.4, rng.seed)
+	model.carve_ellipsoid(local, Vector3.ONE * radius)
+	# Bites out of the rim so the hole is torn asphalt, not a clean circle.
+	for b in ROAD_RIM_BITES:
+		var angle := TAU * (b + rng.randf_range(-0.3, 0.3)) / ROAD_RIM_BITES
+		var bite := radius * rng.randf_range(0.2, 0.45)
+		var at := local + Vector3(cos(angle), 0.0, sin(angle)) * radius * rng.randf_range(0.8, 1.05)
+		model.paint_ellipsoid(at, Vector3.ONE * (bite + ROAD_SCORCH), ROAD_SCORCH_COLOUR, 0.4, rng.seed + b)
+		model.carve_ellipsoid(at, Vector3.ONE * bite)
+	return true
+
+
+## Clients: a crater on the road breaks the road too, not just the ground under it.
+func dig_road(center: Vector3, radius: float) -> void:
+	for i: int in _roads:
+		if _carve_road(_roads[i], center, radius):
+			_roads_dirty[i] = true
+
+
+## Everything a new crater takes with it: grass and the road over it.
+func on_dug(center: Vector3, radius: float) -> void:
+	clear_grass(center, radius)
+	if _visual:
+		dig_road(center, radius)
 
 
 func _grass_mesh() -> Mesh:
@@ -479,3 +601,119 @@ func _grass_mesh() -> Mesh:
 	wind.shader = load("res://modules/world/shaders/grass.gdshader")
 	out.surface_set_material(0, wind)
 	return out
+
+
+## Server: a bullet hit `body` at `point`. Enough hits on one trunk fell it; returns the
+## felled tree's id once it has taken enough, otherwise null.
+func server_shoot_tree(body: Node, point: Vector3) -> Variant:
+	var id: Variant = tree_at(body, point)
+	if not id is Vector2i:
+		return null
+	var hits := int(_tree_hits.get(id, 0)) + 1
+	_tree_hits[id] = hits
+	if hits < int(_cfg["tree_hits"]):
+		return null
+	_tree_hits.erase(id)
+	return id
+
+
+## Server: the standing trees an explosion at `center` knocks down, with the way each falls.
+func server_blast_trees(center: Vector3, radius: float) -> Dictionary[Vector2i, Vector3]:
+	var out: Dictionary[Vector2i, Vector3] = {}
+	var reach := radius * float(_cfg["tree_blast_reach"])
+	for i: int in _trees:
+		var trees: Array = _trees[i]
+		for t in trees.size():
+			var id := Vector2i(i, t)
+			var at: Vector3 = (trees[t] as Dictionary)["at"]
+			if _felled.has(id) or at.distance_to(center) > reach:
+				continue
+			out[id] = at - center
+	return out
+
+
+## The standing tree whose trunk is nearest `point` in the chunk `body` belongs to, or null.
+func tree_at(body: Node, point: Vector3) -> Variant:
+	if body == null or not body.has_meta(&"chunk"):
+		return null
+	var chunk := int(body.get_meta(&"chunk"))
+	if not _trees.has(chunk):
+		return null
+	var best: Variant = null
+	var best_d := INF
+	var trees: Array = _trees[chunk]
+	for t in trees.size():
+		var tree: Dictionary = trees[t]
+		var at: Vector3 = tree["at"]
+		var d := Vector2(point.x - at.x, point.z - at.z).length()
+		if d < float(tree["radius"]) + TREE_HIT_SLACK and d < best_d and not _felled.has(Vector2i(chunk, t)):
+			best = Vector2i(chunk, t)
+			best_d = d
+	return best
+
+
+## Where a tree stands, for tests and the admin panel; null when its chunk is not loaded.
+func tree_position(id: Vector2i) -> Variant:
+	if not _trees.has(id.x) or id.y >= (_trees[id.x] as Array).size():
+		return null
+	return ((_trees[id.x] as Array)[id.y] as Dictionary)["at"]
+
+
+func tree_count(chunk: int) -> int:
+	return (_trees[chunk] as Array).size() if _trees.has(chunk) else 0
+
+
+func is_felled(id: Vector2i) -> bool:
+	return _felled.has(id)
+
+
+func felled() -> Dictionary[Vector2i, Vector3]:
+	return _felled
+
+
+## Every machine: the tree `id` goes down towards `direction` and stays down. Remembered, so
+## its chunk comes back with it lying there.
+func fell_tree(id: Vector2i, direction: Vector3) -> void:
+	if _felled.has(id):
+		return
+	var flat := Vector3(direction.x, 0.0, direction.z)
+	_felled[id] = flat.normalized() if flat.length() > 0.01 else Vector3.FORWARD
+	_tree_hits.erase(id)
+	if _trees.has(id.x) and id.y < (_trees[id.x] as Array).size():
+		_fell(id, _felled[id], true)
+
+
+## Takes the standing tree out (collision and its MultiMesh copies) and, on clients, lays a
+## copy of it down, tipping over from its foot when `animate`.
+func _fell(id: Vector2i, direction: Vector3, animate: bool) -> void:
+	var tree: Dictionary = (_trees[id.x] as Array)[id.y]
+	for part: String in ["trunk", "leaves"]:
+		var shape := tree[part] as CollisionShape3D
+		if is_instance_valid(shape):
+			# Disabled now, so the same physics step stops hitting it; freed after.
+			shape.disabled = true
+			shape.queue_free()
+	if not _visual or not _tree_meshes.has(id.x):
+		return
+	var meshes: Array = (_tree_meshes[id.x] as Dictionary).get(tree["key"], [])
+	for mm_node: Variant in meshes:
+		var mm := (mm_node as MultiMeshInstance3D).multimesh
+		# A zero basis draws nothing; MultiMesh has no way to drop one instance.
+		mm.set_instance_transform(int(tree["slot"]), Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
+	var kinds := _pines if tree["kind"] == "pine" else _leafs
+	var trunk := MeshInstance3D.new()
+	trunk.name = "Felled%d" % id.y
+	trunk.mesh = (kinds[int(tree["v"])] as Dictionary)["near"]
+	trunk.visibility_range_end = float(_cfg["load_distance"])
+	_chunks[id.x].add_child(trunk)
+	var xform: Transform3D = tree["xform"]
+	var axis := Vector3.UP.cross(direction).normalized()
+	var tip := func(t: float) -> void:
+		trunk.transform = Transform3D(Basis(axis, TREE_FALL_ANGLE * t) * xform.basis, xform.origin)
+	if not animate:
+		tip.call(1.0)
+		return
+	tip.call(0.0)
+	# Slow to start, then faster: it leans, then goes.
+	var tween := trunk.create_tween()
+	tween.tween_method(tip, 0.0, 1.0, float(_cfg["tree_fall_seconds"])).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)

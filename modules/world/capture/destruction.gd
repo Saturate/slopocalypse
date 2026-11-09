@@ -1,0 +1,118 @@
+extends Node3D
+## Capture setup: the road and trees breaking. The road before and after explosions, a
+## close look into a crater in the road, trees nearby falling, then lying where they fell.
+
+const WORLD := "res://modules/world/scenes/world.tscn"
+const FRAMES_PER_SHOT := 120
+const AT_Z := -60.0
+
+var _camera := Camera3D.new()
+var _ticks := 0
+var _current := -1
+var _world: Node3D
+var _voxels: VoxelWorld
+var _scenery: SceneryScatter
+var _road: Vector3
+var _trees: Array[Vector2i] = []
+
+
+func _ready() -> void:
+	_world = await VoxelWorld.add_and_wait(self, WORLD)
+	_voxels = _world.get_node("Terrain")
+	_scenery = _world.get_node("Scenery")
+	_voxels.dug.connect(_scenery.on_dug)
+	var heights := _voxels.heights
+	_road = Vector3(heights.road.x_at(AT_Z), heights.road.height_at(AT_Z), AT_Z)
+	_camera.fov = 70.0
+	_camera.far = 900.0
+	add_child(_camera)
+	_camera.current = true
+	_camera.add_child(_voxels.make_viewer())
+	_look(_road + Vector3(5.0, 4.0, 12.0), _road)
+	_go(0)
+
+
+func _look(at: Vector3, target: Vector3) -> void:
+	_camera.global_position = at
+	_camera.look_at(target)
+	_scenery.update_around([at, target], INF)
+	_voxels.update_around([at, target], INF)
+
+
+func _process(_delta: float) -> void:
+	if _scenery == null:
+		return
+	_ticks += 1
+	var shot := (_ticks + FRAMES_PER_SHOT / 2) / FRAMES_PER_SHOT - 1
+	if shot != _current:
+		_go(shot)
+
+
+## The trees standing nearest the road point, closest first.
+func _nearest_trees(count: int) -> Array[Vector2i]:
+	var found: Array[Vector2i] = []
+	for i: int in _scenery.loaded_chunks():
+		for t in _scenery.tree_count(i):
+			found.append(Vector2i(i, t))
+	found.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		return (_scenery.tree_position(a) as Vector3).distance_to(_road) < (_scenery.tree_position(b) as Vector3).distance_to(_road))
+	return found.slice(0, count)
+
+
+## A tree near the road standing on its own, so its fall is easy to see.
+func _lone_tree() -> Vector2i:
+	var near := _nearest_trees(60)
+	var best := near[0]
+	var best_gap := 0.0
+	for id in near:
+		var at: Vector3 = _scenery.tree_position(id)
+		# Down the road, away from the mountain over the tunnel.
+		if at.distance_to(_road) > 70.0 or at.z > _road.z:
+			continue
+		var gap := INF
+		for other in near:
+			if other != id:
+				gap = minf(gap, at.distance_to(_scenery.tree_position(other) as Vector3))
+		if gap > best_gap:
+			best_gap = gap
+			best = id
+	return best
+
+
+func _go(shot: int) -> void:
+	_current = shot
+	match shot:
+		0:
+			_look(_road + Vector3(5.0, 4.0, 12.0), _road)
+		1:
+			_voxels.server_dig(_road + Vector3(0.0, 0.3, 0.0), 2.2)
+			_voxels.server_dig(_road + Vector3(-2.5, 0.3, -6.0), 1.6)
+			_voxels.server_dig(_road + Vector3(3.0, 0.3, 4.0), 0.9)
+		2:
+			_look(_road + Vector3(2.5, 2.2, 3.5), _road + Vector3(0.0, -0.8, 0.0))
+		3:
+			_trees = [_lone_tree()]
+			_look(_tree_view(16.0, 4.0), _tree_target())
+		4:
+			for id in _trees:
+				_scenery.fell_tree(id, _fall_direction())
+		5:
+			_look(_tree_view(-16.0, 6.0), _tree_target())
+
+
+## Falls straight away from the road.
+func _fall_direction() -> Vector3:
+	var d := (_scenery.tree_position(_trees[0]) as Vector3) - _road
+	return Vector3(d.x, 0.0, d.z).normalized()
+
+
+## Side-on to the fall, `distance` away and `height` up.
+func _tree_view(distance: float, height: float) -> Vector3:
+	var d := _fall_direction()
+	var side := d.cross(Vector3.UP)
+	var at := (_scenery.tree_position(_trees[0]) as Vector3) + side * distance + d * 3.0
+	return Vector3(at.x, _voxels.ground_height(at.x, at.z) + height, at.z)
+
+
+func _tree_target() -> Vector3:
+	return (_scenery.tree_position(_trees[0]) as Vector3) + _fall_direction() * 4.0 + Vector3.UP * 2.0
