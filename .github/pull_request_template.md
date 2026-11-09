@@ -4,6 +4,7 @@ Closes #
 
 ## How it was tested
 
+- [ ] Changeset added (`.changeset/*.md`, written for players)
 - [ ] `npm run check:full` passes locally
 - [ ] Screenshot or clip attached, if anything visible changed
 

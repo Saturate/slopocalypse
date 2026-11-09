@@ -5,8 +5,10 @@
 export_presets.cfg
 /build/
 
-# Pinned engine binary (fetch with tools/get-godot.ps1)
+# Pinned engine binary (fetch with tools/get-godot.ts)
 /tools/godot/
+# Pinned changesetter binary (fetch with tools/get-changesetter.ts)
+/tools/changesetter/
 
 # Test and capture output
 /tests/reports/

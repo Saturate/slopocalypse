@@ -36,6 +36,7 @@ You need Node.js 24, Rust (through rustup, the pinned version installs itself) a
 npm ci
 node tools/get-godot.ts     # the pinned Godot 4.7.2 build, into tools/godot/
 node tools/get-addons.ts
+node tools/get-changesetter.ts   # versions and changelog
 npm run check               # builds the Rust parts, imports, runs the fast tests
 tools/godot/Godot_v4.7.2-stable_win64.exe --path .   # or your OS's binary in tools/godot/
 ```

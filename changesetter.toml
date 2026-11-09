@@ -1,0 +1,6 @@
+ignore = ["", "slopocalypse-tools", "*_core", "*_gd"]
+
+[[package]]
+name = "slopocalypse"
+path = "."
+type = "godot"
