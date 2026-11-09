@@ -41,7 +41,7 @@ Agent tooling note: in some agent shells on Windows (seen with Claude Code's Bas
 | Build Rust extensions | `node tools/build-rust.ts` (`--release` for exports); the gate does this before Godot imports |
 | Open editor | `tools/godot/Godot_v4.7.2-stable_win64.exe -e --path .` (Windows; other OSes use their binary in `tools/godot/`) |
 
-CI: `.github/workflows/check.yml` runs the full gate on Linux, Windows and macOS for every pull request and push to main; the local `npm run check:full` stays the gate you run before pushing. `release.yml` and `server-build.yml` are manual: start them only when the maintainer asks.
+CI: `.github/workflows/check.yml` runs the full gate on Linux and macOS for every pull request and push to main; the local `npm run check:full` (Windows) is the gate you run before pushing and merging. `release.yml` and `server-build.yml` are manual: start them only when the maintainer asks.
 
 Planned, added by their issues: `tools/journal` (#11), `tools/soak` (#15).
 
@@ -88,7 +88,7 @@ A module is `modules/<id>/module.json` (`id`, `depends_on`, `flag`, `entry`) plu
 - GitHub issues are the live task list (milestone per phase). One branch per issue, named `issue-<n>-<slug>`; commits and PRs reference the issue.
 - Every branch adds a changeset (`.changeset/*.md`, see Commands); the full gate fails without one. Write it for players, as one line of what they will notice ("Trees are cut where you shoot them"), not as a commit message. `none` for changes players never see. Never edit `config/version` or `CHANGELOG.md` by hand, and never run a release (`changesetter release`, `tools/release.ts` or the `release` workflow) unless the maintainer asks.
 - Agents say who they are. Every issue, PR and comment an agent writes ends with a line `Made by: <model> in <tool>, <steered by a person | on its own>` (e.g. `Made by: Claude Opus 5.5 in Claude Code, steered by a person`). Add the `by:agent` label (`by:human` when a person wrote it) if you have access; outside contributors can't set labels, so the `Made by:` line is what counts. Use the model name you actually are; if you don't know it, say so instead of guessing. Commits keep the attribution trailer your tool adds; if it adds none, add `Assisted-by: <model> in <tool>`.
-- The merge gate is `npm run check:full` run locally, then the `check` workflow green on the pull request; PRs are merged after both pass.
+- The merge gate is `npm run check:full` run locally; PRs are merged once it passes. The `check` workflow then runs the same gate on Linux and macOS; if it goes red, fix it in a follow-up PR straight away.
 - Write a failing test first wherever behaviour is testable. Feel is checked by playtest and recorded in `NOTES.md`.
 - Tool and test runs that start a server pass `--save=<temp file>` or `--no-save`, never the player's own world.
 - Never trust a Godot exit code alone: headless runs can exit 0 after a script error, and gdUnit4 passes tests that only `push_error`. The gate scans logs and fails on any `ERROR:`, `Error:` or `SCRIPT ERROR` line not allow-listed in `tools/lib/gate.ts`.
