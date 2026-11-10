@@ -1,0 +1,39 @@
+name: export
+
+# Builds one platform's portable zip as a workflow artifact, without releasing anything:
+# `gh workflow run export -f os=macos`. Handy for checking an export (macOS needs a Mac).
+on:
+  workflow_dispatch:
+    inputs:
+      os:
+        description: windows, linux or macos
+        required: true
+        default: macos
+        type: choice
+        options: [windows, linux, macos]
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ${{ inputs.os == 'windows' && 'windows-latest' || inputs.os == 'linux' && 'ubuntu-latest' || 'macos-latest' }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup
+
+      - uses: actions/cache@v6
+        with:
+          path: tools/godot/editor_data/export_templates
+          key: godot-templates-${{ hashFiles('tools/lib/godot.ts') }}
+
+      # Exports, then smoke-tests the exported game in solo with the bot.
+      - run: node tools/export.ts --os ${{ inputs.os }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slopocalypse-${{ inputs.os }}
+          path: build/slopocalypse-${{ inputs.os }}.zip
+          compression-level: 0

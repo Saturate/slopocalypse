@@ -26,7 +26,7 @@ If you find better ways to keep agents honest, those are as welcome as features.
 
 ## Playing
 
-There are no public builds yet. Build it yourself (below), then `node tools/export.ts` makes a portable zip in `build/` you can hand to friends. The main menu has Play solo, Host a game and Join a friend.
+Download the latest build for Windows, Linux or macOS from [Releases](https://github.com/Saturate/slopocalypse/releases), or build it yourself (below): `node tools/export.ts` makes a portable zip in `build/` you can hand to friends. The main menu has Play solo, Host a game and Join a friend.
 
 ## Building
 

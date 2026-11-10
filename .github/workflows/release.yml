@@ -1,8 +1,8 @@
 name: release
 
 # Cuts a release, started by hand: `gh workflow run release` (maintainer only).
-# changesetter bumps the version on a release branch; Windows and Linux build from it in
-# parallel; only when both builds pass does main move to the release commit, the tag and the
+# changesetter bumps the version on a release branch; Windows, Linux and macOS build from it
+# in parallel; only when all builds pass does main move to the release commit, the tag and the
 # GitHub Release get made and the server image goes to ghcr.io. A failed build deletes the
 # release branch and publishes nothing. tools/release.ts does the same from a local machine.
 on:
@@ -71,6 +71,8 @@ jobs:
             runner: windows-latest
           - os: linux
             runner: ubuntu-latest
+          - os: macos
+            runner: macos-latest
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     steps:

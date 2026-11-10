@@ -40,7 +40,19 @@ export function presetFor(os: TargetOs, exportPath: string): Preset {
 			"codesign/enable": false,
 		},
 		linux: { ...common, "binary_format/architecture": "x86_64" },
-		macos: { "binary_format/architecture": "universal", "application/bundle_identifier": "dev.saturate.slopocalypse", "codesign/codesign": 0 },
+		// Universal (Apple silicon and Intel), so both texture formats. Ad-hoc signed by Godot's
+		// built-in signer: Apple silicon refuses unsigned code, and without a paid Apple
+		// Developer ID it is not notarised (players open it once with right-click > Open).
+		macos: {
+			"binary_format/architecture": "universal",
+			"texture_format/s3tc_bptc": true,
+			"texture_format/etc2_astc": true,
+			"application/bundle_identifier": "dev.saturate.slopocalypse",
+			"application/short_version": "1.0",
+			"application/version": "1.0",
+			"codesign/codesign": 1,
+			"notarization/notarization": 0,
+		},
 	};
 	return { name: PLATFORMS[os], platform: PLATFORMS[os], exportPath, options: perOs[os] };
 }
@@ -85,6 +97,11 @@ export function exeName(os: TargetOs): string {
 	return os === "windows" ? "Slopocalypse.exe" : os === "linux" ? "Slopocalypse.x86_64" : "Slopocalypse.app";
 }
 
+// The file to run: on macOS the binary inside the app bundle.
+export function runnable(os: TargetOs): string {
+	return os === "windows" ? "Slopocalypse.console.exe" : os === "macos" ? "Slopocalypse.app/Contents/MacOS/Slopocalypse" : exeName(os);
+}
+
 // Gameplay data files a player can tune: data/*.json and modules/<id>/data/*.json,
 // relative to the project root with forward slashes.
 export function dataFiles(root: string): string[] {
@@ -126,5 +143,5 @@ export function hostScript(os: TargetOs, port: number): string {
 	if (os === "windows") {
 		return `@echo off\r\ncd /d "%~dp0"\r\n"%~dp0Slopocalypse.console.exe" --headless -- --server=${port}\r\npause\r\n`;
 	}
-	return `#!/bin/sh\ncd "$(dirname "$0")"\nexec ./${exeName(os)} --headless -- --server=${port}\n`;
+	return `#!/bin/sh\ncd "$(dirname "$0")"\nexec "./${runnable(os)}" --headless -- --server=${port}\n`;
 }

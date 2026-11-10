@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { dataFiles, presetFor, shippedServers, presetsFile, templatesDir } from "./export.ts";
+import { dataFiles, hostScript, presetFor, runnable, shippedServers, presetsFile, templatesDir } from "./export.ts";
 
 test("windows preset embeds the pack, keeps data files and drops dev-only folders", () => {
 	const p = presetFor("windows", "build/windows/Slopocalypse.exe");
@@ -39,4 +39,13 @@ test("the tunable data files are the root and module data folders", () => {
 	assert.ok(files.includes("data/features.json"), files.join(", "));
 	assert.ok(files.includes("modules/enemies/data/enemies.json"), files.join(", "));
 	assert.ok(files.every((f) => f.endsWith(".json") && !f.includes("\\")));
+});
+
+test("macOS exports a universal, ad-hoc signed app run from inside its bundle", () => {
+	const p = presetFor("macos", "build/macos/Slopocalypse.app");
+	assert.equal(p.platform, "macOS");
+	assert.equal(p.options["binary_format/architecture"], "universal");
+	assert.equal(p.options["codesign/codesign"], 1);
+	assert.equal(runnable("macos"), "Slopocalypse.app/Contents/MacOS/Slopocalypse");
+	assert.match(hostScript("macos", 7777), /Slopocalypse\.app\/Contents\/MacOS\/Slopocalypse" --headless -- --server=7777/);
 });
