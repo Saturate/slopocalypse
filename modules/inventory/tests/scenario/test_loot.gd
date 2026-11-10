@@ -1,5 +1,5 @@
 extends GdUnitTestSuite
-## Loot on the ground: E picks up the item in reach if it fits, dropping lays an item from
+## Loot on the ground: F picks up the item in reach if it fits, dropping lays an item from
 ## the inventory in front of the player, and one press never also enters a car.
 
 const PLAYER := "res://modules/player/scenes/player.tscn"
@@ -76,15 +76,3 @@ func test_no_room_leaves_the_loot_where_it_is() -> void:
 	await get_tree().process_frame
 	EventBus.publish(&"player.interact", {"player": player})
 	assert_bool(loot.is_queued_for_deletion()).is_false()
-
-
-func test_dying_spills_the_backpack_where_you_fell() -> void:
-	var player := _spawn(45)
-	var grid: InventoryGrid = _module.call(&"grid_of", 45)
-	var carried := grid.items().size()
-	assert_int(carried).is_greater(0)
-	var before := get_tree().get_nodes_in_group(&"loot").size()
-	EventBus.publish(&"player.died", {"player": player, "position": player.global_position})
-	await get_tree().process_frame
-	assert_int(grid.items().size()).is_equal(0)
-	assert_int(get_tree().get_nodes_in_group(&"loot").size()).is_equal(before + carried)

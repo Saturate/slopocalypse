@@ -94,6 +94,46 @@ impl InventoryGrid {
         result(grid.move_to(&self.sizes, uid_of(uid), cell(x), cell(y), rotated))
     }
 
+    /// Moves item `uid` from this grid to (x, y) in `to`; "" or why not. Within the same
+    /// grid it is a plain move.
+    #[func]
+    fn transfer(
+        &mut self,
+        uid: i64,
+        mut to: Gd<InventoryGrid>,
+        x: i64,
+        y: i64,
+        rotated: bool,
+    ) -> GString {
+        if to == self.to_gd() {
+            return self.move_item(uid, x, y, rotated);
+        }
+        let mut other = to.bind_mut();
+        match (self.grid.as_mut(), other.grid.as_mut()) {
+            (Some(from), Some(into)) => result(
+                from.transfer(into, &self.sizes, uid_of(uid), cell(x), cell(y), rotated)
+                    .map(|_| ()),
+            ),
+            _ => GString::from("not set up"),
+        }
+    }
+
+    /// Moves item `uid` into the first free spot in `to`; "" or why not.
+    #[func]
+    fn transfer_anywhere(&mut self, uid: i64, mut to: Gd<InventoryGrid>) -> GString {
+        if to == self.to_gd() {
+            return GString::from("already here");
+        }
+        let mut other = to.bind_mut();
+        match (self.grid.as_mut(), other.grid.as_mut()) {
+            (Some(from), Some(into)) => result(
+                from.transfer_anywhere(into, &self.sizes, uid_of(uid))
+                    .map(|_| ()),
+            ),
+            _ => GString::from("not set up"),
+        }
+    }
+
     /// Puts `item` in the first free spot: `{ok, x, y, rotated, error}`.
     #[func]
     fn insert(&mut self, uid: i64, item: GString) -> VarDictionary {

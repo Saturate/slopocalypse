@@ -6,15 +6,11 @@ extends CanvasLayer
 ## redraws the grid, so a refused one snaps back.
 
 const CELL := 58
-const GAP := 2
 const BG := Color(0.05, 0.06, 0.06, 0.82)
 const PANEL := Color(0.11, 0.12, 0.11, 0.97)
 const ACCENT := Color(0.82, 0.62, 0.3)
 const TEXT := Color(0.88, 0.88, 0.84)
 const DIM := Color(0.6, 0.61, 0.58)
-const CELL_COLOUR := Color(0.16, 0.17, 0.16)
-const OK := Color(0.4, 0.8, 0.4, 0.35)
-const BAD := Color(0.9, 0.35, 0.3, 0.35)
 
 var inventory: Node
 var peer := 0
@@ -83,14 +79,7 @@ func close() -> void:
 
 ## The item under a grid cell, or empty.
 func item_at(cell: Vector2i) -> Dictionary:
-	var grid: InventoryGrid = inventory.call(&"grid_of", peer)
-	if grid == null:
-		return {}
-	for placed: Dictionary in grid.items():
-		var r := Rect2i(int(placed["x"]), int(placed["y"]), int(placed["w"]), int(placed["h"]))
-		if r.has_point(cell):
-			return placed
-	return {}
+	return GridPainter.item_at(inventory.call(&"grid_of", peer), cell)
 
 
 ## Starts dragging the item at `cell` (as a mouse press does).
@@ -152,14 +141,8 @@ func _draw_grid() -> void:
 	var grid: InventoryGrid = inventory.call(&"grid_of", peer)
 	if grid == null:
 		return
-	for y in grid.height():
-		for x in grid.width():
-			_grid_view.draw_rect(Rect2(x * CELL + GAP, y * CELL + GAP, CELL - GAP * 2, CELL - GAP * 2), CELL_COLOUR)
-	var font := ThemeDB.fallback_font
-	for placed: Dictionary in grid.items():
-		if not _dragging.is_empty() and int(placed["uid"]) == int(_dragging["uid"]):
-			continue
-		_draw_tile(placed, Vector2(int(placed["x"]), int(placed["y"])) * CELL, int(placed["w"]), int(placed["h"]), font, 1.0)
+	GridPainter.draw_cells(_grid_view, grid, CELL)
+	GridPainter.draw_items(_grid_view, inventory, grid, CELL, -1 if _dragging.is_empty() else int(_dragging["uid"]))
 	if _dragging.is_empty():
 		return
 	var mouse := _grid_view.get_local_mouse_position()
@@ -168,19 +151,8 @@ func _draw_grid() -> void:
 		size = Vector2i(size.y, size.x)
 	var cell := _drop_cell(mouse)
 	var fits := grid.can_place(str(_dragging["item"]), cell.x, cell.y, _drag_rotated, int(_dragging["uid"]))
-	_grid_view.draw_rect(Rect2(Vector2(cell) * CELL, Vector2(size) * CELL), OK if fits else BAD)
-	_draw_tile(_dragging, mouse - _grab * CELL, size.x, size.y, font, 0.85)
-
-
-func _draw_tile(placed: Dictionary, at: Vector2, w: int, h: int, font: Font, alpha: float) -> void:
-	var info: Dictionary = inventory.call(&"item_info", str(placed["item"]))
-	var colour: Color = inventory.call(&"kind_colour", str(info.get("kind", "")))
-	var rect := Rect2(at + Vector2(GAP, GAP), Vector2(w * CELL - GAP * 2, h * CELL - GAP * 2))
-	_grid_view.draw_rect(rect, Color(colour.darkened(0.45), alpha))
-	_grid_view.draw_rect(rect, Color(colour, alpha), false, 1.5)
-	# Tiles carry the short name, top right; the full name shows on hover.
-	var label := str(info.get("short", info.get("name", placed["item"])))
-	_grid_view.draw_string(font, rect.position + Vector2(4, 14), label, HORIZONTAL_ALIGNMENT_RIGHT, rect.size.x - 8, 12, Color(TEXT, alpha))
+	GridPainter.draw_fit(_grid_view, cell, size, CELL, fits)
+	GridPainter.draw_tile(_grid_view, inventory, _dragging, mouse - _grab * CELL, size.x, size.y, CELL, 0.85)
 
 
 func _build_ui() -> void:

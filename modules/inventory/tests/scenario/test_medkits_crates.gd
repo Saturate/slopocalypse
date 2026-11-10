@@ -1,5 +1,6 @@
 extends GdUnitTestSuite
-## Medkits heal over a few seconds and are used up; crates hand over what fits and refill.
+## Medkits heal over a few seconds and are used up; crates open for looting, hand over what
+## fits and refill.
 
 const PLAYER := "res://modules/player/scenes/player.tscn"
 const MODULE := "res://modules/inventory/inventory_module.gd"
@@ -53,6 +54,7 @@ func test_searching_a_crate_takes_what_fits_and_it_refills() -> void:
 	var payload := {"player": player}
 	EventBus.publish(&"player.interact", payload)
 	assert_bool(payload.get("handled", false)).is_true()
+	_module.call(&"server_take_all", 53)
 	assert_int((_module.call(&"crate_contents", crate) as Array).size()).is_equal(0)
 	assert_bool(crate.get_meta(&"empty", false)).is_true()
 	for item: String in inside:

@@ -1,7 +1,7 @@
 class_name LootPrompt
 extends CanvasLayer
-## Client only, local player: "F  Pick up <item>" under the crosshair while loot is in
-## reach, using the same reach rule the server uses for the pickup.
+## Client only, local player: "F  Pick up <item>" (or "Search body", "Search crate")
+## under the crosshair while it is in reach, using the same reach rule the server uses for the pickup.
 
 var inventory: Node
 var player: Node3D
@@ -44,13 +44,14 @@ func _process(_delta: float) -> void:
 		queue_free()
 		return
 	var loot: Node = inventory.call(&"loot_in_reach", player)
-	var crate: Node = inventory.call(&"crate_in_reach", player) if loot == null else null
+	var crate: Node = inventory.call(&"container_in_reach", player) if loot == null else null
 	_label.visible = (loot != null or crate != null) and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	if loot != null:
 		var info: Dictionary = inventory.call(&"item_info", str(loot.get(&"item")))
 		_label.text = "F   Pick up %s" % str(info.get("name", loot.get(&"item")))
 	elif crate != null:
-		_label.text = "Empty crate" if crate.get_meta(&"empty", false) else "F   Search crate"
+		var what := "body" if crate is LootBody else "crate"
+		_label.text = "F   Search %s%s" % [what, " (empty)" if crate.get_meta(&"empty", false) else ""]
 	# Medkits: how many, and the key, just above the health bar.
 	_meds.text = "H   Medkit x%d" % int(inventory.call(&"count", peer, "medkit"))
 	_meds.visible = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED

@@ -31,6 +31,8 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | What enemies carry | `modules/inventory/data/items.json` | `npc_loot`: `rolls`, `items` (weights) |
 | Crates: how many, where, refill, contents | `modules/inventory/data/items.json` | `crates`: `count`, `distance`, `seed`, `refill_seconds`, `rolls`, `items` |
 | Loot piles at the spawn | `modules/inventory/data/items.json` | `loot` |
+| Bodies: how long they stay, colour | `modules/inventory/data/items.json` | `bodies`: `seconds`, `empty_seconds` (once searched empty), `colour` |
+| Crate grid size | `modules/inventory/data/items.json` | `crates.grid` |
 | Enemy numbers and timing | `modules/enemies/data/enemies.json` | `first_spawn_seconds`, `max_alive`, `squad_size`, `squad_respawn_seconds`, `spawn_distance`, `corpse_seconds` |
 | Enemy difficulty | `modules/enemies/data/enemies.json` | `max_health`, `reaction_seconds`, `aim_error_degrees` (`[at first, once settled]`), `aim_settle_seconds`, `damage_scale`, `burst_shots`, `burst_pause_seconds` |
 | Enemy senses | `modules/enemies/data/enemies.json` | `sight_range`, `sight_cone_degrees`, `hearing_range`, `chase_seconds`, `forget_seconds` |

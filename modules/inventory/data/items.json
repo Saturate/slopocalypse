@@ -18,7 +18,13 @@
     { "at": [-4.0, -3.0], "items": ["opt_reddot", "stk_ar_std", "mag_pistol_15"] },
     { "at": [-3.0, 3.0], "items": ["hg_ar_std", "bar_ar_14", "sld_pistol_std"] }
   ],
+  "bodies": {
+    "seconds": 300.0,
+    "empty_seconds": 30.0,
+    "colour": [0.3, 0.33, 0.26]
+  },
   "crates": {
+    "grid": [6, 4],
     "count": 12,
     "distance": [12.0, 110.0],
     "seed": 7,
