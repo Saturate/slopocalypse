@@ -159,3 +159,15 @@ func test_saved_loot_now_under_the_ground_is_not_put_back() -> void:
 	await get_tree().process_frame
 	var loot := get_tree().get_nodes_in_group(&"loot").filter(func(n: Node) -> bool: return not n.is_queued_for_deletion())
 	assert_array(loot.map(func(n: Node) -> String: return (n as LootItem).item)).contains_exactly(["mag_ar_30"])
+
+
+func test_tokens_come_back_with_the_player() -> void:
+	var missions: Node = auto_free((load("res://modules/missions/missions_module.gd") as GDScript).new())
+	add_child(missions)
+	var first := _spawn(71)
+	assert_bool(_saves.call(&"server_admit", 71, "Courier", "key-c")).is_true()
+	missions.call(&"server_set_tokens", 71, 340)
+	_leave(71, first)
+	_spawn(72)
+	assert_bool(_saves.call(&"server_admit", 72, "Courier", "key-c")).is_true()
+	assert_int(missions.call(&"server_tokens_of", 72)).is_equal(340)

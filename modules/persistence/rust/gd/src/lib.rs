@@ -79,7 +79,7 @@ impl SaveStore {
         }
     }
 
-    /// `save` is `{health, position: Vector3 or null, items: [{item, container, x, y, rotated}],
+    /// `save` is `{health, tokens, position: Vector3 or null, items: [{item, container, x, y, rotated}],
     /// builds: {weapon_slot: {part_slot: part}}}`.
     #[func]
     fn save_player(&mut self, name: GString, save: VarDictionary) -> bool {
@@ -229,6 +229,7 @@ fn player_from(d: &VarDictionary) -> PlayerSave {
     }
     PlayerSave {
         health: num(d, "health"),
+        tokens: num(d, "tokens") as i64,
         position: vec3(&d.get_or_nil("position")),
         items,
         builds,
@@ -238,6 +239,7 @@ fn player_from(d: &VarDictionary) -> PlayerSave {
 fn player_to(p: &PlayerSave) -> VarDictionary {
     let mut d = VarDictionary::new();
     d.set("health", p.health);
+    d.set("tokens", p.tokens);
     match p.position {
         Some(pos) => d.set("position", to_vec3(pos)),
         None => d.set("position", &Variant::nil()),

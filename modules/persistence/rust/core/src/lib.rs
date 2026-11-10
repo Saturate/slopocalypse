@@ -10,8 +10,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::BTreeMap;
 
 /// Bumped with every change to the tables; `open` upgrades older files step by step.
-/// 2: items name the slot or grid they are in (`container`).
-pub const SCHEMA_VERSION: i64 = 2;
+/// 2: items name the slot or grid they are in (`container`). 3: players have tokens.
+pub const SCHEMA_VERSION: i64 = 3;
 pub const MAX_NAME_CHARS: usize = 16;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,6 +30,8 @@ pub type Builds = BTreeMap<String, BTreeMap<String, String>>;
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PlayerSave {
     pub health: f64,
+    /// Mission pay, spent at the trader.
+    pub tokens: i64,
     /// None for a player saved while dead: they start over at the spawn.
     pub position: Option<[f64; 3]>,
     pub items: Vec<PlacedItem>,
@@ -192,6 +194,14 @@ impl Store {
                 COMMIT;",
             )?;
         }
+        if version < 3 {
+            db.execute_batch(
+                "BEGIN;
+                ALTER TABLE players ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0;
+                PRAGMA user_version = 3;
+                COMMIT;",
+            )?;
+        }
         Ok(Store { db })
     }
 
@@ -226,8 +236,8 @@ impl Store {
             None => [None; 3],
         };
         let changed = tx.execute(
-            "UPDATE players SET health = ?2, x = ?3, y = ?4, z = ?5, last_saved = ?6 WHERE name = ?1",
-            params![name, save.health, x, y, z, now],
+            "UPDATE players SET health = ?2, x = ?3, y = ?4, z = ?5, last_saved = ?6, tokens = ?7 WHERE name = ?1",
+            params![name, save.health, x, y, z, now, save.tokens],
         )?;
         if changed == 0 {
             // Never claimed: nothing to attach the rows to.
@@ -260,18 +270,19 @@ impl Store {
         let row = self
             .db
             .query_row(
-                "SELECT health, x, y, z FROM players WHERE name = ?1",
+                "SELECT health, x, y, z, tokens FROM players WHERE name = ?1",
                 [name],
                 |r| {
                     let health: f64 = r.get(0)?;
                     let x: Option<f64> = r.get(1)?;
                     let y: Option<f64> = r.get(2)?;
                     let z: Option<f64> = r.get(3)?;
-                    Ok((health, x.zip(y).zip(z).map(|((x, y), z)| [x, y, z])))
+                    let tokens: i64 = r.get(4)?;
+                    Ok((health, x.zip(y).zip(z).map(|((x, y), z)| [x, y, z]), tokens))
                 },
             )
             .optional()?;
-        let Some((health, position)) = row else {
+        let Some((health, position, tokens)) = row else {
             return Ok(None);
         };
         let mut items_q = self.db.prepare(
@@ -307,6 +318,7 @@ impl Store {
         }
         Ok(Some(PlayerSave {
             health,
+            tokens,
             position,
             items,
             builds,
@@ -407,6 +419,7 @@ mod tests {
             .insert("receiver".into(), "rcv_ar".into());
         PlayerSave {
             health: 64.5,
+            tokens: 420,
             position: Some([1.0, 2.5, -3.0]),
             items: vec![
                 PlacedItem {

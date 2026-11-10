@@ -185,6 +185,9 @@ func _restore(peer: int, saved: Dictionary) -> void:
 	var weapons := get_tree().get_first_node_in_group(&"weapons_api")
 	if weapons != null:
 		weapons.call(&"server_restore_builds", peer, saved.get("builds", {}))
+	var missions := get_tree().get_first_node_in_group(&"missions_api")
+	if missions != null:
+		missions.call(&"server_set_tokens", peer, int(saved.get("tokens", 0)))
 	var player := _player_of(peer)
 	var at: Variant = saved.get("position")
 	# Saved dead (or never placed): they start over at the spawn like a respawn would.
@@ -242,8 +245,10 @@ func server_save_player(peer: int) -> bool:
 	var dead := player == null or health == null or bool(player.get_meta(&"dead", false)) or health.is_dead()
 	var inventory := _inventory()
 	var weapons := get_tree().get_first_node_in_group(&"weapons_api")
+	var missions := get_tree().get_first_node_in_group(&"missions_api")
 	var save := {
 		"health": 0.0 if dead else health.health,
+		"tokens": int(missions.call(&"server_tokens_of", peer)) if missions != null else 0,
 		"position": null if dead else player.global_position,
 		"items": inventory.call(&"server_items_of", peer) if inventory != null else [],
 		"builds": weapons.call(&"server_builds_of", peer) if weapons != null else {},
