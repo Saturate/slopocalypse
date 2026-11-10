@@ -42,7 +42,13 @@ func _spawn(peer: int) -> PlayerController:
 
 ## Picks the first Smash & Grab on the board.
 func _ride_out() -> void:
-	var offers: Array = _missions.get(&"offers")
+	var cfg: Dictionary = _missions.get(&"config")
+	var offers: Array = []
+	for seed_value in 80:
+		offers = (load(MISSIONS) as GDScript).call(&"roll_offers", cfg, seed_value)
+		if offers.any(func(o: Dictionary) -> bool: return o["type"] == "smash_and_grab"):
+			break
+	_missions.set(&"offers", offers)
 	var index := offers.find(offers.filter(func(o: Dictionary) -> bool: return o["type"] == "smash_and_grab")[0])
 	assert_bool(_missions.call(&"server_choose", 1, index)).is_true()
 	assert_bool(_missions.call(&"server_ride_out")).is_true()
