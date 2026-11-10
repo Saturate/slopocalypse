@@ -43,22 +43,25 @@ func _items(node: Node) -> Array:
 
 
 func _first_uid(node: Node) -> int:
-	var grid: InventoryGrid = (_module.get(&"_containers") as Dictionary)[int(node.get_meta(&"container"))]
-	return int(grid.items()[0]["uid"])
+	var gear: InventoryGear = (_module.get(&"_containers") as Dictionary)[int(node.get_meta(&"container"))]
+	# A loose item, not a worn rig or pack.
+	return int(gear.all_items().filter(func(i: Dictionary) -> bool: return i.has("grid"))[0]["uid"])
 
 
 func test_a_body_keeps_what_the_dead_carried_and_nothing_scatters() -> void:
 	var victim := _spawn(81)
 	var carried: Array = []
-	for placed: Dictionary in (_module.call(&"grid_of", 81) as InventoryGrid).items():
+	for placed: Dictionary in (_module.call(&"grid_of", 81) as InventoryGear).all_items():
 		carried.append(str(placed["item"]))
 	assert_int(carried.size()).is_greater(0)
 	var loose := get_tree().get_nodes_in_group(&"loot").size()
 	var body := await _kill(victim)
 	assert_array(_items(body)).contains_exactly_in_any_order(carried)
 	assert_int(get_tree().get_nodes_in_group(&"loot").size()).is_equal(loose)
-	# The player comes back with an empty backpack.
-	assert_int((_module.call(&"grid_of", 81) as InventoryGrid).items().size()).is_equal(0)
+	# The player comes back with nothing but an empty pack.
+	var fresh: InventoryGear = _module.call(&"grid_of", 81)
+	assert_int(fresh.all_items().size()).is_equal(1)
+	assert_int(fresh.count("bag_small")).is_equal(1)
 
 
 func test_a_soldier_leaves_a_body_too() -> void:
@@ -80,8 +83,8 @@ func test_searching_a_body_takes_an_item_across() -> void:
 	var count := _items(body).size()
 	assert_bool(_module.call(&"server_quick_move", 83, true, uid)).is_true()
 	assert_int(_items(body).size()).is_equal(count - 1)
-	var mine: InventoryGrid = _module.call(&"grid_of", 83)
-	assert_bool(mine.items().any(func(p: Dictionary) -> bool: return int(p["uid"]) == uid)).is_true()
+	var mine: InventoryGear = _module.call(&"grid_of", 83)
+	assert_bool(mine.all_items().any(func(p: Dictionary) -> bool: return int(p["uid"]) == uid)).is_true()
 
 
 func test_f_on_a_body_opens_it() -> void:
@@ -130,18 +133,39 @@ func test_a_move_with_no_room_changes_nothing() -> void:
 	_spawn(94)
 	assert_bool(_module.call(&"server_open", 94, body)).is_true()
 	var uid := _first_uid(body)
-	var size: Vector2i = _module.call(&"grid_size")
-	# Off the edge of the backpack.
-	assert_bool(_module.call(&"server_transfer", 94, true, uid, false, size.x, size.y, false)).is_false()
-	assert_int(_first_uid(body)).is_equal(uid)
+	# Off the edge of the pockets.
+	var count := _items(body).size()
+	assert_bool(_module.call(&"server_transfer", 94, true, uid, false, {"grid": "pockets", "x": 9, "y": 9})).is_false()
+	assert_int(_items(body).size()).is_equal(count)
+	var theirs: InventoryGear = (_module.get(&"_containers") as Dictionary)[int(body.get_meta(&"container"))]
+	assert_bool(theirs.all_items().any(func(i: Dictionary) -> bool: return int(i["uid"]) == uid)).is_true()
+
+
+func test_a_bodys_full_pack_goes_onto_your_back_with_what_is_in_it() -> void:
+	var body := await _kill(_spawn(101, Vector3(0, 0, -1.5)))
+	var looter := _spawn(102)
+	assert_object(looter).is_not_null()
+	var mine: InventoryGear = _module.call(&"grid_of", 102)
+	# Take your own pack off first (emptied into a crate's worth of nothing: just remove it).
+	for placed: Dictionary in mine.items("backpack"):
+		mine.remove(int(placed["uid"]))
+	var own_pack: Dictionary = mine.all_items().filter(func(i: Dictionary) -> bool: return i.get("slot", "") == "backpack")[0]
+	mine.remove(int(own_pack["uid"]))
+	assert_bool(_module.call(&"server_open", 102, body)).is_true()
+	var theirs: InventoryGear = (_module.get(&"_containers") as Dictionary)[int(body.get_meta(&"container"))]
+	var pack: Dictionary = theirs.all_items().filter(func(i: Dictionary) -> bool: return i.get("slot", "") == "backpack")[0]
+	var inside := theirs.items("backpack").size()
+	assert_int(inside).is_greater(0)
+	assert_bool(_module.call(&"server_transfer", 102, true, int(pack["uid"]), false, {"slot": "backpack"})).is_true()
+	assert_int(mine.items("backpack").size()).is_equal(inside)
 
 
 func test_putting_something_on_a_body_works_both_ways() -> void:
 	var body := await _kill(_spawn(95, Vector3(0, 0, -1.5)))
 	_spawn(96)
 	assert_bool(_module.call(&"server_open", 96, body)).is_true()
-	var mine: InventoryGrid = _module.call(&"grid_of", 96)
-	var uid := int(mine.items()[0]["uid"])
+	var mine: InventoryGear = _module.call(&"grid_of", 96)
+	var uid := int(mine.items("backpack")[0]["uid"])
 	var count := _items(body).size()
 	assert_bool(_module.call(&"server_quick_move", 96, false, uid)).is_true()
 	assert_int(_items(body).size()).is_equal(count + 1)
@@ -154,6 +178,13 @@ func test_an_emptied_body_goes_sooner() -> void:
 	var id := int(body.get_meta(&"container"))
 	var left: Dictionary = _module.get(&"_body_left")
 	assert_float(float(left[id])).is_greater(60.0)
+	# Empty it (your own gear has no room for a second rig and pack), then any move
+	# tells the server.
+	var theirs: InventoryGear = (_module.get(&"_containers") as Dictionary)[id]
+	for placed: Dictionary in theirs.all_items().filter(func(i: Dictionary) -> bool: return i.has("grid")):
+		theirs.remove(int(placed["uid"]))
+	for placed: Dictionary in theirs.all_items():
+		theirs.remove(int(placed["uid"]))
 	_module.call(&"server_take_all", 98)
 	assert_array(_items(body)).is_empty()
 	assert_float(float(left[id])).is_less_equal(30.0)
@@ -163,6 +194,8 @@ func test_an_emptied_body_goes_sooner() -> void:
 func test_a_crate_opens_the_same_way_and_take_all_empties_it() -> void:
 	var looter := _spawn(99)
 	var crate: LootCrate = _module.call(&"server_spawn_crate", Vector3(0, 0, -1.5))
+	# Known contents that fit, rather than a random roll.
+	_module.call(&"server_restore_world", {"loot": [], "crates": [{"index": 0, "items": ["medkit", "muz_flash", "grp_ar_std"], "refill_seconds": -1.0}]})
 	await get_tree().process_frame
 	var payload := {"player": looter}
 	EventBus.publish(&"player.interact", payload)

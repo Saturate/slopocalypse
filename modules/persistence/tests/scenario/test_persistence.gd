@@ -78,7 +78,7 @@ func test_a_bad_name_is_refused() -> void:
 	assert_bool(_saves.call(&"server_admit", 67, "   ", "key-a")).is_false()
 
 
-func test_dying_then_leaving_starts_over_at_the_spawn_with_an_empty_backpack() -> void:
+func test_dying_then_leaving_starts_over_at_the_spawn_with_an_empty_pack() -> void:
 	var first := _spawn(68, Vector3(40.0, 2.0, 40.0))
 	assert_bool(_saves.call(&"server_admit", 68, "Ranger", "key-a")).is_true()
 	(first.get_node("Health") as HealthComponent).server_apply_damage(1000.0)
@@ -88,7 +88,9 @@ func test_dying_then_leaving_starts_over_at_the_spawn_with_an_empty_backpack() -
 
 	var again := _spawn(69)
 	assert_bool(_saves.call(&"server_admit", 69, "Ranger", "key-a")).is_true()
-	assert_array(_inventory.call(&"server_items_of", 69)).is_empty()
+	var items: Array = _inventory.call(&"server_items_of", 69)
+	assert_int(items.size()).is_equal(1)
+	assert_str(str(items[0]["container"])).is_equal("slot:backpack")
 	assert_vector(again.global_position).is_equal(Vector3.ZERO)
 	assert_float((again.get_node("Health") as HealthComponent).health).is_equal(100.0)
 
@@ -96,6 +98,8 @@ func test_dying_then_leaving_starts_over_at_the_spawn_with_an_empty_backpack() -
 func test_the_world_keeps_its_loot_and_emptied_crates() -> void:
 	var player := _spawn(70)
 	var crate: LootCrate = _inventory.call(&"server_spawn_crate", Vector3(0, 0, -1.5))
+	# Known contents that fit, rather than a random roll.
+	_inventory.call(&"server_restore_world", {"loot": [], "crates": [{"index": 0, "items": ["medkit", "muz_flash", "grp_ar_std"], "refill_seconds": -1.0}]})
 	_inventory.call(&"server_spawn_loot", "medkit", Vector3(3.0, 0.0, 4.0))
 	await get_tree().process_frame
 	_inventory.call(&"server_search", 70, crate)

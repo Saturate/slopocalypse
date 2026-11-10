@@ -10,12 +10,15 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::BTreeMap;
 
 /// Bumped with every change to the tables; `open` upgrades older files step by step.
-pub const SCHEMA_VERSION: i64 = 1;
+/// 2: items name the slot or grid they are in (`container`).
+pub const SCHEMA_VERSION: i64 = 2;
 pub const MAX_NAME_CHARS: usize = 16;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlacedItem {
     pub item: String,
+    /// Where it is: a grid ("pockets", "rig", "backpack") or a slot ("slot:rig").
+    pub container: String,
     pub x: i64,
     pub y: i64,
     pub rotated: bool,
@@ -178,6 +181,17 @@ impl Store {
                 COMMIT;",
             )?;
         }
+        if version < 2 {
+            // Gear moved from one grid to slots and several grids; old saved items are
+            // wiped rather than guessed into the new layout.
+            db.execute_batch(
+                "BEGIN;
+                DELETE FROM player_items;
+                ALTER TABLE player_items ADD COLUMN container TEXT NOT NULL DEFAULT '';
+                PRAGMA user_version = 2;
+                COMMIT;",
+            )?;
+        }
         Ok(Store { db })
     }
 
@@ -223,10 +237,10 @@ impl Store {
         tx.execute("DELETE FROM player_builds WHERE player = ?1", [name])?;
         {
             let mut add = tx.prepare(
-                "INSERT INTO player_items (player, item, x, y, rotated) VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO player_items (player, item, x, y, rotated, container) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )?;
             for it in &save.items {
-                add.execute(params![name, it.item, it.x, it.y, it.rotated])?;
+                add.execute(params![name, it.item, it.x, it.y, it.rotated, it.container])?;
             }
             let mut fit = tx.prepare(
                 "INSERT INTO player_builds (player, weapon_slot, part_slot, part) VALUES (?1, ?2, ?3, ?4)",
@@ -261,7 +275,7 @@ impl Store {
             return Ok(None);
         };
         let mut items_q = self.db.prepare(
-            "SELECT item, x, y, rotated FROM player_items WHERE player = ?1 ORDER BY rowid",
+            "SELECT item, x, y, rotated, container FROM player_items WHERE player = ?1 ORDER BY rowid",
         )?;
         let items = items_q
             .query_map([name], |r| {
@@ -270,6 +284,7 @@ impl Store {
                     x: r.get(1)?,
                     y: r.get(2)?,
                     rotated: r.get(3)?,
+                    container: r.get(4)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -396,12 +411,14 @@ mod tests {
             items: vec![
                 PlacedItem {
                     item: "medkit".into(),
+                    container: "pockets".into(),
                     x: 0,
                     y: 0,
                     rotated: false,
                 },
                 PlacedItem {
                     item: "mag_30".into(),
+                    container: "backpack".into(),
                     x: 3,
                     y: 1,
                     rotated: true,
@@ -509,6 +526,28 @@ mod tests {
         assert_eq!(s.load_player("Allan").unwrap(), Some(kit()));
         drop(s);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_version_1_file_loses_its_items_but_keeps_players() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            "CREATE TABLE players (name TEXT PRIMARY KEY COLLATE NOCASE, key TEXT NOT NULL,
+                health REAL NOT NULL DEFAULT 0, x REAL, y REAL, z REAL,
+                first_seen INTEGER NOT NULL, last_saved INTEGER NOT NULL);
+            CREATE TABLE player_items (player TEXT NOT NULL, item TEXT NOT NULL,
+                x INTEGER NOT NULL, y INTEGER NOT NULL, rotated INTEGER NOT NULL);
+            INSERT INTO players (name, key, health, first_seen, last_saved) VALUES ('Allan', 'k', 50, 1, 1);
+            INSERT INTO player_items VALUES ('Allan', 'medkit', 0, 0, 0);
+            PRAGMA user_version = 1;",
+        )
+        .unwrap();
+        let s = Store::setup(db).unwrap();
+        assert_eq!(s.claim("Allan", "k", 2).unwrap(), Claim::Returning);
+        let n: i64 =
+            s.db.query_row("SELECT COUNT(*) FROM player_items", [], |r| r.get(0))
+                .unwrap();
+        assert_eq!(n, 0);
     }
 
     #[test]

@@ -20,4 +20,6 @@ func _ready() -> void:
 	_screen.peer = 1
 	add_child(_screen)
 	_screen.open()
-	_screen.pick(Vector2i(0, 0))
+	var gear: InventoryGear = module.call(&"grid_of", 1)
+	var item: Dictionary = gear.items("backpack")[0]
+	_screen.pick(false, {"grid": "backpack", "x": item["x"], "y": item["y"]})

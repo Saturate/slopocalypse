@@ -2,6 +2,8 @@
 //! degrees, and may not overlap or leave the grid. Pure rules so the server (which decides)
 //! and the client (which previews a drag) agree.
 
+pub mod gear;
+
 use std::collections::BTreeMap;
 
 /// Cells an item takes when not rotated.

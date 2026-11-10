@@ -145,7 +145,7 @@ func _on_inventory_changed(_p: Dictionary) -> void:
 	var grid: Object = inv.call(&"grid_of", int(_local.get_meta(&"peer_id", 1)))
 	if grid == null:
 		return
-	var count: int = (grid.call(&"items") as Array).size()
+	var count: int = (grid.call(&"all_items") as Array).size()
 	# More items than before: something was picked up or searched out of a crate.
 	if _last_items >= 0 and count > _last_items:
 		play_flat("pickup")
