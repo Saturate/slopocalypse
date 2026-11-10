@@ -119,5 +119,5 @@ func hud_lines(_player: Node3D) -> Array[String]:
 func markers() -> Array:
 	var out := []
 	for at: Vector3 in status.get("spots", []):
-		out.append({"at": at + Vector3.UP * 2.3, "text": "TARGET"})
+		out.append({"at": at + Vector3.UP * 2.3, "text": "target"})
 	return out
