@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { dataFiles, hostScript, presetFor, runnable, shippedServers, presetsFile, templatesDir } from "./export.ts";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { addonFrameworkBinaries, dataFiles, hostScript, presetFor, runnable, shippedServers, presetsFile, templatesDir } from "./export.ts";
 
 test("windows preset embeds the pack, keeps data files and drops dev-only folders", () => {
 	const p = presetFor("windows", "build/windows/Slopocalypse.exe");
@@ -48,4 +50,18 @@ test("macOS exports a universal, ad-hoc signed app run from inside its bundle", 
 	assert.equal(p.options["codesign/codesign"], 1);
 	assert.equal(runnable("macos"), "Slopocalypse.app/Contents/MacOS/Slopocalypse");
 	assert.match(hostScript("macos", 7777), /Slopocalypse\.app\/Contents\/MacOS\/Slopocalypse" --headless -- --server=7777/);
+});
+
+test("addonFrameworkBinaries lists the libraries inside addon .framework folders", () => {
+	const root = mkdtempSync(join(tmpdir(), "slopocalypse-fw-"));
+	try {
+		const fw = join(root, "addons", "lib.voxel", "bin", "libvoxel.macos.template_release.universal.framework");
+		mkdirSync(fw, { recursive: true });
+		writeFileSync(join(fw, "libvoxel.macos.template_release.universal"), "");
+		writeFileSync(join(root, "addons", "lib.voxel", "bin", "libvoxel.linux.so"), "");
+		mkdirSync(join(root, "addons", "plain"), { recursive: true });
+		assert.deepEqual(addonFrameworkBinaries(root), [join(fw, "libvoxel.macos.template_release.universal")]);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });

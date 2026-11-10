@@ -3,16 +3,17 @@
 // macOS exports only on a Mac (the .app bundle is put together and signed there).
 // --connect ships those addresses in servers.json, so the menu already lists them and a
 // friend just clicks. Output: build/<os>/ and build/slopocalypse-<os>.zip.
+import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { argv, exit, platform } from "node:process";
 import { expectedSha512, verifySha512 } from "./lib/checksum.ts";
 import { download, extract, zipFolder } from "./lib/download.ts";
-import { dataFiles, exeName, hostScript, runnable, shippedServers, TWEAKS_README, presetFor, presetsFile, templatesDir, type TargetOs } from "./lib/export.ts";
+import { addonFrameworkBinaries, dataFiles, exeName, hostScript, runnable, shippedServers, TWEAKS_README, presetFor, presetsFile, templatesDir, type TargetOs } from "./lib/export.ts";
 import { GODOT_NOISE, godotImport } from "./lib/gate.ts";
 import { GODOT_DIR, GODOT_VERSION, localGodot, RELEASE_URL } from "./lib/godot.ts";
-import { scanLog } from "./lib/log-scan.ts";
+import { errorDetails, scanLog } from "./lib/log-scan.ts";
 import { parseReport } from "./lib/net.ts";
 import { run } from "./lib/proc.ts";
 import { buildRust } from "./lib/rust.ts";
@@ -98,6 +99,8 @@ async function main(): Promise<void> {
 	const exe = join(outDir, exeName(os));
 	writeFileSync(join(root, "export_presets.cfg"), presetsFile([presetFor(os, exe.replaceAll("\\", "/"))]));
 
+	if (os === "macos") for (const lib of addonFrameworkBinaries(root)) execFileSync("codesign", ["--force", "--sign", "-", lib], { stdio: "inherit" });
+
 	const imported = await godotImport(godot, root);
 	if (!imported.ok) throw new Error(`import failed:\n${imported.detail}`);
 
@@ -107,7 +110,7 @@ async function main(): Promise<void> {
 	const r = await run(godot, ["--headless", "--path", root, "--export-release", presetFor(os, exe).name, exe], { cwd: root, timeoutMs: 600_000 });
 	const problems = scanLog(r.output, GODOT_NOISE);
 	if (r.code !== 0 || problems.length > 0 || !existsSync(exe)) {
-		throw new Error(`export failed (exit ${r.code}):\n${problems.join("\n") || r.output.slice(-3000)}`);
+		throw new Error(`export failed (exit ${r.code}):\n${errorDetails(r.output, GODOT_NOISE).join("\n") || r.output.slice(-3000)}`);
 	}
 
 	const ext = os === "windows" ? "bat" : "sh";
