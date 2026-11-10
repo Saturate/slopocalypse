@@ -17,6 +17,19 @@
     "spread": 35.0,
     "gap": 3.0
   },
+  "hazards": {
+    "trigger_radius": 0.9,
+    "delay": 0.6,
+    "blast_radius": 3.5,
+    "damage": 95.0,
+    "reveal_range": 4.0,
+    "disarm_range": 1.4,
+    "shot_radius": 0.4,
+    "mine_ring": [3.0, 14.0],
+    "door_clear": 2.0,
+    "signs": 2,
+    "sign_distance": 32.0
+  },
   "offered": 3,
   "seed": 11,
   "codenames": {
@@ -105,6 +118,17 @@
       "distance": [240.0, 420.0],
       "guards": [6, 9],
       "payout": [380.0, 520.0]
+    },
+    {
+      "type": "ghost_run",
+      "place": "Cabin in the woods",
+      "objective": "A lone cabin deep in the trees. Few guards, they say, but nobody comes back from it. Watch your step.",
+      "distance": [300.0, 520.0],
+      "guards": [1, 2],
+      "mines": [10, 16],
+      "tripwires": [1, 1],
+      "buildings": { "count": [1, 1], "off_road": [28.0, 40.0], "width": [5.0, 6.5], "depth": [4.5, 5.5] },
+      "payout": [420.0, 600.0]
     },
     {
       "type": "ghost_run",
