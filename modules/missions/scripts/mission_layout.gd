@@ -48,5 +48,6 @@ static func buildings(cfg: Dictionary, seed_value: int, road_at: Callable, along
 			"paint": rng.randi_range(0, 3),
 			"seed": rng.randi(),
 			"radius": radius,
+			"material": str(cfg["material"]) if cfg.has("material") else ("concrete" if rng.randf() < float(cfg.get("concrete_share", 0.0)) else "wood"),
 		})
 	return out

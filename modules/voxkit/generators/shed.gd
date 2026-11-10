@@ -1,7 +1,8 @@
 class_name VoxShed
 extends VoxGenerator
-## A plank shed on a concrete slab: vertical boards, gable roof in ribbed metal, a door gap
-## at the front and framed windows around the sides. Hollow inside.
+## A shed on a concrete slab: vertical plank boards (or cast concrete walls for a
+## blockhouse), gable roof in ribbed metal, a door gap at the front and framed windows around
+## the sides. Hollow inside.
 
 const PAINTS: Array[String] = ["Red barn", "Weathered", "Green", "White"]
 const WALLS := [Color(0.55, 0.17, 0.12), Color(0.5, 0.42, 0.33), Color(0.25, 0.36, 0.25), Color(0.82, 0.8, 0.74)]
@@ -9,6 +10,10 @@ const TRIM := Color(0.88, 0.86, 0.8)
 const ROOF := Color(0.32, 0.33, 0.35)
 const CONCRETE := Color(0.58, 0.57, 0.54)
 const GLASS := Color(0.2, 0.27, 0.32)
+const MATERIALS: Array[String] = ["Planks", "Concrete"]
+const CAST := Color(0.56, 0.56, 0.53)
+## Concrete walls are poured in lifts: a slightly different shade every this many metres up.
+const LIFT := 0.6
 const DOOR_WIDTH := 1.0
 const DOOR_HEIGHT := 2.0
 const WINDOW := Vector2(0.8, 0.6)
@@ -25,6 +30,7 @@ func params() -> Array[Dictionary]:
 	return [
 		seed_param(),
 		choice("paint", "Paint", PAINTS, 1),
+		choice("material", "Walls", MATERIALS, 0),
 		param("width", "Width (m)", 2.0, 9.0, 0.25, 4.5),
 		param("depth", "Depth (m)", 2.0, 7.0, 0.25, 3.5),
 		param("wall_height", "Wall height (m)", 2.2, 4.0, 0.1, 2.6),
@@ -50,14 +56,27 @@ func build(values: Dictionary) -> VoxelModel:
 	m.setup(Vector3(w + OVERHANG * 2.0 + v * 4.0, wh + rise + v * 4.0 + 0.3, d + OVERHANG * 2.0 + v * 4.0), v)
 	var slab := 0.15
 	m.fill_box(Vector3(-w / 2 - 0.1, 0, -d / 2 - 0.1), Vector3(w / 2 + 0.1, slab, d / 2 + 0.1), CONCRETE, 0.1, seed)
-	# Walls as vertical boards, each its own shade, then the gable triangles at both ends.
-	var x := -w / 2
-	var board := 0
-	while x < w / 2 - 0.001:
-		var x1 := minf(x + PLANK, w / 2)
-		m.fill_box(Vector3(x, slab, -d / 2), Vector3(x1, wh, d / 2), wall * rng.randf_range(0.86, 1.06), 0.07, seed + board)
-		x = x1
-		board += 1
+	var concrete := int(p.get("material", 0)) == 1
+	if concrete:
+		# Cast walls, poured in lifts, each a little different.
+		wall = CAST
+		var y := slab
+		var lift := 0
+		while y < wh - 0.001:
+			var y1 := minf(y + LIFT, wh)
+			m.fill_box(Vector3(-w / 2, y, -d / 2), Vector3(w / 2, y1, d / 2), CAST * rng.randf_range(0.92, 1.04), 0.05, seed + lift)
+			y = y1
+			lift += 1
+	else:
+		# Walls as vertical boards, each its own shade.
+		var x := -w / 2
+		var board := 0
+		while x < w / 2 - 0.001:
+			var x1 := minf(x + PLANK, w / 2)
+			m.fill_box(Vector3(x, slab, -d / 2), Vector3(x1, wh, d / 2), wall * rng.randf_range(0.86, 1.06), 0.07, seed + board)
+			x = x1
+			board += 1
+	# Then the gable triangles at both ends.
 	var steps := int(ceil(rise / v))
 	for k in steps:
 		var half := d / 2 * (1.0 - float(k + 1) / (steps + 1))

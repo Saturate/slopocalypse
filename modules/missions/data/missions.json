@@ -19,7 +19,12 @@
     "segment": 1.2,
     "segment_hp": 100.0,
     "blast_damage": 140.0,
-    "blast_reach": 1.6
+    "blast_reach": 1.6,
+    "concrete_share": 0.3,
+    "materials": {
+      "wood": { "bullet": 1.0, "blast": 1.0, "min_bullet_damage": 0.0, "hole": 0.13 },
+      "concrete": { "bullet": 0.15, "blast": 0.8, "min_bullet_damage": 60.0, "hole": 0.0 }
+    }
   },
   "hazards": {
     "trigger_radius": 0.9,
@@ -100,7 +105,8 @@
     {
       "type": "clean_sweep",
       "place": "Depot",
-      "objective": "Soldiers have dug in at the depot. Clear out every last one.",
+      "objective": "Soldiers have dug in at the depot's concrete blockhouses. Clear out every last one.",
+      "buildings": { "material": "concrete" },
       "distance": [220.0, 380.0],
       "guards": [5, 7],
       "patrols": [1, 2],
@@ -118,6 +124,7 @@
     {
       "type": "ghost_run",
       "place": "Relay station",
+      "buildings": { "material": "concrete" },
       "objective": "The drive is in the best-guarded hut. Get in and out before they know you were there.",
       "distance": [240.0, 420.0],
       "guards": [6, 9],

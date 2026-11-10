@@ -637,9 +637,22 @@ func _on_building_broken(p: Dictionary) -> void:
 	_building_nodes[i].break_segments(segs)
 
 
-## Server: a bullet that hits close to a mine sets it off.
+## A bullet that hits a building: everyone sees the hole or chip; the server wears the
+## piece down and may break it. A bullet that hits close to a mine sets it off.
 func _on_weapon_fired(p: Dictionary) -> void:
-	if not multiplayer.is_server() or not p.has("to"):
+	if not p.has("to"):
+		return
+	var building := p.get("collider") as MissionBuilding
+	if building != null:
+		building.bullet_mark(p["to"])
+		if multiplayer.is_server():
+			var weapon: Object = p.get("weapon")
+			var stats: Variant = weapon.get(&"stats") if weapon != null else null
+			var damage := float((stats as Dictionary).get("damage", 0.0)) if stats is Dictionary else float(p.get("damage", 0.0))
+			var broke := building.server_shot(p["to"], damage)
+			if broke >= 0:
+				Net.server_broadcast(&"missions.building_broken", {"index": _building_nodes.find(building), "segments": [broke]})
+	if not multiplayer.is_server():
 		return
 	var hit: Vector3 = p["to"]
 	for node: Node in get_tree().get_nodes_in_group(&"mines"):
@@ -793,6 +806,7 @@ func _build_buildings() -> void:
 		b.spec = entry
 		b.segment_size = float((config["buildings"] as Dictionary).get("segment", 1.2))
 		b.segment_hp = float((config["buildings"] as Dictionary).get("segment_hp", 100.0))
+		b.material_cfg = ((config["buildings"] as Dictionary).get("materials", {}) as Dictionary).get(str(entry.get("material", "wood")), {})
 		add_child(b)
 		b.global_position = entry["position"]
 		b.rotation.y = float(entry["yaw"])
