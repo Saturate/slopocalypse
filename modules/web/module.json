@@ -1,0 +1,6 @@
+{
+  "id": "web",
+  "depends_on": [],
+  "flag": "web",
+  "entry": "web_module.gd"
+}
