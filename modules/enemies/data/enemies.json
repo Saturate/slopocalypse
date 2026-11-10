@@ -34,6 +34,21 @@
     "wounded_share": 0.6,
     "cornered_range": 8.0
   },
+  "cover": {
+    "search_radius": 12.0,
+    "rings": 4,
+    "spokes": 12,
+    "search_every": 1.5,
+    "min_threat_distance": 5.0,
+    "crouch_height": 0.9,
+    "stand_eye": 1.5,
+    "threat_eye": 1.5,
+    "no_shot_penalty": 8.0,
+    "peek_seconds": [1.2, 2.4],
+    "hide_seconds": [1.0, 2.0],
+    "bound_range": 15.0,
+    "callout_range": 30.0
+  },
   "suppression": {
     "near_miss": 2.0,
     "per_shot": 0.25,
