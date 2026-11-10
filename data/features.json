@@ -16,6 +16,7 @@
     "daytime": true,
     "debug_api": true,
     "perf": true,
-    "missions": true
+    "missions": true,
+    "trader": true
   }
 }

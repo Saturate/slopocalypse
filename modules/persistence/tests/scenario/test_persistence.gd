@@ -78,7 +78,7 @@ func test_a_bad_name_is_refused() -> void:
 	assert_bool(_saves.call(&"server_admit", 67, "   ", "key-a")).is_false()
 
 
-func test_dying_then_leaving_starts_over_at_the_spawn_with_an_empty_pack() -> void:
+func test_dying_then_leaving_starts_over_at_the_spawn_with_nothing() -> void:
 	var first := _spawn(68, Vector3(40.0, 2.0, 40.0))
 	assert_bool(_saves.call(&"server_admit", 68, "Ranger", "key-a")).is_true()
 	(first.get_node("Health") as HealthComponent).server_apply_damage(1000.0)
@@ -88,9 +88,7 @@ func test_dying_then_leaving_starts_over_at_the_spawn_with_an_empty_pack() -> vo
 
 	var again := _spawn(69)
 	assert_bool(_saves.call(&"server_admit", 69, "Ranger", "key-a")).is_true()
-	var items: Array = _inventory.call(&"server_items_of", 69)
-	assert_int(items.size()).is_equal(1)
-	assert_str(str(items[0]["container"])).is_equal("slot:backpack")
+	assert_array(_inventory.call(&"server_items_of", 69)).is_empty()
 	assert_vector(again.global_position).is_equal(Vector3.ZERO)
 	assert_float((again.get_node("Health") as HealthComponent).health).is_equal(100.0)
 

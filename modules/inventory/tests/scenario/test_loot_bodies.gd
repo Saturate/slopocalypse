@@ -58,10 +58,9 @@ func test_a_body_keeps_what_the_dead_carried_and_nothing_scatters() -> void:
 	var body := await _kill(victim)
 	assert_array(_items(body)).contains_exactly_in_any_order(carried)
 	assert_int(get_tree().get_nodes_in_group(&"loot").size()).is_equal(loose)
-	# The player comes back with nothing but an empty pack.
+	# The player comes back with nothing at all.
 	var fresh: InventoryGear = _module.call(&"grid_of", 81)
-	assert_int(fresh.all_items().size()).is_equal(1)
-	assert_int(fresh.count("bag_small")).is_equal(1)
+	assert_int(fresh.all_items().size()).is_equal(0)
 
 
 func test_a_soldier_leaves_a_body_too() -> void:
