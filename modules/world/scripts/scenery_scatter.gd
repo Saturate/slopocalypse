@@ -59,6 +59,9 @@ var _cfg: Dictionary
 var _seed := 0
 var _visual := DisplayServer.get_name() != "headless"
 var _chunks: Dictionary[int, Node3D] = {}
+## Circles kept free of trees, rocks and grass (where another module puts buildings), as
+## (x, z, radius).
+var _clearings: Array[Vector3] = []
 ## Variant lists per kind: {near: Mesh, far: Mesh, height, trunk} for trees,
 ## {mesh: Mesh, shape: Shape3D, top} for rocks.
 var _pines: Array[Dictionary] = []
@@ -104,6 +107,8 @@ func _ready() -> void:
 	_heights = TerrainHeights.new(world)
 	_biomes = Biomes.new(world["biomes"], _heights.stages)
 	_make_variants()
+	# Other modules ask for clearings through this group (`set_clearings`).
+	add_to_group(&"scenery")
 	# The spawn is ready before anyone arrives (the world waits on its collision).
 	update_around([Vector3.ZERO], INF)
 
@@ -148,6 +153,34 @@ func update_around(points: Array[Vector3], budget: float) -> void:
 	for i: int in _chunks.keys():
 		if not wanted.has(i) and _nearest(i, points) > reach + CHUNK:
 			_free_chunk(i)
+
+
+## Keeps trees, rocks and grass out of `circles` (`[{at: Vector3, radius: float}]`),
+## replacing any earlier set; loaded chunks the old or new circles touch are rebuilt. Every
+## instance must set the same circles (they change what grows where).
+func set_clearings(circles: Array) -> void:
+	var before := _clearings.duplicate()
+	_clearings.clear()
+	for c: Dictionary in circles:
+		var at: Vector3 = c["at"]
+		_clearings.append(Vector3(at.x, at.z, float(c["radius"])))
+	var touched := before + _clearings
+	if touched.is_empty():
+		return
+	for i: int in _chunks.keys():
+		var span := _chunk_z(i)
+		for c: Vector3 in touched:
+			if c.y + c.z > span.x and c.y - c.z < span.y:
+				_free_chunk(i)
+				_chunks[i] = _build_chunk(i)
+				break
+
+
+func _in_clearing(x: float, z: float) -> bool:
+	for c in _clearings:
+		if Vector2(x - c.x, z - c.y).length() < c.z:
+			return true
+	return false
 
 
 func loaded_chunks() -> Array[int]:
@@ -283,6 +316,8 @@ func _spot(rng: RandomNumberGenerator, area: Rect2, weight: Callable) -> Variant
 		if _heights.in_tunnel(x, z, TUNNEL_CLEARANCE):
 			continue
 		if _heights.road != null and _heights.road.distance(x, z) < _heights.road.half_width + float(_cfg["road_clearance"]):
+			continue
+		if _in_clearing(x, z):
 			continue
 		if rng.randf() > float(weight.call(x, z)):
 			continue
@@ -443,6 +478,8 @@ func _add_grass(node: Node3D, rng: RandomNumberGenerator, area: Rect2) -> void:
 		if _heights.road != null and _heights.road.distance(x, z) < _heights.road.half_width + 0.5:
 			continue
 		if _heights.in_tunnel(x, z, TUNNEL_CLEARANCE):
+			continue
+		if _in_clearing(x, z):
 			continue
 		var at := Vector3(x, _heights.height_at(x, z), z)
 		if _in_old_dig(at):

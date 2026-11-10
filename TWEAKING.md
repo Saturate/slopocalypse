@@ -31,9 +31,11 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | What enemies carry | `modules/inventory/data/items.json` | `npc_loot`: `rolls`, `items` (weights) |
 | Crates: how many, where, refill, contents | `modules/inventory/data/items.json` | `crates`: `count`, `distance`, `seed`, `refill_seconds`, `rolls`, `items` |
 | Loot piles at the spawn | `modules/inventory/data/items.json` | `loot` |
-| Missions: what the board offers, distance, time, pay | `modules/missions/data/missions.json` | `missions` (each: `name`, `objective`, `distance` and `payout` ranges, `time_limit`), `offered`, `seed` |
-| Strike zone: where, how big, the strike waves | `modules/missions/data/missions.json` | `zone` (`beyond_dropoff`, `radius`), `strikes` (`waves` of `{at, drones}`, `overtime_every`, `overtime_drones`, `max_flying`) |
-| Mission buildings: how many, sizes, spacing, how many strikes go for them | `modules/missions/data/missions.json` | `buildings`: `count`, `width`, `depth`, `wall_height`, `off_road`, `spread`, `gap`, `strike_share` |
+| Mission kinds and their names, codename words | `modules/missions/data/missions.json` | `types` (each: `name`, `script`, `defaults` such as Smash & Grab's `strikes`), `codenames` (`first`, `second`) |
+| Missions: what the board offers, distance, time, pay | `modules/missions/data/missions.json` | `missions` (each: `type`, `place`, `objective`, `distance` and `payout` ranges, `time_limit` for Smash & Grab, `guards` and `patrols` ranges for Clean Sweep), `offered`, `seed` |
+| Strike zone: where, how big, the strike waves | `modules/missions/data/missions.json` | `zone` (`beyond_dropoff`, `radius`), `types.smash_and_grab.defaults.strikes` (`waves` of `{at, drones}`, `overtime_every`, `overtime_drones`, `max_flying`, `building_share`) |
+| Guards on posts: how far they look either side | `modules/enemies/data/enemies.json` | `post_scan_degrees`, `post_scan_seconds` |
+| Mission buildings: how many, sizes, spacing, how many strikes go for them | `modules/missions/data/missions.json` | `buildings`: `count`, `width`, `depth`, `wall_height`, `off_road`, `spread`, `gap` |
 | Strike drones: dive delay, how far they hear shots | `modules/drones/data/drones.json` | `strike_dive_delay`, `strike_alert_radius`, `strike_hear_radius` |
 | Home base: board and car spots, who rides | `modules/missions/data/missions.json` | `board.offset`, `transport.offset` (from the spawn), `home_radius`, `ride_home_reach`, `ride_fade_seconds` |
 | Bodies: how long they stay, colour | `modules/inventory/data/items.json` | `bodies`: `seconds`, `empty_seconds` (once searched empty), `colour` |

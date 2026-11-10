@@ -21,5 +21,7 @@
   "burst_shots": [3, 6],
   "burst_pause_seconds": [0.9, 1.8],
   "chase_seconds": 8.0,
-  "forget_seconds": 20.0
+  "forget_seconds": 20.0,
+  "post_scan_degrees": 70.0,
+  "post_scan_seconds": 8.0
 }

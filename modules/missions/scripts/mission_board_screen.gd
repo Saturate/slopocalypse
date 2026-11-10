@@ -93,13 +93,17 @@ func _sheet(index: int, offer: Dictionary, chosen: bool, running: bool) -> Contr
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 8)
 	panel.add_child(col)
-	col.add_child(_label(str(offer.get("name", "")), 22, ACCENT))
+	col.add_child(_label(str(offer.get("codename", "")), 20, ACCENT))
+	col.add_child(_label("%s  ·  %s" % [str(offer.get("type_name", "")).to_upper(), offer.get("place", "")], 14, TEXT))
 	var objective := _label(str(offer.get("objective", "")), 15, TEXT)
 	objective.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	objective.custom_minimum_size.x = SHEET_WIDTH - 32
 	col.add_child(objective)
 	col.add_child(_label("%d m down the road" % int(offer.get("distance", 0)), 15, DIM))
-	col.add_child(_label("Time limit %d:%02d once you arrive" % [int(offer.get("time_limit", 0)) / 60, int(offer.get("time_limit", 0)) % 60], 15, DIM))
+	if offer.has("time_limit"):
+		col.add_child(_label("Time limit %d:%02d once you arrive" % [int(offer["time_limit"]) / 60, int(offer["time_limit"]) % 60], 15, DIM))
+	if offer.has("guards"):
+		col.add_child(_label("About %d guards" % int(offer["guards"]), 15, DIM))
 	col.add_child(_label("Pays %d tokens" % int(offer.get("payout", 0)), 18, TEXT))
 	var take := Button.new()
 	take.focus_mode = Control.FOCUS_NONE

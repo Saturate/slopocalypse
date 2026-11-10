@@ -42,7 +42,9 @@ func _ride_out() -> void:
 	player.set_physics_process(false)
 	player.global_position = SPAWN + Vector3(1, 0, 2)
 	EventBus.publish(&"player.spawned", {"player": player, "local": false})
-	_missions.call(&"server_choose", 61, 0)
+	var offers: Array = _missions.get(&"offers")
+	var index := offers.find(offers.filter(func(o: Dictionary) -> bool: return o["type"] == "smash_and_grab")[0])
+	_missions.call(&"server_choose", 61, index)
 	assert_bool(_missions.call(&"server_ride_out")).is_true()
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -81,7 +83,7 @@ func test_riding_out_builds_them_with_the_drive_inside_one() -> void:
 	var nodes := get_tree().get_nodes_in_group(&"mission_buildings")
 	assert_int(nodes.size()).is_greater(2)
 	var first := nodes[0] as MissionBuilding
-	var crate := _missions.get(&"_objective_crate") as Node3D
+	var crate := (_missions.get_node("Type") as MissionType).get(&"_crate") as Node3D
 	var local := first.global_transform.affine_inverse() * crate.global_position
 	assert_float(absf(local.x)).is_less(float(first.spec["width"]) / 2.0)
 	assert_float(absf(local.z)).is_less(float(first.spec["depth"]) / 2.0)
