@@ -8,7 +8,10 @@ const DUMMY := "res://modules/training/scenes/dummy.tscn"
 var _voxels: VoxelWorld
 var _camera := Camera3D.new()
 var _ticks := 0
-var _charges: Array[Vector3] = [Vector3(0, 0, -10), Vector3(4, 0, -14), Vector3(-3, 0, -18)]
+## Out on the road past the start tunnel.
+const OUT := Vector3(0, 0, -40)
+
+var _charges: Array[Vector3] = [OUT + Vector3(0, 0, -10), OUT + Vector3(4, 0, -14), OUT + Vector3(-3, 0, -18)]
 
 
 func _ready() -> void:
@@ -19,12 +22,12 @@ func _ready() -> void:
 	add_child(effects)
 	var dummy: Node3D = (load(DUMMY) as PackedScene).instantiate()
 	add_child(dummy)
-	dummy.global_position = Vector3(2, 0, -11)
+	dummy.global_position = OUT + Vector3(2, 0, -11)
 	EventBus.subscribe(&"explosion", func(p: Dictionary) -> void: _voxels.server_dig(p["position"], float(p["radius"])))
 	add_child(_camera)
 	_camera.current = true
 	_camera.fov = 65.0
-	_camera.global_transform = Transform3D(Basis.from_euler(Vector3(deg_to_rad(-28.0), 0.0, 0.0)), Vector3(0, 9, 4))
+	_camera.global_transform = Transform3D(Basis.from_euler(Vector3(deg_to_rad(-28.0), 0.0, 0.0)), OUT + Vector3(0, 9, 4))
 
 
 func _physics_process(_delta: float) -> void:

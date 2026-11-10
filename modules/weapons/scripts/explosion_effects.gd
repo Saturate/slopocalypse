@@ -33,36 +33,34 @@ func _on_explosion(p: Dictionary) -> void:
 
 
 ## One-shot particle burst. Dust drifts slowly upward; debris is thrown out and falls.
-func _burst(at: Vector3, radius: float, mesh: Mesh, amount: int, speed: Vector2, lifetime: float, gravity: float, colour: Color) -> GPUParticles3D:
-	var particles := GPUParticles3D.new()
+## CPU particles, not GPU: GPU particles only run while on screen, so a blast behind you
+## would start from nothing when you turned round instead of being half way through.
+func _burst(at: Vector3, radius: float, mesh: Mesh, amount: int, speed: Vector2, lifetime: float, gravity: float, colour: Color) -> CPUParticles3D:
+	var particles := CPUParticles3D.new()
 	particles.one_shot = true
 	particles.explosiveness = 0.95
 	particles.amount = amount
 	particles.lifetime = lifetime
-	particles.draw_pass_1 = mesh
-	var process := ParticleProcessMaterial.new()
-	process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	process.emission_sphere_radius = radius * 0.4
-	process.direction = Vector3.UP
-	process.spread = 70.0
-	process.initial_velocity_min = speed.x
-	process.initial_velocity_max = speed.y
-	process.gravity = Vector3.DOWN * gravity
-	process.damping_min = 1.0
-	process.damping_max = 2.5
-	process.scale_min = 0.6
-	process.scale_max = 1.6
-	process.color = colour
+	particles.mesh = mesh
+	particles.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	particles.emission_sphere_radius = radius * 0.4
+	particles.direction = Vector3.UP
+	particles.spread = 70.0
+	particles.initial_velocity_min = speed.x
+	particles.initial_velocity_max = speed.y
+	particles.gravity = Vector3.DOWN * gravity
+	particles.damping_min = 1.0
+	particles.damping_max = 2.5
+	particles.scale_amount_min = 0.6
+	particles.scale_amount_max = 1.6
+	particles.color = colour
 	# Fade out over the particle's life so clouds thin away rather than vanish.
 	var fade := Gradient.new()
 	fade.set_color(0, Color(1, 1, 1, 1))
 	fade.set_color(1, Color(1, 1, 1, 0))
-	var ramp := GradientTexture1D.new()
-	ramp.gradient = fade
-	process.color_ramp = ramp
-	process.angular_velocity_min = -360.0
-	process.angular_velocity_max = 360.0
-	particles.process_material = process
+	particles.color_ramp = fade
+	particles.angular_velocity_min = -360.0
+	particles.angular_velocity_max = 360.0
 	particles.emitting = true
 	particles.position = at
 	particles.finished.connect(particles.queue_free)
