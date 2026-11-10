@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.4.0 - 2026-11-10
+
+#### Watch your step: some missions have buried mines and tripwires across doors. Crouch to spot the glint, press F next to one to disarm it, or shoot it. New mission: the cabin in the woods
+
+#### Soldiers feel fear: fire that passes close pins them down and spoils their aim, and depending on their nerve, their friends nearby and their wounds they fight, hold their ground, run, or throw down their gun and give up. They no longer shoot through walls or leaves
+
+#### A trader at home base: sell anything you carry and buy gun parts, rigs, packs and medkits with your tokens (cheap for now while we playtest). Dying now costs everything you carried: you come back with nothing but your tokens
+
+#### Soldiers take cover: under fire they run to the nearest spot that hides them, one at a time while the others keep shooting, then duck and pop up to fire. A soldier who spots you tells their squad
+
+#### Guns are items: your rifle and pistol sit in their own slots, soldiers drop the rifle they carried (with its parts), and you can loot, drop, swap and buy guns. Lose them when you die
+
+#### New mission kind, Clean Sweep: soldiers hold the buildings (sentries at the doors, more inside, patrols between); take them all down, the last few get marked, then ride home for the pay. Missions now have codenames like Operation Rusty Lantern, and the strike zone job is called Smash & Grab
+
+#### Mission markers are subtle now: a small faint diamond with the distance, fading out as you get close so you find the last bit yourself
+
+#### New mission kind, Ghost Run: the drive is in the best-guarded building and there is no clock, so sneak in or fight your way in, then ride home with it
+
+#### Releases include a macOS build (Apple silicon and Intel); it is not notarised, so open it the first time with right-click > Open
+
+#### Releases include a macOS build that runs on Apple silicon and Intel Macs
+
+#### Items in your inventory show pictures of the real thing, rendered from their 3D models, and medkits, rigs, packs and the drive have proper models when they lie on the ground
+
+### Internal
+
+#### Privacy policy and terms of use
+
+#### Release and export build macOS on macos-15 runners
+
 ## 0.3.0 - 2026-11-10
 
 #### The start tunnel is home base: pick a job at the mission board, ride out in the parked car to the drop-off down the road, and ride home from the car waiting there
