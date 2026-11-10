@@ -49,6 +49,8 @@ var _viewers: Dictionary = {}
 var _crates: Array[LootCrate] = []
 ## Server: player -> {per_second, left} while a medkit works.
 var _healing: Dictionary = {}
+## Client: rendered item pictures for the tiles.
+var _icons: ItemIcons
 ## This instance's copy of its own player's inventory (on the server, the same grid).
 var _mine: InventoryGear
 ## This instance's copy of the container its player has open (on the server, the same
@@ -93,6 +95,13 @@ func _ready() -> void:
 	Net.peer_joined.connect(_on_peer_joined)
 	if DisplayServer.get_name() != "headless":
 		InputBindings.register(_data.get("bindings", {}), &"inventory")
+		_icons = ItemIcons.new()
+		_icons.name = "ItemIcons"
+		_icons.model_for = item_model
+		_icons.cells_for = func(item: String) -> Vector2i:
+			var size: Array = item_info(item).get("size", [1, 1])
+			return Vector2i(int(size[0]), int(size[1]))
+		add_child(_icons)
 
 
 func _exit_tree() -> void:
@@ -115,6 +124,26 @@ func item_info(item: String) -> Dictionary:
 ## Read-only gun slots for the gear screen, `{slot: label}` (guns are not items yet).
 func weapon_labels() -> Dictionary:
 	return (_data.get("gear", {}) as Dictionary).get("weapons", {})
+
+
+## A fresh 3D model of `item` (its own voxel model, or one another module supplies for it,
+## e.g. a gun part), or null if it has none.
+func item_model(item: String) -> Node3D:
+	var own := str(item_info(item).get("model", ""))
+	var kind := VoxGear.kind_of(own)
+	if kind >= 0:
+		var mesh := MeshInstance3D.new()
+		mesh.mesh = VoxGenerator.to_mesh(VoxGear.new().build({"kind": kind, "seed": 1}))
+		return mesh
+	var ask := {"item": item, "model": null}
+	EventBus.publish(&"inventory.item_model", ask)
+	return ask["model"] as Node3D
+
+
+## Client: the item's picture for its tile, or null until it is rendered (or if it has no
+## model).
+func item_icon(item: String) -> Texture2D:
+	return _icons.icon(item) if _icons != null else null
 
 
 func kind_colour(kind: String) -> Color:
@@ -258,6 +287,11 @@ func _make_loot(data: Variant) -> Node:
 	loot.cells = Vector2i(int(size[0]), int(size[1]))
 	loot.position = info["position"]
 	loot.rotation.y = float(int(info["index"]) * 37 % 360) * PI / 180.0
+	# Gear with its own model lies on the ground as that model.
+	if DisplayServer.get_name() != "headless" and VoxGear.kind_of(str(def.get("model", ""))) >= 0:
+		var model := item_model(item)
+		if model != null:
+			loot.set_visual(model)
 	# Other modules (weapons) may dress it with the real model.
 	EventBus.publish(&"inventory.loot_spawned", {"loot": loot, "item": item})
 	return loot

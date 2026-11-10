@@ -1,6 +1,6 @@
 {
   "id": "inventory",
-  "depends_on": ["player"],
+  "depends_on": ["player", "voxkit"],
   "flag": "inventory",
   "entry": "inventory_module.gd"
 }
