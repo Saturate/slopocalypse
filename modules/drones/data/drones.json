@@ -24,5 +24,8 @@
   "aim_cone_degrees": 6.0,
   "aim_range": 160.0,
   "aim_seconds": 0.4,
-  "calm_after_seconds": 40.0
+  "calm_after_seconds": 40.0,
+  "strike_dive_delay": [2.0, 6.0],
+  "strike_alert_radius": 30.0,
+  "strike_hear_radius": 25.0
 }

@@ -190,3 +190,60 @@ func test_a_downed_drone_crashes_on_the_height_map_where_there_is_no_collision()
 	await _frames(90)
 	assert_int(_explosions.size()).is_equal(1)
 	assert_float((_explosions[0]["position"] as Vector3).y).is_greater(29.0)
+
+
+## Something that shot: like a gun, it knows who holds it.
+func _gun_held_by(holder: Node3D) -> Node:
+	var script := GDScript.new()
+	script.source_code = "extends Node\nvar holder: Node3D\n"
+	script.reload()
+	var gun: Node = auto_free(Node.new())
+	gun.set_script(script)
+	gun.set(&"holder", holder)
+	return gun
+
+
+func _shooter(at: Vector3) -> Node3D:
+	var shooter: Node3D = auto_free(Node3D.new())
+	shooter.add_to_group(&"players")
+	add_child(shooter)
+	shooter.global_position = at
+	return shooter
+
+
+func test_a_strike_drone_dives_into_its_spot() -> void:
+	var spot := Vector3(12.0, 0.0, -8.0)
+	_module.server_spawn_strike(spot)
+	assert_int(_module.strike_count()).is_equal(1)
+	for i in 60 * 20:
+		await get_tree().physics_frame
+		if not _explosions.is_empty():
+			break
+	assert_int(_explosions.size()).is_equal(1)
+	assert_float((_explosions[0]["position"] as Vector3).distance_to(spot)).is_less(3.5)
+	assert_int(_module.strike_count()).is_equal(0)
+
+
+func test_shooting_a_strike_drone_turns_it_and_its_neighbours_on_you() -> void:
+	var shooter := _shooter(Vector3(0, 1, 30))
+	var first: StalkerDrone = _module.server_spawn_strike(Vector3(5, 0, 0))
+	var second: StalkerDrone = _module.server_spawn_strike(Vector3(5, 0, 0))
+	second.global_position = first.global_position + Vector3(3, 0, 0)
+	first.health().server_apply_damage(5.0, _gun_held_by(shooter))
+	assert_object(first.target).is_same(shooter)
+	assert_object(second.target).is_same(shooter)
+	assert_bool(first.is_striking()).is_false()
+
+
+func test_shots_fired_near_strike_drones_draw_them() -> void:
+	var drone: StalkerDrone = _module.server_spawn_strike(Vector3(5, 0, 0))
+	var shooter := _shooter(drone.global_position + Vector3(0, -10, 5))
+	EventBus.publish(&"weapon.fired", {"holder": shooter, "from": shooter.global_position, "to": shooter.global_position + Vector3.FORWARD})
+	assert_object(drone.target).is_same(shooter)
+
+
+func test_clearing_calls_off_every_strike_drone() -> void:
+	_module.server_spawn_strike(Vector3(5, 0, 0))
+	_module.server_spawn_strike(Vector3(-5, 0, 0))
+	_module.server_clear_strikes()
+	assert_int(_module.strike_count()).is_equal(0)

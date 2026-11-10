@@ -32,6 +32,8 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | Crates: how many, where, refill, contents | `modules/inventory/data/items.json` | `crates`: `count`, `distance`, `seed`, `refill_seconds`, `rolls`, `items` |
 | Loot piles at the spawn | `modules/inventory/data/items.json` | `loot` |
 | Missions: what the board offers, distance, time, pay | `modules/missions/data/missions.json` | `missions` (each: `name`, `objective`, `distance` and `payout` ranges, `time_limit`), `offered`, `seed` |
+| Strike zone: where, how big, the strike waves | `modules/missions/data/missions.json` | `zone` (`beyond_dropoff`, `radius`), `strikes` (`waves` of `{at, drones}`, `overtime_every`, `overtime_drones`, `max_flying`) |
+| Strike drones: dive delay, how far they hear shots | `modules/drones/data/drones.json` | `strike_dive_delay`, `strike_alert_radius`, `strike_hear_radius` |
 | Home base: board and car spots, who rides | `modules/missions/data/missions.json` | `board.offset`, `transport.offset` (from the spawn), `home_radius`, `ride_home_reach`, `ride_fade_seconds` |
 | Bodies: how long they stay, colour | `modules/inventory/data/items.json` | `bodies`: `seconds`, `empty_seconds` (once searched empty), `colour` |
 | Crate grid size | `modules/inventory/data/items.json` | `crates.grid` |
