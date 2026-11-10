@@ -49,4 +49,4 @@ WORKDIR /opt/slopocalypse
 EXPOSE 7777/udp
 # Tuning without a rebuild: mount files over /opt/slopocalypse/tweaks/<res path>, see TWEAKING.md.
 ENTRYPOINT ["./Slopocalypse.x86_64", "--headless", "--"]
-CMD ["--server=7777", "--save=/data/world.db"]
+CMD ["--server=7777", "--save=/data/world.db", "--web"]

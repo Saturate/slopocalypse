@@ -47,10 +47,10 @@ The `Dockerfile` builds the whole dedicated server inside the container, so all 
 
 ```sh
 docker build -t slopocalypse-server .
-docker run -d --name slopocalypse --restart unless-stopped -p 7777:7777/udp -v slopocalypse-data:/data slopocalypse-server
+docker run -d --name slopocalypse --restart unless-stopped -p 7777:7777/udp -p 7777:7777/tcp -v slopocalypse-data:/data slopocalypse-server
 ```
 
-The world save, logs and journals live in the `/data` volume, so a rebuilt image keeps everyone's gear. Players join on UDP port 7777. For another port, add `--server=PORT --save=/data/world.db` after the image name and publish that port instead. To change game values, mount a file over `/opt/slopocalypse/tweaks/<res path>` (see `TWEAKING.md`).
+The world save, logs and journals live in the `/data` volume, so a rebuilt image keeps everyone's gear. Players join on UDP port 7777. The same port on TCP serves a status page for browsers: open `http://<server>:7777` to see who is on and what mission is running (`/status.json` has the same as JSON). It is read only; leave TCP unpublished to keep it private. In Kubernetes, expose 7777 for both UDP and TCP on the Service. For another port, add `--server=PORT --save=/data/world.db` after the image name and publish that port instead. To change game values, mount a file over `/opt/slopocalypse/tweaks/<res path>` (see `TWEAKING.md`).
 
 `AGENTS.md` has every command, the architecture rules and the code style. It is written for coding agents but reads fine for people. `TWEAKING.md` lists the game values you can change without touching code.
 

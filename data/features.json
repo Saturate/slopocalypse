@@ -17,6 +17,7 @@
     "debug_api": true,
     "perf": true,
     "missions": true,
-    "trader": true
+    "trader": true,
+    "web": true
   }
 }
