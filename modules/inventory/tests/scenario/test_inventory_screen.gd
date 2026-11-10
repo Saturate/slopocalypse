@@ -30,7 +30,14 @@ func test_dragging_a_tile_moves_the_item() -> void:
 	var gear: InventoryGear = _module.call(&"grid_of", 1)
 	var item: Dictionary = gear.items("backpack")[0]
 	var size := gear.grid_size("backpack")
-	var target := {"grid": "backpack", "x": size.x - int(item["w"]), "y": size.y - int(item["h"])}
+	# The last free spot the item fits in, scanning from the bottom right.
+	var target := {}
+	for y in range(size.y - int(item["h"]), -1, -1):
+		for x in range(size.x - int(item["w"]), -1, -1):
+			var spot := {"grid": "backpack", "x": x, "y": y, "rotated": bool(item["rotated"])}
+			if target.is_empty() and (x != int(item["x"]) or y != int(item["y"])) and gear.can_place(str(item["item"]), false, spot, int(item["uid"])):
+				target = {"grid": "backpack", "x": x, "y": y}
+	assert_dict(target).is_not_empty()
 	assert_bool(_screen.pick(false, {"grid": "backpack", "x": int(item["x"]), "y": int(item["y"])})).is_true()
 	_screen.drop_on(false, target)
 	assert_int(int(_screen.item_at(false, target).get("uid", -1))).is_equal(int(item["uid"]))

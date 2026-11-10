@@ -6,6 +6,7 @@
   "stock": [
     { "item": "gun_rifle", "price": 40 },
     { "item": "gun_pistol", "price": 15 },
+    { "item": "breach_charge", "price": 10 },
     { "item": "medkit", "price": 10 },
     { "item": "mag_ar_30", "price": 10 },
     { "item": "mag_ar_45", "price": 20 },

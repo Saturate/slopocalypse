@@ -12,6 +12,8 @@ extends Node
 const RIFLE := "res://modules/weapons/scenes/rifle.tscn"
 ## Weapon slots, in the order 1 and 2 select them.
 const WEAPON_SLOTS: Array[String] = ["primary", "secondary"]
+## A bullet landing this close to a placed charge sets it off.
+const CHARGE_SHOT_RADIUS := 0.35
 ## Gun items and the default build each comes with.
 const GUN_ITEMS := {"gun_rifle": "primary", "gun_pistol": "secondary"}
 
@@ -46,6 +48,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"inventory.loot_spawned", _on_loot_spawned)
 	EventBus.subscribe(&"inventory.item_model", _on_item_model)
 	EventBus.subscribe(&"inventory.slot_changed", _on_slot_changed)
+	EventBus.subscribe(&"weapon.fired", _on_shot_near_charge)
 	Net.peer_joined.connect(_on_peer_joined)
 	if DisplayServer.get_name() != "headless":
 		var data: Variant = Data.load_json(HitscanWeapon.CONFIG)
@@ -65,6 +68,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"inventory.loot_spawned", _on_loot_spawned)
 	EventBus.unsubscribe(&"inventory.item_model", _on_item_model)
 	EventBus.unsubscribe(&"inventory.slot_changed", _on_slot_changed)
+	EventBus.unsubscribe(&"weapon.fired", _on_shot_near_charge)
 	if Net.peer_joined.is_connected(_on_peer_joined):
 		Net.peer_joined.disconnect(_on_peer_joined)
 
@@ -243,9 +247,12 @@ func _on_loot_spawned(p: Dictionary) -> void:
 	loot.call(&"set_visual", model)
 
 
-## The inventory wants a model of an item (for its icon): a gun part's own mesh, or a whole
-## gun in its default build.
+## The inventory wants a model of an item (for its icon): a gun part's own mesh, a whole
+## gun in its default build, or a breaching charge's block.
 func _on_item_model(p: Dictionary) -> void:
+	if str(p.get("item", "")) == "breach_charge" and p.get("model") == null:
+		p["model"] = _charge_model()
+		return
 	if GUN_ITEMS.has(str(p.get("item", ""))) and p.get("model") == null:
 		p["model"] = GunAssembly.build_model(default_build(str(GUN_ITEMS[str(p["item"])])))
 		return
@@ -499,6 +506,17 @@ func _update_scope(player: PlayerController) -> void:
 
 
 ## Server only, called by ChargeThrower.
+## Server: a bullet that hits a placed charge sets it off.
+func _on_shot_near_charge(p: Dictionary) -> void:
+	if not multiplayer.is_server() or not p.has("to"):
+		return
+	var hit: Vector3 = p["to"]
+	for node: Node in get_tree().get_nodes_in_group(&"charges"):
+		var charge := node as DemolitionCharge
+		if charge != null and not charge.is_queued_for_deletion() and charge.global_position.distance_to(hit) < CHARGE_SHOT_RADIUS:
+			charge.server_explode()
+
+
 func spawn_charge(at: Vector3, stats: Dictionary) -> DemolitionCharge:
 	_charges_placed += 1
 	return _charge_spawner.spawn({"index": _charges_placed, "position": at, "stats": stats})
@@ -512,3 +530,26 @@ func _make_charge(data: Variant) -> Node:
 	charge.stats = info["stats"]
 	charge.position = info["position"]
 	return charge
+
+
+## A block of putty in olive wrap with a detonator on top, for icons.
+static func _charge_model() -> Node3D:
+	var root := Node3D.new()
+	var block := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(0.22, 0.08, 0.14)
+	var wrap := StandardMaterial3D.new()
+	wrap.albedo_color = Color(0.4, 0.42, 0.3)
+	box.material = wrap
+	block.mesh = box
+	root.add_child(block)
+	var cap := MeshInstance3D.new()
+	var top := BoxMesh.new()
+	top.size = Vector3(0.06, 0.03, 0.05)
+	var metal := StandardMaterial3D.new()
+	metal.albedo_color = Color(0.15, 0.15, 0.16)
+	top.material = metal
+	cap.mesh = top
+	cap.position = Vector3(0.04, 0.055, 0.0)
+	root.add_child(cap)
+	return root

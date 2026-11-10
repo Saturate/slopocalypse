@@ -26,6 +26,6 @@
     "radius": 3.0,
     "damage": 150.0,
     "range": 40.0,
-    "cooldown_seconds": 1.0
+    "cooldown_seconds": 1.0, "item": "breach_charge"
   }
 }

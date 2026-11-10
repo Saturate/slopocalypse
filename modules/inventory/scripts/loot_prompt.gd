@@ -54,4 +54,7 @@ func _process(_delta: float) -> void:
 		_label.text = "F   Search %s%s" % [what, " (empty)" if crate.get_meta(&"empty", false) else ""]
 	# Medkits: how many, and the key, just above the health bar.
 	_meds.text = "H   Medkit x%d" % int(inventory.call(&"count", peer, "medkit"))
+	var charges := int(inventory.call(&"count", peer, "breach_charge"))
+	if charges > 0:
+		_meds.text += "     G   Charge x%d   ·   T   Set off" % charges
 	_meds.visible = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED

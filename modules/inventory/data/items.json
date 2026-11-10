@@ -44,11 +44,11 @@
       "hg_ar_std": 2, "hg_ar_long": 1, "bar_ar_14": 1, "bar_ar_10": 2, "grp_ar_std": 2,
       "mag_pistol_15": 3, "mag_pistol_21": 2, "muz_pistol_comp": 2, "muz_pistol_supp": 1,
       "opt_pistol_dot": 2, "sld_pistol_std": 1, "sld_pistol_long": 1, "bag_small": 2,
-      "bag_large": 1, "rig_light": 1, "rig_heavy": 1
+      "bag_large": 1, "rig_light": 1, "rig_heavy": 1, "breach_charge": 3
     }
   },
   "starting_kit": [
-    "medkit", "opt_scope_4x", "opt_holo", "muz_comp", "muz_supp", "mag_ar_45", "stk_ar_light",
+    "medkit", "breach_charge", "breach_charge", "opt_scope_4x", "opt_holo", "muz_comp", "muz_supp", "mag_ar_45", "stk_ar_light",
     "bar_ar_10", "hg_ar_long", "mag_pistol_21", "opt_pistol_dot"
   ],
   "kinds": {
@@ -63,7 +63,8 @@
     "backpack": [0.42, 0.36, 0.26],
     "objective": [0.75, 0.62, 0.2],
     "primary_gun": [0.36, 0.38, 0.42],
-    "sidearm": [0.4, 0.36, 0.44]
+    "sidearm": [0.4, 0.36, 0.44],
+    "explosive": [0.55, 0.45, 0.2]
   },
   "items": {
     "opt_reddot": { "name": "Tube red dot", "short": "Red dot", "size": [1, 1], "kind": "optic" },
@@ -95,6 +96,7 @@
     "bag_small": { "name": "Day pack", "short": "Day pack", "size": [3, 3], "kind": "backpack", "grid": [5, 5], "model": "bag_small" },
     "bag_large": { "name": "Raid pack", "short": "Raid pack", "size": [4, 4], "kind": "backpack", "grid": [6, 7], "model": "bag_large" },
     "usb_drive": { "name": "Encrypted drive (mission)", "short": "Drive", "size": [1, 1], "kind": "objective", "model": "drive" },
+    "breach_charge": { "name": "Breaching charge (G to place, T to set off)", "short": "C4", "size": [1, 1], "kind": "explosive" },
     "medkit": { "name": "Field medkit", "short": "Medkit", "size": [1, 1], "kind": "med", "model": "medkit", "use": { "heal": 60.0, "seconds": 3.0 } }
   }
 }
