@@ -3,7 +3,8 @@ extends Node
 ## is the real player body and guns driven by an EnemyBrain on the server, spawned through
 ## a MultiplayerSpawner so everyone sees them. They carry random loot (the inventory module
 ## fills their backpack) and drop it when they die; squads come back over time so the map
-## never empties.
+## never empties. Other modules (missions) place guards through the `enemies_api` group:
+## `server_spawn_guard` puts one on a post, or on a patrol route.
 
 ## Ground probes start this far over the untouched ground, or over the point itself.
 const PROBE_ABOVE_GROUND := 3.0
@@ -53,6 +54,7 @@ func _ready() -> void:
 	if not data is Dictionary or not Data.require(CONFIG, data, REQUIRED):
 		return
 	config = data
+	add_to_group(&"enemies_api")
 	_rng.randomize()
 	EventBus.subscribe(&"world.ready", _on_world_ready)
 	EventBus.subscribe(&"enemy.died", _on_enemy_died)
@@ -116,6 +118,16 @@ func server_spawn_squad(size: int, centre: Variant = null) -> Array[Node]:
 	return out
 
 
+## Server: one guard standing at `at` watching `yaw`, or walking `route` (points) round and
+## round if it has any. Like any soldier it fights when it spots or hears someone, then goes
+## back to its post or route.
+func server_spawn_guard(at: Vector3, yaw: float, route: Array = []) -> Node:
+	_spawned += 1
+	# Exactly there: posts are on floors the caller knows, and a probe from above would put a
+	# guard meant to stand inside a building on its roof.
+	return _spawner.spawn({"index": _spawned, "position": at + Vector3.UP * 0.3, "home": at, "post_yaw": yaw, "route": route})
+
+
 ## Runs on the server and, through the spawner, on every client.
 func _make_enemy(data: Variant) -> Node:
 	var info: Dictionary = data
@@ -129,11 +141,12 @@ func _make_enemy(data: Variant) -> Node:
 	enemy.add_to_group(&"enemies")
 	if not multiplayer.is_server():
 		enemy.set_physics_process(false)
-	enemy.ready.connect(_on_enemy_ready.bind(enemy, info["home"]), CONNECT_ONE_SHOT)
+	enemy.rotation.y = float(info.get("post_yaw", 0.0))
+	enemy.ready.connect(_on_enemy_ready.bind(enemy, info["home"], info), CONNECT_ONE_SHOT)
 	return enemy
 
 
-func _on_enemy_ready(enemy: PlayerController, home: Vector3) -> void:
+func _on_enemy_ready(enemy: PlayerController, home: Vector3, info: Dictionary = {}) -> void:
 	var health := enemy.get_node("Health") as HealthComponent
 	health.max_health = config["max_health"]
 	health.server_reset()
@@ -151,6 +164,11 @@ func _on_enemy_ready(enemy: PlayerController, home: Vector3) -> void:
 		brain.body = enemy
 		brain.config = config
 		brain.home = home
+		if info.has("post_yaw"):
+			brain.post_yaw = float(info["post_yaw"])
+			brain.has_post = true
+		for point: Variant in info.get("route", []):
+			brain.route.append(point as Vector3)
 		enemy.add_child(brain)
 	if DisplayServer.get_name() != "headless":
 		_tint(enemy)

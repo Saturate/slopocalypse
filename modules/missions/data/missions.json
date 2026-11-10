@@ -7,8 +7,7 @@
   "board": { "offset": [4.9, 0.0, -3.0] },
   "transport": { "offset": [-2.6, 0.0, -8.0] },
   "dropoff_side": 5.0,
-  "zone": { "beyond_dropoff": 70.0, "radius": 45.0, "objective_side": -6.0 },
-  "objective_item": "usb_drive",
+  "zone": { "beyond_dropoff": 70.0, "radius": 45.0 },
   "buildings": {
     "count": [3, 6],
     "width": [5.0, 8.5],
@@ -16,47 +15,83 @@
     "wall_height": [2.7, 3.2],
     "off_road": [9.0, 22.0],
     "spread": 35.0,
-    "gap": 3.0,
-    "strike_share": 0.5
-  },
-  "strikes": {
-    "waves": [
-      { "at": 0.0, "drones": 2 },
-      { "at": 35.0, "drones": 3 },
-      { "at": 70.0, "drones": 4 },
-      { "at": 105.0, "drones": 5 }
-    ],
-    "overtime_every": 10.0,
-    "overtime_drones": 3,
-    "max_flying": 10,
-    "spread": 0.8
+    "gap": 3.0
   },
   "offered": 3,
   "seed": 11,
+  "codenames": {
+    "first": ["Rusty", "Silent", "Broken", "Hollow", "Crimson", "Velvet", "Iron", "Paper", "Static", "Copper", "Glass", "Feral", "Midnight", "Sunken", "Neon", "Grim"],
+    "second": ["Lantern", "Kettle", "Magpie", "Anvil", "Harbor", "Wasp", "Thistle", "Compass", "Badger", "Furnace", "Sparrow", "Ledger", "Hammer", "Orchard", "Viper", "Teacup"]
+  },
+  "types": {
+    "smash_and_grab": {
+      "name": "Smash & Grab",
+      "script": "res://modules/missions/types/smash_and_grab.gd",
+      "defaults": {
+        "objective_item": "usb_drive",
+        "strikes": {
+          "waves": [
+            { "at": 0.0, "drones": 2 },
+            { "at": 35.0, "drones": 3 },
+            { "at": 70.0, "drones": 4 },
+            { "at": 105.0, "drones": 5 }
+          ],
+          "overtime_every": 10.0,
+          "overtime_drones": 3,
+          "max_flying": 10,
+          "spread": 0.8,
+          "building_share": 0.5
+        }
+      }
+    },
+    "clean_sweep": {
+      "name": "Clean Sweep",
+      "script": "res://modules/missions/types/clean_sweep.gd",
+      "defaults": {}
+    }
+  },
   "missions": [
     {
-      "id": "strike_substation",
-      "name": "Substation strike",
+      "type": "smash_and_grab",
+      "place": "Substation",
       "objective": "Grab the drive from the substation before the strike levels it.",
       "distance": [260.0, 420.0],
       "time_limit": 180.0,
       "payout": [300.0, 450.0]
     },
     {
-      "id": "strike_farm",
-      "name": "Farmstead strike",
+      "type": "smash_and_grab",
+      "place": "Farmstead",
       "objective": "A courier hid a drive at the farm. Get it out before the drones arrive.",
       "distance": [180.0, 320.0],
       "time_limit": 150.0,
       "payout": [200.0, 320.0]
     },
     {
-      "id": "strike_mast",
-      "name": "Radio mast strike",
-      "objective": "Pull the drive from the mast hut. The strike comes early.",
+      "type": "smash_and_grab",
+      "place": "Radio mast",
+      "objective": "Pull the drive from the mast huts. The strike comes early.",
       "distance": [400.0, 620.0],
       "time_limit": 120.0,
       "payout": [450.0, 650.0]
+    },
+    {
+      "type": "clean_sweep",
+      "place": "Depot",
+      "objective": "Soldiers have dug in at the depot. Clear out every last one.",
+      "distance": [220.0, 380.0],
+      "guards": [5, 7],
+      "patrols": [1, 2],
+      "payout": [280.0, 400.0]
+    },
+    {
+      "type": "clean_sweep",
+      "place": "Roadside camp",
+      "objective": "A squad holds the huts by the road. Sweep them out.",
+      "distance": [300.0, 520.0],
+      "guards": [7, 10],
+      "patrols": [2, 3],
+      "payout": [420.0, 600.0]
     }
   ]
 }

@@ -48,6 +48,15 @@ func test_the_board_offers_distinct_missions_from_data() -> void:
 		assert_float(float(o["payout"])).is_greater(0.0)
 
 
+func test_offers_have_codenames_and_a_kind_with_its_name() -> void:
+	var cfg: Dictionary = _module.get(&"config")
+	for seed_value in 10:
+		for o: Dictionary in (load(MODULE) as GDScript).call(&"roll_offers", cfg, seed_value):
+			assert_str(str(o["codename"])).starts_with("Operation ")
+			assert_bool((cfg["types"] as Dictionary).has(o["type"])).is_true()
+			assert_str(str(o["type_name"])).is_equal(str(cfg["types"][o["type"]]["name"]))
+
+
 func test_the_same_seed_rolls_the_same_offers() -> void:
 	var cfg: Dictionary = _module.get(&"config")
 	var script: GDScript = load(MODULE)

@@ -50,7 +50,7 @@ func _process(_delta: float) -> void:
 			elif state != "home":
 				_label.text = "A run is already on"
 			else:
-				_label.text = "F   Ride out: %s" % current.get("name", "")
+				_label.text = "F   Ride out: %s" % current.get("codename", "")
 		"ride_home":
 			_label.text = "F   Ride home"
 		_:
@@ -58,19 +58,10 @@ func _process(_delta: float) -> void:
 	_label.visible = not _label.text.is_empty()
 	var lines: Array[String] = ["Tokens: %d" % int(missions.get(&"my_tokens"))]
 	if not current.is_empty() and state == "home":
-		lines.append("Mission chosen: %s  ·  %d m  ·  %d tokens" % [current.get("name", ""), int(current.get("distance", 0)), int(current.get("payout", 0))])
+		lines.append("Mission chosen: %s (%s)  ·  %d m  ·  %d tokens" % [current.get("codename", ""), current.get("type_name", ""), int(current.get("distance", 0)), int(current.get("payout", 0))])
 	elif not current.is_empty():
-		lines.append(str(current.get("name", "")))
-		var left := float(missions.get(&"time_left"))
-		if bool(current.get("delivered", false)):
-			lines.append("Drive delivered")
-		elif left < 0.0:
-			lines.append("Reach the strike zone")
-		elif left > 0.0:
-			lines.append("Strike in %d:%02d" % [int(left) / 60, int(left) % 60])
-		else:
-			lines.append("STRIKE INCOMING")
-		var drive: Vector3 = missions.get(&"objective_at")
-		lines.append("Drive %d m" % int(player.global_position.distance_to(drive)))
+		lines.append("%s  ·  %s" % [current.get("codename", ""), current.get("type_name", "")])
+		for line: Variant in missions.call(&"hud_lines", player):
+			lines.append(str(line))
 	_mission.text = "\n".join(lines)
 	_mission.visible = captured

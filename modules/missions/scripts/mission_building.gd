@@ -66,3 +66,19 @@ func inside(along: float, side: float) -> Vector3:
 	var d := float(spec.get("depth", 4.0))
 	var local := Vector3(side * (w / 2.0 - WALL - 0.6), SLAB, lerpf(-d / 2.0 + WALL + 0.6, d / 2.0 - WALL - 0.6, along))
 	return global_transform * local
+
+
+## Where guards can stand, in world space, as `[{at, yaw}]` (yaw as a player's: facing
+## -Z turned by it): a sentry outside the door looking out, and two inside at the back
+## watching the door.
+func posts() -> Array:
+	var d := float(spec.get("depth", 4.0))
+	var door_out := global_transform * Vector3(0.6, SLAB, -d / 2.0 - 1.4)
+	# The door is on local -Z, so facing local -Z is both "watching the door" from inside and
+	# "looking out" from in front of it.
+	var facing := global_rotation.y
+	return [
+		{"at": door_out, "yaw": facing},
+		{"at": inside(0.9, -0.6), "yaw": facing},
+		{"at": inside(0.9, 0.6), "yaw": facing},
+	]

@@ -106,3 +106,27 @@ func test_killing_one_leaves_a_body_with_what_it_carried() -> void:
 	await get_tree().process_frame
 	assert_bool(enemy.get_meta(&"dead", false)).is_true()
 	assert_int(get_tree().get_nodes_in_group(&"loot_bodies").size()).is_equal(before + 1)
+
+
+func test_a_guard_holds_its_post_and_watches_its_arc() -> void:
+	_player.global_position = Vector3(80, 0.1, 80)
+	var post := Vector3(4, 0, -6)
+	var guard: PlayerController = _enemies.call(&"server_spawn_guard", post, 0.5)
+	await _frames(60 * 6)
+	assert_float(Vector2(guard.global_position.x - post.x, guard.global_position.z - post.z).length()).is_less(1.6)
+	var brain := guard.get_node("Brain") as EnemyBrain
+	assert_bool(brain.has_post).is_true()
+	assert_float(absf(angle_difference(guard.rotation.y, 0.5))).is_less(deg_to_rad(40.0))
+
+
+func test_a_patrol_walks_its_route() -> void:
+	_player.global_position = Vector3(80, 0.1, 80)
+	var route: Array = [Vector3(0, 0, 0), Vector3(10, 0, 0)]
+	var guard: PlayerController = _enemies.call(&"server_spawn_guard", route[0], 0.0, route)
+	var reached_far := false
+	for i in 60 * 15:
+		await get_tree().physics_frame
+		if guard.global_position.distance_to(route[1]) < 2.0:
+			reached_far = true
+			break
+	assert_bool(reached_far).is_true()

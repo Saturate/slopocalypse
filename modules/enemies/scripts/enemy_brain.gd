@@ -4,7 +4,9 @@ extends Node
 ## fills, so it moves, aims and shoots with the real body and gun. It patrols around its
 ## home, spots players it can see (range, cone, line of sight) or hears shooting, turns to
 ## them, and fires bursts once it has had time to react; its aim tightens the longer it
-## watches. Lost targets are chased to where they were last seen, then forgotten.
+## watches. Lost targets are chased to where they were last seen, then forgotten. A guard
+## (`has_post`) does not wander: it holds its post, slowly scanning either side of
+## `post_yaw`, or walks its `route` round and round, and goes back there after a fight.
 
 enum State { PATROL, FIGHT, CHASE }
 
@@ -18,6 +20,11 @@ const ON_TARGET := 0.12
 var body: PlayerController
 var config: Dictionary = {}
 var home := Vector3.ZERO
+
+## A guard's post and route (see the class comment).
+var has_post := false
+var post_yaw := 0.0
+var route: Array[Vector3] = []
 
 var state := State.PATROL
 var target: Node3D
@@ -33,12 +40,14 @@ var _pause := 0.0
 var _burst_left := 0.0
 var _burst_pause := 0.0
 var _error := Vector2.ZERO
+var _route_index := 0
+var _scan_time := 0.0
 
 
 func _ready() -> void:
 	_rng.randomize()
 	_yaw = body.rotation.y
-	_goal = home
+	_goal = route[0] if not route.is_empty() else home
 	EventBus.subscribe(&"weapon.fired", _on_shot_heard)
 
 
@@ -112,6 +121,9 @@ func _physics_tick(delta: float) -> void:
 
 
 func _patrol(delta: float, intent: PlayerIntent) -> void:
+	if has_post and route.is_empty():
+		_hold_post(delta, intent)
+		return
 	if _pause > 0.0:
 		_pause -= delta
 		intent.move = Vector2.ZERO
@@ -124,6 +136,19 @@ func _patrol(delta: float, intent: PlayerIntent) -> void:
 		intent.move = Vector2.ZERO
 		return
 	_walk_toward(_goal, delta, intent, float(config["walk_speed_share"]))
+
+
+## Back to the post if pushed off it, then stand and look either side of the post's facing.
+func _hold_post(delta: float, intent: PlayerIntent) -> void:
+	var flat := Vector2(home.x - body.global_position.x, home.z - body.global_position.z)
+	if flat.length() > ARRIVED:
+		_walk_toward(home, delta, intent, float(config["walk_speed_share"]))
+		return
+	intent.move = Vector2.ZERO
+	_scan_time += delta
+	var sweep := deg_to_rad(float(config.get("post_scan_degrees", 60.0))) / 2.0
+	var period := maxf(float(config.get("post_scan_seconds", 8.0)), 0.1)
+	_turn_to(post_yaw + sin(_scan_time / period * TAU) * sweep, 0.0, delta)
 
 
 func _walk_toward(at: Vector3, delta: float, intent: PlayerIntent, speed: float) -> void:
@@ -220,6 +245,11 @@ func _eye() -> Vector3:
 
 
 func _patrol_point() -> Vector3:
+	if not route.is_empty():
+		_route_index = (_route_index + 1) % route.size()
+		return route[_route_index]
+	if has_post:
+		return home
 	var r := float(config["patrol_radius"])
 	var a := _rng.randf() * TAU
 	return home + Vector3(cos(a), 0.0, sin(a)) * _rng.randf_range(r * 0.3, r)

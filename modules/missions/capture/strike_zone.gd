@@ -40,7 +40,7 @@ func _physics_process(_delta: float) -> void:
 	_ticks += 1
 	if _ticks == 20:
 		# Into the zone, 25 m short of the crate, facing it.
-		var crate: Vector3 = _missions.get(&"objective_at")
+		var crate: Vector3 = ((_missions.get_node("Type") as MissionType).status as Dictionary).get("drive", Vector3.ZERO)
 		var zone: Vector3 = _missions.get(&"zone")
 		var at := crate + (zone - crate).normalized() * 4.0 + Vector3(0, 0, 25)
 		var ground := get_tree().get_first_node_in_group(&"ground")
