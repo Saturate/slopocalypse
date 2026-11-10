@@ -98,7 +98,7 @@ function publish(p: ReleasePlan, assets: readonly string[]): void {
 	step("git", ["tag", "-a", p.tag, "-m", `Slopocalypse ${p.version}`]);
 	step("git", ["push", "--atomic", "origin", "main", p.tag]);
 	const notes = join(outDir, "notes.md");
-	writeFileSync(notes, releaseNotes(p));
+	writeFileSync(notes, releaseNotes(p, false));
 	step("gh", ["release", "create", p.tag, ...assets, "--title", `Slopocalypse ${p.version}`, "--notes-file", notes]);
 	const user = capture("gh", ["api", "user", "--jq", ".login"]);
 	step("docker", ["login", "ghcr.io", "-u", user, "--password-stdin"], capture("gh", ["auth", "token"]) + "\n");
@@ -113,7 +113,7 @@ async function main(): Promise<void> {
 		return;
 	}
 	if (succeeds("git", ["rev-parse", "--verify", "--quiet", `refs/tags/${p.tag}`])) throw new Error(`tag ${p.tag} already exists`);
-	console.log(`\nReleasing ${p.tag}${dryRun ? " (dry run: nothing is published)" : ""}\n\n${releaseNotes(p)}`);
+	console.log(`\nReleasing ${p.tag}${dryRun ? " (dry run: nothing is published)" : ""}\n\n${releaseNotes(p, false)}`);
 
 	let assets: string[];
 	try {

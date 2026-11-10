@@ -29,7 +29,10 @@ export function extract(zip: string, dest: string): void {
 // Entries are listed by name (no shell globbing), so the zip has no "./" prefixes.
 export function zipFolder(folder: string, zip: string): void {
 	const entries = readdirSync(folder);
-	if (platform === "linux") {
+	if (platform === "darwin") {
+		// ditto keeps an app bundle's symlinks and permissions, which a plain zip can lose.
+		execFileSync("ditto", ["-c", "-k", "--sequesterRsrc", folder, zip], { stdio: "inherit" });
+	} else if (platform === "linux") {
 		execFileSync("zip", ["-r", "-q", zip, ...entries], { cwd: folder, stdio: "inherit" });
 	} else {
 		const tar = platform === "win32" ? join(process.env["SystemRoot"] ?? "C:\\Windows", "System32", "tar.exe") : "tar";

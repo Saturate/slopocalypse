@@ -1,5 +1,6 @@
 // Builds a portable game folder and zip a player can unpack and double-click.
-//   node tools/export.ts [--os windows|linux] [--connect HOST[:PORT][,HOST...]] [--port 7777]
+//   node tools/export.ts [--os windows|linux|macos] [--connect HOST[:PORT][,HOST...]] [--port 7777]
+// macOS exports only on a Mac (the .app bundle is put together and signed there).
 // --connect ships those addresses in servers.json, so the menu already lists them and a
 // friend just clicks. Output: build/<os>/ and build/slopocalypse-<os>.zip.
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -8,7 +9,7 @@ import { dirname, join, resolve } from "node:path";
 import { argv, exit, platform } from "node:process";
 import { expectedSha512, verifySha512 } from "./lib/checksum.ts";
 import { download, extract, zipFolder } from "./lib/download.ts";
-import { dataFiles, exeName, hostScript, shippedServers, TWEAKS_README, presetFor, presetsFile, templatesDir, type TargetOs } from "./lib/export.ts";
+import { dataFiles, exeName, hostScript, runnable, shippedServers, TWEAKS_README, presetFor, presetsFile, templatesDir, type TargetOs } from "./lib/export.ts";
 import { GODOT_NOISE, godotImport } from "./lib/gate.ts";
 import { GODOT_DIR, GODOT_VERSION, localGodot, RELEASE_URL } from "./lib/godot.ts";
 import { scanLog } from "./lib/log-scan.ts";
@@ -70,13 +71,14 @@ const README = (host: string | undefined, port: number, os: TargetOs): string =>
 		"Tuning: copy a file from the defaults folder into tweaks (same path) and edit it; see tweaks/README.txt.",
 		"",
 		os === "windows" ? 'Windows may say "Windows protected your PC" because the game is not signed: click "More info", then "Run anyway".' : "",
+		os === "macos" ? 'macOS may say the app "cannot be opened" because it is not notarised: right-click Slopocalypse, choose Open, then Open again (once). Or run: xattr -cr Slopocalypse.app' : "",
 	];
 	return lines.join(os === "windows" ? "\r\n" : "\n");
 };
 
 async function main(): Promise<void> {
 	const os = parseOs(arg("os"));
-	if (os === "macos") throw new Error("macOS exports need signing and notarisation; not set up yet");
+	if (os === "macos" && hostOs() !== "macos") throw new Error("macOS exports need a Mac (the release workflow builds it on a macOS runner)");
 	const connect = arg("connect");
 	const port = Number(arg("port") ?? "7777");
 	const godot = localGodot(root);
@@ -132,7 +134,7 @@ async function main(): Promise<void> {
 // The exported game, not the project: solo must start its own server from the exported
 // executable and the bot must move and shoot through it.
 async function smokeTest(outDir: string, os: TargetOs): Promise<void> {
-	const exe = join(outDir, os === "windows" ? "Slopocalypse.console.exe" : exeName(os));
+	const exe = join(outDir, runnable(os));
 	const r = await run(exe, ["--headless", "--", "--net-report-after=600", "--bot=walk", "--no-save"], { cwd: outDir, timeoutMs: 120_000 });
 	const rep = parseReport(r.output);
 	const problems = scanLog(r.output, GODOT_NOISE);

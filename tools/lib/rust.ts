@@ -55,9 +55,32 @@ export interface BuildResult {
 	detail: string;
 }
 
+// A Mac release export is universal, so its libraries must be too: both architectures
+// built, then joined with lipo.
+const MAC_TARGETS = ["aarch64-apple-darwin", "x86_64-apple-darwin"];
+
+async function buildMacUniversal(root: string, crates: BindingCrate[]): Promise<BuildResult> {
+	const add = await run("rustup", ["target", "add", ...MAC_TARGETS], { cwd: root, timeoutMs: 600_000 });
+	if (add.code !== 0) return { ok: false, detail: add.output.trim() };
+	for (const target of MAC_TARGETS) {
+		const r = await run("cargo", ["build", ...crates.flatMap((c) => ["-p", c.name]), "--release", "--target", target], { cwd: root, timeoutMs: 1_800_000 });
+		if (r.code !== 0) return { ok: false, detail: r.output.trim().split(/\r?\n/).slice(-30).join("\n") };
+	}
+	for (const c of crates) {
+		const file = libraryFile(c.name, "darwin");
+		const dest = binDir(c.moduleDir, "darwin", "release");
+		mkdirSync(dest, { recursive: true });
+		const parts = MAC_TARGETS.map((t) => join(root, "target", t, "release", file));
+		const r = await run("lipo", ["-create", ...parts, "-output", join(dest, file)], { cwd: root, timeoutMs: 60_000 });
+		if (r.code !== 0) return { ok: false, detail: r.output.trim() };
+	}
+	return { ok: true, detail: `built ${crates.map((c) => c.name).join(", ")} (release, universal)` };
+}
+
 export async function buildRust(root: string, release: boolean): Promise<BuildResult> {
 	const crates = findBindingCrates(root);
 	if (crates.length === 0) return { ok: true, detail: "no binding crates" };
+	if (release && platform === "darwin") return buildMacUniversal(root, crates);
 	const profile = release ? "release" : "debug";
 	const args = ["build", ...crates.flatMap((c) => ["-p", c.name]), ...(release ? ["--release"] : [])];
 	const r = await run("cargo", args, { cwd: root, timeoutMs: 1_800_000 });

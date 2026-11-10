@@ -71,7 +71,7 @@ export function parseReleasePlan(output: string, readChangeset: (id: string) => 
 	return undefined;
 }
 
-export function assetName(version: string, os: "windows" | "linux"): string {
+export function assetName(version: string, os: "windows" | "linux" | "macos"): string {
 	return `slopocalypse-${version}-${os}.zip`;
 }
 
@@ -92,7 +92,9 @@ const SECTIONS: readonly [Bump, string][] = [
 ];
 
 // Grouped by kind of change when the changesets were readable, one list otherwise.
-export function releaseNotes(plan: ReleasePlan): string {
+// `mac`: whether this release ships a macOS zip (the workflow builds one; the local fallback
+// on Windows cannot).
+export function releaseNotes(plan: ReleasePlan, mac = true): string {
 	const out: string[] = [];
 	if (plan.entries.length > 0) {
 		for (const [bump, title] of SECTIONS) {
@@ -109,6 +111,7 @@ export function releaseNotes(plan: ReleasePlan): string {
 		"",
 		`- Windows: download \`${assetName(plan.version, "windows")}\`, unzip, run \`Slopocalypse.exe\`.`,
 		`- Linux: download \`${assetName(plan.version, "linux")}\`, unzip, run \`Slopocalypse.x86_64\`.`,
+		...(mac ? [`- macOS (Apple silicon and Intel): download \`${assetName(plan.version, "macos")}\`, unzip, right-click \`Slopocalypse.app\` > Open the first time (it is not notarised).`] : []),
 		`- Server: \`docker run -d -p 7777:7777/udp -v slopocalypse-data:/data ${IMAGE}:${plan.version}\``,
 		"",
 	);

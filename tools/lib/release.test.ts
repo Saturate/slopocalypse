@@ -94,3 +94,9 @@ test("without readable changesets the notes list the changelog, and say how to g
 	assert.match(notes, /slopocalypse-0\.1\.0-windows\.zip/);
 	assert.match(notes, /slopocalypse-server:0\.1\.0/);
 });
+
+test("the notes list the macOS zip only when the release ships one", () => {
+	const plan = { version: "0.4.0", tag: "v0.4.0", changelog: "", entries: [{ bump: "minor" as const, text: "Macs." }], internal: [] };
+	assert.match(releaseNotes(plan), /slopocalypse-0\.4\.0-macos\.zip/);
+	assert.doesNotMatch(releaseNotes(plan, false), /macos/);
+});
