@@ -10,6 +10,10 @@ extends StaticBody3D
 ## wear segments down on the server; a broken one loses its collision and is carved out of
 ## the model with a burst of debris, leaving a hole you can walk or shoot through. The entry's
 ## `broken` list carries which are gone, so late joiners see the same holes.
+##
+## Its material decides what bullets do: wood takes a small hole where each one hits and
+## enough of them break a piece out; concrete only chips (no hole, next to no damage) and
+## needs a blast, a breaching charge or a heavy enough round. Blasts hurt concrete less too.
 
 const DOOR_WIDTH := 1.0
 const DOOR_HEIGHT := 2.0
@@ -20,6 +24,8 @@ const WALL := 0.2
 const VOXEL := 0.15
 const DEBRIS_COUNT := 24
 const DEBRIS_SPEED := 4.5
+## Bullet holes rebuild the mesh at most this often, seconds.
+const REMESH_EVERY := 0.2
 
 ## The layout entry: `{position, yaw, width, depth, wall_height, windows, paint, seed,
 ## broken}`.
@@ -27,6 +33,9 @@ var spec: Dictionary = {}
 ## Segment size and health from the missions config (`buildings`).
 var segment_size := 1.2
 var segment_hp := 100.0
+## What its material takes: `{bullet, blast, min_bullet_damage, hole}` (from the missions
+## config's `materials`).
+var material_cfg: Dictionary = {}
 
 var _visual := DisplayServer.get_name() != "headless"
 var _model: VoxelModel
@@ -35,6 +44,8 @@ var _shapes: Dictionary[int, CollisionShape3D] = {}
 ## Server: segment id -> health left.
 var _hp: Dictionary[int, float] = {}
 var _segments: Array[AABB] = []
+## Client: the mesh needs rebuilding after bullet holes (done at most a few times a second).
+var _remesh_in := -1.0
 
 
 func _ready() -> void:
@@ -53,6 +64,7 @@ func _ready() -> void:
 			"seed": int(spec.get("seed", 1)), "paint": int(spec.get("paint", 1)), "width": w,
 			"depth": d, "wall_height": wh, "pitch": float(spec.get("pitch", 0.45)), "door": 1,
 			"windows": float(spec.get("windows", 2)), "voxel": VOXEL,
+			"material": 1 if material() == "concrete" else 0,
 		})
 		_mesh = MeshInstance3D.new()
 		_mesh.name = "Mesh"
@@ -110,6 +122,10 @@ static func _cuts(from: float, to: float, size: float) -> Array[Vector2]:
 	return out
 
 
+func material() -> String:
+	return str(spec.get("material", "wood"))
+
+
 func segment_count() -> int:
 	return _segments.size()
 
@@ -131,10 +147,64 @@ func server_blast(centre: Vector3, radius: float, damage: float, reach: float) -
 		var dist := nearest.distance_to(local)
 		if dist >= far:
 			continue
-		_hp[id] = float(_hp.get(id, segment_hp)) - damage * (1.0 - dist / far)
+		_hp[id] = float(_hp.get(id, segment_hp)) - damage * float(material_cfg.get("blast", 1.0)) * (1.0 - dist / far)
 		if _hp[id] <= 0.0:
 			broke.append(id)
 	return broke
+
+
+## The segment a point on the building (world) is on, or -1.
+func segment_at(point: Vector3) -> int:
+	var local := global_transform.affine_inverse() * point
+	var best := -1
+	var best_d := 0.35
+	for id: int in _shapes.keys():
+		var box := _segments[id]
+		var nearest := Vector3(clampf(local.x, box.position.x, box.end.x), clampf(local.y, box.position.y, box.end.y), clampf(local.z, box.position.z, box.end.z))
+		var dist := nearest.distance_to(local)
+		if dist < best_d:
+			best = id
+			best_d = dist
+	return best
+
+
+## Server: a bullet hit it at `point` with `damage`. Wood takes it (times its `bullet`
+## factor); concrete ignores rounds lighter than `min_bullet_damage`. Returns the segment it
+## broke, or -1.
+func server_shot(point: Vector3, damage: float) -> int:
+	if damage < float(material_cfg.get("min_bullet_damage", 0.0)):
+		return -1
+	var id := segment_at(point)
+	if id < 0:
+		return -1
+	_hp[id] = float(_hp.get(id, segment_hp)) - damage * float(material_cfg.get("bullet", 1.0))
+	return id if _hp[id] <= 0.0 else -1
+
+
+## Client: where a bullet hit, a hole in wood (and a puff of splinters) or a chip of concrete
+## dust; the mesh catches up a moment later.
+func bullet_mark(point: Vector3) -> void:
+	if not _visual or _model == null:
+		return
+	var hole := float(material_cfg.get("hole", 0.0))
+	var colour := Color(0.55, 0.55, 0.52) if material() == "concrete" else Color(0.55, 0.42, 0.3)
+	if is_inside_tree():
+		VoxelDebris.burst(get_parent(), point, (point - global_position).normalized(), colour, 5, 2.5)
+	if hole <= 0.0:
+		return
+	var local := global_transform.affine_inverse() * point
+	_model.carve_ellipsoid(local, Vector3.ONE * hole)
+	if _remesh_in < 0.0:
+		_remesh_in = REMESH_EVERY
+
+
+func _process(delta: float) -> void:
+	if _remesh_in < 0.0:
+		return
+	_remesh_in -= delta
+	if _remesh_in <= 0.0:
+		_remesh_in = -1.0
+		_mesh.mesh = VoxGenerator.to_mesh(_model)
 
 
 ## Everywhere: takes the segments away (collision, and on clients the voxels with debris).

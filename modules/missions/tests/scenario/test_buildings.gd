@@ -163,3 +163,46 @@ func test_a_faraway_blast_leaves_it_whole() -> void:
 	await get_tree().physics_frame
 	for i in b.segment_count():
 		assert_bool(b.is_broken(i)).is_false()
+
+
+## A building of `material`, on its own, for the bullet tests.
+func _building(material: String) -> MissionBuilding:
+	var entry: Dictionary = MissionLayout.buildings(_cfg(), 3, _road, 300.0)[0]
+	entry["material"] = material
+	entry["position"] = Vector3(0, 0, -40)
+	var b: MissionBuilding = auto_free(MissionBuilding.new())
+	b.spec = entry
+	b.material_cfg = (_cfg()["materials"] as Dictionary)[material]
+	add_child(b)
+	b.global_position = entry["position"]
+	return b
+
+
+func test_rifle_rounds_break_a_wooden_wall_piece() -> void:
+	var b := _building("wood")
+	var w := float(b.spec["width"])
+	var point := b.global_transform * Vector3(w / 2.0, 0.6, 0.0)
+	var id := b.segment_at(point)
+	assert_int(id).is_greater_equal(0)
+	var broke := -1
+	for i in 10:
+		broke = b.server_shot(point, 25.0)
+		if broke >= 0:
+			break
+	assert_int(broke).is_equal(id)
+
+
+func test_rifle_rounds_only_chip_concrete_but_a_blast_still_breaks_it() -> void:
+	var b := _building("concrete")
+	var w := float(b.spec["width"])
+	var point := b.global_transform * Vector3(w / 2.0, 0.6, 0.0)
+	for i in 40:
+		assert_int(b.server_shot(point, 25.0)).is_equal(-1)
+	assert_int(b.server_blast(point + b.global_transform.basis.x * 0.3, 3.0, 140.0, 1.6).size()).is_greater(0)
+
+
+func test_a_mission_can_ask_for_concrete() -> void:
+	var cfg := _cfg().duplicate()
+	cfg["material"] = "concrete"
+	for entry: Dictionary in MissionLayout.buildings(cfg, 9, _road, 300.0):
+		assert_str(str(entry["material"])).is_equal("concrete")

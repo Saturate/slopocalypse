@@ -220,6 +220,8 @@ func test_under_fire_a_soldier_gets_behind_cover() -> void:
 	await get_tree().physics_frame
 	var enemy := await _enemy_at(Vector3(0, 0, 0))
 	var brain := _brain(enemy)
+	# Its patrol steps, aim jitter and peek timing are random; the same every run here.
+	(brain.get(&"_rng") as RandomNumberGenerator).seed = 7
 	# Give it time to pick a spot and get there (a busy machine runs fewer ticks a second).
 	for i in 60 * 8:
 		await get_tree().physics_frame
