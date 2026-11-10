@@ -65,3 +65,5 @@ The code is under the [GNU Affero General Public License v3.0 or later](LICENSE)
 Third-party assets and libraries keep their own licences, listed in [assets/LICENSES.md](assets/LICENSES.md).
 
 The name Slopocalypse and its logo are not covered by the code licence. Forks are welcome but need their own name; see [TRADEMARKS.md](TRADEMARKS.md).
+
+Privacy and terms of use: [PRIVACY.md](PRIVACY.md), [TERMS.md](TERMS.md).
