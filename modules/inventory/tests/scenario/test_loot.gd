@@ -58,8 +58,8 @@ func test_loot_behind_you_or_far_away_stays() -> void:
 
 func test_dropping_puts_the_item_on_the_ground() -> void:
 	_spawn(43)
-	var grid: InventoryGrid = _module.call(&"grid_of", 43)
-	var first: Dictionary = grid.items()[0]
+	var gear: InventoryGear = _module.call(&"grid_of", 43)
+	var first: Dictionary = gear.all_items().filter(func(i: Dictionary) -> bool: return i.has("grid"))[0]
 	var before: int = _module.call(&"count", 43, str(first["item"]))
 	assert_bool(_module.call(&"server_drop", 43, int(first["uid"]))).is_true()
 	await get_tree().process_frame

@@ -5,6 +5,8 @@
 #![allow(unsafe_code)]
 
 use godot::prelude::*;
+mod gear;
+
 use inventory_core::{Grid, Placed, Size, Sizes};
 
 struct InventoryExtension;
@@ -200,11 +202,11 @@ impl InventoryGrid {
 }
 
 /// Grid coordinates are small; anything outside u8 lands out of bounds instead of wrapping.
-fn cell(v: i64) -> u8 {
+pub(crate) fn cell(v: i64) -> u8 {
     u8::try_from(v.clamp(0, i64::from(u8::MAX))).unwrap_or(u8::MAX)
 }
 
-fn uid_of(v: i64) -> u32 {
+pub(crate) fn uid_of(v: i64) -> u32 {
     u32::try_from(v).unwrap_or(u32::MAX)
 }
 

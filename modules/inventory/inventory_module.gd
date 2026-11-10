@@ -1,6 +1,6 @@
 extends Node
-## Each player's inventory: a grid of items whose rules run in Rust
-## (`InventoryGrid`). The server holds every inventory and decides every change; each
+## Each player's gear: equipment slots (rig, backpack) and grids (pockets, plus the grids a
+## worn rig and backpack open), whose rules run in Rust (`InventoryGear`). The server holds every inventory and decides every change; each
 ## owner gets a copy of theirs after a change, which the Tab screen shows and previews drags
 ## against. Crates and the bodies of the dead are containers with a grid of their own:
 ## searching one opens the loot screen (yours and theirs side by side), and every move
@@ -27,16 +27,16 @@ const BODY_AIM := 0.15
 const PILE_RADIUS := 0.45
 
 var _data: Dictionary = {}
-## Item id -> [w, h], for the grids.
-var _sizes: Dictionary = {}
-## Server: peer id -> InventoryGrid.
+## Item id -> {size, kind, grid}, for the gear rules.
+var _defs: Dictionary = {}
+## Server: peer id -> InventoryGear.
 var _grids: Dictionary = {}
 var _next_uid := 1
 var _loot_spawner := MultiplayerSpawner.new()
 var _loot_count := 0
 var _crate_spawner := MultiplayerSpawner.new()
 var _body_spawner := MultiplayerSpawner.new()
-## Server: container id -> InventoryGrid for every crate and body, and id -> its node.
+## Server: container id -> InventoryGear for every crate and body, and id -> its node.
 var _containers: Dictionary = {}
 var _container_nodes: Dictionary = {}
 var _next_container := 1
@@ -50,10 +50,10 @@ var _crates: Array[LootCrate] = []
 ## Server: player -> {per_second, left} while a medkit works.
 var _healing: Dictionary = {}
 ## This instance's copy of its own player's inventory (on the server, the same grid).
-var _mine: InventoryGrid
+var _mine: InventoryGear
 ## This instance's copy of the container its player has open (on the server, the same
 ## grid), or null, and its title for the screen.
-var _theirs: InventoryGrid
+var _theirs: InventoryGear
 var _theirs_title := ""
 
 
@@ -64,7 +64,10 @@ func _ready() -> void:
 	_data = parsed if parsed is Dictionary else {}
 	var items: Dictionary = _data.get("items", {})
 	for id: String in items:
-		_sizes[id] = (items[id] as Dictionary).get("size", [1, 1])
+		var def: Dictionary = items[id]
+		_defs[id] = {"size": def.get("size", [1, 1]), "kind": def.get("kind", ""), "grid": def.get("grid", null)}
+		if def.get("grid", null) == null:
+			(_defs[id] as Dictionary).erase("grid")
 	_mine = _new_grid()
 	# Loot on the ground is created by the server and replicated, like the car.
 	_loot_spawner.name = "LootSpawner"
@@ -109,9 +112,9 @@ func item_info(item: String) -> Dictionary:
 	return (_data.get("items", {}) as Dictionary).get(item, {})
 
 
-func grid_size() -> Vector2i:
-	var size: Array = _data.get("grid", [10, 6])
-	return Vector2i(int(size[0]), int(size[1]))
+## Read-only gun slots for the gear screen, `{slot: label}` (guns are not items yet).
+func weapon_labels() -> Dictionary:
+	return (_data.get("gear", {}) as Dictionary).get("weapons", {})
 
 
 func kind_colour(kind: String) -> Color:
@@ -119,65 +122,65 @@ func kind_colour(kind: String) -> Color:
 	return Color(float(c[0]), float(c[1]), float(c[2]))
 
 
-## The grid for `peer`: the server's own on the server, this player's copy on a client.
-func grid_of(peer: int) -> InventoryGrid:
+## The gear of `peer`: the server's own on the server, this player's copy on a client.
+func grid_of(peer: int) -> InventoryGear:
 	if multiplayer.is_server():
 		return _grids.get(peer)
 	return _mine if peer == multiplayer.get_unique_id() else null
 
 
 func count(peer: int, item: String) -> int:
-	var grid := grid_of(peer)
-	return grid.count(item) if grid != null else 0
+	var gear := grid_of(peer)
+	return gear.count(item) if gear != null else 0
 
 
-## Server: puts one `item` into `peer`'s inventory if there is room.
+## Server: puts one `item` into `peer`'s gear if there is room (an empty slot of its kind
+## first, then the rig, pockets and backpack).
 func server_give(peer: int, item: String) -> bool:
-	var grid: InventoryGrid = _grids.get(peer)
-	if grid == null or item_info(item).is_empty():
+	var gear: InventoryGear = _grids.get(peer)
+	if gear == null or item_info(item).is_empty():
 		return false
-	var result := grid.insert(_next_uid, item)
-	if not result["ok"]:
+	if not gear.insert(_next_uid, item)["ok"]:
 		return false
 	_next_uid += 1
 	_send(peer)
 	return true
 
 
-## Server: takes one `item` out of `peer`'s inventory if they have one.
+## Server: takes one `item` out of `peer`'s gear if they have one.
 func server_take(peer: int, item: String) -> bool:
-	var grid: InventoryGrid = _grids.get(peer)
-	if grid == null:
+	var gear: InventoryGear = _grids.get(peer)
+	if gear == null:
 		return false
-	for placed: Dictionary in grid.items():
-		if placed["item"] == item:
-			grid.remove(int(placed["uid"]))
+	for placed: Dictionary in gear.all_items():
+		if placed["item"] == item and gear.remove(int(placed["uid"])).is_empty():
 			_send(peer)
 			return true
 	return false
 
 
-## Client: asks to move an item in this player's inventory.
-func request_move(uid: int, x: int, y: int, rotated: bool) -> void:
+## Client: asks to move an item within this player's gear to `place` (`{slot: name}` or
+## `{grid: name, x, y, rotated}`).
+func request_move(uid: int, place: Dictionary) -> void:
 	if multiplayer.is_server():
-		server_move(multiplayer.get_unique_id(), uid, x, y, rotated)
+		server_move(multiplayer.get_unique_id(), uid, place)
 	else:
-		_request_move.rpc_id(1, uid, x, y, rotated)
+		_request_move.rpc_id(1, uid, place)
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func _request_move(uid: int, x: int, y: int, rotated: bool) -> void:
+func _request_move(uid: int, place: Dictionary) -> void:
 	if multiplayer.is_server():
-		server_move(multiplayer.get_remote_sender_id(), uid, x, y, rotated)
+		server_move(multiplayer.get_remote_sender_id(), uid, place)
 
 
-## Server: moves an item if the grid rules allow it. The owner gets the result either way,
+## Server: moves an item if the gear rules allow it. The owner gets the result either way,
 ## so a refused drag snaps back.
-func server_move(peer: int, uid: int, x: int, y: int, rotated: bool) -> bool:
-	var grid: InventoryGrid = _grids.get(peer)
-	if grid == null:
+func server_move(peer: int, uid: int, place: Dictionary) -> bool:
+	var gear: InventoryGear = _grids.get(peer)
+	if gear == null:
 		return false
-	var why := grid.move_item(uid, x, y, rotated)
+	var why := gear.move_item(uid, place)
 	if not why.is_empty():
 		Log.info(&"inventory", "peer %d: move refused: %s" % [peer, why])
 	_send(peer)
@@ -190,12 +193,11 @@ func _on_player_spawned(p: Dictionary) -> void:
 	if multiplayer.is_server() and not _grids.has(peer):
 		var grid := _new_grid() if peer != multiplayer.get_unique_id() else _mine
 		_grids[peer] = grid
-		# Players start with a kit; enemies carry a few random things worth killing them for.
+		# Players start with a rig, a pack and a kit; enemies wear their gear and carry a few
+		# random things worth killing them for.
 		var npc: bool = p.get("npc", false)
-		for item: String in (_roll_loot() if npc else Array(_data.get("starting_kit", []))):
-			var result := grid.insert(_next_uid, item)
-			if result["ok"]:
-				_next_uid += 1
+		_wear(grid, _data.get("npc_gear" if npc else "starting_gear", {}))
+		_fill(grid, _roll_loot() if npc else Array(_data.get("starting_kit", [])))
 		if not npc:
 			_send(peer)
 	if DisplayServer.get_name() != "headless" and p.get("local", false):
@@ -337,19 +339,23 @@ func _request_drop(uid: int, from_theirs: bool) -> void:
 ## Server: takes the item out of `peer`'s inventory (or what they have open) and lays it on
 ## the ground in front of their player.
 func server_drop(peer: int, uid: int, from_theirs: bool = false) -> bool:
-	var grid: InventoryGrid = _session(peer) if from_theirs else _grids.get(peer)
+	var grid: InventoryGear = _session(peer) if from_theirs else _grids.get(peer)
 	var player := _player_of(peer)
 	if grid == null or player == null:
 		if from_theirs:
 			_after_move(peer, uid, "nothing open in reach", true)
 		return false
 	var item := ""
-	for placed: Dictionary in grid.items():
+	for placed: Dictionary in grid.all_items():
 		if int(placed["uid"]) == uid:
 			item = str(placed["item"])
-	if item.is_empty() or not grid.remove(uid):
+	var why := "no item %d there" % uid if item.is_empty() else grid.remove(uid)
+	if not why.is_empty():
 		if from_theirs:
-			_after_move(peer, uid, "no item %d there" % uid, true)
+			_after_move(peer, uid, why, true)
+		else:
+			Log.info(&"inventory", "peer %d: drop refused: %s" % [peer, why])
+			_send(peer)
 		return false
 	var front := player.global_position - player.global_transform.basis.z * DROP_DISTANCE
 	server_spawn_loot(item, _on_ground(front))
@@ -411,11 +417,12 @@ func _on_player_died(p: Dictionary) -> void:
 	if player == null:
 		return
 	var peer := int(player.get_meta(&"peer_id", 1))
-	var grid: InventoryGrid = _grids.get(peer)
+	var grid: InventoryGear = _grids.get(peer)
 	if grid == null:
 		return
 	server_close(peer)
 	var fresh := _new_grid()
+	_wear(fresh, _data.get("respawn_gear", {}))
 	if grid == _mine:
 		_mine = fresh
 	_grids[peer] = fresh
@@ -438,7 +445,7 @@ func crate_contents(crate: Node3D) -> Array:
 	var grid := _grid_of_container(crate)
 	var out := []
 	if grid != null:
-		for placed: Dictionary in grid.items():
+		for placed: Dictionary in grid.all_items():
 			out.append(str(placed["item"]))
 	return out
 
@@ -464,7 +471,7 @@ func _make_crate(data: Variant) -> Node:
 
 ## Server: lays a body on the ground holding `grid`; it goes away after a while, sooner once
 ## it is empty.
-func server_spawn_body(at: Vector3, yaw: float, grid: InventoryGrid) -> LootBody:
+func server_spawn_body(at: Vector3, yaw: float, grid: InventoryGear) -> LootBody:
 	_loot_count += 1
 	var body: LootBody = _body_spawner.spawn({"index": _loot_count, "position": at, "yaw": yaw})
 	var id := _new_container(body, grid)
@@ -491,13 +498,13 @@ func _on_container_state(p: Dictionary) -> void:
 
 
 ## The grid of a crate or body, or null (on the server; clients only see an open one).
-func _grid_of_container(node: Node) -> InventoryGrid:
+func _grid_of_container(node: Node) -> InventoryGear:
 	if node == null:
 		return null
 	return _containers.get(int(node.get_meta(&"container", -1)))
 
 
-func _new_container(node: Node, grid: InventoryGrid) -> int:
+func _new_container(node: Node, grid: InventoryGear) -> int:
 	var id := _next_container
 	_next_container += 1
 	node.set_meta(&"container", id)
@@ -506,9 +513,16 @@ func _new_container(node: Node, grid: InventoryGrid) -> int:
 	return id
 
 
-func _fill(grid: InventoryGrid, items: Array) -> void:
+func _fill(grid: InventoryGear, items: Array) -> void:
 	for item: Variant in items:
 		if grid.insert(_next_uid, str(item))["ok"]:
+			_next_uid += 1
+
+
+## Puts gear on: `{slot: item id}`.
+func _wear(gear: InventoryGear, worn: Dictionary) -> void:
+	for slot: String in worn:
+		if gear.place(_next_uid, str(worn[slot]), {"slot": slot}).is_empty():
 			_next_uid += 1
 
 
@@ -516,11 +530,11 @@ func _fill(grid: InventoryGrid, items: Array) -> void:
 ## stops a crate's refill, hurries an emptied body along, and sends the new contents to
 ## everyone looking into it.
 func _container_changed(id: int) -> void:
-	var grid: InventoryGrid = _containers.get(id)
+	var grid: InventoryGear = _containers.get(id)
 	var node: Node = _container_nodes.get(id)
 	if grid == null or not is_instance_valid(node):
 		return
-	var empty := grid.items().is_empty()
+	var empty := grid.is_empty()
 	if empty != bool(node.get_meta(&"empty", false)):
 		Net.server_broadcast(&"inventory.container_state", {"node": node, "empty": empty})
 	if node is LootCrate:
@@ -555,10 +569,9 @@ func _bodies_data() -> Dictionary:
 	return _data.get("bodies", {})
 
 
-func _crate_grid() -> InventoryGrid:
-	var size: Array = _crates_data().get("grid", [6, 4])
-	var grid := InventoryGrid.new()
-	grid.setup(int(size[0]), int(size[1]), _sizes)
+func _crate_grid() -> InventoryGear:
+	var grid := InventoryGear.new()
+	grid.setup(_defs, {"slots": {}, "fixed": {"crate": _crates_data().get("grid", [6, 4])}, "fill_order": ["crate"]})
 	return grid
 
 
@@ -589,9 +602,9 @@ func server_close(peer: int) -> void:
 
 ## Server: the grid `peer` has open, if they may still use it: it exists, they are alive and
 ## within reach of it. Null otherwise.
-func _session(peer: int) -> InventoryGrid:
+func _session(peer: int) -> InventoryGear:
 	var id := int(_viewers.get(peer, -1))
-	var grid: InventoryGrid = _containers.get(id)
+	var grid: InventoryGear = _containers.get(id)
 	var node := _container_nodes.get(id) as Node3D
 	var player := _player_of(peer)
 	if grid == null or not is_instance_valid(node) or player == null or player.get_meta(&"dead", false):
@@ -603,24 +616,23 @@ func _session(peer: int) -> InventoryGrid:
 
 func _send_container(peer: int, opening: bool) -> void:
 	var id := int(_viewers.get(peer, -1))
-	var grid: InventoryGrid = _containers.get(id)
+	var grid: InventoryGear = _containers.get(id)
 	if grid == null:
 		return
-	var title := "BODY" if _container_nodes.get(id) is LootBody else "CRATE"
+	var body := _container_nodes.get(id) is LootBody
+	var title := "BODY" if body else "CRATE"
 	if peer == multiplayer.get_unique_id():
 		_theirs = grid
 		_theirs_title = title
 		EventBus.publish(&"inventory.loot_changed", {"peer": peer, "opened": opening})
 	elif multiplayer.get_peers().has(peer):
-		_receive_container.rpc_id(peer, grid.width(), grid.height(), grid.items(), title, opening)
+		_receive_container.rpc_id(peer, body, grid.snapshot(), title, opening)
 
 
 @rpc("authority", "call_remote", "reliable")
-func _receive_container(w: int, h: int, items: Array, title: String, opening: bool) -> void:
-	var grid := InventoryGrid.new()
-	grid.setup(w, h, _sizes)
-	for placed: Dictionary in items:
-		grid.place(int(placed["uid"]), str(placed["item"]), int(placed["x"]), int(placed["y"]), bool(placed["rotated"]))
+func _receive_container(body: bool, snapshot: Dictionary, title: String, opening: bool) -> void:
+	var grid := _new_grid() if body else _crate_grid()
+	_apply_snapshot(grid, snapshot)
 	_theirs = grid
 	_theirs_title = title
 	EventBus.publish(&"inventory.loot_changed", {"peer": multiplayer.get_unique_id(), "opened": opening})
@@ -634,7 +646,7 @@ func _loot_closed() -> void:
 
 
 ## The open body or crate's grid as this instance sees it, or null when none is open.
-func loot_grid() -> InventoryGrid:
+func loot_grid() -> InventoryGear:
 	return _theirs
 
 
@@ -658,17 +670,17 @@ func _request_close_loot() -> void:
 
 ## Client: moves an item between this player's gear (`false`) and the open body or crate
 ## (`true`), to (x, y), maybe turned.
-func request_transfer(from_theirs: bool, uid: int, to_theirs: bool, x: int, y: int, rotated: bool) -> void:
+func request_transfer(from_theirs: bool, uid: int, to_theirs: bool, place: Dictionary) -> void:
 	if multiplayer.is_server():
-		server_transfer(multiplayer.get_unique_id(), from_theirs, uid, to_theirs, x, y, rotated)
+		server_transfer(multiplayer.get_unique_id(), from_theirs, uid, to_theirs, place)
 	else:
-		_request_transfer.rpc_id(1, from_theirs, uid, to_theirs, x, y, rotated)
+		_request_transfer.rpc_id(1, from_theirs, uid, to_theirs, place)
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func _request_transfer(from_theirs: bool, uid: int, to_theirs: bool, x: int, y: int, rotated: bool) -> void:
+func _request_transfer(from_theirs: bool, uid: int, to_theirs: bool, place: Dictionary) -> void:
 	if multiplayer.is_server():
-		server_transfer(multiplayer.get_remote_sender_id(), from_theirs, uid, to_theirs, x, y, rotated)
+		server_transfer(multiplayer.get_remote_sender_id(), from_theirs, uid, to_theirs, place)
 
 
 ## Client: moves an item to the other side, into the first place it fits (Ctrl+click).
@@ -702,8 +714,8 @@ func _request_take_all() -> void:
 ## Server: one move between `peer`'s gear and what they have open (or within either). The
 ## first request for an item wins; a later one finds it gone and is refused. Everyone looking
 ## into the container sees the result, and a refused drag snaps back.
-func server_transfer(peer: int, from_theirs: bool, uid: int, to_theirs: bool, x: int, y: int, rotated: bool) -> bool:
-	var mine: InventoryGrid = _grids.get(peer)
+func server_transfer(peer: int, from_theirs: bool, uid: int, to_theirs: bool, place: Dictionary) -> bool:
+	var mine: InventoryGear = _grids.get(peer)
 	var theirs := _session(peer) if from_theirs or to_theirs else null
 	var why := ""
 	if mine == null:
@@ -713,13 +725,13 @@ func server_transfer(peer: int, from_theirs: bool, uid: int, to_theirs: bool, x:
 	else:
 		var from := theirs if from_theirs else mine
 		var to := theirs if to_theirs else mine
-		why = from.transfer(uid, to, x, y, rotated)
+		why = from.transfer(uid, to, place)
 	return _after_move(peer, uid, why, from_theirs or to_theirs)
 
 
 ## Server: moves an item to the other side into the first place it fits.
 func server_quick_move(peer: int, from_theirs: bool, uid: int) -> bool:
-	var mine: InventoryGrid = _grids.get(peer)
+	var mine: InventoryGear = _grids.get(peer)
 	var theirs := _session(peer)
 	var why := ""
 	if mine == null or theirs == null:
@@ -744,12 +756,12 @@ func server_take_all(peer: int) -> int:
 
 
 func _take_all(peer: int, id: int) -> int:
-	var mine: InventoryGrid = _grids.get(peer)
-	var theirs: InventoryGrid = _containers.get(id)
+	var mine: InventoryGear = _grids.get(peer)
+	var theirs: InventoryGear = _containers.get(id)
 	if mine == null or theirs == null:
 		return 0
 	var taken := 0
-	for placed: Dictionary in theirs.items():
+	for placed: Dictionary in theirs.all_items():
 		if theirs.transfer_anywhere(int(placed["uid"]), mine).is_empty():
 			taken += 1
 	if taken > 0:
@@ -832,7 +844,7 @@ func _physics_tick(delta: float) -> void:
 		if float(_crate_refill[crate]) <= 0.0:
 			_crate_refill.erase(crate)
 			var grid := _grid_of_container(crate)
-			if grid != null and grid.items().is_empty():
+			if grid != null and grid.is_empty():
 				_fill(grid, _roll(_crates_data()))
 			_container_changed(int(crate.get_meta(&"container", -1)))
 	for id: int in _body_left.keys():
@@ -925,34 +937,38 @@ func _receive_emptied(names: Array) -> void:
 			node.call(&"set_empty", true)
 
 
-## Server: `peer`'s backpack as `[{item, x, y, rotated}]`, for saving.
+## Server: `peer`'s gear as `[{item, container, x, y, rotated}]` for saving; a worn item's
+## container is `slot:<name>`.
 func server_items_of(peer: int) -> Array:
-	var grid: InventoryGrid = _grids.get(peer)
+	var gear: InventoryGear = _grids.get(peer)
 	var out := []
-	if grid == null:
+	if gear == null:
 		return out
-	for placed: Dictionary in grid.items():
-		out.append({"item": placed["item"], "x": placed["x"], "y": placed["y"], "rotated": placed["rotated"]})
+	for placed: Dictionary in gear.all_items():
+		var container := "slot:%s" % placed["slot"] if placed.has("slot") else str(placed["grid"])
+		out.append({"item": placed["item"], "container": container, "x": placed["x"], "y": placed["y"], "rotated": placed["rotated"]})
 	return out
 
 
-## Server: replaces `peer`'s backpack with saved items, each where it was. Anything that no
-## longer fits there (the grid or an item's size changed) goes in the first free spot, and
-## what has no room at all lands at the player's feet rather than vanishing.
+## Server: replaces `peer`'s gear with saved items, each where it was: worn items first, so
+## their grids are open for what was inside. Anything that no longer fits there goes in the
+## first free place, and what has no room at all lands at the player's feet rather than
+## vanishing.
 func server_restore_items(peer: int, items: Array) -> void:
-	var grid := _new_grid() if peer != multiplayer.get_unique_id() else _mine
-	if grid == _mine:
-		for placed: Dictionary in grid.items():
-			grid.remove(int(placed["uid"]))
+	var grid := _new_grid()
+	if peer == multiplayer.get_unique_id():
+		_mine = grid
 	_grids[peer] = grid
+	var ordered := items.filter(func(i: Dictionary) -> bool: return str(i.get("container", "")).begins_with("slot:"))
+	ordered.append_array(items.filter(func(i: Dictionary) -> bool: return not str(i.get("container", "")).begins_with("slot:")))
 	var spilled: Array[String] = []
-	for saved: Dictionary in items:
+	for saved: Dictionary in ordered:
 		var item := str(saved.get("item", ""))
 		if item_info(item).is_empty():
 			Log.warn(&"inventory", "peer %d: dropped unknown saved item '%s'" % [peer, item])
 			continue
-		var placed := grid.place(_next_uid, item, int(saved.get("x", 0)), int(saved.get("y", 0)), bool(saved.get("rotated", false)))
-		if not placed.is_empty() and not grid.insert(_next_uid, item)["ok"]:
+		var why := grid.place(_next_uid, item, _place_of(saved))
+		if not why.is_empty() and not grid.insert(_next_uid, item)["ok"]:
 			spilled.append(item)
 			continue
 		_next_uid += 1
@@ -961,6 +977,14 @@ func server_restore_items(peer: int, items: Array) -> void:
 		if player != null:
 			server_spawn_loot(item, _on_ground(player.global_position))
 	_send(peer)
+
+
+## `{slot}` or `{grid, x, y, rotated}` from a saved or sent item.
+static func _place_of(saved: Dictionary) -> Dictionary:
+	var container := str(saved.get("container", ""))
+	if container.begins_with("slot:"):
+		return {"slot": container.trim_prefix("slot:")}
+	return {"grid": container, "x": int(saved.get("x", 0)), "y": int(saved.get("y", 0)), "rotated": bool(saved.get("rotated", false))}
 
 
 ## Server: loose loot and crate state, for saving: `{loot: [{item, position}], crates:
@@ -974,10 +998,10 @@ func server_world_state() -> Dictionary:
 	# Bodies do not outlast a restart; what they held is saved as loot where they lie.
 	for id: int in _body_left.keys():
 		var body := _container_nodes.get(id) as Node3D
-		var grid: InventoryGrid = _containers.get(id)
+		var grid: InventoryGear = _containers.get(id)
 		if not is_instance_valid(body) or grid == null:
 			continue
-		var items := grid.items()
+		var items := grid.all_items()
 		for i in items.size():
 			var a := TAU * i / maxf(1.0, items.size())
 			loot.append({"item": items[i]["item"], "position": body.global_position + Vector3(cos(a), 0.0, sin(a)) * PILE_RADIUS})
@@ -1013,7 +1037,7 @@ func server_restore_world(state: Dictionary) -> void:
 		var grid := _grid_of_container(crate)
 		if grid == null:
 			continue
-		for placed: Dictionary in grid.items():
+		for placed: Dictionary in grid.all_items():
 			grid.remove(int(placed["uid"]))
 		var items: Array = []
 		for item: Variant in saved.get("items", []):
@@ -1028,11 +1052,24 @@ func server_restore_world(state: Dictionary) -> void:
 		_container_changed(int(crate.get_meta(&"container", -1)))
 
 
-func _new_grid() -> InventoryGrid:
-	var size: Array = _data.get("grid", [10, 6])
-	var grid := InventoryGrid.new()
-	grid.setup(int(size[0]), int(size[1]), _sizes)
-	return grid
+## A player's (or body's) gear, empty: the slots, pockets, and nothing worn.
+func _new_grid() -> InventoryGear:
+	var layout: Dictionary = _data.get("gear", {})
+	var gear := InventoryGear.new()
+	gear.setup(_defs, {"slots": layout.get("slots", {}), "fixed": {"pockets": layout.get("pockets", [4, 1])}, "fill_order": layout.get("fill_order", [])})
+	return gear
+
+
+## Rebuilds a copy of someone's gear from a `snapshot()`: worn items first, then the grids.
+func _apply_snapshot(gear: InventoryGear, snapshot: Dictionary) -> void:
+	var slots: Dictionary = snapshot.get("slots", {})
+	for slot: String in slots:
+		var worn: Dictionary = slots[slot]
+		gear.place(int(worn["uid"]), str(worn["item"]), {"slot": slot})
+	var grids: Dictionary = snapshot.get("grids", {})
+	for name: String in grids:
+		for placed: Dictionary in grids[name]:
+			gear.place(int(placed["uid"]), str(placed["item"]), {"grid": name, "x": int(placed["x"]), "y": int(placed["y"]), "rotated": bool(placed["rotated"])})
 
 
 ## Server: sends `peer` their inventory. On the server's own player it is already current.
@@ -1040,17 +1077,16 @@ func _send(peer: int) -> void:
 	if peer == multiplayer.get_unique_id():
 		EventBus.publish(&"inventory.changed", {"peer": peer})
 		return
-	var grid: InventoryGrid = _grids.get(peer)
+	var grid: InventoryGear = _grids.get(peer)
 	if grid != null and multiplayer.get_peers().has(peer):
-		_receive.rpc_id(peer, grid.items())
+		_receive.rpc_id(peer, grid.snapshot())
 	EventBus.publish(&"inventory.changed", {"peer": peer})
 
 
 @rpc("authority", "call_remote", "reliable")
-func _receive(items: Array) -> void:
+func _receive(snapshot: Dictionary) -> void:
 	_mine = _new_grid()
-	for placed: Dictionary in items:
-		_mine.place(int(placed["uid"]), str(placed["item"]), int(placed["x"]), int(placed["y"]), bool(placed["rotated"]))
+	_apply_snapshot(_mine, snapshot)
 	EventBus.publish(&"inventory.changed", {"peer": multiplayer.get_unique_id()})
 
 

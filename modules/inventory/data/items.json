@@ -3,14 +3,23 @@
     "inventory": ["Tab"],
     "use_medkit": ["H"]
   },
-  "grid": [10, 6],
+  "gear": {
+    "slots": { "rig": "rig", "backpack": "backpack" },
+    "pockets": [4, 1],
+    "fill_order": ["rig", "pockets", "backpack"],
+    "weapons": { "primary": "Rifle (in hand)", "secondary": "Pistol (in hand)" }
+  },
+  "starting_gear": { "rig": "rig_light", "backpack": "bag_small" },
+  "respawn_gear": { "backpack": "bag_small" },
+  "npc_gear": { "rig": "rig_light" },
   "npc_loot": {
     "rolls": [1, 3],
     "items": {
       "medkit": 5, "mag_ar_30": 6, "mag_ar_45": 2, "muz_flash": 4, "muz_comp": 3, "muz_supp": 1,
       "opt_reddot": 3, "opt_holo": 2, "opt_scope_4x": 1, "stk_ar_light": 2, "hg_ar_long": 1,
       "bar_ar_10": 2, "mag_pistol_15": 4, "mag_pistol_21": 2, "muz_pistol_comp": 2,
-      "muz_pistol_supp": 1, "opt_pistol_dot": 2, "sld_pistol_long": 1
+      "muz_pistol_supp": 1, "opt_pistol_dot": 2, "sld_pistol_long": 1, "bag_small": 2,
+      "bag_large": 1, "rig_heavy": 1
     }
   },
   "loot": [
@@ -35,14 +44,13 @@
       "opt_reddot": 3, "opt_holo": 2, "opt_scope_4x": 1, "stk_ar_std": 2, "stk_ar_light": 2,
       "hg_ar_std": 2, "hg_ar_long": 1, "bar_ar_14": 1, "bar_ar_10": 2, "grp_ar_std": 2,
       "mag_pistol_15": 3, "mag_pistol_21": 2, "muz_pistol_comp": 2, "muz_pistol_supp": 1,
-      "opt_pistol_dot": 2, "sld_pistol_std": 1, "sld_pistol_long": 1
+      "opt_pistol_dot": 2, "sld_pistol_std": 1, "sld_pistol_long": 1, "bag_small": 2,
+      "bag_large": 1, "rig_light": 1, "rig_heavy": 1
     }
   },
   "starting_kit": [
-    "medkit",
-    "opt_scope_4x", "opt_holo", "muz_comp", "muz_supp", "mag_ar_45", "stk_ar_light",
-    "bar_ar_10", "hg_ar_long", "sld_pistol_long", "mag_pistol_21", "muz_pistol_comp",
-    "muz_pistol_supp", "opt_pistol_dot"
+    "medkit", "opt_scope_4x", "opt_holo", "muz_comp", "muz_supp", "mag_ar_45", "stk_ar_light",
+    "bar_ar_10", "hg_ar_long", "mag_pistol_21", "opt_pistol_dot"
   ],
   "kinds": {
     "optic": [0.32, 0.42, 0.55],
@@ -51,7 +59,9 @@
     "furniture": [0.5, 0.42, 0.3],
     "barrel": [0.38, 0.38, 0.4],
     "pistol": [0.42, 0.36, 0.46],
-    "med": [0.62, 0.22, 0.2]
+    "med": [0.62, 0.22, 0.2],
+    "rig": [0.36, 0.4, 0.28],
+    "backpack": [0.42, 0.36, 0.26]
   },
   "items": {
     "opt_reddot": { "name": "Tube red dot", "short": "Red dot", "size": [1, 1], "kind": "optic" },
@@ -76,6 +86,10 @@
     "muz_pistol_comp": { "name": "Pistol compensator", "short": "P comp", "size": [1, 1], "kind": "pistol" },
     "muz_pistol_supp": { "name": "Pistol suppressor", "short": "P supp", "size": [2, 1], "kind": "pistol" },
     "opt_pistol_dot": { "name": "Mini red dot", "short": "Mini dot", "size": [1, 1], "kind": "pistol" },
+    "rig_light": { "name": "Chest rig", "short": "Chest rig", "size": [2, 2], "kind": "rig", "grid": [4, 2] },
+    "rig_heavy": { "name": "Assault rig", "short": "Assault rig", "size": [3, 2], "kind": "rig", "grid": [5, 3] },
+    "bag_small": { "name": "Day pack", "short": "Day pack", "size": [3, 3], "kind": "backpack", "grid": [5, 5] },
+    "bag_large": { "name": "Raid pack", "short": "Raid pack", "size": [4, 4], "kind": "backpack", "grid": [6, 7] },
     "medkit": { "name": "Field medkit", "short": "Medkit", "size": [1, 1], "kind": "med", "use": { "heal": 60.0, "seconds": 3.0 } }
   }
 }

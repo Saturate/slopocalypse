@@ -48,6 +48,8 @@ func test_no_medkit_wasted_at_full_health() -> void:
 func test_searching_a_crate_takes_what_fits_and_it_refills() -> void:
 	var player := _spawn(53)
 	var crate: LootCrate = _module.call(&"server_spawn_crate", player.global_position + Vector3(0, 0, -1.5))
+	# Known contents that fit, rather than a random roll.
+	_module.call(&"server_restore_world", {"loot": [], "crates": [{"index": 0, "items": ["medkit", "muz_flash", "grp_ar_std"], "refill_seconds": -1.0}]})
 	await get_tree().process_frame
 	var inside: Array = (_module.call(&"crate_contents", crate) as Array).duplicate()
 	assert_int(inside.size()).is_greater(0)

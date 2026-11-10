@@ -56,6 +56,7 @@ func _physics_process(_delta: float) -> void:
 	elif _ticks == OPEN_AT:
 		_inventory.call(&"server_open", 1, _body)
 		var screen := _inventory.get_node("LootScreen") as LootScreen
-		var item: Dictionary = (_inventory.call(&"loot_grid") as InventoryGrid).items()[0]
-		screen.pick(true, Vector2i(int(item["x"]), int(item["y"])))
+		var gear: InventoryGear = _inventory.call(&"loot_grid")
+		var item: Dictionary = gear.all_items()[-1]
+		screen.pick(true, {"grid": item["grid"], "x": item["x"], "y": item["y"]} if item.has("grid") else {"slot": item["slot"]})
 		Input.warp_mouse(get_viewport().get_visible_rect().size * Vector2(0.3, 0.45))
