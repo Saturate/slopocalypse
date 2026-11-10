@@ -15,6 +15,7 @@ const REQUIRED := {
 	"ride_home_reach": TYPE_FLOAT, "drop_spread": TYPE_FLOAT, "board": TYPE_DICTIONARY,
 	"transport": TYPE_DICTIONARY, "dropoff_side": TYPE_FLOAT, "offered": TYPE_FLOAT,
 	"seed": TYPE_FLOAT, "missions": TYPE_ARRAY, "zone": TYPE_DICTIONARY, "objective_item": TYPE_STRING,
+	"buildings": TYPE_DICTIONARY,
 }
 ## How squarely you must face the board or a car to use it.
 const FACING := 0.7
@@ -35,6 +36,10 @@ var state := HOME
 var zone := Vector3.ZERO
 var objective_at := Vector3.ZERO
 var time_left := -1.0
+## Everywhere: the zone's buildings as layout entries (see MissionLayout), and the nodes
+## built from them.
+var buildings: Array = []
+var _building_nodes: Array[MissionBuilding] = []
 ## This instance's own player's tokens, as the server last said.
 var my_tokens := 0
 
@@ -49,6 +54,8 @@ var _placed_for: Dictionary = {}
 var _out: Dictionary = {}
 var _runs := 0
 var _objective_crate: Node3D
+## Server: loot crates in the zone's buildings.
+var _loot_crates: Array[Node3D] = []
 ## Server: seconds since the clock started, the next wave to send, and the countdown to the
 ## next overtime wave once time is up.
 var _elapsed := 0.0
@@ -330,7 +337,7 @@ func _on_peer_left(peer: int) -> void:
 ## Server: tells everyone the offers, the mission and the run state; `riders` (peer ids) get
 ## the ride's fade.
 func _broadcast(riders: Array = []) -> void:
-	Net.server_broadcast(&"missions.changed", {"offers": offers, "current": current, "state": state, "riders": riders, "zone": zone, "objective": objective_at, "time_left": time_left})
+	Net.server_broadcast(&"missions.changed", {"offers": offers, "current": current, "state": state, "riders": riders, "zone": zone, "objective": objective_at, "time_left": time_left, "buildings": buildings})
 
 
 ## Everywhere: takes the server's word for the mission state.
@@ -341,6 +348,9 @@ func _on_changed(p: Dictionary) -> void:
 	zone = p.get("zone", zone)
 	objective_at = p.get("objective", objective_at)
 	time_left = float(p.get("time_left", time_left))
+	if p.has("buildings") and p["buildings"] != buildings:
+		buildings = p["buildings"]
+		_build_buildings()
 	if _key(current) != _key(_placed_for):
 		_place_dropoff_car()
 	_update_markers()
@@ -385,7 +395,7 @@ func _marker(marker_name: StringName, at: Vector3, text: String, show: bool) -> 
 ## Server: a friend who joins late sees the board and the mission as they are.
 func _on_peer_joined(peer: int) -> void:
 	if multiplayer.is_server():
-		_sync.rpc_id(peer, {"offers": offers, "current": current, "state": state, "zone": zone, "objective": objective_at, "time_left": time_left})
+		_sync.rpc_id(peer, {"offers": offers, "current": current, "state": state, "zone": zone, "objective": objective_at, "time_left": time_left, "buildings": buildings})
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -421,11 +431,19 @@ func _open_zone() -> void:
 	objective_at = zone + Vector3(float(z.get("objective_side", -6.0)), 0.0, 0.0)
 	time_left = -1.0
 	current["delivered"] = false
+	buildings = MissionLayout.buildings(config["buildings"], int(config["seed"]) * 7919 + _runs, _road_at, float(mission["distance"]))
+	_place_on_ground(buildings)
+	_build_buildings()
+	if not _building_nodes.is_empty():
+		objective_at = _building_nodes[0].inside(0.85, 0.0)
 	var inventory := get_tree().get_first_node_in_group(&"inventory_api")
 	if inventory != null:
 		_objective_crate = inventory.call(&"server_spawn_mission_crate", objective_at, [str(config["objective_item"])])
 		if _objective_crate != null:
 			objective_at = _objective_crate.global_position
+		for i in range(1, _building_nodes.size()):
+			var loot: Array = inventory.call(&"roll_crate_loot")
+			_loot_crates.append(inventory.call(&"server_spawn_mission_crate", _building_nodes[i].inside(0.8, 0.5), loot))
 
 
 ## Server: the run is over: whatever is left of the objective crate goes.
@@ -434,6 +452,12 @@ func _close_zone() -> void:
 	if inventory != null and is_instance_valid(_objective_crate):
 		inventory.call(&"server_remove_container", _objective_crate)
 	_objective_crate = null
+	for crate in _loot_crates:
+		if inventory != null and is_instance_valid(crate):
+			inventory.call(&"server_remove_container", crate)
+	_loot_crates.clear()
+	buildings = []
+	_build_buildings()
 	time_left = -1.0
 	var drones := get_tree().get_first_node_in_group(&"drones_api")
 	if drones != null:
@@ -546,5 +570,47 @@ func _send_strike(count: Variant) -> void:
 		var at := zone + Vector3(cos(a) * r, 0.0, sin(a) * r)
 		if ground != null and ground.has_method(&"ground_height"):
 			at.y = float(ground.call(&"ground_height", at.x, at.z))
+		# Some go for the buildings: their roofs.
+		if not buildings.is_empty() and _rng.randf() < float((config["buildings"] as Dictionary).get("strike_share", 0.5)):
+			var b: Dictionary = buildings[_rng.randi_range(0, buildings.size() - 1)]
+			at = (b["position"] as Vector3) + Vector3.UP * float(b["wall_height"])
 		drones.call(&"server_spawn_strike", at)
 	EventBus.publish(&"missions.strike", {"mission": current.get("id", ""), "drones": mini(int(count), room)})
+
+
+## A point on the road `metres` out (straight down -z without a world, as in tests).
+func _road_at(metres: float) -> Vector3:
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	if ground != null and ground.has_method(&"road_point"):
+		return ground.call(&"road_point", metres)
+	return Vector3(0.0, 0.0, -metres)
+
+
+## Sets each entry's height to the ground under it (a little sunk, so the slab never floats).
+func _place_on_ground(entries: Array) -> void:
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	if ground == null or not ground.has_method(&"ground_height"):
+		return
+	for entry: Dictionary in entries:
+		var at: Vector3 = entry["position"]
+		at.y = float(ground.call(&"ground_height", at.x, at.z)) - 0.05
+		entry["position"] = at
+
+
+## Everywhere: (re)builds the zone's buildings from `buildings`.
+func _build_buildings() -> void:
+	for node in _building_nodes:
+		if is_instance_valid(node):
+			node.queue_free()
+	_building_nodes.clear()
+	if not is_inside_tree():
+		return
+	for i in buildings.size():
+		var entry: Dictionary = buildings[i]
+		var b := MissionBuilding.new()
+		b.name = "Building%d" % i
+		b.spec = entry
+		add_child(b)
+		b.global_position = entry["position"]
+		b.rotation.y = float(entry["yaw"])
+		_building_nodes.append(b)
