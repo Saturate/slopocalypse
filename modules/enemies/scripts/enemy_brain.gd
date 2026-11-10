@@ -14,6 +14,11 @@ extends Node
 ## ground and fires when it has a shot), flees (runs from the threat, firing only when
 ## cornered) or submits (drops its gun and stays down for good). It never fires unless a
 ## ray from its muzzle to the target is clear of walls and leaves.
+##
+## In a fight it uses cover: it looks for a spot near it that hides it (crouched) from the
+## threat, preferably one it can stand up from to fire, runs there (one squad mate at a time
+## while the others keep firing), then hides and peeks in turns; pinned, it stays down. A
+## soldier who spots someone calls it out to squad mates within earshot.
 
 enum State { PATROL, FIGHT, CHASE }
 
@@ -61,6 +66,12 @@ var _error := Vector2.ZERO
 var _route_index := 0
 var _scan_time := 0.0
 var _evaluate_in := 0.0
+## Cover: the spot it uses (valid while `_has_cover`), when it looks again, and the peek cycle.
+var _has_cover := false
+var _cover := Vector3.ZERO
+var _cover_search_in := 0.0
+var _peeking := false
+var _peek_left := 0.0
 
 
 func _ready() -> void:
@@ -138,13 +149,15 @@ func _physics_tick(delta: float) -> void:
 	if seen != null:
 		if target != seen:
 			_seen_for = 0.0
+			_call_out(seen)
 		target = seen
 		last_seen = seen.global_position
 		_lost_for = 0.0
 		_seen_for += delta
 		state = State.FIGHT
 	elif target != null:
-		_seen_for = 0.0
+		# Ducking out of sight behind cover should not cost the whole aim: it fades.
+		_seen_for = maxf(_seen_for - delta * 2.0, 0.0)
 		_lost_for += delta
 		if _lost_for > float(config["forget_seconds"]) or not is_instance_valid(target):
 			target = null
@@ -161,8 +174,13 @@ func _physics_tick(delta: float) -> void:
 	if surrendered:
 		return
 	intent.crouch = is_pinned()
+	if state == State.PATROL or target == null:
+		_drop_cover()
 	if state != State.PATROL and mood == Fortitude.FLEE:
+		_drop_cover()
 		_flee(delta, intent)
+	elif state != State.PATROL and target != null and _use_cover(delta, intent):
+		pass
 	else:
 		match state:
 			State.PATROL:
@@ -407,6 +425,158 @@ func _flee(delta: float, intent: PlayerIntent) -> void:
 		return
 	_walk_toward(body.global_position + away.normalized() * 10.0, delta, intent, 1.0)
 	intent.sprint = true
+
+
+func _cover_cfg() -> Dictionary:
+	return config.get("cover", {})
+
+
+func has_cover() -> bool:
+	return _has_cover
+
+
+func cover_spot() -> Vector3:
+	return _cover
+
+
+## Runs to cover and fights from it. False when there is no cover to use (it fights where it
+## stands instead).
+func _use_cover(delta: float, intent: PlayerIntent) -> bool:
+	var threat := last_seen
+	_cover_search_in -= delta
+	if _cover_search_in <= 0.0 and (not _has_cover or not hidden_at(_cover, threat)):
+		_cover_search_in = float(_cover_cfg().get("search_every", 1.5))
+		var found: Variant = find_cover(threat)
+		_has_cover = found is Vector3
+		if _has_cover:
+			_cover = found
+	if not _has_cover:
+		return false
+	var flat := Vector2(_cover.x - body.global_position.x, _cover.z - body.global_position.z)
+	if flat.length() > ARRIVED * 0.6:
+		# One at a time: wait (and keep firing) while a squad mate close by is on the move.
+		if not is_pinned() and _mate_moving():
+			body.set_meta(&"moving_to_cover", false)
+			return false
+		body.set_meta(&"moving_to_cover", true)
+		_walk_toward(_cover, delta, intent, 1.0)
+		intent.sprint = true
+		return true
+	body.set_meta(&"moving_to_cover", false)
+	intent.move = Vector2.ZERO
+	_peek_left -= delta
+	if _peek_left <= 0.0:
+		_peeking = not _peeking
+		var r: Array = _cover_cfg().get("peek_seconds" if _peeking else "hide_seconds", [1.5, 2.0])
+		_peek_left = _rng.randf_range(float(r[0]), float(r[1]))
+	if is_pinned() or not _peeking:
+		intent.crouch = true
+		var want := look_angles(_eye(), threat + Vector3.UP * CHEST)
+		_turn_to(want.x, want.y, delta)
+		return true
+	intent.crouch = false
+	if state == State.FIGHT:
+		_fight(delta, intent)
+	else:
+		var want := look_angles(_eye(), threat + Vector3.UP * CHEST)
+		_turn_to(want.x, want.y, delta)
+		intent.aim = true
+	return true
+
+
+func _drop_cover() -> void:
+	_has_cover = false
+	_peeking = false
+	if body.get_meta(&"moving_to_cover", false):
+		body.set_meta(&"moving_to_cover", false)
+
+
+func _mate_moving() -> bool:
+	var reach := float(_cover_cfg().get("bound_range", 15.0))
+	for node: Node in get_tree().get_nodes_in_group(&"enemies"):
+		var mate := node as Node3D
+		if mate != null and mate != body and mate.get_meta(&"moving_to_cover", false) and not mate.get_meta(&"dead", false) and mate.global_position.distance_to(body.global_position) < reach:
+			return true
+	return false
+
+
+## Whether a body crouched at `spot` is hidden from someone standing at `threat`.
+func hidden_at(spot: Vector3, threat: Vector3) -> bool:
+	var from := threat + Vector3.UP * float(_cover_cfg().get("threat_eye", 1.5))
+	var to := spot + Vector3.UP * float(_cover_cfg().get("crouch_height", 0.9))
+	return _blocked(from, to, PhysicsLayers.SOLID)
+
+
+## The best spot near it that hides it from `threat` (preferring ones it can stand up from to
+## fire, and short runs), or null.
+func find_cover(threat: Vector3) -> Variant:
+	var cfg := _cover_cfg()
+	var reach := float(cfg.get("search_radius", 12.0))
+	var rings := int(cfg.get("rings", 4))
+	var spokes := int(cfg.get("spokes", 12))
+	var keep_off := float(cfg.get("min_threat_distance", 5.0))
+	var stand := float(cfg.get("stand_eye", 1.5))
+	var best: Variant = null
+	var best_score := INF
+	var candidates: Array[Vector3] = [body.global_position]
+	for ring in rings:
+		var r := reach * float(ring + 1) / rings
+		for i in spokes:
+			var a := TAU * (float(i) + 0.5 * (ring % 2)) / spokes
+			candidates.append(body.global_position + Vector3(cos(a), 0.0, sin(a)) * r)
+	for c in candidates:
+		var spot: Variant = _floor_at(c)
+		if not spot is Vector3:
+			continue
+		var at: Vector3 = spot
+		if Vector2(at.x - threat.x, at.z - threat.z).length() < keep_off or not hidden_at(at, threat):
+			continue
+		var can_fire := not _blocked(at + Vector3.UP * stand, threat + Vector3.UP * CHEST, PhysicsLayers.SOLID | PhysicsLayers.SIGHT)
+		var score := at.distance_to(body.global_position) + (0.0 if can_fire else float(cfg.get("no_shot_penalty", 8.0)))
+		if score < best_score:
+			best_score = score
+			best = at
+	return best
+
+
+## The floor under `at` (a ray down from a little above), or null where there is none.
+func _floor_at(at: Vector3) -> Variant:
+	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 2.0, at + Vector3.DOWN * 6.0, PhysicsLayers.SOLID)
+	query.exclude = [body.get_rid()]
+	var hit := body.get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return null
+	return hit["position"]
+
+
+func _blocked(from: Vector3, to: Vector3, mask: int) -> bool:
+	var query := PhysicsRayQueryParameters3D.create(from, to, mask)
+	var skip: Array[RID] = [body.get_rid()]
+	if target is CollisionObject3D and is_instance_valid(target):
+		skip.append((target as CollisionObject3D).get_rid())
+	query.exclude = skip
+	return not body.get_world_3d().direct_space_state.intersect_ray(query).is_empty()
+
+
+## Tells squad mates within earshot where the one it just spotted is.
+func _call_out(who: Node3D) -> void:
+	var reach := float(_cover_cfg().get("callout_range", 30.0))
+	for node: Node in get_tree().get_nodes_in_group(&"enemies"):
+		if node == body or node.get_meta(&"dead", false) or (node as Node3D).global_position.distance_to(body.global_position) > reach:
+			continue
+		var brain := node.get_node_or_null("Brain") as EnemyBrain
+		if brain != null:
+			brain.hear_callout(who)
+
+
+## A squad mate called out `who`: go after them if it has nothing to fight yet.
+func hear_callout(who: Node3D) -> void:
+	if surrendered or body.get_meta(&"dead", false) or target != null:
+		return
+	target = who
+	last_seen = who.global_position
+	_lost_for = 0.0
+	state = State.CHASE
 
 
 func _eye() -> Vector3:

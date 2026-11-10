@@ -199,3 +199,47 @@ func test_a_soldier_with_nothing_left_gives_up_and_stops_shooting() -> void:
 	var before := health.health
 	await _frames(60 * 3)
 	assert_float(health.health).is_equal(before)
+
+
+func _box(at: Vector3, size: Vector3) -> StaticBody3D:
+	var wall := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = size
+	shape.shape = box
+	wall.add_child(shape)
+	add_child(auto_free(wall))
+	wall.global_position = at
+	return wall
+
+
+func test_under_fire_a_soldier_gets_behind_cover() -> void:
+	_player.global_position = Vector3(0, 0.1, -20)
+	# A low wall a few metres off to the side, between the soldier's side and the player.
+	_box(Vector3(3, 0.6, -1.5), Vector3(2.4, 1.2, 0.3))
+	await get_tree().physics_frame
+	var enemy := await _enemy_at(Vector3(0, 0, 0))
+	var brain := _brain(enemy)
+	await _frames(60 * 5)
+	assert_bool(brain.has_cover()).is_true()
+	assert_bool(brain.hidden_at(brain.cover_spot(), _player.global_position)).is_true()
+	assert_float(Vector2(enemy.global_position.x - brain.cover_spot().x, enemy.global_position.z - brain.cover_spot().z).length()).is_less(1.5)
+
+
+func test_out_in_the_open_it_fights_where_it_stands() -> void:
+	_player.global_position = Vector3(0, 0.1, -20)
+	var enemy := await _enemy_at(Vector3(0, 0, 0))
+	await _frames(60 * 2)
+	assert_bool(_brain(enemy).has_cover()).is_false()
+
+
+func test_a_soldier_who_spots_you_calls_it_out() -> void:
+	_player.global_position = Vector3(0, 0.1, -20)
+	var spotter := await _enemy_at(Vector3(0, 0, 0))
+	var mate := await _enemy_at(Vector3(8, 0, 6))
+	# The mate looks the other way and cannot see the player itself.
+	mate.rotation.y = PI
+	(mate.get_node("Brain") as EnemyBrain).set(&"_yaw", PI)
+	await _frames(30)
+	assert_object(_brain(spotter).target).is_same(_player)
+	assert_object(_brain(mate).target).is_same(_player)
