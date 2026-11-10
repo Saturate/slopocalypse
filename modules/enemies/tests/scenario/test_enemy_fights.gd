@@ -27,6 +27,8 @@ func before_test() -> void:
 		add_child(auto_free((load(INVENTORY) as GDScript).new()))
 	_enemies = auto_free((load(ENEMIES) as GDScript).new())
 	add_child(_enemies)
+	# Brave by default, so the fighting tests are not about fear; fear tests lower it.
+	((_enemies.get(&"config") as Dictionary)["fortitude"] as Dictionary)["start"] = [20, 20]
 	_player = auto_free((load(PLAYER) as PackedScene).instantiate())
 	_player.set_meta(&"peer_id", 1)
 	_player.add_to_group(&"players")
@@ -130,3 +132,70 @@ func test_a_patrol_walks_its_route() -> void:
 			reached_far = true
 			break
 	assert_bool(reached_far).is_true()
+
+
+func _brain(enemy: PlayerController) -> EnemyBrain:
+	return enemy.get_node("Brain") as EnemyBrain
+
+
+func test_near_misses_pin_a_soldier_and_it_wears_off() -> void:
+	_player.global_position = Vector3(0, 0.1, -40)
+	var enemy := await _enemy_at(Vector3(0, 0, 0))
+	var brain := _brain(enemy)
+	var chest := enemy.global_position + Vector3.UP * 1.3
+	for i in 6:
+		EventBus.publish(&"weapon.fired", {"holder": _player, "from": _player.global_position + Vector3.UP * 1.5, "to": chest + Vector3(1.0, 0.0, 3.0)})
+	assert_bool(brain.is_pinned()).is_true()
+	await _frames(60 * 6)
+	assert_bool(brain.is_pinned()).is_false()
+
+
+func test_a_shot_far_off_does_not_pin() -> void:
+	var enemy := await _enemy_at(Vector3(0, 0, 0))
+	for i in 10:
+		EventBus.publish(&"weapon.fired", {"holder": _player, "from": Vector3(30, 1, 0), "to": Vector3(30, 1, -50)})
+	assert_float(_brain(enemy).suppression).is_equal(0.0)
+
+
+func test_no_shot_through_a_wall() -> void:
+	_player.global_position = Vector3(0, 0.1, -12)
+	var enemy := await _enemy_at(Vector3(0, 0, 0))
+	var wall := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(6, 4, 0.4)
+	shape.shape = box
+	wall.add_child(shape)
+	add_child(auto_free(wall))
+	wall.global_position = Vector3(0, 1.5, -6)
+	await get_tree().physics_frame
+	assert_bool(_brain(enemy).clear_shot(_player)).is_false()
+	wall.global_position = Vector3(30, 1.5, -6)
+	await get_tree().physics_frame
+	assert_bool(_brain(enemy).clear_shot(_player)).is_true()
+
+
+func test_a_frightened_soldier_runs_from_you() -> void:
+	_player.global_position = Vector3(0, 0.1, -20)
+	var enemy := await _enemy_at(Vector3(0, 0, 0))
+	# Alone it loses 2: 8 becomes 6, the flee band.
+	_brain(enemy).fortitude_start = 8
+	var start := enemy.global_position.distance_to(_player.global_position)
+	await _frames(60 * 4)
+	assert_str(_brain(enemy).mood).is_equal(Fortitude.FLEE)
+	assert_float(enemy.global_position.distance_to(_player.global_position)).is_greater(start + 3.0)
+
+
+func test_a_soldier_with_nothing_left_gives_up_and_stops_shooting() -> void:
+	_player.global_position = Vector3(0, 0.1, -15)
+	var enemy := await _enemy_at(Vector3(0, 0, 0))
+	# Alone and wounded: 6 - 2 - 2 = 2, the submit band.
+	_brain(enemy).fortitude_start = 6
+	(enemy.get_node("Health") as HealthComponent).server_apply_damage(50.0)
+	await _frames(60 * 2)
+	assert_bool(_brain(enemy).surrendered).is_true()
+	assert_bool(enemy.get_meta(&"surrendered", false)).is_true()
+	var health := _player.get_node("Health") as HealthComponent
+	var before := health.health
+	await _frames(60 * 3)
+	assert_float(health.health).is_equal(before)

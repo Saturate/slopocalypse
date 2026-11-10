@@ -1,6 +1,7 @@
 extends MissionType
 ## Clean Sweep: soldiers hold the zone's buildings: sentries at the doors, others inside,
-## a couple patrolling between the buildings. The job is done when the last one is down;
+## a couple patrolling between the buildings. The job is done when the last one is down
+## (or has given up);
 ## then ride home for the pay, and everything they carried is yours to loot. When only a
 ## few are left, markers show where they are.
 
@@ -67,7 +68,7 @@ static func _shuffle(list: Array, rng: RandomNumberGenerator) -> void:
 func _alive() -> Array[Node3D]:
 	var out: Array[Node3D] = []
 	for g in _guards:
-		if is_instance_valid(g) and not g.get_meta(&"dead", false):
+		if is_instance_valid(g) and not g.get_meta(&"dead", false) and not g.get_meta(&"surrendered", false):
 			out.append(g as Node3D)
 	return out
 

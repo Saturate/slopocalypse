@@ -15,7 +15,9 @@ var _player: PlayerController
 func before_test() -> void:
 	EventBus.subscribe(&"player.move_requested", _on_move)
 	add_child(auto_free((load(INVENTORY) as GDScript).new()))
-	add_child(auto_free((load(ENEMIES) as GDScript).new()))
+	var enemies: Node = auto_free((load(ENEMIES) as GDScript).new())
+	add_child(enemies)
+	((enemies.get(&"config") as Dictionary)["fortitude"] as Dictionary)["start"] = [20, 20]
 	_missions = auto_free((load(MISSIONS) as GDScript).new())
 	add_child(_missions)
 	EventBus.publish(&"world.ready", {"spawn": SPAWN})

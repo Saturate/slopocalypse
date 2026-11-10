@@ -58,12 +58,14 @@ func _ready() -> void:
 	_rng.randomize()
 	EventBus.subscribe(&"world.ready", _on_world_ready)
 	EventBus.subscribe(&"enemy.died", _on_enemy_died)
+	EventBus.subscribe(&"enemy.surrendered", _on_enemy_surrendered)
 	EventBus.subscribe(&"admin.spawn", _on_admin_spawn)
 
 
 func _exit_tree() -> void:
 	EventBus.unsubscribe(&"world.ready", _on_world_ready)
 	EventBus.unsubscribe(&"enemy.died", _on_enemy_died)
+	EventBus.unsubscribe(&"enemy.surrendered", _on_enemy_surrendered)
 	EventBus.unsubscribe(&"admin.spawn", _on_admin_spawn)
 
 
@@ -211,6 +213,21 @@ func _on_enemy_died(p: Dictionary) -> void:
 	(enemy.get_node("Shape") as CollisionShape3D).set_deferred(&"disabled", true)
 	if multiplayer.is_server():
 		enemy.set_physics_process(false)
+
+
+## Everywhere: a soldier gave up: its gun goes away (out of its hands, and it cannot fire).
+func _on_enemy_surrendered(p: Dictionary) -> void:
+	var enemy := p.get("enemy") as PlayerController
+	if enemy == null:
+		return
+	enemy.set_meta(&"surrendered", true)
+	for weapon in enemy.get_node("Head/Camera").get_children():
+		if weapon is HitscanWeapon:
+			(weapon as HitscanWeapon).active = false
+	var socket := PlayerBody.weapon_socket(enemy)
+	var held := socket.get_node_or_null("HeldRifle") as Node3D if socket != null else null
+	if held != null:
+		held.visible = false
 
 
 func _roll(range_pair: Array) -> int:

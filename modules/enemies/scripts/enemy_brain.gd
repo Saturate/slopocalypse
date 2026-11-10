@@ -7,6 +7,13 @@ extends Node
 ## watches. Lost targets are chased to where they were last seen, then forgotten. A guard
 ## (`has_post`) does not wander: it holds its post, slowly scanning either side of
 ## `post_yaw`, or walks its `route` round and round, and goes back there after a fight.
+##
+## Under fire it is a person, not a turret (`Fortitude`): bullets passing close and blasts
+## nearby build suppression, which pins it (it ducks and its aim goes wide); while fighting
+## its fortitude band decides whether it fights (chases, fires freely), postures (holds its
+## ground and fires when it has a shot), flees (runs from the threat, firing only when
+## cornered) or submits (drops its gun and stays down for good). It never fires unless a
+## ray from its muzzle to the target is clear of walls and leaves.
 
 enum State { PATROL, FIGHT, CHASE }
 
@@ -16,6 +23,10 @@ const CHEST := 1.3
 const ARRIVED := 1.5
 ## Fire only when the aim is within this of the target, radians.
 const ON_TARGET := 0.12
+## Where a body counts as hidden from a threat: something solid in front of the waist.
+const WAIST := 0.9
+## The muzzle sits about this far in front of the eye.
+const MUZZLE_AHEAD := 0.6
 
 var body: PlayerController
 var config: Dictionary = {}
@@ -25,6 +36,13 @@ var home := Vector3.ZERO
 var has_post := false
 var post_yaw := 0.0
 var route: Array[Vector3] = []
+
+## Fear: the fixed starting fortitude, the band it is in now, and suppression (pinned above
+## the config's threshold).
+var fortitude_start := 20
+var mood := Fortitude.FIGHT
+var suppression := 0.0
+var surrendered := false
 
 var state := State.PATROL
 var target: Node3D
@@ -42,17 +60,40 @@ var _burst_pause := 0.0
 var _error := Vector2.ZERO
 var _route_index := 0
 var _scan_time := 0.0
+var _evaluate_in := 0.0
 
 
 func _ready() -> void:
 	_rng.randomize()
+	fortitude_start = Fortitude.roll(_fear(), _rng)
 	_yaw = body.rotation.y
 	_goal = route[0] if not route.is_empty() else home
 	EventBus.subscribe(&"weapon.fired", _on_shot_heard)
+	EventBus.subscribe(&"explosion", _on_explosion)
 
 
 func _exit_tree() -> void:
 	EventBus.unsubscribe(&"weapon.fired", _on_shot_heard)
+	EventBus.unsubscribe(&"explosion", _on_explosion)
+
+
+func _fear() -> Dictionary:
+	return config.get("fortitude", {})
+
+
+func _suppression_cfg() -> Dictionary:
+	return config.get("suppression", {})
+
+
+func is_pinned() -> bool:
+	return suppression >= float(_suppression_cfg().get("pinned", 1.0))
+
+
+## Closest distance from `point` to the segment `a`..`b`.
+static func distance_to_segment(point: Vector3, a: Vector3, b: Vector3) -> float:
+	var ab := b - a
+	var t := clampf((point - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
+	return point.distance_to(a + ab * t)
 
 
 ## The yaw and pitch that look from `from` toward `to` (yaw about +Y with -Z forward,
@@ -86,6 +127,13 @@ func _physics_tick(delta: float) -> void:
 		intent.move = Vector2.ZERO
 		intent.fire = false
 		return
+	suppression = maxf(suppression - float(_suppression_cfg().get("decay", 0.35)) * delta, 0.0)
+	if surrendered:
+		intent.move = Vector2.ZERO
+		intent.fire = false
+		intent.aim = false
+		intent.crouch = true
+		return
 	var seen := _find_target()
 	if seen != null:
 		if target != seen:
@@ -108,13 +156,25 @@ func _physics_tick(delta: float) -> void:
 			state = State.CHASE
 	intent.fire = false
 	intent.aim = false
-	match state:
-		State.PATROL:
-			_patrol(delta, intent)
-		State.CHASE:
-			_walk_toward(last_seen, delta, intent, 1.0)
-		State.FIGHT:
-			_fight(delta, intent)
+	intent.sprint = false
+	_evaluate_fear(delta)
+	if surrendered:
+		return
+	intent.crouch = is_pinned()
+	if state != State.PATROL and mood == Fortitude.FLEE:
+		_flee(delta, intent)
+	else:
+		match state:
+			State.PATROL:
+				_patrol(delta, intent)
+			State.CHASE:
+				# Only a soldier with fight in it goes looking; the rest hold.
+				if mood == Fortitude.FIGHT:
+					_walk_toward(last_seen, delta, intent, 1.0)
+				else:
+					intent.move = Vector2.ZERO
+			State.FIGHT:
+				_fight(delta, intent)
 	intent.look_yaw = _yaw
 	intent.look_pitch = _pitch
 	intent.remote_look = true
@@ -165,6 +225,8 @@ func _fight(delta: float, intent: PlayerIntent) -> void:
 	var want := look_angles(eye, target.global_position + Vector3.UP * CHEST)
 	var errors: Array = config["aim_error_degrees"]
 	var spread := deg_to_rad(aim_error(_seen_for, float(errors[0]), float(errors[1]), float(config["aim_settle_seconds"])))
+	if is_pinned():
+		spread *= float(_suppression_cfg().get("pinned_aim_scale", 2.5))
 	_turn_to(want.x + _error.x * spread, want.y + _error.y * spread, delta)
 	if _seen_for < float(config["reaction_seconds"]):
 		return
@@ -177,7 +239,7 @@ func _fight(delta: float, intent: PlayerIntent) -> void:
 		# Seconds of trigger; the gun's own fire rate turns it into shots.
 		_burst_left = float(_rng.randi_range(int(shots[0]), int(shots[1]))) * 0.1
 		_error = Vector2(_rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0))
-	if on_target:
+	if on_target and clear_shot(target):
 		intent.fire = true
 		_burst_left -= delta
 		if _burst_left <= 0.0:
@@ -225,11 +287,20 @@ func _clear_line(from: Vector3, to: Vector3, wanted: Node) -> bool:
 	return collider is Node and (collider == wanted or (wanted as Node).is_ancestor_of(collider as Node))
 
 
-## Gunfire nearby draws attention to the shooter, even out of sight.
+## Gunfire nearby draws attention to the shooter, even out of sight; bullets passing close
+## (or hitting it) build suppression.
 func _on_shot_heard(p: Dictionary) -> void:
 	var shooter := p.get("holder") as Node3D
 	if shooter == null or not shooter.is_in_group(&"players") or body.get_meta(&"dead", false):
 		return
+	var sup := _suppression_cfg()
+	var chest := body.global_position + Vector3.UP * CHEST
+	if p.has("from") and p.has("to") and distance_to_segment(chest, p["from"], p["to"]) < float(sup.get("near_miss", 2.0)):
+		suppression += float(sup.get("per_shot", 0.25))
+		if target == null:
+			target = shooter
+			last_seen = shooter.global_position
+			state = State.CHASE
 	if body.global_position.distance_to(shooter.global_position) > float(config["hearing_range"]):
 		return
 	if target == null or state == State.PATROL:
@@ -237,6 +308,105 @@ func _on_shot_heard(p: Dictionary) -> void:
 		last_seen = shooter.global_position
 		_lost_for = 0.0
 		state = State.CHASE
+
+
+## Blasts nearby build suppression: a lot close in, less further out.
+func _on_explosion(p: Dictionary) -> void:
+	if body.get_meta(&"dead", false) or not p.has("position"):
+		return
+	var reach := float(p.get("radius", 2.0)) * float(_suppression_cfg().get("explosion_reach", 4.0))
+	var d := body.global_position.distance_to(p["position"])
+	if d < reach:
+		suppression += float(_suppression_cfg().get("explosion", 1.5)) * (1.0 - d / reach)
+
+
+## Whether a shot from the muzzle would reach `who`: nothing solid and no leaves on the way.
+func clear_shot(who: Node3D) -> bool:
+	return _clear_line(_muzzle(), who.global_position + Vector3.UP * CHEST, who)
+
+
+## Roughly where the barrel ends: a little in front of the eye along the look.
+func _muzzle() -> Vector3:
+	var camera := body.get_node_or_null("Head/Camera") as Node3D
+	if camera == null:
+		return _eye()
+	return camera.global_position - camera.global_basis.z * MUZZLE_AHEAD
+
+
+## Every `evaluate_seconds` while it has a target: works out the fortitude band from what is
+## happening. Submitting is for good.
+func _evaluate_fear(delta: float) -> void:
+	if target == null:
+		mood = Fortitude.FIGHT
+		return
+	_evaluate_in -= delta
+	if _evaluate_in > 0.0:
+		return
+	_evaluate_in = float(_fear().get("evaluate_seconds", 0.5))
+	var health := body.get_node_or_null("Health") as HealthComponent
+	var situation := {
+		"ally_in_sight": _ally_in_sight(),
+		"pinned": is_pinned(),
+		"in_cover": _in_cover(),
+		"wounded": health != null and health.health < health.max_health * float(_fear().get("wounded_share", 0.6)),
+	}
+	mood = Fortitude.band(_fear(), Fortitude.total(_fear(), fortitude_start, situation))
+	if mood == Fortitude.SUBMIT:
+		server_surrender()
+
+
+## Server: gives up for good: drops its gun and stays down.
+func server_surrender() -> void:
+	if surrendered:
+		return
+	surrendered = true
+	mood = Fortitude.SUBMIT
+	var intent := body.intent()
+	intent.fire = false
+	intent.move = Vector2.ZERO
+	Net.server_broadcast(&"enemy.surrendered", {"enemy": body})
+
+
+func _ally_in_sight() -> bool:
+	var eye := _eye()
+	var reach := float(_fear().get("ally_range", 25.0))
+	for node: Node in get_tree().get_nodes_in_group(&"enemies"):
+		var ally := node as Node3D
+		if ally == null or ally == body or ally.get_meta(&"dead", false) or ally.get_meta(&"surrendered", false):
+			continue
+		var chest := ally.global_position + Vector3.UP * CHEST
+		if eye.distance_to(chest) < reach and _clear_line(eye, chest, ally):
+			return true
+	return false
+
+
+## Something solid between the threat and its waist: it is behind cover.
+func _in_cover() -> bool:
+	if target == null or not is_instance_valid(target):
+		return false
+	var from := target.global_position + Vector3.UP * 1.5
+	var to := body.global_position + Vector3.UP * WAIST
+	var query := PhysicsRayQueryParameters3D.create(from, to, PhysicsLayers.SOLID)
+	var skip: Array[RID] = [body.get_rid()]
+	if target is CollisionObject3D:
+		skip.append((target as CollisionObject3D).get_rid())
+	query.exclude = skip
+	return not body.get_world_3d().direct_space_state.intersect_ray(query).is_empty()
+
+
+## Runs from the threat at full speed; fires back only when cornered (the threat close and
+## in sight).
+func _flee(delta: float, intent: PlayerIntent) -> void:
+	var threat := last_seen if target == null or not is_instance_valid(target) else target.global_position
+	var away := body.global_position - threat
+	away.y = 0.0
+	if away.length() < 0.1:
+		away = Vector3.FORWARD
+	if state == State.FIGHT and target != null and body.global_position.distance_to(target.global_position) < float(_fear().get("cornered_range", 8.0)):
+		_fight(delta, intent)
+		return
+	_walk_toward(body.global_position + away.normalized() * 10.0, delta, intent, 1.0)
+	intent.sprint = true
 
 
 func _eye() -> Vector3:

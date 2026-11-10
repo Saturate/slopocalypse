@@ -23,5 +23,24 @@
   "chase_seconds": 8.0,
   "forget_seconds": 20.0,
   "post_scan_degrees": 70.0,
-  "post_scan_seconds": 8.0
+  "post_scan_seconds": 8.0,
+  "fortitude": {
+    "start": [6, 20],
+    "step": 2,
+    "steady_from": 18,
+    "bands": { "fight": 17, "posture": 11, "flee": 5 },
+    "evaluate_seconds": 0.5,
+    "ally_range": 25.0,
+    "wounded_share": 0.6,
+    "cornered_range": 8.0
+  },
+  "suppression": {
+    "near_miss": 2.0,
+    "per_shot": 0.25,
+    "explosion": 1.5,
+    "explosion_reach": 4.0,
+    "decay": 0.35,
+    "pinned": 1.0,
+    "pinned_aim_scale": 2.5
+  }
 }

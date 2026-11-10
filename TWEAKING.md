@@ -34,6 +34,8 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | Mission kinds and their names, codename words | `modules/missions/data/missions.json` | `types` (each: `name`, `script`, `defaults` such as Smash & Grab's `strikes`), `codenames` (`first`, `second`) |
 | Missions: what the board offers, distance, time, pay | `modules/missions/data/missions.json` | `missions` (each: `type`, `place`, `objective`, `distance` and `payout` ranges, `time_limit` for Smash & Grab, `guards` and `patrols` ranges for Clean Sweep), `offered`, `seed` |
 | Strike zone: where, how big, the strike waves | `modules/missions/data/missions.json` | `zone` (`beyond_dropoff`, `radius`), `types.smash_and_grab.defaults.strikes` (`waves` of `{at, drones}`, `overtime_every`, `overtime_drones`, `max_flying`, `building_share`) |
+| Soldiers' nerve: how brave, what scares them, when they hold, run or give up | `modules/enemies/data/enemies.json` | `fortitude` (`start` range, `step`, `steady_from`, `bands`, `ally_range`, `wounded_share`, `cornered_range`) |
+| Being pinned by fire | `modules/enemies/data/enemies.json` | `suppression` (`near_miss` metres, `per_shot`, `explosion`, `decay` per second, `pinned` threshold, `pinned_aim_scale`) |
 | Guards on posts: how far they look either side | `modules/enemies/data/enemies.json` | `post_scan_degrees`, `post_scan_seconds` |
 | Mission buildings: how many, sizes, spacing, how many strikes go for them | `modules/missions/data/missions.json` | `buildings`: `count`, `width`, `depth`, `wall_height`, `off_road`, `spread`, `gap` |
 | Strike drones: dive delay, how far they hear shots | `modules/drones/data/drones.json` | `strike_dive_delay`, `strike_alert_radius`, `strike_hear_radius` |
