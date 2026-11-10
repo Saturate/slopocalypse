@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   export:
-    runs-on: ${{ inputs.os == 'windows' && 'windows-latest' || inputs.os == 'linux' && 'ubuntu-latest' || inputs.runner || 'macos-latest' }}
+    runs-on: ${{ inputs.os == 'windows' && 'windows-latest' || inputs.os == 'linux' && 'ubuntu-latest' || inputs.runner || 'macos-15' }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
