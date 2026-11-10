@@ -27,3 +27,7 @@ Data="*res://core/data.gd"
 Features="*res://core/features.gd"
 EventBus="*res://core/event_bus.gd"
 Net="*res://core/net.gd"
+
+[rendering]
+
+textures/vram_compression/import_etc2_astc=true

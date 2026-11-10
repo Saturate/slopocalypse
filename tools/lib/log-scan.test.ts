@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { scanLog, stripAnsi, testSummary } from "./log-scan.ts";
+import { errorDetails, scanLog, stripAnsi, testSummary } from "./log-scan.ts";
 
 const NOISE = [/Remote Debugger: Unable to connect to host '127\.0\.0\.1:0'/, /remote port number must be between/];
 
@@ -38,4 +38,20 @@ test("reads the gdUnit overall summary, and reports a missing one as undefined",
 	const log = "Overall Summary: 3 test cases | 1 errors | 2 failures | 0 flaky | 0 skipped | 0 orphans |";
 	assert.deepEqual(testSummary(log), { cases: 3, errors: 1, failures: 2 });
 	assert.equal(testSummary("crashed before summary"), undefined);
+});
+
+test("errorDetails keeps the lines Godot prints under an error, up to its at: line", () => {
+	const log = [
+		"Loading resource: res://a.tres",
+		'ERROR: Cannot export project with preset "macOS" due to configuration errors:',
+		"Cannot export for universal or arm64 if ETC2 ASTC texture format is disabled.",
+		"",
+		"   at: _fs_changed (editor/editor_node.cpp:1401)",
+		"Class 'X' is not exposed, skipping.",
+		"ERROR: The remote port number must be between 1 and 65535 (inclusive).",
+		"   at: somewhere",
+	].join("\n");
+	assert.deepEqual(errorDetails(log, NOISE), [
+		'ERROR: Cannot export project with preset "macOS" due to configuration errors:\nCannot export for universal or arm64 if ETC2 ASTC texture format is disabled.',
+	]);
 });

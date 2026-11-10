@@ -117,6 +117,24 @@ export function dataFiles(root: string): string[] {
 	return out;
 }
 
+// Addons can ship a macOS library as a bare .framework folder with only the linker's ad-hoc
+// signature. Godot copies that binary out flat and does not re-sign it, and its built-in
+// signer then rejects the app ("Unsigned nested executable file"), so these get signed first.
+export function addonFrameworkBinaries(root: string): string[] {
+	const out: string[] = [];
+	const addons = join(root, "addons");
+	if (!existsSync(addons)) return out;
+	for (const addon of readdirSync(addons).sort()) {
+		const bin = join(addons, addon, "bin");
+		if (!existsSync(bin)) continue;
+		for (const fw of readdirSync(bin).sort()) {
+			if (!fw.endsWith(".framework")) continue;
+			for (const f of readdirSync(join(bin, fw), { withFileTypes: true })) if (f.isFile()) out.push(join(bin, fw, f.name));
+		}
+	}
+	return out;
+}
+
 export const TWEAKS_README = [
 	"Tuning the game without rebuilding it",
 	"",

@@ -18,6 +18,24 @@ export function scanLog(log: string, allow: readonly RegExp[]): string[] {
 		.filter((line) => !allow.some((pattern) => pattern.test(line)));
 }
 
+// Godot puts the reason for some errors on the lines after the ERROR: line (an export's
+// configuration errors), so a report built from scanLog alone says nothing useful.
+export function errorDetails(log: string, allow: readonly RegExp[]): string[] {
+	const blocks: string[][] = [];
+	let open = false;
+	for (const line of stripAnsi(log).split(/\r?\n/)) {
+		if (ERROR_LINE.test(line)) {
+			open = !allow.some((pattern) => pattern.test(line));
+			if (open) blocks.push([line]);
+		} else if (open && (/^\s*at: /.test(line) || line.trim() === "")) {
+			open = false;
+		} else if (open) {
+			blocks[blocks.length - 1]?.push(line);
+		}
+	}
+	return blocks.map((b) => b.join("\n"));
+}
+
 export interface TestSummary {
 	cases: number;
 	errors: number;
