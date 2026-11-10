@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0 - 2026-11-10
+
+#### The start tunnel is home base: pick a job at the mission board, ride out in the parked car to the drop-off down the road, and ride home from the car waiting there
+
+#### Mission zones have buildings you can walk into: the drive is inside one, the others hold loot crates, and strike drones go for their roofs
+
+#### Strike zones get bombed: once the clock starts, drones come in waves and dive into the zone, more as time runs out and nonstop once it has. Shoot one, or fire near them, and they come for you
+
+#### Gear has slots now: wear a rig and a backpack, each with its own grid, plus pockets; loot bodies' rigs and packs (a full pack comes with what is in it). Saved inventories are reset
+
+#### The dead keep their gear on their body: search a body or a crate with F to open a loot screen with your backpack and theirs side by side, then drag items across, Ctrl+click to send one over, or take all
+
+#### Drones no longer spawn inside hills or chase you from under the ground, and a crash's smoke and explosion play out even when you are not looking
+
+#### Missions have a goal: walk into the strike zone to start the clock, grab the drive from its crate, and ride home with it to get paid in tokens (shown top left, kept between sessions)
+
+#### Missions pay in tokens
+
 ## 0.2.1 - 2026-11-09
 
 Fixed the game grinding down and closing some time after you killed soldiers: it kept trying to forget their guns every frame. Thanks to LOLIVER for the report and the logs that found it.
