@@ -123,4 +123,4 @@ func hud_lines(player: Node3D) -> Array[String]:
 func markers() -> Array:
 	if bool(status.get("delivered", false)) or not status.has("drive"):
 		return []
-	return [{"at": (status["drive"] as Vector3) + Vector3.UP * 2.2, "text": "DRIVE"}]
+	return [{"at": (status["drive"] as Vector3) + Vector3.UP * 2.2, "text": "drive"}]

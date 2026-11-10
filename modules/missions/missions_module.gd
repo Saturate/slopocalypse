@@ -22,8 +22,13 @@ const REQUIRED := {
 }
 ## How squarely you must face the board or a car to use it.
 const FACING := 0.7
-const MARKER_COLOUR := Color(1.0, 0.8, 0.35)
-const MARKER_PIXEL_SIZE := 0.0012
+const MARKER_COLOUR := Color(1.0, 0.85, 0.5)
+const MARKER_PIXEL_SIZE := 0.0008
+## Markers are faint, and fade out over `MARKER_FADE` metres as you come within
+## `MARKER_NEAR` of them: they point the way, the last bit you find yourself.
+const MARKER_ALPHA := 0.55
+const MARKER_NEAR := 10.0
+const MARKER_FADE := 8.0
 ## Trees are cleared this far around a building's footprint.
 const CLEARING_MARGIN := 4.0
 const HOME := "home"
@@ -426,7 +431,7 @@ func _update_markers() -> void:
 		return
 	var running := state == IN_MISSION
 	var car_at := _dropoff_car.global_position + Vector3.UP * 3.4 if _dropoff_car != null else Vector3.ZERO
-	_marker(&"CarMarker", car_at, "RIDE HOME", running and _dropoff_car != null)
+	_marker(&"CarMarker", car_at, "Car", running and _dropoff_car != null)
 	var wanted: Array = _type.markers() if running and _type != null else []
 	var i := 0
 	while i < wanted.size() or get_node_or_null(NodePath("Marker%d" % i)) != null:
@@ -446,13 +451,40 @@ func _marker(marker_name: StringName, at: Vector3, text: String, show: bool) -> 
 		label.no_depth_test = true
 		label.fixed_size = true
 		label.pixel_size = MARKER_PIXEL_SIZE
-		label.font_size = 32
-		label.outline_size = 8
-		label.modulate = MARKER_COLOUR
+		label.font_size = 26
+		label.outline_size = 6
+		label.outline_modulate = Color(0, 0, 0, 0.5)
+		label.modulate = Color(MARKER_COLOUR, MARKER_ALPHA)
+		label.add_to_group(&"mission_markers")
 		add_child(label)
-	label.text = text
+	label.set_meta(&"caption", text.capitalize())
 	label.global_position = at
 	label.visible = show
+
+
+## Client: each marker shows a small diamond and how far it is, fading out up close.
+func _process(_delta: float) -> void:
+	if DisplayServer.get_name() == "headless" or state != IN_MISSION:
+		return
+	var me := _local_player()
+	if me == null:
+		return
+	for node: Node in get_tree().get_nodes_in_group(&"mission_markers"):
+		var label := node as Label3D
+		if not label.visible:
+			continue
+		var d := me.global_position.distance_to(label.global_position)
+		label.text = "◆\n%s %d m" % [label.get_meta(&"caption", ""), int(d)]
+		label.modulate.a = MARKER_ALPHA * clampf((d - MARKER_NEAR) / MARKER_FADE, 0.0, 1.0)
+
+
+func _local_player() -> Node3D:
+	if not Net.has_local_player():
+		return null
+	for node: Node in get_tree().get_nodes_in_group(&"players"):
+		if int(node.get_meta(&"peer_id", 0)) == Net.local_peer_id():
+			return node as Node3D
+	return null
 
 
 ## Server: a friend who joins late sees the board and the mission as they are.
