@@ -48,7 +48,8 @@ func test_a_returning_player_gets_their_gear_and_spot_back() -> void:
 	assert_bool(_inventory.call(&"server_give", 61, "medkit")).is_true()
 	var kits: int = _inventory.call(&"count", 61, "medkit")
 	(first.get_node("Health") as HealthComponent).server_apply_damage(35.0)
-	_weapons.call(&"server_restore_builds", 61, {"secondary": GunAssembly.build("pistol_tactical")})
+	# Builds live on the gun items now.
+	assert_bool(_inventory.call(&"server_set_slot_data", 61, "secondary", {"build": GunAssembly.build("pistol_tactical")})).is_true()
 	_leave(61, first)
 
 	var again := _spawn(62)

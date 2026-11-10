@@ -1,13 +1,19 @@
 extends Node
-## Equips spawned players with two guns, a primary (rifle) and a secondary (pistol): their
-## logic at the camera (shots follow the aim), and the drawn one's model in the body's
-## hands, which the owner sees in first person and everyone else in third. 1 and 2 switch. Each player's build (parts in slots) is decided by the server
-## and replayed to everyone. Adds shot effects for all shots, and the HUD and modding
-## screen for the local player.
+## Arms players with up to two guns, a primary (rifle) and a secondary (pistol): their logic
+## at the camera (shots follow the aim), and the drawn one's model in the body's hands,
+## which the owner sees in first person and everyone else in third. 1 and 2 switch. Each
+## player's build (parts in slots) is decided by the server and replayed to everyone. With
+## the inventory loaded, guns are items: whatever gun item is in a player's primary or
+## secondary gear slot is the gun they hold, with the build stored on that item (so a looted
+## rifle keeps its parts); an empty slot means no gun there. Without the inventory everyone
+## carries the default guns. Adds shot effects for all shots, and the HUD and modding screen
+## for the local player.
 
 const RIFLE := "res://modules/weapons/scenes/rifle.tscn"
 ## Weapon slots, in the order 1 and 2 select them.
 const WEAPON_SLOTS: Array[String] = ["primary", "secondary"]
+## Gun items and the default build each comes with.
+const GUN_ITEMS := {"gun_rifle": "primary", "gun_pistol": "secondary"}
 
 var _charge_spawner := MultiplayerSpawner.new()
 var _charges_placed := 0
@@ -39,6 +45,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"weapons.build_changed", _on_build_changed)
 	EventBus.subscribe(&"inventory.loot_spawned", _on_loot_spawned)
 	EventBus.subscribe(&"inventory.item_model", _on_item_model)
+	EventBus.subscribe(&"inventory.slot_changed", _on_slot_changed)
 	Net.peer_joined.connect(_on_peer_joined)
 	if DisplayServer.get_name() != "headless":
 		var data: Variant = Data.load_json(HitscanWeapon.CONFIG)
@@ -57,6 +64,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"weapons.build_changed", _on_build_changed)
 	EventBus.unsubscribe(&"inventory.loot_spawned", _on_loot_spawned)
 	EventBus.unsubscribe(&"inventory.item_model", _on_item_model)
+	EventBus.unsubscribe(&"inventory.slot_changed", _on_slot_changed)
 	if Net.peer_joined.is_connected(_on_peer_joined):
 		Net.peer_joined.disconnect(_on_peer_joined)
 
@@ -73,7 +81,9 @@ func _on_player_spawned(p: Dictionary) -> void:
 		_local_player = player
 	var peer := int(player.get_meta(&"peer_id", 1))
 	for slot: String in WEAPON_SLOTS:
-		_equip(player, build_of(peer, slot))
+		var build := build_of(peer, slot)
+		if not build.is_empty():
+			_equip(player, build)
 	if DisplayServer.get_name() == "headless" or not local:
 		return
 	var feedback := ShotFeedback.new()
@@ -88,13 +98,36 @@ func _on_player_spawned(p: Dictionary) -> void:
 	add_child(modding)
 
 
-## The build `peer` carries in a weapon slot ("primary" or "secondary"): theirs once they
-## have changed it, otherwise the default for that slot.
+## The build `peer` carries in a weapon slot ("primary" or "secondary"): theirs once known
+## (empty when that slot has no gun), otherwise the default for that slot.
 func build_of(peer: int, slot: String = "primary") -> Dictionary:
 	var theirs: Dictionary = _builds.get(peer, {})
 	if theirs.has(slot):
 		return theirs[slot]
+	return default_build(slot)
+
+
+static func default_build(slot: String) -> Dictionary:
 	return GunAssembly.build(GunAssembly.chosen_build() if slot == "primary" else GunAssembly.default_secondary())
+
+
+## The build a gun item carries: its own if it has one that assembles, else its default.
+static func build_of_item(item: String, data: Dictionary) -> Dictionary:
+	var own: Variant = data.get("build")
+	if own is Dictionary and not (own as Dictionary).is_empty() and WeaponBuild.assemble(GunAssembly.catalogue(), own)["ok"]:
+		return own
+	return default_build(str(GUN_ITEMS.get(item, "primary")))
+
+
+## Server: the gun in a player's gear slot changed: arm them with it (its own build) or, for
+## an empty slot, take that gun away. Everyone hears it.
+func _on_slot_changed(p: Dictionary) -> void:
+	if not multiplayer.is_server():
+		return
+	var slot := str(p.get("slot", ""))
+	var item := str(p.get("item", ""))
+	var build := build_of_item(item, p.get("data", {})) if GUN_ITEMS.has(item) else {}
+	Net.server_broadcast(&"weapons.build_changed", {"peer": int(p.get("peer", 0)), "slot": slot, "build": build})
 
 
 ## The slot the player has drawn.
@@ -128,11 +161,20 @@ func server_set_build(peer: int, slots: Dictionary) -> bool:
 	if not result["ok"]:
 		_refuse(peer, ", ".join(result["errors"]))
 		return false
-	var why := _swap_parts(peer, build_of(peer, GunAssembly.weapon_slot_of(clean)), clean)
+	var weapon_slot := GunAssembly.weapon_slot_of(clean)
+	var inv := inventory()
+	if inv != null and (inv.call(&"slot_item", peer, weapon_slot) as Dictionary).is_empty():
+		_refuse(peer, "no gun in your %s slot" % weapon_slot)
+		return false
+	var why := _swap_parts(peer, build_of(peer, weapon_slot), clean)
 	if not why.is_empty():
 		_refuse(peer, why)
 		return false
-	Net.server_broadcast(&"weapons.build_changed", {"peer": peer, "build": clean})
+	# The build lives on the gun item; that change re-arms the player.
+	if inv != null:
+		inv.call(&"server_set_slot_data", peer, weapon_slot, {"build": clean})
+	else:
+		Net.server_broadcast(&"weapons.build_changed", {"peer": peer, "slot": weapon_slot, "build": clean})
 	return true
 
 
@@ -154,6 +196,9 @@ func _build_refused(why: String) -> void:
 ## Server: the builds `peer` changed from the defaults, `{weapon_slot: {part_slot: part}}`,
 ## for saving. Slots left at the default are not listed, so they follow the data.
 func server_builds_of(peer: int) -> Dictionary:
+	# With the inventory, builds are saved on the gun items instead.
+	if inventory() != null:
+		return {}
 	return (_builds.get(peer, {}) as Dictionary).duplicate(true)
 
 
@@ -161,6 +206,8 @@ func server_builds_of(peer: int) -> Dictionary:
 ## on the gun when it was saved). A build the current parts data no longer assembles is
 ## skipped, leaving that slot at its default.
 func server_restore_builds(peer: int, builds: Dictionary) -> void:
+	if inventory() != null:
+		return
 	for weapon_slot: Variant in builds:
 		var slots: Dictionary = builds[weapon_slot] if builds[weapon_slot] is Dictionary else {}
 		var result := WeaponBuild.assemble(GunAssembly.catalogue(), slots)
@@ -170,12 +217,20 @@ func server_restore_builds(peer: int, builds: Dictionary) -> void:
 		Net.server_broadcast(&"weapons.build_changed", {"peer": peer, "build": slots})
 
 
-## A gun part lying on the ground looks like the part, lying on its side.
+## A gun part lying on the ground looks like the part, lying on its side; a gun looks like
+## that gun, with its own parts.
 func _on_loot_spawned(p: Dictionary) -> void:
 	if DisplayServer.get_name() == "headless":
 		return
-	var part: Dictionary = GunAssembly.catalogue().get(str(p.get("item", "")), {})
 	var loot: Node = p.get("loot")
+	var item := str(p.get("item", ""))
+	if GUN_ITEMS.has(item) and loot != null and loot.has_method(&"set_visual"):
+		var gun := GunAssembly.build_model(build_of_item(item, loot.get_meta(&"data", {})))
+		gun.rotation = Vector3(0.0, 0.0, PI / 2.0)
+		gun.position.y = 0.05
+		loot.call(&"set_visual", gun)
+		return
+	var part: Dictionary = GunAssembly.catalogue().get(item, {})
 	if part.is_empty() or loot == null or not loot.has_method(&"set_visual"):
 		return
 	var model := MeshInstance3D.new()
@@ -188,8 +243,12 @@ func _on_loot_spawned(p: Dictionary) -> void:
 	loot.call(&"set_visual", model)
 
 
-## The inventory wants a model of an item (for its icon): a gun part's own mesh.
+## The inventory wants a model of an item (for its icon): a gun part's own mesh, or a whole
+## gun in its default build.
 func _on_item_model(p: Dictionary) -> void:
+	if GUN_ITEMS.has(str(p.get("item", ""))) and p.get("model") == null:
+		p["model"] = GunAssembly.build_model(default_build(str(GUN_ITEMS[str(p["item"])])))
+		return
 	var part: Dictionary = GunAssembly.catalogue().get(str(p.get("item", "")), {})
 	if part.is_empty() or p.get("model") != null:
 		return
@@ -261,16 +320,46 @@ func _swap_parts(peer: int, before: Dictionary, after: Dictionary) -> String:
 
 
 ## Everywhere, from the server's broadcast or a late-join catch-up: remember the build and
-## re-equip that player if they are here.
+## re-equip that player if they are here; an empty build takes the gun in that slot away.
 func _on_build_changed(p: Dictionary) -> void:
 	var peer := int(p.get("peer", 0))
 	var slots: Dictionary = p.get("build", {})
+	var slot := str(p.get("slot", "")) if slots.is_empty() else GunAssembly.weapon_slot_of(slots)
+	if slot.is_empty():
+		return
 	if not _builds.has(peer):
 		_builds[peer] = {}
-	_builds[peer][GunAssembly.weapon_slot_of(slots)] = slots
-	for player: Node in get_tree().get_nodes_in_group(&"players"):
-		if int(player.get_meta(&"peer_id", 1)) == peer:
+	_builds[peer][slot] = slots
+	for player: Node in _players_of(peer):
+		if slots.is_empty():
+			_unequip(player as PlayerController, slot)
+		else:
 			_equip(player as PlayerController, slots)
+
+
+## Players (and soldiers) with this peer id.
+func _players_of(peer: int) -> Array[Node]:
+	var out: Array[Node] = []
+	for group: StringName in [&"players", &"enemies"]:
+		for node: Node in get_tree().get_nodes_in_group(group):
+			if int(node.get_meta(&"peer_id", 1)) == peer and not out.has(node):
+				out.append(node)
+	return out
+
+
+## Takes the gun in `slot` away: no logic at the camera, nothing in the hands if it was drawn.
+func _unequip(player: PlayerController, slot: String) -> void:
+	var camera := player.get_node("Head/Camera")
+	var old := camera.get_node_or_null("Weapon_" + slot)
+	if old != null:
+		camera.remove_child(old)
+		old.queue_free()
+	if drawn_slot(player) == slot:
+		var socket := PlayerBody.weapon_socket(player)
+		var held := socket.get_node_or_null("HeldRifle") if socket != null else null
+		if held != null:
+			socket.remove_child(held)
+			held.queue_free()
 
 
 ## Server: a player who joins late learns everyone's builds before their players appear.
@@ -279,12 +368,12 @@ func _on_peer_joined(peer: int) -> void:
 		return
 	for owner: int in _builds:
 		for slot: String in _builds[owner]:
-			_catch_up.rpc_id(peer, owner, _builds[owner][slot])
+			_catch_up.rpc_id(peer, owner, slot, _builds[owner][slot])
 
 
 @rpc("authority", "call_remote", "reliable")
-func _catch_up(owner: int, slots: Dictionary) -> void:
-	_on_build_changed({"peer": owner, "build": slots})
+func _catch_up(owner: int, slot: String, slots: Dictionary) -> void:
+	_on_build_changed({"peer": owner, "slot": slot, "build": slots})
 
 
 ## Gives `player` the gun `slots` describes, in the weapon slot its receiver belongs to: its
@@ -300,6 +389,9 @@ func _equip(player: PlayerController, slots: Dictionary) -> void:
 	var camera := player.get_node("Head/Camera")
 	var node_name := "Weapon_" + slot
 	var old := camera.get_node_or_null(node_name)
+	# Already holding exactly this gun: nothing to do (and no forced reload).
+	if old != null and old.get_meta(&"build", {}) == slots:
+		return
 	if old != null:
 		camera.remove_child(old)
 		old.queue_free()
@@ -307,6 +399,9 @@ func _equip(player: PlayerController, slots: Dictionary) -> void:
 	weapon.name = node_name
 	weapon.holder = player
 	weapon.stats = assembled["stats"]
+	# Soldiers' guns hit softer than a player's (their module says how much).
+	if player.has_meta(&"damage_scale"):
+		weapon.stats["damage"] = float(weapon.stats.get("damage", 0.0)) * float(player.get_meta(&"damage_scale"))
 	weapon.semi_auto = GunAssembly.receiver_of(slots).get("fire_mode", "auto") == "semi"
 	weapon.set_meta(&"build", slots)
 	camera.add_child(weapon)

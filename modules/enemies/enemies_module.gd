@@ -154,11 +154,10 @@ func _on_enemy_ready(enemy: PlayerController, home: Vector3, info: Dictionary = 
 	health.server_reset()
 	# Weapons equip it, the inventory fills its pockets with loot, the world streams
 	# terrain around it on the server.
+	# Their guns hit softer than a player's, so a squad is a fight rather than a wipe (the
+	# weapons module applies it to whatever gun they hold).
+	enemy.set_meta(&"damage_scale", float(config["damage_scale"]))
 	EventBus.publish(&"player.spawned", {"player": enemy, "local": false, "npc": true})
-	# Their guns hit softer than a player's, so a squad is a fight rather than a wipe.
-	for weapon in enemy.get_node("Head/Camera").get_children():
-		if weapon is HitscanWeapon:
-			weapon.stats["damage"] = float(weapon.stats.get("damage", 0.0)) * float(config["damage_scale"])
 	if multiplayer.is_server():
 		health.died.connect(_server_died.bind(enemy))
 		var brain := EnemyBrain.new()

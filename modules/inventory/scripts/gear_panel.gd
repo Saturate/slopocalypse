@@ -1,13 +1,15 @@
 class_name GearPanel
 extends HBoxContainer
-## One side of the gear screens: the equipment slots on the left (rig, backpack, and the
-## guns, which are not items yet and only show what you have), the grids on the right
+## One side of the gear screens: the equipment slots on the left (primary gun, sidearm,
+## rig, backpack), the grids on the right
 ## (pockets, then the grids the worn rig and backpack open; a crate shows its one grid).
 ## Draws itself from an `InventoryGear`; the screen that owns it handles dragging and asks
 ## `target_at` what is under the mouse.
 
 const CELL := 40
 const SLOT_CELLS := 2
+## Slots shaped for what goes in them: a rifle is long.
+const WIDE_SLOTS := {"primary": Vector2i(4, 2)}
 const ACCENT := Color(0.82, 0.62, 0.3)
 const DIM := Color(0.6, 0.61, 0.58)
 const SLOT_COLOUR := Color(0.14, 0.15, 0.14)
@@ -16,8 +18,6 @@ const SLOT_EDGE := Color(0.3, 0.31, 0.28)
 ## Returns the InventoryGear to show (or null).
 var gear_source: Callable
 var inventory: Node
-## Read-only gun slots, `{name: label}`; only your own side shows them.
-var weapon_labels: Dictionary = {}
 ## Uid not to draw (being dragged), and uid to outline in red (refused quick move).
 var skip_uid := -1
 var flash_uid := -1
@@ -77,25 +77,19 @@ func _rebuild(g: InventoryGear) -> void:
 	_grid_views.clear()
 	if g == null:
 		return
-	for slot: Dictionary in g.slots():
+	var slots := g.slots()
+	slots.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _slot_rank(str(a["name"])) < _slot_rank(str(b["name"])))
+	for slot: Dictionary in slots:
 		var name := str(slot["name"])
 		_slots_col.add_child(_caption(name.to_upper()))
 		var box := Control.new()
-		box.custom_minimum_size = Vector2.ONE * CELL * SLOT_CELLS
+		box.custom_minimum_size = Vector2(_slot_cells(name) * CELL)
 		# Its own size, not the column's width: a wider box showed a strip beside the item.
 		box.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		box.mouse_filter = Control.MOUSE_FILTER_PASS
 		box.draw.connect(_draw_slot.bind(box, name))
 		_slots_col.add_child(box)
 		_slot_views[name] = box
-	for name: String in weapon_labels:
-		_slots_col.add_child(_caption(name.to_upper()))
-		var gun := Label.new()
-		gun.text = str(weapon_labels[name])
-		gun.custom_minimum_size = Vector2(CELL * SLOT_CELLS, CELL * 0.8)
-		gun.add_theme_font_size_override("font_size", 13)
-		gun.add_theme_color_override("font_color", DIM)
-		_slots_col.add_child(gun)
 	for name in g.grid_names():
 		_grids_col.add_child(_caption(name.to_upper()))
 		var view := Control.new()
@@ -105,6 +99,16 @@ func _rebuild(g: InventoryGear) -> void:
 		view.draw.connect(_draw_grid.bind(view, name))
 		_grids_col.add_child(view)
 		_grid_views[name] = view
+
+
+static func _slot_cells(slot: String) -> Vector2i:
+	return WIDE_SLOTS.get(slot, Vector2i(SLOT_CELLS, SLOT_CELLS))
+
+
+## Guns first, then what you wear.
+static func _slot_rank(slot: String) -> int:
+	var order := ["primary", "secondary", "rig", "backpack"]
+	return order.find(slot) if order.has(slot) else order.size()
 
 
 func _caption(text: String) -> Label:
@@ -126,7 +130,8 @@ func _draw_slot(box: Control, name: String) -> void:
 		var worn: Dictionary = slot["item"]
 		if str(slot["name"]) != name or worn.is_empty() or int(worn["uid"]) == skip_uid:
 			continue
-		GridPainter.draw_tile(box, inventory, worn, Vector2.ZERO, SLOT_CELLS, SLOT_CELLS, CELL, 1.0)
+		var cells := _slot_cells(name)
+		GridPainter.draw_tile(box, inventory, worn, Vector2.ZERO, cells.x, cells.y, CELL, 1.0)
 		if int(worn["uid"]) == flash_uid:
 			box.draw_rect(rect.grow(-GridPainter.GAP), GridPainter.FLASH, false, 3.0)
 

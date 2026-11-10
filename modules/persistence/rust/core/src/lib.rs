@@ -11,7 +11,8 @@ use std::collections::BTreeMap;
 
 /// Bumped with every change to the tables; `open` upgrades older files step by step.
 /// 2: items name the slot or grid they are in (`container`). 3: players have tokens.
-pub const SCHEMA_VERSION: i64 = 3;
+/// 4: items carry their own data (`data`, JSON: a gun's build).
+pub const SCHEMA_VERSION: i64 = 4;
 pub const MAX_NAME_CHARS: usize = 16;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -19,6 +20,8 @@ pub struct PlacedItem {
     pub item: String,
     /// Where it is: a grid ("pockets", "rig", "backpack") or a slot ("slot:rig").
     pub container: String,
+    /// The item's own data as JSON (a gun's build), or empty.
+    pub data: String,
     pub x: i64,
     pub y: i64,
     pub rotated: bool,
@@ -202,6 +205,14 @@ impl Store {
                 COMMIT;",
             )?;
         }
+        if version < 4 {
+            db.execute_batch(
+                "BEGIN;
+                ALTER TABLE player_items ADD COLUMN data TEXT NOT NULL DEFAULT '';
+                PRAGMA user_version = 4;
+                COMMIT;",
+            )?;
+        }
         Ok(Store { db })
     }
 
@@ -247,10 +258,18 @@ impl Store {
         tx.execute("DELETE FROM player_builds WHERE player = ?1", [name])?;
         {
             let mut add = tx.prepare(
-                "INSERT INTO player_items (player, item, x, y, rotated, container) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO player_items (player, item, x, y, rotated, container, data) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             )?;
             for it in &save.items {
-                add.execute(params![name, it.item, it.x, it.y, it.rotated, it.container])?;
+                add.execute(params![
+                    name,
+                    it.item,
+                    it.x,
+                    it.y,
+                    it.rotated,
+                    it.container,
+                    it.data
+                ])?;
             }
             let mut fit = tx.prepare(
                 "INSERT INTO player_builds (player, weapon_slot, part_slot, part) VALUES (?1, ?2, ?3, ?4)",
@@ -286,7 +305,7 @@ impl Store {
             return Ok(None);
         };
         let mut items_q = self.db.prepare(
-            "SELECT item, x, y, rotated, container FROM player_items WHERE player = ?1 ORDER BY rowid",
+            "SELECT item, x, y, rotated, container, data FROM player_items WHERE player = ?1 ORDER BY rowid",
         )?;
         let items = items_q
             .query_map([name], |r| {
@@ -296,6 +315,7 @@ impl Store {
                     y: r.get(2)?,
                     rotated: r.get(3)?,
                     container: r.get(4)?,
+                    data: r.get(5)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -425,6 +445,7 @@ mod tests {
                 PlacedItem {
                     item: "medkit".into(),
                     container: "pockets".into(),
+                    data: String::new(),
                     x: 0,
                     y: 0,
                     rotated: false,
@@ -432,6 +453,7 @@ mod tests {
                 PlacedItem {
                     item: "mag_30".into(),
                     container: "backpack".into(),
+                    data: r#"{"build":{"receiver":"rcv_ar"}}"#.into(),
                     x: 3,
                     y: 1,
                     rotated: true,

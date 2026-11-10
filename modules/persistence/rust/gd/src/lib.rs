@@ -205,6 +205,7 @@ fn player_from(d: &VarDictionary) -> PlayerSave {
         .map(|i| PlacedItem {
             item: text(i, "item"),
             container: text(i, "container"),
+            data: text(i, "data"),
             x: num(i, "x") as i64,
             y: num(i, "y") as i64,
             rotated: i.get_or_nil("rotated").try_to::<bool>().unwrap_or(false),
@@ -249,6 +250,7 @@ fn player_to(p: &PlayerSave) -> VarDictionary {
         let mut i = VarDictionary::new();
         i.set("item", it.item.as_str());
         i.set("container", it.container.as_str());
+        i.set("data", it.data.as_str());
         i.set("x", it.x);
         i.set("y", it.y);
         i.set("rotated", it.rotated);

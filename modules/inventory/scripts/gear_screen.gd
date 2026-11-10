@@ -346,8 +346,6 @@ func _build_ui() -> void:
 		var gear_panel := GearPanel.new()
 		gear_panel.inventory = inventory
 		gear_panel.gear_source = _gear.bind(theirs)
-		if not theirs:
-			gear_panel.weapon_labels = (inventory.call(&"weapon_labels") as Dictionary)
 		side.add_child(gear_panel)
 		_panels.append(gear_panel)
 	_info = _label("", 16, TEXT)

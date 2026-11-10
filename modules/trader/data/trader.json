@@ -4,6 +4,8 @@
   "sell_share": 0.5,
   "unlisted_price": 10,
   "stock": [
+    { "item": "gun_rifle", "price": 40 },
+    { "item": "gun_pistol", "price": 15 },
     { "item": "medkit", "price": 10 },
     { "item": "mag_ar_30", "price": 10 },
     { "item": "mag_ar_45", "price": 20 },

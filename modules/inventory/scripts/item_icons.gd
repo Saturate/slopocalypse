@@ -127,8 +127,9 @@ func _frame(holder: Node3D, model: Node3D, cells: Vector2i) -> void:
 		# The front (-Z) leads: model +Z goes the other way.
 		cols[longest] = -along if longest == 2 else along
 		cols[order[1]] = Vector3.UP if wide else Vector3.RIGHT
+		# A mirror image is no rotation: show the other face instead, keeping its top up.
 		if Basis(cols[0], cols[1], cols[2]).determinant() < 0.0:
-			cols[order[1]] = -cols[order[1]]
+			cols[facing] = -cols[facing]
 		turn = Basis(cols[0], cols[1], cols[2])
 	holder.basis = Basis.from_euler(TILT) * turn
 	var seen := _bounds(holder, holder.transform)

@@ -4,14 +4,13 @@
     "use_medkit": ["H"]
   },
   "gear": {
-    "slots": { "rig": "rig", "backpack": "backpack" },
+    "slots": { "primary": "primary_gun", "secondary": "sidearm", "rig": "rig", "backpack": "backpack" },
     "pockets": [4, 1],
-    "fill_order": ["rig", "pockets", "backpack"],
-    "weapons": { "primary": "Rifle (in hand)", "secondary": "Pistol (in hand)" }
+    "fill_order": ["rig", "pockets", "backpack"]
   },
-  "starting_gear": { "rig": "rig_light", "backpack": "bag_small" },
+  "starting_gear": { "primary": "gun_rifle", "secondary": "gun_pistol", "rig": "rig_light", "backpack": "bag_small" },
   "respawn_gear": {},
-  "npc_gear": { "rig": "rig_light" },
+  "npc_gear": { "primary": "gun_rifle", "rig": "rig_light" },
   "npc_loot": {
     "rolls": [1, 3],
     "items": {
@@ -62,7 +61,9 @@
     "med": [0.62, 0.22, 0.2],
     "rig": [0.36, 0.4, 0.28],
     "backpack": [0.42, 0.36, 0.26],
-    "objective": [0.75, 0.62, 0.2]
+    "objective": [0.75, 0.62, 0.2],
+    "primary_gun": [0.36, 0.38, 0.42],
+    "sidearm": [0.4, 0.36, 0.44]
   },
   "items": {
     "opt_reddot": { "name": "Tube red dot", "short": "Red dot", "size": [1, 1], "kind": "optic" },
@@ -87,6 +88,8 @@
     "muz_pistol_comp": { "name": "Pistol compensator", "short": "P comp", "size": [1, 1], "kind": "pistol" },
     "muz_pistol_supp": { "name": "Pistol suppressor", "short": "P supp", "size": [2, 1], "kind": "pistol" },
     "opt_pistol_dot": { "name": "Mini red dot", "short": "Mini dot", "size": [1, 1], "kind": "pistol" },
+    "gun_rifle": { "name": "Rifle (with its parts)", "short": "Rifle", "size": [5, 2], "kind": "primary_gun" },
+    "gun_pistol": { "name": "Pistol (with its parts)", "short": "Pistol", "size": [2, 2], "kind": "sidearm" },
     "rig_light": { "name": "Chest rig", "short": "Chest rig", "size": [2, 2], "kind": "rig", "grid": [4, 2], "model": "rig_light" },
     "rig_heavy": { "name": "Assault rig", "short": "Assault rig", "size": [3, 2], "kind": "rig", "grid": [5, 3], "model": "rig_heavy" },
     "bag_small": { "name": "Day pack", "short": "Day pack", "size": [3, 3], "kind": "backpack", "grid": [5, 5], "model": "bag_small" },
