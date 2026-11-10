@@ -15,7 +15,11 @@
     "wall_height": [2.7, 3.2],
     "off_road": [9.0, 22.0],
     "spread": 35.0,
-    "gap": 3.0
+    "gap": 3.0,
+    "segment": 1.2,
+    "segment_hp": 100.0,
+    "blast_damage": 140.0,
+    "blast_reach": 1.6
   },
   "hazards": {
     "trigger_radius": 0.9,

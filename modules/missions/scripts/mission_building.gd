@@ -1,9 +1,15 @@
 class_name MissionBuilding
 extends StaticBody3D
 ## A building in a mission zone: the voxel kit's shed (plank walls, a door, windows, a metal
-## roof) with walk-in collision: the slab, four walls with a gap for the door, and the
-## roof. Built the same on every instance from its layout entry (see `MissionLayout`), so
-## nothing about it is sent but that entry. The door is on the local -Z side.
+## roof) with walk-in collision. Built the same on every instance from its layout entry (see
+## `MissionLayout`), so nothing about it is sent but that entry. The door is on the local -Z
+## side.
+##
+## It breaks: the walls and roof are cut into segments (about a metre each, two rows up the
+## walls), each with its own collision and health. Blasts nearby (drones, mines, charges)
+## wear segments down on the server; a broken one loses its collision and is carved out of
+## the model with a burst of debris, leaving a hole you can walk or shoot through. The entry's
+## `broken` list carries which are gone, so late joiners see the same holes.
 
 const DOOR_WIDTH := 1.0
 const DOOR_HEIGHT := 2.0
@@ -12,11 +18,23 @@ const ROOF_THICKNESS := 0.25
 const WALL := 0.2
 ## Voxel size of the mesh: coarse enough to build quickly during a ride.
 const VOXEL := 0.15
+const DEBRIS_COUNT := 24
+const DEBRIS_SPEED := 4.5
 
-## The layout entry: `{position, yaw, width, depth, wall_height, windows, paint, seed}`.
+## The layout entry: `{position, yaw, width, depth, wall_height, windows, paint, seed,
+## broken}`.
 var spec: Dictionary = {}
+## Segment size and health from the missions config (`buildings`).
+var segment_size := 1.2
+var segment_hp := 100.0
 
 var _visual := DisplayServer.get_name() != "headless"
+var _model: VoxelModel
+var _mesh: MeshInstance3D
+var _shapes: Dictionary[int, CollisionShape3D] = {}
+## Server: segment id -> health left.
+var _hp: Dictionary[int, float] = {}
+var _segments: Array[AABB] = []
 
 
 func _ready() -> void:
@@ -25,38 +43,127 @@ func _ready() -> void:
 	var w := float(spec.get("width", 5.0))
 	var d := float(spec.get("depth", 4.0))
 	var wh := float(spec.get("wall_height", 2.8))
-	for box in collision_boxes(w, d, wh):
-		var shape := CollisionShape3D.new()
-		var b := BoxShape3D.new()
-		b.size = box.size
-		shape.shape = b
-		shape.position = box.get_center()
-		add_child(shape)
+	_add_shape(-1, AABB(Vector3(-w / 2.0, 0.0, -d / 2.0), Vector3(w, SLAB, d)))
+	_segments = segments(w, d, wh, segment_size)
+	for i in _segments.size():
+		_add_shape(i, _segments[i])
+		_hp[i] = segment_hp
 	if _visual:
-		var mesh := MeshInstance3D.new()
-		mesh.name = "Mesh"
-		mesh.mesh = VoxGenerator.to_mesh(VoxShed.new().build({
+		_model = VoxShed.new().build({
 			"seed": int(spec.get("seed", 1)), "paint": int(spec.get("paint", 1)), "width": w,
 			"depth": d, "wall_height": wh, "pitch": float(spec.get("pitch", 0.45)), "door": 1,
 			"windows": float(spec.get("windows", 2)), "voxel": VOXEL,
-		}))
-		add_child(mesh)
+		})
+		_mesh = MeshInstance3D.new()
+		_mesh.name = "Mesh"
+		add_child(_mesh)
+	_remove(spec.get("broken", []), false)
+	if _visual:
+		_mesh.mesh = VoxGenerator.to_mesh(_model)
 
 
-## The solid parts, local: slab, back and side walls, the front wall on both sides of the
-## door and above it, and the roof.
-static func collision_boxes(w: float, d: float, wh: float) -> Array[AABB]:
+func _add_shape(id: int, box: AABB) -> void:
+	var shape := CollisionShape3D.new()
+	var b := BoxShape3D.new()
+	b.size = box.size
+	shape.shape = b
+	shape.position = box.get_center()
+	add_child(shape)
+	if id >= 0:
+		_shapes[id] = shape
+
+
+## The breakable parts, local: each wall cut along its length into pieces of about `size`
+## and into two rows up its height (the front leaves the doorway open, with a lintel over
+## it), and the roof as a grid of tiles.
+static func segments(w: float, d: float, wh: float, size: float) -> Array[AABB]:
+	var out: Array[AABB] = []
 	var top := minf(SLAB + DOOR_HEIGHT, wh - 0.2)
-	return [
-		AABB(Vector3(-w / 2.0, 0.0, -d / 2.0), Vector3(w, SLAB, d)),
-		AABB(Vector3(-w / 2.0, 0.0, d / 2.0 - WALL), Vector3(w, wh, WALL)),
-		AABB(Vector3(-w / 2.0, 0.0, -d / 2.0), Vector3(WALL, wh, d)),
-		AABB(Vector3(w / 2.0 - WALL, 0.0, -d / 2.0), Vector3(WALL, wh, d)),
-		AABB(Vector3(-w / 2.0, 0.0, -d / 2.0), Vector3(w / 2.0 - DOOR_WIDTH / 2.0, wh, WALL)),
-		AABB(Vector3(DOOR_WIDTH / 2.0, 0.0, -d / 2.0), Vector3(w / 2.0 - DOOR_WIDTH / 2.0, wh, WALL)),
-		AABB(Vector3(-DOOR_WIDTH / 2.0, top, -d / 2.0), Vector3(DOOR_WIDTH, wh - top, WALL)),
-		AABB(Vector3(-w / 2.0, wh, -d / 2.0), Vector3(w, ROOF_THICKNESS, d)),
-	]
+	var rows := [[0.0, wh / 2.0], [wh / 2.0, wh]]
+	for row: Array in rows:
+		var y0 := float(row[0])
+		var y1 := float(row[1])
+		# Back (+Z), left (-X) and right (+X) walls.
+		for piece in _cuts(-w / 2.0, w / 2.0, size):
+			out.append(AABB(Vector3(piece.x, y0, d / 2.0 - WALL), Vector3(piece.y - piece.x, y1 - y0, WALL)))
+		for piece in _cuts(-d / 2.0, d / 2.0, size):
+			out.append(AABB(Vector3(-w / 2.0, y0, piece.x), Vector3(WALL, y1 - y0, piece.y - piece.x)))
+			out.append(AABB(Vector3(w / 2.0 - WALL, y0, piece.x), Vector3(WALL, y1 - y0, piece.y - piece.x)))
+		# Front (-Z), either side of the door.
+		for side: Vector2 in [Vector2(-w / 2.0, -DOOR_WIDTH / 2.0), Vector2(DOOR_WIDTH / 2.0, w / 2.0)]:
+			for piece in _cuts(side.x, side.y, size):
+				out.append(AABB(Vector3(piece.x, y0, -d / 2.0), Vector3(piece.y - piece.x, y1 - y0, WALL)))
+	out.append(AABB(Vector3(-DOOR_WIDTH / 2.0, top, -d / 2.0), Vector3(DOOR_WIDTH, wh - top, WALL)))
+	for px in _cuts(-w / 2.0, w / 2.0, size * 1.5):
+		for pz in _cuts(-d / 2.0, d / 2.0, size * 1.5):
+			out.append(AABB(Vector3(px.x, wh, pz.x), Vector3(px.y - px.x, ROOF_THICKNESS, pz.y - pz.x)))
+	return out
+
+
+## `from`..`to` cut into equal pieces of about `size`, as (start, end) pairs.
+static func _cuts(from: float, to: float, size: float) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	var n := maxi(1, int(round((to - from) / size)))
+	var step := (to - from) / n
+	for i in n:
+		out.append(Vector2(from + i * step, from + (i + 1) * step))
+	return out
+
+
+func segment_count() -> int:
+	return _segments.size()
+
+
+func is_broken(id: int) -> bool:
+	return not _shapes.has(id)
+
+
+## Server: a blast at `centre` (world) with `radius`: segments within `radius * reach` lose
+## health (`damage` at the centre, falling off to nothing at the edge of the reach). Returns
+## the ids of segments it broke.
+func server_blast(centre: Vector3, radius: float, damage: float, reach: float) -> Array[int]:
+	var local := global_transform.affine_inverse() * centre
+	var far := radius * reach
+	var broke: Array[int] = []
+	for id: int in _shapes.keys():
+		var box := _segments[id]
+		var nearest := Vector3(clampf(local.x, box.position.x, box.end.x), clampf(local.y, box.position.y, box.end.y), clampf(local.z, box.position.z, box.end.z))
+		var dist := nearest.distance_to(local)
+		if dist >= far:
+			continue
+		_hp[id] = float(_hp.get(id, segment_hp)) - damage * (1.0 - dist / far)
+		if _hp[id] <= 0.0:
+			broke.append(id)
+	return broke
+
+
+## Everywhere: takes the segments away (collision, and on clients the voxels with debris).
+func break_segments(ids: Array) -> void:
+	_remove(ids, true)
+	if _visual and _model != null and not ids.is_empty():
+		_mesh.mesh = VoxGenerator.to_mesh(_model)
+
+
+func _remove(ids: Array, debris: bool) -> void:
+	var wh := float(spec.get("wall_height", 2.8))
+	var d := float(spec.get("depth", 4.0))
+	for v: Variant in ids:
+		var id := int(v)
+		if not _shapes.has(id):
+			continue
+		var shape := _shapes[id]
+		_shapes.erase(id)
+		shape.queue_free()
+		if _model == null:
+			continue
+		var box := _segments[id].grow(VOXEL * 0.5)
+		# A roof tile takes the sloping roof above it too.
+		if box.position.y >= wh - 0.1:
+			box = AABB(box.position, Vector3(box.size.x, d * 0.6 + 0.6, box.size.z))
+		_model.carve_box(box.position, box.end)
+		if debris and is_inside_tree():
+			var at := global_transform * _segments[id].get_center()
+			VoxelDebris.burst(get_parent(), at, Vector3.UP, Color(0.5, 0.42, 0.33), DEBRIS_COUNT, DEBRIS_SPEED)
 
 
 ## A spot on the floor inside, `along` (0..1 from the door to the back wall) and `side`
