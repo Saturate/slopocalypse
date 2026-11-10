@@ -7,6 +7,8 @@
   "board": { "offset": [4.9, 0.0, -3.0] },
   "transport": { "offset": [-2.6, 0.0, -8.0] },
   "dropoff_side": 5.0,
+  "zone": { "beyond_dropoff": 70.0, "radius": 45.0, "objective_side": -6.0 },
+  "objective_item": "usb_drive",
   "offered": 3,
   "seed": 11,
   "missions": [

@@ -56,9 +56,21 @@ func _process(_delta: float) -> void:
 		_:
 			_label.text = ""
 	_label.visible = not _label.text.is_empty()
-	if current.is_empty():
-		_mission.text = ""
-	else:
-		var where := "out on" if state != "home" else "chosen:"
-		_mission.text = "Mission %s %s  ·  %d m  ·  %d tokens" % [where, current.get("name", ""), int(current.get("distance", 0)), int(current.get("payout", 0))]
-	_mission.visible = captured and not _mission.text.is_empty()
+	var lines: Array[String] = ["Tokens: %d" % int(missions.get(&"my_tokens"))]
+	if not current.is_empty() and state == "home":
+		lines.append("Mission chosen: %s  ·  %d m  ·  %d tokens" % [current.get("name", ""), int(current.get("distance", 0)), int(current.get("payout", 0))])
+	elif not current.is_empty():
+		lines.append(str(current.get("name", "")))
+		var left := float(missions.get(&"time_left"))
+		if bool(current.get("delivered", false)):
+			lines.append("Drive delivered")
+		elif left < 0.0:
+			lines.append("Reach the strike zone")
+		elif left > 0.0:
+			lines.append("Strike in %d:%02d" % [int(left) / 60, int(left) % 60])
+		else:
+			lines.append("STRIKE INCOMING")
+		var drive: Vector3 = missions.get(&"objective_at")
+		lines.append("Drive %d m" % int(player.global_position.distance_to(drive)))
+	_mission.text = "\n".join(lines)
+	_mission.visible = captured

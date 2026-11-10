@@ -3,18 +3,21 @@ extends Node
 ## offers a few missions, and the car parked inside rides everyone at home out to the chosen
 ## mission's drop-off point down the road; the car waiting there rides them back. The server
 ## owns the run (`home`, then `in_mission` until nobody is out any more) and tells everyone
-## through `missions.*` topics. Mission content (objective, drones, pay) comes in later
-## issues; this is the flow.
+## through `missions.*` topics. Each mission has a strike zone past the drop-off with the
+## objective (a drive in a crate); its clock starts when someone walks in, and riding home
+## with the drive pays everyone who rode home in tokens. Drone strikes come next.
 
 const CONFIG := "res://modules/missions/data/missions.json"
 const REQUIRED := {
 	"home_radius": TYPE_FLOAT, "reach": TYPE_FLOAT, "ride_fade_seconds": TYPE_FLOAT,
 	"ride_home_reach": TYPE_FLOAT, "drop_spread": TYPE_FLOAT, "board": TYPE_DICTIONARY,
 	"transport": TYPE_DICTIONARY, "dropoff_side": TYPE_FLOAT, "offered": TYPE_FLOAT,
-	"seed": TYPE_FLOAT, "missions": TYPE_ARRAY,
+	"seed": TYPE_FLOAT, "missions": TYPE_ARRAY, "zone": TYPE_DICTIONARY, "objective_item": TYPE_STRING,
 }
 ## How squarely you must face the board or a car to use it.
 const FACING := 0.7
+const MARKER_COLOUR := Color(1.0, 0.8, 0.35)
+const MARKER_PIXEL_SIZE := 0.0012
 const HOME := "home"
 const IN_MISSION := "in_mission"
 
@@ -24,6 +27,14 @@ var config: Dictionary = {}
 var offers: Array = []
 var current: Dictionary = {}
 var state := HOME
+## Everywhere: the strike zone's centre and the objective's spot while a mission runs, and
+## the clock (-1 until someone reaches the zone). Each instance counts the clock down
+## itself after the server starts it.
+var zone := Vector3.ZERO
+var objective_at := Vector3.ZERO
+var time_left := -1.0
+## This instance's own player's tokens, as the server last said.
+var my_tokens := 0
 
 var _spawn := Vector3.ZERO
 var _board: MissionBoard
@@ -35,6 +46,9 @@ var _placed_for: Dictionary = {}
 ## Server: peers out on the mission; how many runs have ended (rolls the next offers).
 var _out: Dictionary = {}
 var _runs := 0
+var _objective_crate: Node3D
+## Server: peer -> tokens.
+var _tokens: Dictionary = {}
 
 
 func _ready() -> void:
@@ -239,6 +253,7 @@ func server_ride_out() -> bool:
 	if riders.is_empty():
 		return false
 	state = IN_MISSION
+	_open_zone()
 	var spread := float(config.get("drop_spread", 2.0))
 	for i in riders.size():
 		var player := riders[i]
@@ -271,6 +286,7 @@ func server_ride_home(player: Node3D) -> bool:
 	if riders.is_empty():
 		return false
 	EventBus.publish(&"missions.rode_home", {"mission": current.get("id", ""), "riders": riders})
+	_pay_if_delivered(riders)
 	_broadcast(riders)
 	_end_if_nobody_out()
 	return true
@@ -279,7 +295,8 @@ func server_ride_home(player: Node3D) -> bool:
 func _end_if_nobody_out() -> void:
 	if state != IN_MISSION or not _out.is_empty():
 		return
-	EventBus.publish(&"missions.ended", {"mission": current.get("id", "")})
+	EventBus.publish(&"missions.ended", {"mission": current.get("id", ""), "delivered": bool(current.get("delivered", false))})
+	_close_zone()
 	_runs += 1
 	state = HOME
 	current = {}
@@ -305,7 +322,7 @@ func _on_peer_left(peer: int) -> void:
 ## Server: tells everyone the offers, the mission and the run state; `riders` (peer ids) get
 ## the ride's fade.
 func _broadcast(riders: Array = []) -> void:
-	Net.server_broadcast(&"missions.changed", {"offers": offers, "current": current, "state": state, "riders": riders})
+	Net.server_broadcast(&"missions.changed", {"offers": offers, "current": current, "state": state, "riders": riders, "zone": zone, "objective": objective_at, "time_left": time_left})
 
 
 ## Everywhere: takes the server's word for the mission state.
@@ -313,21 +330,59 @@ func _on_changed(p: Dictionary) -> void:
 	offers = p.get("offers", offers)
 	current = p.get("current", {})
 	state = str(p.get("state", state))
-	if current != _placed_for:
+	zone = p.get("zone", zone)
+	objective_at = p.get("objective", objective_at)
+	time_left = float(p.get("time_left", time_left))
+	if _key(current) != _key(_placed_for):
 		_place_dropoff_car()
+	_update_markers()
 	if Net.has_local_player() and (p.get("riders", []) as Array).has(Net.local_peer_id()):
 		EventBus.publish(&"missions.ride", {"seconds": float(config.get("ride_fade_seconds", 0.8))})
+
+
+## Which mission a dictionary is, ignoring run details such as `delivered`.
+static func _key(mission: Dictionary) -> String:
+	return "%s@%s" % [mission.get("id", ""), mission.get("distance", 0)]
+
+
+## Client: markers over the objective and the drop-off car while a mission runs, seen
+## through walls so they lead the way.
+func _update_markers() -> void:
+	if DisplayServer.get_name() == "headless" or not is_inside_tree():
+		return
+	var running := state == IN_MISSION
+	_marker(&"ObjectiveMarker", objective_at + Vector3.UP * 2.2, "DRIVE", running and not bool(current.get("delivered", false)))
+	var car_at := _dropoff_car.global_position + Vector3.UP * 3.4 if _dropoff_car != null else Vector3.ZERO
+	_marker(&"CarMarker", car_at, "RIDE HOME", running and _dropoff_car != null)
+
+
+func _marker(marker_name: StringName, at: Vector3, text: String, show: bool) -> void:
+	var label := get_node_or_null(NodePath(marker_name)) as Label3D
+	if label == null:
+		label = Label3D.new()
+		label.name = marker_name
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.no_depth_test = true
+		label.fixed_size = true
+		label.pixel_size = MARKER_PIXEL_SIZE
+		label.font_size = 32
+		label.outline_size = 8
+		label.modulate = MARKER_COLOUR
+		add_child(label)
+	label.text = text
+	label.global_position = at
+	label.visible = show
 
 
 ## Server: a friend who joins late sees the board and the mission as they are.
 func _on_peer_joined(peer: int) -> void:
 	if multiplayer.is_server():
-		_sync.rpc_id(peer, offers, current, state)
+		_sync.rpc_id(peer, {"offers": offers, "current": current, "state": state, "zone": zone, "objective": objective_at, "time_left": time_left})
 
 
 @rpc("authority", "call_remote", "reliable")
-func _sync(new_offers: Array, new_current: Dictionary, new_state: String) -> void:
-	_on_changed({"offers": new_offers, "current": new_current, "state": new_state})
+func _sync(p: Dictionary) -> void:
+	_on_changed(p)
 
 
 ## Client only: the local player's prompt, board screen and ride fade.
@@ -346,3 +401,95 @@ func _on_player_spawned(p: Dictionary) -> void:
 	var fade := RideFade.new()
 	fade.name = "RideFade"
 	add_child(fade)
+
+
+## Server: lays out the strike zone past the drop-off: its centre, and the crate holding the
+## objective beside the road there. The clock waits for someone to arrive.
+func _open_zone() -> void:
+	var z: Dictionary = config["zone"]
+	var mission := current.duplicate()
+	mission["distance"] = float(current.get("distance", 0.0)) + float(z.get("beyond_dropoff", 70.0))
+	zone = dropoff_of(mission) - Vector3(float(config.get("dropoff_side", 0.0)), 0.0, 0.0)
+	objective_at = zone + Vector3(float(z.get("objective_side", -6.0)), 0.0, 0.0)
+	time_left = -1.0
+	current["delivered"] = false
+	var inventory := get_tree().get_first_node_in_group(&"inventory_api")
+	if inventory != null:
+		_objective_crate = inventory.call(&"server_spawn_mission_crate", objective_at, [str(config["objective_item"])])
+		if _objective_crate != null:
+			objective_at = _objective_crate.global_position
+
+
+## Server: the run is over: whatever is left of the objective crate goes.
+func _close_zone() -> void:
+	var inventory := get_tree().get_first_node_in_group(&"inventory_api")
+	if inventory != null and is_instance_valid(_objective_crate):
+		inventory.call(&"server_remove_container", _objective_crate)
+	_objective_crate = null
+	time_left = -1.0
+
+
+## Server: riding home with the drive in someone's gear pays everyone who rode home with it
+## the mission's tokens (the drive is handed in). Without it, nothing.
+func _pay_if_delivered(riders: Array) -> void:
+	var inventory := get_tree().get_first_node_in_group(&"inventory_api")
+	if inventory == null or bool(current.get("delivered", false)):
+		return
+	var item := str(config["objective_item"])
+	var carrier := -1
+	for peer: int in riders:
+		if int(inventory.call(&"count", peer, item)) > 0:
+			carrier = peer
+			break
+	if carrier < 0:
+		return
+	inventory.call(&"server_take", carrier, item)
+	current["delivered"] = true
+	var pay := int(current.get("payout", 0))
+	for peer: int in riders:
+		server_set_tokens(peer, server_tokens_of(peer) + pay)
+	EventBus.publish(&"missions.paid", {"mission": current.get("id", ""), "riders": riders, "tokens": pay})
+
+
+func server_tokens_of(peer: int) -> int:
+	return int(_tokens.get(peer, 0))
+
+
+## Server: sets `peer`'s tokens (pay, the trader, a loaded save) and tells them.
+func server_set_tokens(peer: int, tokens: int) -> void:
+	_tokens[peer] = maxi(tokens, 0)
+	if peer == multiplayer.get_unique_id():
+		my_tokens = _tokens[peer]
+	elif multiplayer.get_peers().has(peer):
+		_receive_tokens.rpc_id(peer, int(_tokens[peer]))
+
+
+@rpc("authority", "call_remote", "reliable")
+func _receive_tokens(tokens: int) -> void:
+	my_tokens = tokens
+
+
+func _physics_process(delta: float) -> void:
+	var prof := Prof.start()
+	_physics_tick(delta)
+	Prof.stop(&"missions/module:physics", prof)
+
+
+## The clock: the server starts it when the first rider reaches the zone and tells everyone;
+## every instance then counts it down on its own.
+func _physics_tick(delta: float) -> void:
+	if state != IN_MISSION:
+		return
+	if time_left >= 0.0:
+		time_left = maxf(time_left - delta, 0.0)
+		return
+	if not multiplayer.is_server():
+		return
+	var radius := float((config["zone"] as Dictionary).get("radius", 45.0))
+	for node: Node in get_tree().get_nodes_in_group(&"players"):
+		var p := node as Node3D
+		if p != null and _out.has(int(p.get_meta(&"peer_id", 1))) and Vector2(p.global_position.x - zone.x, p.global_position.z - zone.z).length() < radius:
+			time_left = float(current.get("time_limit", 180.0))
+			EventBus.publish(&"missions.clock_started", {"mission": current.get("id", ""), "seconds": time_left})
+			_broadcast()
+			return

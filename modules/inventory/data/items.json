@@ -61,7 +61,8 @@
     "pistol": [0.42, 0.36, 0.46],
     "med": [0.62, 0.22, 0.2],
     "rig": [0.36, 0.4, 0.28],
-    "backpack": [0.42, 0.36, 0.26]
+    "backpack": [0.42, 0.36, 0.26],
+    "objective": [0.75, 0.62, 0.2]
   },
   "items": {
     "opt_reddot": { "name": "Tube red dot", "short": "Red dot", "size": [1, 1], "kind": "optic" },
@@ -90,6 +91,7 @@
     "rig_heavy": { "name": "Assault rig", "short": "Assault rig", "size": [3, 2], "kind": "rig", "grid": [5, 3] },
     "bag_small": { "name": "Day pack", "short": "Day pack", "size": [3, 3], "kind": "backpack", "grid": [5, 5] },
     "bag_large": { "name": "Raid pack", "short": "Raid pack", "size": [4, 4], "kind": "backpack", "grid": [6, 7] },
+    "usb_drive": { "name": "Encrypted drive (mission)", "short": "Drive", "size": [1, 1], "kind": "objective" },
     "medkit": { "name": "Field medkit", "short": "Medkit", "size": [1, 1], "kind": "med", "use": { "heal": 60.0, "seconds": 3.0 } }
   }
 }

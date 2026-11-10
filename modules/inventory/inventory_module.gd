@@ -460,6 +460,23 @@ func server_spawn_crate(at: Vector3) -> LootCrate:
 	return crate
 
 
+## Server: a crate holding exactly `items` that never refills and is not saved with the world
+## (a mission's objective). `server_remove_container` takes it away again.
+func server_spawn_mission_crate(at: Vector3, items: Array) -> LootCrate:
+	_loot_count += 1
+	var crate: LootCrate = _crate_spawner.spawn({"index": _loot_count, "position": _on_ground(at)})
+	crate.set_meta(&"no_refill", true)
+	var id := _new_container(crate, _crate_grid())
+	_fill(_containers[id], items)
+	return crate
+
+
+## Server: removes a crate or body and whatever is still in it.
+func server_remove_container(node: Node) -> void:
+	if node != null and node.has_meta(&"container"):
+		_remove_container(int(node.get_meta(&"container")))
+
+
 func _make_crate(data: Variant) -> Node:
 	var info: Dictionary = data
 	var crate := LootCrate.new()
@@ -537,7 +554,7 @@ func _container_changed(id: int) -> void:
 	var empty := grid.is_empty()
 	if empty != bool(node.get_meta(&"empty", false)):
 		Net.server_broadcast(&"inventory.container_state", {"node": node, "empty": empty})
-	if node is LootCrate:
+	if node is LootCrate and not node.get_meta(&"no_refill", false):
 		if not empty:
 			_crate_refill.erase(node)
 		elif not _crate_refill.has(node):
