@@ -82,6 +82,8 @@ func _rebuild(g: InventoryGear) -> void:
 		_slots_col.add_child(_caption(name.to_upper()))
 		var box := Control.new()
 		box.custom_minimum_size = Vector2.ONE * CELL * SLOT_CELLS
+		# Its own size, not the column's width: a wider box showed a strip beside the item.
+		box.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		box.mouse_filter = Control.MOUSE_FILTER_PASS
 		box.draw.connect(_draw_slot.bind(box, name))
 		_slots_col.add_child(box)

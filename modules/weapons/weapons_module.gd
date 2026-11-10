@@ -38,6 +38,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	EventBus.subscribe(&"weapons.build_changed", _on_build_changed)
 	EventBus.subscribe(&"inventory.loot_spawned", _on_loot_spawned)
+	EventBus.subscribe(&"inventory.item_model", _on_item_model)
 	Net.peer_joined.connect(_on_peer_joined)
 	if DisplayServer.get_name() != "headless":
 		var data: Variant = Data.load_json(HitscanWeapon.CONFIG)
@@ -55,6 +56,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
 	EventBus.unsubscribe(&"weapons.build_changed", _on_build_changed)
 	EventBus.unsubscribe(&"inventory.loot_spawned", _on_loot_spawned)
+	EventBus.unsubscribe(&"inventory.item_model", _on_item_model)
 	if Net.peer_joined.is_connected(_on_peer_joined):
 		Net.peer_joined.disconnect(_on_peer_joined)
 
@@ -184,6 +186,19 @@ func _on_loot_spawned(p: Dictionary) -> void:
 	model.rotation = Vector3(0.0, 0.0, PI / 2.0)
 	model.position.y = 0.03
 	loot.call(&"set_visual", model)
+
+
+## The inventory wants a model of an item (for its icon): a gun part's own mesh.
+func _on_item_model(p: Dictionary) -> void:
+	var part: Dictionary = GunAssembly.catalogue().get(str(p.get("item", "")), {})
+	if part.is_empty() or p.get("model") != null:
+		return
+	var mesh := GunPartMeshes.mesh(str(part.get("mesh", "")))
+	if mesh == null:
+		return
+	var model := MeshInstance3D.new()
+	model.mesh = mesh
+	p["model"] = model
 
 
 ## The inventory module's API when it is loaded; without it every part is free to use.

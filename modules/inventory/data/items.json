@@ -87,11 +87,11 @@
     "muz_pistol_comp": { "name": "Pistol compensator", "short": "P comp", "size": [1, 1], "kind": "pistol" },
     "muz_pistol_supp": { "name": "Pistol suppressor", "short": "P supp", "size": [2, 1], "kind": "pistol" },
     "opt_pistol_dot": { "name": "Mini red dot", "short": "Mini dot", "size": [1, 1], "kind": "pistol" },
-    "rig_light": { "name": "Chest rig", "short": "Chest rig", "size": [2, 2], "kind": "rig", "grid": [4, 2] },
-    "rig_heavy": { "name": "Assault rig", "short": "Assault rig", "size": [3, 2], "kind": "rig", "grid": [5, 3] },
-    "bag_small": { "name": "Day pack", "short": "Day pack", "size": [3, 3], "kind": "backpack", "grid": [5, 5] },
-    "bag_large": { "name": "Raid pack", "short": "Raid pack", "size": [4, 4], "kind": "backpack", "grid": [6, 7] },
-    "usb_drive": { "name": "Encrypted drive (mission)", "short": "Drive", "size": [1, 1], "kind": "objective" },
-    "medkit": { "name": "Field medkit", "short": "Medkit", "size": [1, 1], "kind": "med", "use": { "heal": 60.0, "seconds": 3.0 } }
+    "rig_light": { "name": "Chest rig", "short": "Chest rig", "size": [2, 2], "kind": "rig", "grid": [4, 2], "model": "rig_light" },
+    "rig_heavy": { "name": "Assault rig", "short": "Assault rig", "size": [3, 2], "kind": "rig", "grid": [5, 3], "model": "rig_heavy" },
+    "bag_small": { "name": "Day pack", "short": "Day pack", "size": [3, 3], "kind": "backpack", "grid": [5, 5], "model": "bag_small" },
+    "bag_large": { "name": "Raid pack", "short": "Raid pack", "size": [4, 4], "kind": "backpack", "grid": [6, 7], "model": "bag_large" },
+    "usb_drive": { "name": "Encrypted drive (mission)", "short": "Drive", "size": [1, 1], "kind": "objective", "model": "drive" },
+    "medkit": { "name": "Field medkit", "short": "Medkit", "size": [1, 1], "kind": "med", "model": "medkit", "use": { "heal": 60.0, "seconds": 3.0 } }
   }
 }
