@@ -104,3 +104,43 @@ func test_riding_home_without_the_drive_pays_nothing() -> void:
 	assert_int(_missions.call(&"server_tokens_of", 55)).is_equal(0)
 	await get_tree().process_frame
 	assert_bool(is_instance_valid(crate) and not crate.is_queued_for_deletion()).is_false()
+
+
+func _drones() -> Node:
+	var drones: Node = auto_free((load("res://modules/drones/drones_module.gd") as GDScript).new())
+	add_child(drones)
+	return drones
+
+
+func test_strike_waves_come_on_the_clock_and_never_stop_once_time_is_up() -> void:
+	var drones := _drones()
+	var player := _spawn(56)
+	await _ride_out()
+	player.global_position = _missions.get(&"zone")
+	# One tick starts the clock, the next sends the first wave.
+	for i in 4:
+		await get_tree().physics_frame
+	var waves: Array = (_missions.get(&"config") as Dictionary)["strikes"]["waves"]
+	assert_int(drones.call(&"strike_count")).is_equal(int(waves[0]["drones"]))
+	# Into the second wave.
+	_missions.call(&"_step_strikes", float(waves[1]["at"]), false)
+	assert_int(drones.call(&"strike_count")).is_equal(int(waves[0]["drones"]) + int(waves[1]["drones"]))
+	# Time up: a wave every few seconds, capped.
+	_missions.set(&"time_left", 0.0)
+	for i in 10:
+		_missions.call(&"_step_strikes", 30.0, false)
+	assert_int(drones.call(&"strike_count")).is_equal(int((_missions.get(&"config") as Dictionary)["strikes"]["max_flying"]))
+
+
+func test_the_strike_ends_with_the_run() -> void:
+	var drones := _drones()
+	var player := _spawn(57)
+	await _ride_out()
+	player.global_position = _missions.get(&"zone")
+	for i in 4:
+		await get_tree().physics_frame
+	assert_int(drones.call(&"strike_count")).is_greater(0)
+	var car := _missions.get(&"_dropoff_car") as Node3D
+	player.global_position = car.global_position + Vector3(2, 0, 0)
+	_missions.call(&"server_ride_home", player)
+	assert_int(drones.call(&"strike_count")).is_equal(0)

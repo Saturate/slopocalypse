@@ -6,8 +6,14 @@ extends CharacterBody3D
 ## whine warns everyone first). Left alone for a while it calms down again. Shot down, it
 ## tumbles out of the sky and its crash hurts whatever is near. All decisions run on the
 ## server; rotor spin, the light and the hum are cosmetic.
+##
+## A strike drone (`server_strike`) is sent at a spot instead of a person: it flies there
+## and dives into it. Shot, or hearing shots close by, it turns on the shooter like any
+## other.
 
 signal destroyed
+## Server: a player's shot hit it (`shooter`, where it was).
+signal damaged_by(shooter: Node3D, at: Vector3)
 
 const CONFIG := "res://modules/drones/data/drones.json"
 const REQUIRED := {
@@ -45,6 +51,8 @@ var _angry := false
 ## Seconds someone has held it in their sights, and since anyone last provoked it.
 var _aimed_for := 0.0
 var _calm_in := 0.0
+## A strike drone's spot marker (its target until someone provokes it), or null.
+var _strike_point: Node3D
 
 
 func _ready() -> void:
@@ -103,9 +111,25 @@ func is_angry() -> bool:
 	return _angry
 
 
+func is_striking() -> bool:
+	return _strike_point != null and target == _strike_point
+
+
+## Server: sends it at `point` on the ground; it dives in after a short delay.
+func server_strike(point: Node3D) -> void:
+	_strike_point = point
+	target = point
+	_angry = true
+	_calm_in = INF
+	var delay: Array = config.get("strike_dive_delay", [2.0, 6.0])
+	_until_dive = _rng.randf_range(float(delay[0]), float(delay[1]))
+
 ## Server: someone provoked it (shot it, or held it in their sights). It goes after them.
 func server_anger(provoker: Node3D) -> void:
 	_calm_in = float(config["calm_after_seconds"])
+	if provoker != null and provoker != target and _strike_point != null:
+		# Turned from its spot to the one who provoked it.
+		_angry = false
 	if provoker != null:
 		target = provoker
 	if _angry:
@@ -127,6 +151,8 @@ func _on_damaged(_amount: float, source: Node) -> void:
 	# The weapon's holder is the one to blame; anything else (a blast) just angers it.
 	var holder: Variant = source.get(&"holder") if source != null else null
 	server_anger(holder if holder is Node3D else (source as Node3D))
+	if holder is Node3D:
+		damaged_by.emit(holder, global_position)
 
 
 ## Server: anyone aiming down sights at it for `aim_seconds` provokes it.
@@ -201,7 +227,8 @@ func _step_stalk(delta: float) -> void:
 		velocity = velocity.move_toward(Vector3.ZERO, float(config["acceleration"]) * delta)
 		move_and_slide()
 		return
-	_watch_sights(delta)
+	if not is_striking():
+		_watch_sights(delta)
 	if _angry:
 		_calm_in -= delta
 		if _calm_in <= 0.0:
@@ -311,4 +338,6 @@ func server_detonate(radius: float, damage: float) -> void:
 		health.server_apply_damage(damage * lerpf(1.0, 0.25, clampf(distance / radius, 0.0, 1.0)), self)
 	Net.server_broadcast(&"explosion", {"position": global_position, "radius": radius, "source": null})
 	destroyed.emit()
+	if is_instance_valid(_strike_point):
+		_strike_point.queue_free()
 	queue_free()

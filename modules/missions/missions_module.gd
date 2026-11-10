@@ -5,7 +5,9 @@ extends Node
 ## owns the run (`home`, then `in_mission` until nobody is out any more) and tells everyone
 ## through `missions.*` topics. Each mission has a strike zone past the drop-off with the
 ## objective (a drive in a crate); its clock starts when someone walks in, and riding home
-## with the drive pays everyone who rode home in tokens. Drone strikes come next.
+## with the drive pays everyone who rode home in tokens. From the moment the clock starts,
+## strike drones come in waves and dive into the zone, more as time runs out and nonstop
+## once it has.
 
 const CONFIG := "res://modules/missions/data/missions.json"
 const REQUIRED := {
@@ -47,6 +49,12 @@ var _placed_for: Dictionary = {}
 var _out: Dictionary = {}
 var _runs := 0
 var _objective_crate: Node3D
+## Server: seconds since the clock started, the next wave to send, and the countdown to the
+## next overtime wave once time is up.
+var _elapsed := 0.0
+var _next_wave := 0
+var _overtime_in := 0.0
+var _rng := RandomNumberGenerator.new()
 ## Server: peer -> tokens.
 var _tokens: Dictionary = {}
 
@@ -427,6 +435,9 @@ func _close_zone() -> void:
 		inventory.call(&"server_remove_container", _objective_crate)
 	_objective_crate = null
 	time_left = -1.0
+	var drones := get_tree().get_first_node_in_group(&"drones_api")
+	if drones != null:
+		drones.call(&"server_clear_strikes")
 
 
 ## Server: riding home with the drive in someone's gear pays everyone who rode home with it
@@ -481,7 +492,10 @@ func _physics_tick(delta: float) -> void:
 	if state != IN_MISSION:
 		return
 	if time_left >= 0.0:
+		var was := time_left
 		time_left = maxf(time_left - delta, 0.0)
+		if multiplayer.is_server():
+			_step_strikes(delta, was > 0.0 and time_left <= 0.0)
 		return
 	if not multiplayer.is_server():
 		return
@@ -490,6 +504,47 @@ func _physics_tick(delta: float) -> void:
 		var p := node as Node3D
 		if p != null and _out.has(int(p.get_meta(&"peer_id", 1))) and Vector2(p.global_position.x - zone.x, p.global_position.z - zone.z).length() < radius:
 			time_left = float(current.get("time_limit", 180.0))
+			_elapsed = 0.0
+			_next_wave = 0
+			_overtime_in = 0.0
+			_rng.seed = int(config["seed"]) + _runs
 			EventBus.publish(&"missions.clock_started", {"mission": current.get("id", ""), "seconds": time_left})
 			_broadcast()
 			return
+
+
+## Server: sends the waves that are due (by seconds since the clock started), and once time
+## is up a wave every `overtime_every` seconds; never more than `max_flying` at once.
+func _step_strikes(delta: float, time_just_ran_out: bool) -> void:
+	var strikes: Dictionary = config.get("strikes", {})
+	var waves: Array = strikes.get("waves", [])
+	_elapsed += delta
+	while _next_wave < waves.size() and _elapsed >= float((waves[_next_wave] as Dictionary).get("at", 0.0)):
+		_send_strike((waves[_next_wave] as Dictionary).get("drones", 1))
+		_next_wave += 1
+	if time_just_ran_out:
+		EventBus.publish(&"missions.time_up", {"mission": current.get("id", "")})
+	if time_left > 0.0:
+		return
+	_overtime_in -= delta
+	if _overtime_in <= 0.0:
+		_overtime_in = float(strikes.get("overtime_every", 10.0))
+		_send_strike(strikes.get("overtime_drones", 3))
+
+
+func _send_strike(count: Variant) -> void:
+	var drones := get_tree().get_first_node_in_group(&"drones_api")
+	if drones == null:
+		return
+	var strikes: Dictionary = config.get("strikes", {})
+	var room := int(strikes.get("max_flying", 10)) - int(drones.call(&"strike_count"))
+	var radius := float((config["zone"] as Dictionary).get("radius", 45.0)) * float(strikes.get("spread", 0.8))
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	for i in mini(int(count), room):
+		var a := _rng.randf() * TAU
+		var r := sqrt(_rng.randf()) * radius
+		var at := zone + Vector3(cos(a) * r, 0.0, sin(a) * r)
+		if ground != null and ground.has_method(&"ground_height"):
+			at.y = float(ground.call(&"ground_height", at.x, at.z))
+		drones.call(&"server_spawn_strike", at)
+	EventBus.publish(&"missions.strike", {"mission": current.get("id", ""), "drones": mini(int(count), room)})
