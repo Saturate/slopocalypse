@@ -48,6 +48,11 @@
       "name": "Clean Sweep",
       "script": "res://modules/missions/types/clean_sweep.gd",
       "defaults": {}
+    },
+    "ghost_run": {
+      "name": "Ghost Run",
+      "script": "res://modules/missions/types/ghost_run.gd",
+      "defaults": { "objective_item": "usb_drive" }
     }
   },
   "missions": [
@@ -92,6 +97,22 @@
       "guards": [7, 10],
       "patrols": [2, 3],
       "payout": [420.0, 600.0]
+    },
+    {
+      "type": "ghost_run",
+      "place": "Relay station",
+      "objective": "The drive is in the best-guarded hut. Get in and out before they know you were there.",
+      "distance": [240.0, 420.0],
+      "guards": [6, 9],
+      "payout": [380.0, 520.0]
+    },
+    {
+      "type": "ghost_run",
+      "place": "Lodge",
+      "objective": "A drive sits in the back room of a guarded lodge. Quiet is safer.",
+      "distance": [320.0, 560.0],
+      "guards": [8, 11],
+      "payout": [460.0, 640.0]
     }
   ]
 }
