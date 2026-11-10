@@ -20,6 +20,8 @@ const STEEP_SLOPE := 1.1
 const SKIRT := 2.0
 ## Focus points closer together than this (metres) count as one.
 const THIN_GRID := 4.0
+## `road_point` keeps this far from the end of the world.
+const ROAD_END_MARGIN := 20.0
 const GRASS := Color(0.36, 0.5, 0.22)
 const LITTER := Color(0.33, 0.29, 0.18)
 const STRAW := Color(0.7, 0.61, 0.36)
@@ -129,6 +131,17 @@ func is_ready_at(point: Vector3, radius: float = 8.0) -> bool:
 ## Height of the untouched ground (ignores digging) for placing spawns and scenery.
 func ground_height(x: float, z: float) -> float:
 	return heights.height_at(x, z) if heights != null else 0.0
+
+
+## A point on the road `metres` out from the start (past the tunnel portal, if there is
+## one), on the untouched ground; the far end of the road if it is shorter than that.
+func road_point(metres: float) -> Vector3:
+	if heights == null or heights.road == null:
+		return Vector3(0.0, 0.0, -metres)
+	var start := float(heights.start["portal_z"]) if heights.has_tunnel() else heights.z_max()
+	var z := maxf(start - metres, heights.z_min() + ROAD_END_MARGIN)
+	var x := heights.road.x_at(z)
+	return Vector3(x, heights.height_at(x, z), z)
 
 
 ## The ground as it is now, craters included.

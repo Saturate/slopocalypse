@@ -15,6 +15,7 @@
     "admin": true,
     "daytime": true,
     "debug_api": true,
-    "perf": true
+    "perf": true,
+    "missions": true
   }
 }

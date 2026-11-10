@@ -31,6 +31,8 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | What enemies carry | `modules/inventory/data/items.json` | `npc_loot`: `rolls`, `items` (weights) |
 | Crates: how many, where, refill, contents | `modules/inventory/data/items.json` | `crates`: `count`, `distance`, `seed`, `refill_seconds`, `rolls`, `items` |
 | Loot piles at the spawn | `modules/inventory/data/items.json` | `loot` |
+| Missions: what the board offers, distance, time, pay | `modules/missions/data/missions.json` | `missions` (each: `name`, `objective`, `distance` and `payout` ranges, `time_limit`), `offered`, `seed` |
+| Home base: board and car spots, who rides | `modules/missions/data/missions.json` | `board.offset`, `transport.offset` (from the spawn), `home_radius`, `ride_home_reach`, `ride_fade_seconds` |
 | Bodies: how long they stay, colour | `modules/inventory/data/items.json` | `bodies`: `seconds`, `empty_seconds` (once searched empty), `colour` |
 | Crate grid size | `modules/inventory/data/items.json` | `crates.grid` |
 | Enemy numbers and timing | `modules/enemies/data/enemies.json` | `first_spawn_seconds`, `max_alive`, `squad_size`, `squad_respawn_seconds`, `spawn_distance`, `corpse_seconds` |
