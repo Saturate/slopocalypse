@@ -229,11 +229,19 @@ func _hold_post(delta: float, intent: PlayerIntent) -> void:
 	_turn_to(post_yaw + sin(_scan_time / period * TAU) * sweep, 0.0, delta)
 
 
+## Turns towards `at` and moves straight at it whatever way it faces yet (forward plus a
+## sidestep), so it never circles a spot it is turning too slowly to face.
 func _walk_toward(at: Vector3, delta: float, intent: PlayerIntent, speed: float) -> void:
 	var want := look_angles(body.global_position, at).x
 	_turn_to(want, 0.0, delta)
 	var flat := Vector2(at.x - body.global_position.x, at.z - body.global_position.z)
-	intent.move = Vector2(0.0, speed) if flat.length() > ARRIVED else Vector2.ZERO
+	if flat.length() <= ARRIVED * 0.5:
+		intent.move = Vector2.ZERO
+		return
+	var dir := flat.normalized()
+	var forward := Vector2(-sin(_yaw), -cos(_yaw))
+	var right := Vector2(cos(_yaw), -sin(_yaw))
+	intent.move = Vector2(dir.dot(right), dir.dot(forward)) * speed
 
 
 func _fight(delta: float, intent: PlayerIntent) -> void:

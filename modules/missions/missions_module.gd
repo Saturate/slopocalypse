@@ -9,7 +9,8 @@ extends Node
 ## kind, a MissionType script named in data (Smash & Grab, Clean Sweep, ...). The kind lays
 ## out its content and decides when the job is done; riding home then pays everyone who rode
 ## home in tokens. This module only knows the run, the zone, the buildings, crates, pay and
-## markers.
+## markers, plus hazards any mission can ask for in its data: buried mines around the
+## buildings (`mines`) and tripwires across their doors (`tripwires`), with warning signs.
 
 const CONFIG := "res://modules/missions/data/missions.json"
 const REQUIRED := {
@@ -57,6 +58,8 @@ var _type: MissionType
 var _out: Dictionary = {}
 var _runs := 0
 var _crates: Array[Node3D] = []
+var _mine_spawner := MultiplayerSpawner.new()
+var _mines_spawned := 0
 var _tokens: Dictionary = {}
 
 
@@ -67,6 +70,12 @@ func _ready() -> void:
 		return
 	config = parsed
 	offers = roll_offers(config, int(config["seed"]))
+	# Mines and wires are made by the server and replicated, so everyone sees the same ones.
+	_mine_spawner.name = "MineSpawner"
+	_mine_spawner.spawn_path = NodePath("..")
+	_mine_spawner.spawn_function = _make_mine
+	add_child(_mine_spawner)
+	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.subscribe(&"world.ready", _on_world_ready)
 	EventBus.subscribe(&"player.interact", _on_player_interact)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
@@ -82,6 +91,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
 	EventBus.unsubscribe(&"player.respawned", _on_player_respawned)
 	EventBus.unsubscribe(&"missions.changed", _on_changed)
+	EventBus.unsubscribe(&"weapon.fired", _on_weapon_fired)
 	if Net.peer_joined.is_connected(_on_peer_joined):
 		Net.peer_joined.disconnect(_on_peer_joined)
 	if Net.peer_left.is_connected(_on_peer_left):
@@ -115,7 +125,7 @@ static func roll_offers(cfg: Dictionary, seed_value: int) -> Array:
 		for key: String in ["distance", "payout"]:
 			var r: Array = t.get(key, [100.0, 200.0])
 			offer[key] = snappedf(rng_.randf_range(float(r[0]), float(r[1])), 10.0)
-		for key: String in ["guards", "patrols"]:
+		for key: String in ["guards", "patrols", "mines", "tripwires"]:
 			if t.get(key) is Array:
 				offer[key] = rng_.randi_range(int(t[key][0]), int(t[key][1]))
 		out.append(offer)
@@ -199,6 +209,11 @@ func _on_player_interact(payload: Dictionary) -> void:
 		return
 	var player := payload["player"] as Node3D
 	var peer := int(player.get_meta(&"peer_id", 1))
+	var mine := disarmable(player)
+	if mine != null:
+		payload["handled"] = true
+		mine.server_disarm()
+		return
 	match facing(player):
 		"board":
 			payload["handled"] = true
@@ -477,7 +492,10 @@ func _open_zone() -> void:
 	zone = _road_at(along)
 	zone.y = ground_y(zone.x, zone.z)
 	rng.seed = int(config["seed"]) * 31 + _runs
-	buildings = MissionLayout.buildings(config["buildings"], int(config["seed"]) * 7919 + _runs, _road_at, along)
+	# A mission can override the layout (a lone cabin: one building, far from the road).
+	var layout: Dictionary = (config["buildings"] as Dictionary).duplicate()
+	layout.merge(current.get("buildings", {}), true)
+	buildings = MissionLayout.buildings(layout, int(config["seed"]) * 7919 + _runs, _road_at, along)
 	for entry: Dictionary in buildings:
 		var at: Vector3 = entry["position"]
 		# A little sunk, so the slab never floats.
@@ -487,6 +505,91 @@ func _open_zone() -> void:
 	_sync_type()
 	if _type != null:
 		_type.server_open()
+	_place_hazards()
+
+
+## Server: the mission's mines around its buildings and tripwires across their doors, plus
+## a few warning signs at the edge of the minefield.
+func _place_hazards() -> void:
+	var count := int(current.get("mines", 0))
+	var wires := int(current.get("tripwires", 0))
+	var h: Dictionary = config.get("hazards", {})
+	var ring: Array = h.get("mine_ring", [3.0, 14.0])
+	var keep_clear := float(h.get("door_clear", 2.0))
+	for i in count:
+		var centre: Vector3 = zone
+		var radius := 4.0
+		if not buildings.is_empty():
+			var b: Dictionary = buildings[rng.randi_range(0, buildings.size() - 1)]
+			centre = b["position"]
+			radius = float(b.get("radius", 4.0))
+		var a := rng.randf() * TAU
+		var r := radius + rng.randf_range(float(ring[0]), float(ring[1]))
+		var at := centre + Vector3(cos(a) * r, 0.0, sin(a) * r)
+		# Not right on a doorstep: the wire is for that.
+		var on_step := _building_nodes.any(func(n: MissionBuilding) -> bool: return at.distance_to(n.global_transform * Vector3(0, 0, -float(n.spec["depth"]) / 2.0 - 1.0)) < keep_clear)
+		if on_step:
+			continue
+		at.y = ground_y(at.x, at.z)
+		server_spawn_hazard("mine", at, Vector3.ZERO)
+	for i in mini(wires, _building_nodes.size()):
+		var n := _building_nodes[i]
+		var d := float(n.spec["depth"])
+		var a := n.global_transform * Vector3(-MissionBuilding.DOOR_WIDTH / 2.0, MissionBuilding.SLAB + 0.15, -d / 2.0 - 0.05)
+		var b := n.global_transform * Vector3(MissionBuilding.DOOR_WIDTH / 2.0, MissionBuilding.SLAB + 0.15, -d / 2.0 - 0.05)
+		server_spawn_hazard("wire", a, b)
+	if count > 0:
+		for i in int(h.get("signs", 2)):
+			var a := rng.randf() * TAU
+			var at := zone + Vector3(cos(a), 0.0, sin(a)) * float(h.get("sign_distance", 30.0))
+			at.y = ground_y(at.x, at.z)
+			server_spawn_hazard("sign", at, Vector3.ZERO)
+
+
+## Server: one mine ("mine"), tripwire from `at` to `end` ("wire") or warning sign ("sign").
+func server_spawn_hazard(kind: String, at: Vector3, end: Vector3) -> Node3D:
+	_mines_spawned += 1
+	return _mine_spawner.spawn({"index": _mines_spawned, "kind": kind, "position": at, "end": end})
+
+
+func _make_mine(data: Variant) -> Node:
+	var info: Dictionary = data
+	if str(info["kind"]) == "sign":
+		var sign := MineSign.new()
+		sign.name = "Sign%d" % int(info["index"])
+		sign.position = info["position"]
+		sign.rotation.y = float(int(info["index"]) * 71 % 360) * PI / 180.0
+		return sign
+	var mine := Mine.new()
+	mine.name = "Mine%d" % int(info["index"])
+	mine.kind = str(info["kind"])
+	mine.position = info["position"]
+	mine.wire_end = info.get("end", Vector3.ZERO)
+	mine.cfg = config.get("hazards", {})
+	return mine
+
+
+## Server: a bullet that hits close to a mine sets it off.
+func _on_weapon_fired(p: Dictionary) -> void:
+	if not multiplayer.is_server() or not p.has("to"):
+		return
+	var hit: Vector3 = p["to"]
+	for node: Node in get_tree().get_nodes_in_group(&"mines"):
+		var mine := node as Mine
+		if mine != null and mine.is_armed() and mine.kind == "mine" and mine.global_position.distance_to(hit) < float((config.get("hazards", {}) as Dictionary).get("shot_radius", 0.4)):
+			mine.server_detonate()
+
+
+## The armed mine or wire `player` could disarm now (crouched, close), or null.
+func disarmable(player: Node3D) -> Mine:
+	if not (player as PlayerController).intent().crouch:
+		return null
+	var reach := float((config.get("hazards", {}) as Dictionary).get("disarm_range", 1.4))
+	for node: Node in get_tree().get_nodes_in_group(&"mines"):
+		var mine := node as Mine
+		if mine != null and mine.is_armed() and mine.global_position.distance_to(player.global_position) < reach:
+			return mine
+	return null
 
 
 ## Server: the run is over: the kind cleans up, then the crates and buildings go.
@@ -498,6 +601,8 @@ func _close_zone() -> void:
 		if inventory != null and is_instance_valid(crate):
 			inventory.call(&"server_remove_container", crate)
 	_crates.clear()
+	for node: Node in get_tree().get_nodes_in_group(&"mines") + get_tree().get_nodes_in_group(&"mine_signs"):
+		node.queue_free()
 	buildings = []
 	_build_buildings()
 

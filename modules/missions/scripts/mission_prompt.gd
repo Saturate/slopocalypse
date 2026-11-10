@@ -41,6 +41,10 @@ func _process(_delta: float) -> void:
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	var current: Dictionary = missions.get(&"current")
 	var state := str(missions.get(&"state"))
+	if captured and missions.call(&"disarmable", player) != null:
+		_label.text = "F   Disarm"
+		_label.visible = true
+		return
 	match str(missions.call(&"facing", player)) if captured else "":
 		"board":
 			_label.text = "F   Mission board"
