@@ -4,6 +4,8 @@ extends Node
 
 const SCENE := "res://modules/drones/scenes/drone.tscn"
 const CONFIG := "res://modules/drones/data/drones.json"
+## A new drone appears this high over the ground (or its target, whichever is higher).
+const SPAWN_HEIGHT := 20.0
 
 var config: Dictionary = {}
 var _players: Array[Node3D] = []
@@ -78,7 +80,9 @@ func _physics_tick(delta: float) -> void:
 func server_spawn(target: Node3D) -> StalkerDrone:
 	var angle := _rng.randf() * TAU
 	var distance: float = config["spawn_distance"]
-	var at := target.global_position + Vector3(cos(angle) * distance, 20.0, sin(angle) * distance)
+	var at := target.global_position + Vector3(cos(angle) * distance, 0.0, sin(angle) * distance)
+	# High over the ground there, not over the target: the spot may be up a hillside.
+	at.y = maxf(target.global_position.y, StalkerDrone.terrain_height(get_tree(), at)) + SPAWN_HEIGHT
 	var drone: StalkerDrone = _spawner.spawn({"index": _spawned_count, "position": at})
 	_spawned_count += 1
 	drone.target = target

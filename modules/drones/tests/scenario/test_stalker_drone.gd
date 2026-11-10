@@ -150,3 +150,43 @@ func test_left_alone_it_calms_down() -> void:
 	drone.server_anger(_target)
 	await _frames(60)
 	assert_bool(drone.is_angry()).is_false()
+
+
+## Ground that is 30 m high past x = 20 (a hillside) and 0 elsewhere, with no collision
+## there: like the server far from players, where only the height map knows the ground.
+func _add_hill() -> Node:
+	var script := GDScript.new()
+	script.source_code = "extends Node\nfunc surface_height(x: float, _z: float) -> float:\n\treturn 30.0 if x > 20.0 else 0.0\n"
+	script.reload()
+	var ground: Node = auto_free(Node.new())
+	ground.set_script(script)
+	ground.add_to_group(&"ground")
+	add_child(ground)
+	return ground
+
+
+func test_drones_spawn_above_a_hillside_not_inside_it() -> void:
+	_add_hill()
+	for i in 16:
+		var drone: StalkerDrone = _module.server_spawn(_target)
+		var floor_y := 30.0 if drone.global_position.x > 20.0 else 0.0
+		assert_float(drone.global_position.y).is_greater(floor_y + 5.0)
+
+
+func test_a_drone_inside_the_ground_is_lifted_out() -> void:
+	_add_hill()
+	var drone: StalkerDrone = _module.server_spawn(_target)
+	drone.postpone_dive(1000.0)
+	drone.global_position = Vector3(40.0, 10.0, 0.0)
+	await _frames(2)
+	assert_float(drone.global_position.y).is_greater(30.0)
+
+
+func test_a_downed_drone_crashes_on_the_height_map_where_there_is_no_collision() -> void:
+	_add_hill()
+	var drone: StalkerDrone = _module.server_spawn(_target)
+	drone.global_position = Vector3(40.0, 33.0, 0.0)
+	drone.health().server_apply_damage(1000.0)
+	await _frames(90)
+	assert_int(_explosions.size()).is_equal(1)
+	assert_float((_explosions[0]["position"] as Vector3).y).is_greater(29.0)

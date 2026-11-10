@@ -226,6 +226,7 @@ func _step_stalk(delta: float) -> void:
 	var desired := (goal - global_position).limit_length(float(config["speed"]))
 	velocity = velocity.move_toward(desired, float(config["acceleration"]) * delta * 3.0)
 	move_and_slide()
+	_keep_above_ground()
 	# Face the target, banking a little into its motion.
 	var look := target.global_position - global_position
 	look.y = 0.0
@@ -240,14 +241,40 @@ func _step_fall(delta: float) -> void:
 	velocity.y -= _gravity * delta
 	rotate_object_local(_tumble.normalized(), _tumble.length() * delta)
 	var collided := move_and_slide()
-	if collided or _fall_left <= 0.0:
+	# Far from players there is no terrain collision to hit; the height map says when it lands.
+	var landed := global_position.y <= terrain_height(get_tree(), global_position) + 0.2
+	if collided or landed or _fall_left <= 0.0:
+		if landed:
+			global_position.y = terrain_height(get_tree(), global_position) + 0.2
 		server_crash()
 
 
+## The highest of what a physics ray finds (buildings, cars) and the terrain's own height.
+## The server only has terrain collision near players, so far from them the ray finds
+## nothing and the height map answers.
 func _ground_below(at: Vector3) -> float:
 	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 50.0, at + Vector3.DOWN * 200.0, collision_mask, [get_rid()])
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)
-	return (hit["position"] as Vector3).y if not hit.is_empty() else -INF
+	var ray := (hit["position"] as Vector3).y if not hit.is_empty() else -INF
+	return maxf(ray, terrain_height(get_tree(), at))
+
+
+## The terrain's height under `at` (craters included), or -INF with no ground node.
+static func terrain_height(tree: SceneTree, at: Vector3) -> float:
+	var ground := tree.get_first_node_in_group(&"ground")
+	if ground == null:
+		return -INF
+	var method := &"surface_height" if ground.has_method(&"surface_height") else &"ground_height"
+	return float(ground.call(method, at.x, at.z)) if ground.has_method(method) else -INF
+
+
+## Server: never inside the ground. Where no terrain collision is built, nothing stops it
+## flying into a hillside, so lift it back out.
+func _keep_above_ground() -> void:
+	var floor_y := terrain_height(get_tree(), global_position)
+	if global_position.y < floor_y + 0.5:
+		global_position.y = floor_y + float(config["min_ground_clearance"])
+		velocity.y = maxf(velocity.y, 0.0)
 
 
 func _on_died(_source: Node) -> void:
