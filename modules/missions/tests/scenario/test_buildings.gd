@@ -117,3 +117,49 @@ func test_the_buildings_go_when_the_run_ends() -> void:
 	await get_tree().process_frame
 	var left := get_tree().get_nodes_in_group(&"mission_buildings").filter(func(n: Node) -> bool: return not n.is_queued_for_deletion())
 	assert_int(left.size()).is_equal(0)
+
+
+func test_a_blast_beside_a_wall_knocks_a_hole_you_can_see_through() -> void:
+	await _ride_out()
+	var b := get_tree().get_nodes_in_group(&"mission_buildings")[0] as MissionBuilding
+	var w := float(b.spec["width"])
+	var outside := b.global_transform * Vector3(w / 2.0 + 1.5, 1.0, 0)
+	var inside := b.global_transform * Vector3(0, 1.0, 0)
+	var space := b.get_world_3d().direct_space_state
+	assert_dict(space.intersect_ray(PhysicsRayQueryParameters3D.create(outside, inside))).is_not_empty()
+	var before := b.segment_count()
+	# A blast right against the right-hand wall.
+	Net.server_broadcast(&"explosion", {"position": b.global_transform * Vector3(w / 2.0 + 0.3, 1.0, 0), "radius": 3.0})
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	assert_dict(space.intersect_ray(PhysicsRayQueryParameters3D.create(outside, inside))).is_empty()
+	# The back wall far from it still stands somewhere.
+	var standing := 0
+	for i in before:
+		if not b.is_broken(i):
+			standing += 1
+	assert_int(standing).is_greater(0)
+	# The layout entry remembers the hole for anyone who joins later.
+	var entry: Dictionary = (_missions.get(&"buildings") as Array)[0]
+	assert_int((entry.get("broken", []) as Array).size()).is_greater(0)
+
+
+func test_a_building_built_from_an_entry_with_holes_has_them() -> void:
+	await _ride_out()
+	var entry: Dictionary = ((_missions.get(&"buildings") as Array)[0] as Dictionary).duplicate()
+	entry["broken"] = [0, 1]
+	var copy: MissionBuilding = auto_free(MissionBuilding.new())
+	copy.spec = entry
+	add_child(copy)
+	assert_bool(copy.is_broken(0)).is_true()
+	assert_bool(copy.is_broken(1)).is_true()
+	assert_bool(copy.is_broken(2)).is_false()
+
+
+func test_a_faraway_blast_leaves_it_whole() -> void:
+	await _ride_out()
+	var b := get_tree().get_nodes_in_group(&"mission_buildings")[0] as MissionBuilding
+	Net.server_broadcast(&"explosion", {"position": b.global_position + Vector3(40, 0, 0), "radius": 3.0})
+	await get_tree().physics_frame
+	for i in b.segment_count():
+		assert_bool(b.is_broken(i)).is_false()

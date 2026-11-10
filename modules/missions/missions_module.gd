@@ -81,6 +81,8 @@ func _ready() -> void:
 	_mine_spawner.spawn_function = _make_mine
 	add_child(_mine_spawner)
 	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)
+	EventBus.subscribe(&"explosion", _on_explosion)
+	EventBus.subscribe(&"missions.building_broken", _on_building_broken)
 	EventBus.subscribe(&"world.ready", _on_world_ready)
 	EventBus.subscribe(&"player.interact", _on_player_interact)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
@@ -97,6 +99,8 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"player.respawned", _on_player_respawned)
 	EventBus.unsubscribe(&"missions.changed", _on_changed)
 	EventBus.unsubscribe(&"weapon.fired", _on_weapon_fired)
+	EventBus.unsubscribe(&"explosion", _on_explosion)
+	EventBus.unsubscribe(&"missions.building_broken", _on_building_broken)
 	if Net.peer_joined.is_connected(_on_peer_joined):
 		Net.peer_joined.disconnect(_on_peer_joined)
 	if Net.peer_left.is_connected(_on_peer_left):
@@ -601,6 +605,38 @@ func _make_mine(data: Variant) -> Node:
 	return mine
 
 
+## Server: a blast near the zone's buildings breaks the wall and roof segments it wears
+## out, for everyone.
+func _on_explosion(p: Dictionary) -> void:
+	if not multiplayer.is_server() or not p.has("position"):
+		return
+	var cfg: Dictionary = config["buildings"]
+	var at: Vector3 = p["position"]
+	var radius := float(p.get("radius", 2.0))
+	for i in _building_nodes.size():
+		var b := _building_nodes[i]
+		if b.global_position.distance_to(at) > radius * float(cfg.get("blast_reach", 1.6)) + 8.0:
+			continue
+		var broke := b.server_blast(at, radius, float(cfg.get("blast_damage", 140.0)), float(cfg.get("blast_reach", 1.6)))
+		if not broke.is_empty():
+			Net.server_broadcast(&"missions.building_broken", {"index": i, "segments": broke})
+
+
+## Everywhere: segments of a building broke; the layout entry remembers it for late joiners.
+func _on_building_broken(p: Dictionary) -> void:
+	var i := int(p.get("index", -1))
+	if i < 0 or i >= _building_nodes.size() or i >= buildings.size():
+		return
+	var segs: Array = p.get("segments", [])
+	var entry: Dictionary = buildings[i]
+	var broken: Array = entry.get("broken", [])
+	for s: Variant in segs:
+		if not broken.has(int(s)):
+			broken.append(int(s))
+	entry["broken"] = broken
+	_building_nodes[i].break_segments(segs)
+
+
 ## Server: a bullet that hits close to a mine sets it off.
 func _on_weapon_fired(p: Dictionary) -> void:
 	if not multiplayer.is_server() or not p.has("to"):
@@ -755,6 +791,8 @@ func _build_buildings() -> void:
 		var b := MissionBuilding.new()
 		b.name = "Building%d" % i
 		b.spec = entry
+		b.segment_size = float((config["buildings"] as Dictionary).get("segment", 1.2))
+		b.segment_hp = float((config["buildings"] as Dictionary).get("segment_hp", 100.0))
 		add_child(b)
 		b.global_position = entry["position"]
 		b.rotation.y = float(entry["yaw"])
