@@ -100,7 +100,7 @@ func _sheet(index: int, offer: Dictionary, chosen: bool, running: bool) -> Contr
 	col.add_child(objective)
 	col.add_child(_label("%d m down the road" % int(offer.get("distance", 0)), 15, DIM))
 	col.add_child(_label("Time limit %d:%02d once you arrive" % [int(offer.get("time_limit", 0)) / 60, int(offer.get("time_limit", 0)) % 60], 15, DIM))
-	col.add_child(_label("Pays %d kr" % int(offer.get("payout", 0)), 18, TEXT))
+	col.add_child(_label("Pays %d tokens" % int(offer.get("payout", 0)), 18, TEXT))
 	var take := Button.new()
 	take.focus_mode = Control.FOCUS_NONE
 	take.add_theme_font_size_override("font_size", 16)
