@@ -60,5 +60,5 @@ func _process(_delta: float) -> void:
 		_mission.text = ""
 	else:
 		var where := "out on" if state != "home" else "chosen:"
-		_mission.text = "Mission %s %s  ·  %d m  ·  %d kr" % [where, current.get("name", ""), int(current.get("distance", 0)), int(current.get("payout", 0))]
+		_mission.text = "Mission %s %s  ·  %d m  ·  %d tokens" % [where, current.get("name", ""), int(current.get("distance", 0)), int(current.get("payout", 0))]
 	_mission.visible = captured and not _mission.text.is_empty()
