@@ -11,13 +11,17 @@ on:
         default: macos
         type: choice
         options: [windows, linux, macos]
+      runner:
+        description: Runner image for a macOS export (blank for the default)
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
 jobs:
   export:
-    runs-on: ${{ inputs.os == 'windows' && 'windows-latest' || inputs.os == 'linux' && 'ubuntu-latest' || 'macos-latest' }}
+    runs-on: ${{ inputs.os == 'windows' && 'windows-latest' || inputs.os == 'linux' && 'ubuntu-latest' || inputs.runner || 'macos-latest' }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
