@@ -1,0 +1,38 @@
+{
+  "home_radius": 26.0,
+  "reach": 2.6,
+  "ride_fade_seconds": 0.8,
+  "ride_home_reach": 14.0,
+  "drop_spread": 2.0,
+  "board": { "offset": [4.9, 0.0, -3.0] },
+  "transport": { "offset": [-2.6, 0.0, -8.0] },
+  "dropoff_side": 5.0,
+  "offered": 3,
+  "seed": 11,
+  "missions": [
+    {
+      "id": "strike_substation",
+      "name": "Substation strike",
+      "objective": "Grab the drive from the substation before the strike levels it.",
+      "distance": [260.0, 420.0],
+      "time_limit": 180.0,
+      "payout": [300.0, 450.0]
+    },
+    {
+      "id": "strike_farm",
+      "name": "Farmstead strike",
+      "objective": "A courier hid a drive at the farm. Get it out before the drones arrive.",
+      "distance": [180.0, 320.0],
+      "time_limit": 150.0,
+      "payout": [200.0, 320.0]
+    },
+    {
+      "id": "strike_mast",
+      "name": "Radio mast strike",
+      "objective": "Pull the drive from the mast hut. The strike comes early.",
+      "distance": [400.0, 620.0],
+      "time_limit": 120.0,
+      "payout": [450.0, 650.0]
+    }
+  ]
+}

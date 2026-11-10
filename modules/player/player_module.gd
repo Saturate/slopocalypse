@@ -47,6 +47,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"player.respawned", _on_player_respawned)
 	EventBus.subscribe(&"session.back_to_spawn", _on_back_to_spawn_asked)
 	EventBus.subscribe(&"admin.teleport", _on_admin_teleport)
+	EventBus.subscribe(&"player.move_requested", _on_admin_teleport)
 	Net.peer_joined.connect(_on_peer_joined)
 	Net.peer_left.connect(_on_peer_left)
 
@@ -59,6 +60,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"player.respawned", _on_player_respawned)
 	EventBus.unsubscribe(&"session.back_to_spawn", _on_back_to_spawn_asked)
 	EventBus.unsubscribe(&"admin.teleport", _on_admin_teleport)
+	EventBus.unsubscribe(&"player.move_requested", _on_admin_teleport)
 
 
 func players() -> Array[PlayerController]:
@@ -357,6 +359,8 @@ func _camera(player: PlayerController) -> Camera3D:
 	return player.get_node("Head/Camera")
 
 
+## Server: an admin's teleport, or another module moving a player (`player.move_requested`,
+## e.g. missions riding the group out): `{player, position}`.
 func _on_admin_teleport(p: Dictionary) -> void:
 	var player := p.get("player") as PlayerController
 	if player != null and multiplayer.is_server() and not player.get_meta(&"dead", false):

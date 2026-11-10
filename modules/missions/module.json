@@ -1,0 +1,6 @@
+{
+  "id": "missions",
+  "depends_on": ["world", "player"],
+  "flag": "missions",
+  "entry": "missions_module.gd"
+}
