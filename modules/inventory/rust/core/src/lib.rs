@@ -200,6 +200,49 @@ impl Grid {
         Ok(placed)
     }
 
+    /// Moves an item from this grid to (x, y) in `to`. Nothing changes if it does not fit.
+    pub fn transfer(
+        &mut self,
+        to: &mut Grid,
+        sizes: &Sizes,
+        uid: u32,
+        x: u8,
+        y: u8,
+        rotated: bool,
+    ) -> Result<Placed, PlaceError> {
+        let item = self
+            .get(uid)
+            .ok_or(PlaceError::NoSuchUid(uid))?
+            .item
+            .clone();
+        if to.get(uid).is_some() {
+            return Err(PlaceError::DuplicateUid(uid));
+        }
+        to.check(sizes, &item, x, y, rotated, None)?;
+        let mut placed = self.remove(uid).ok_or(PlaceError::NoSuchUid(uid))?;
+        placed.x = x;
+        placed.y = y;
+        placed.rotated = rotated;
+        to.items.push(placed.clone());
+        Ok(placed)
+    }
+
+    /// Moves an item from this grid into the first free spot in `to`, as a quick move does.
+    pub fn transfer_anywhere(
+        &mut self,
+        to: &mut Grid,
+        sizes: &Sizes,
+        uid: u32,
+    ) -> Result<Placed, PlaceError> {
+        let item = self
+            .get(uid)
+            .ok_or(PlaceError::NoSuchUid(uid))?
+            .item
+            .clone();
+        let (x, y, rotated) = to.find_spot(sizes, &item).ok_or(PlaceError::NoRoom)?;
+        self.transfer(to, sizes, uid, x, y, rotated)
+    }
+
     /// How many of `item` the grid holds.
     pub fn count(&self, item: &str) -> usize {
         self.items.iter().filter(|p| p.item == item).count()
@@ -313,6 +356,74 @@ mod tests {
             g.insert(&sizes(), 2, "laser"),
             Err(PlaceError::UnknownItem("laser".into()))
         );
+    }
+
+    #[test]
+    fn transfer_moves_an_item_into_another_grid() {
+        let mut body = Grid::new(4, 4);
+        let mut mine = Grid::new(3, 3);
+        body.place(&sizes(), at(1, "box", 0, 0, false))
+            .expect("free");
+        let moved = body
+            .transfer(&mut mine, &sizes(), 1, 1, 1, false)
+            .expect("fits");
+        assert_eq!((moved.x, moved.y), (1, 1));
+        assert_eq!(body.get(1), None);
+        assert_eq!(mine.get(1), Some(&at(1, "box", 1, 1, false)));
+    }
+
+    #[test]
+    fn a_transfer_that_does_not_fit_changes_nothing() {
+        let mut body = Grid::new(4, 4);
+        let mut mine = Grid::new(3, 1);
+        body.place(&sizes(), at(1, "mag", 0, 0, false))
+            .expect("free");
+        mine.place(&sizes(), at(2, "cell", 0, 0, false))
+            .expect("free");
+        assert_eq!(
+            body.transfer(&mut mine, &sizes(), 1, 0, 0, false),
+            Err(PlaceError::OutOfBounds)
+        );
+        assert_eq!(
+            body.transfer(&mut mine, &sizes(), 1, 0, 0, true),
+            Err(PlaceError::Overlaps(2))
+        );
+        assert_eq!(
+            body.transfer(&mut mine, &sizes(), 9, 1, 0, true),
+            Err(PlaceError::NoSuchUid(9))
+        );
+        assert_eq!(body.get(1), Some(&at(1, "mag", 0, 0, false)));
+        assert_eq!(mine.items().len(), 1);
+    }
+
+    #[test]
+    fn a_turned_transfer_fits_where_upright_would_not() {
+        let mut body = Grid::new(4, 4);
+        let mut mine = Grid::new(3, 1);
+        body.place(&sizes(), at(1, "mag", 0, 0, false))
+            .expect("free");
+        body.transfer(&mut mine, &sizes(), 1, 1, 0, true)
+            .expect("lies down");
+        assert_eq!(mine.get(1).map(|p| p.rotated), Some(true));
+    }
+
+    #[test]
+    fn transfer_anywhere_takes_the_first_free_spot_or_nothing() {
+        let mut body = Grid::new(4, 4);
+        let mut mine = Grid::new(2, 2);
+        body.place(&sizes(), at(1, "cell", 0, 0, false))
+            .expect("free");
+        body.place(&sizes(), at(2, "box", 2, 0, false))
+            .expect("free");
+        let first = body
+            .transfer_anywhere(&mut mine, &sizes(), 1)
+            .expect("room");
+        assert_eq!((first.x, first.y), (0, 0));
+        assert_eq!(
+            body.transfer_anywhere(&mut mine, &sizes(), 2),
+            Err(PlaceError::NoRoom)
+        );
+        assert!(body.get(2).is_some());
     }
 
     #[test]

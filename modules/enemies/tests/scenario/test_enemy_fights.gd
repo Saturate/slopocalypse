@@ -96,13 +96,13 @@ func test_leaves_hide_the_player_too() -> void:
 	assert_float(health.health).is_equal(health.max_health)
 
 
-func test_killing_one_drops_what_it_carried() -> void:
+func test_killing_one_leaves_a_body_with_what_it_carried() -> void:
 	if not ResourceLoader.exists(INVENTORY):
 		return
 	_player.global_position = Vector3(60, 0.1, 60)
 	var enemy := await _enemy_at(Vector3(0, 0, 0))
-	var before := get_tree().get_nodes_in_group(&"loot").size()
+	var before := get_tree().get_nodes_in_group(&"loot_bodies").size()
 	(enemy.get_node("Health") as HealthComponent).server_apply_damage(1000.0)
 	await get_tree().process_frame
 	assert_bool(enemy.get_meta(&"dead", false)).is_true()
-	assert_int(get_tree().get_nodes_in_group(&"loot").size()).is_greater(before)
+	assert_int(get_tree().get_nodes_in_group(&"loot_bodies").size()).is_equal(before + 1)
