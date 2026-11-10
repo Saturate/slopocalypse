@@ -19,6 +19,8 @@ const ITEMS := "res://modules/inventory/data/items.json"
 const PICKUP_RANGE := 2.6
 const PICKUP_FACING := 0.8
 const DROP_DISTANCE := 1.0
+## Gear slots whose contents other modules arm the player with.
+const WEAPON_SLOTS: Array[String] = ["primary", "secondary"]
 ## How far from a body or crate you may be while its loot screen stays open.
 const LOOT_REACH := PICKUP_RANGE + 1.0
 ## Where the crosshair aims on a crate or a body, above its origin.
@@ -49,6 +51,11 @@ var _viewers: Dictionary = {}
 var _crates: Array[LootCrate] = []
 ## Server: player -> {per_second, left} while a medkit works.
 var _healing: Dictionary = {}
+## Server: per-item data by uid (a gun's build), kept as the item moves between gears,
+## the ground and saves.
+var _item_data: Dictionary[int, Dictionary] = {}
+## Server: peer -> slot -> uid last reported in a weapon slot (to report changes once).
+var _last_slots: Dictionary = {}
 ## Client: rendered item pictures for the tiles.
 var _icons: ItemIcons
 ## This instance's copy of its own player's inventory (on the server, the same grid).
@@ -121,11 +128,6 @@ func item_info(item: String) -> Dictionary:
 	return (_data.get("items", {}) as Dictionary).get(item, {})
 
 
-## Read-only gun slots for the gear screen, `{slot: label}` (guns are not items yet).
-func weapon_labels() -> Dictionary:
-	return (_data.get("gear", {}) as Dictionary).get("weapons", {})
-
-
 ## A fresh 3D model of `item` (its own voxel model, or one another module supplies for it,
 ## e.g. a gun part), or null if it has none.
 func item_model(item: String) -> Node3D:
@@ -165,15 +167,62 @@ func count(peer: int, item: String) -> int:
 
 ## Server: puts one `item` into `peer`'s gear if there is room (an empty slot of its kind
 ## first, then the rig, pockets and backpack).
-func server_give(peer: int, item: String) -> bool:
+func server_give(peer: int, item: String, data: Dictionary = {}) -> bool:
 	var gear: InventoryGear = _grids.get(peer)
 	if gear == null or item_info(item).is_empty():
 		return false
 	if not gear.insert(_next_uid, item)["ok"]:
 		return false
+	if not data.is_empty():
+		_item_data[_next_uid] = data.duplicate(true)
 	_next_uid += 1
 	_send(peer)
 	return true
+
+
+## Server: an item's own data (a gun's `{build}`), or empty.
+func item_data(uid: int) -> Dictionary:
+	return _item_data.get(uid, {})
+
+
+## Server: what `peer` has in a slot: `{uid, item, data}`, or empty.
+func slot_item(peer: int, slot: String) -> Dictionary:
+	var gear: InventoryGear = _grids.get(peer)
+	if gear == null:
+		return {}
+	for s: Dictionary in gear.slots():
+		var worn: Dictionary = s["item"]
+		if str(s["name"]) == slot and not worn.is_empty():
+			return {"uid": int(worn["uid"]), "item": str(worn["item"]), "data": item_data(int(worn["uid"]))}
+	return {}
+
+
+## Server: replaces the data of what `peer` has in `slot` (a gun's new build). False when
+## the slot is empty.
+func server_set_slot_data(peer: int, slot: String, data: Dictionary) -> bool:
+	var worn := slot_item(peer, slot)
+	if worn.is_empty():
+		return false
+	_item_data[int(worn["uid"])] = data.duplicate(true)
+	_last_slots.get(peer, {}).erase(slot)
+	_check_slots(peer)
+	return true
+
+
+## Server: tells other modules (`inventory.slot_changed`) when what `peer` has in a weapon
+## slot changed: `{peer, slot, item, uid, data}`, item "" when it went empty.
+func _check_slots(peer: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var last: Dictionary = _last_slots.get(peer, {})
+	_last_slots[peer] = last
+	for slot: String in WEAPON_SLOTS:
+		var worn := slot_item(peer, slot)
+		var uid := int(worn.get("uid", -1))
+		if last.has(slot) and int(last[slot]) == uid:
+			continue
+		last[slot] = uid
+		EventBus.publish(&"inventory.slot_changed", {"peer": peer, "slot": slot, "item": str(worn.get("item", "")), "uid": uid, "data": worn.get("data", {})})
 
 
 ## Server: takes one `item` out of `peer`'s gear if they have one.
@@ -201,6 +250,7 @@ func server_take_uid(peer: int, uid: int) -> String:
 			item = str(placed["item"])
 	if item.is_empty() or not gear.remove(uid).is_empty():
 		return ""
+	_item_data.erase(uid)
 	_send(peer)
 	return item
 
@@ -246,6 +296,8 @@ func _on_player_spawned(p: Dictionary) -> void:
 		_fill(grid, _roll_loot() if npc else Array(_data.get("starting_kit", [])))
 		if not npc:
 			_send(peer)
+		else:
+			_check_slots(peer)
 	if DisplayServer.get_name() != "headless" and p.get("local", false):
 		var prompt := LootPrompt.new()
 		prompt.name = "LootPrompt"
@@ -266,11 +318,11 @@ func _on_player_spawned(p: Dictionary) -> void:
 
 
 ## Server: puts `item` on the ground at `at`; everyone sees it.
-func server_spawn_loot(item: String, at: Vector3) -> LootItem:
+func server_spawn_loot(item: String, at: Vector3, data: Dictionary = {}) -> LootItem:
 	if item_info(item).is_empty():
 		return null
 	_loot_count += 1
-	return _loot_spawner.spawn({"index": _loot_count, "item": item, "position": at})
+	return _loot_spawner.spawn({"index": _loot_count, "item": item, "position": at, "data": data})
 
 
 ## Runs on the server and, through the spawner, on every client.
@@ -286,6 +338,7 @@ func _make_loot(data: Variant) -> Node:
 	var size: Array = def.get("size", [1, 1])
 	loot.cells = Vector2i(int(size[0]), int(size[1]))
 	loot.position = info["position"]
+	loot.set_meta(&"data", info.get("data", {}))
 	loot.rotation.y = float(int(info["index"]) * 37 % 360) * PI / 180.0
 	# Gear with its own model lies on the ground as that model.
 	if DisplayServer.get_name() != "headless" and VoxGear.kind_of(str(def.get("model", ""))) >= 0:
@@ -366,7 +419,7 @@ func _on_player_interact(payload: Dictionary) -> void:
 			server_open(peer, container)
 		return
 	payload["handled"] = true
-	if server_give(peer, loot.item):
+	if server_give(peer, loot.item, loot.get_meta(&"data", {})):
 		loot.queue_free()
 	else:
 		Log.info(&"inventory", "peer %d: no room for %s" % [peer, loot.item])
@@ -409,7 +462,8 @@ func server_drop(peer: int, uid: int, from_theirs: bool = false) -> bool:
 			_send(peer)
 		return false
 	var front := player.global_position - player.global_transform.basis.z * DROP_DISTANCE
-	server_spawn_loot(item, _on_ground(front))
+	server_spawn_loot(item, _on_ground(front), item_data(uid))
+	_item_data.erase(uid)
 	if from_theirs:
 		_after_move(peer, uid, "", true)
 	else:
@@ -1020,7 +1074,8 @@ func server_items_of(peer: int) -> Array:
 		return out
 	for placed: Dictionary in gear.all_items():
 		var container := "slot:%s" % placed["slot"] if placed.has("slot") else str(placed["grid"])
-		out.append({"item": placed["item"], "container": container, "x": placed["x"], "y": placed["y"], "rotated": placed["rotated"]})
+		var data := item_data(int(placed["uid"]))
+		out.append({"item": placed["item"], "container": container, "x": placed["x"], "y": placed["y"], "rotated": placed["rotated"], "data": JSON.stringify(data) if not data.is_empty() else ""})
 	return out
 
 
@@ -1045,6 +1100,9 @@ func server_restore_items(peer: int, items: Array) -> void:
 		if not why.is_empty() and not grid.insert(_next_uid, item)["ok"]:
 			spilled.append(item)
 			continue
+		var data: Variant = JSON.parse_string(str(saved["data"])) if not str(saved.get("data", "")).is_empty() else null
+		if data is Dictionary:
+			_item_data[_next_uid] = data
 		_next_uid += 1
 	var player := _player_of(peer)
 	for item in spilled:
@@ -1148,6 +1206,7 @@ func _apply_snapshot(gear: InventoryGear, snapshot: Dictionary) -> void:
 
 ## Server: sends `peer` their inventory. On the server's own player it is already current.
 func _send(peer: int) -> void:
+	_check_slots(peer)
 	if peer == multiplayer.get_unique_id():
 		EventBus.publish(&"inventory.changed", {"peer": peer})
 		return
