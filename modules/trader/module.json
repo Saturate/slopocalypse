@@ -1,0 +1,6 @@
+{
+  "id": "trader",
+  "depends_on": ["world", "player", "inventory", "missions"],
+  "flag": "trader",
+  "entry": "trader_module.gd"
+}

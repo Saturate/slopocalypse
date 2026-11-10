@@ -10,7 +10,7 @@
     "weapons": { "primary": "Rifle (in hand)", "secondary": "Pistol (in hand)" }
   },
   "starting_gear": { "rig": "rig_light", "backpack": "bag_small" },
-  "respawn_gear": { "backpack": "bag_small" },
+  "respawn_gear": {},
   "npc_gear": { "rig": "rig_light" },
   "npc_loot": {
     "rolls": [1, 3],

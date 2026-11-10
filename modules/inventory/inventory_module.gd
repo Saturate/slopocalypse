@@ -159,6 +159,23 @@ func server_take(peer: int, item: String) -> bool:
 	return false
 
 
+## Server: takes the item `uid` out of `peer`'s gear for good (sold, handed in) and returns
+## its item id, or "" if there is no such item or it cannot go (a worn pack with things in
+## it).
+func server_take_uid(peer: int, uid: int) -> String:
+	var gear: InventoryGear = _grids.get(peer)
+	if gear == null:
+		return ""
+	var item := ""
+	for placed: Dictionary in gear.all_items():
+		if int(placed["uid"]) == uid:
+			item = str(placed["item"])
+	if item.is_empty() or not gear.remove(uid).is_empty():
+		return ""
+	_send(peer)
+	return item
+
+
 ## Client: asks to move an item within this player's gear to `place` (`{slot: name}` or
 ## `{grid: name, x, y, rotated}`).
 func request_move(uid: int, place: Dictionary) -> void:
