@@ -33,6 +33,8 @@ var aim: bool = false
 var reload: bool = false
 ## One-shot: place a demolition charge where the player aims.
 var throw: bool = false
+## One-shot: set off every charge this player placed.
+var detonate: bool = false
 ## One-shots: draw the first or second weapon.
 var weapon_1: bool = false
 var weapon_2: bool = false
@@ -41,7 +43,7 @@ var weapon_slot: int = 0
 
 ## One-shot: take me back to the spawn (the Esc menu).
 var back_to_spawn := false
-const ONE_SHOTS := [&"jump", &"interact", &"reload", &"throw", &"weapon_1", &"weapon_2", &"back_to_spawn"]
+const ONE_SHOTS := [&"jump", &"interact", &"reload", &"throw", &"detonate", &"weapon_1", &"weapon_2", &"back_to_spawn"]
 
 
 func consume_back_to_spawn() -> bool:
@@ -89,6 +91,12 @@ func consume_weapon_2() -> bool:
 func consume_throw() -> bool:
 	var out := throw
 	throw = false
+	return out
+
+
+func consume_detonate() -> bool:
+	var out := detonate
+	detonate = false
 	return out
 
 

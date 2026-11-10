@@ -54,6 +54,7 @@
     "lean_right": ["E"],
     "reload": ["R"],
     "charge": ["G"],
+    "detonate": ["T"],
     "weapon_1": ["1"],
     "weapon_2": ["2"]
   }

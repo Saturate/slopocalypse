@@ -42,6 +42,7 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | Strike drones: dive delay, how far they hear shots | `modules/drones/data/drones.json` | `strike_dive_delay`, `strike_alert_radius`, `strike_hear_radius` |
 | Mines and tripwires: how close sets them off, how hard they hit, spotting and disarming | `modules/missions/data/missions.json` | `hazards` (`trigger_radius`, `delay`, `blast_radius`, `damage`, `reveal_range`, `disarm_range`, `shot_radius`, `mine_ring`, `signs`); per mission `mines`, `tripwires`, and a `buildings` override |
 | Home base: board and car spots, who rides | `modules/missions/data/missions.json` | `board.offset`, `transport.offset` (from the spawn), `home_radius`, `ride_home_reach`, `ride_fade_seconds` |
+| Breaching charges: blast, range, which item they use | `modules/weapons/data/weapons.json` | `charge` (`radius`, `damage`, `range`, `cooldown_seconds`, `item`); keys in `modules/player/data/player.json` (`charge`, `detonate`) |
 | Trader: what is for sale and for how much, what selling pays | `modules/trader/data/trader.json` | `stock` (`item`, `price`), `sell_share`, `unlisted_price`, `stall.offset` |
 | What you come back with after dying | `modules/inventory/data/items.json` | `respawn_gear` (empty: nothing) |
 | Bodies: how long they stay, colour | `modules/inventory/data/items.json` | `bodies`: `seconds`, `empty_seconds` (once searched empty), `colour` |

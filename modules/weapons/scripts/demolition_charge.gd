@@ -2,7 +2,9 @@ class_name DemolitionCharge
 extends Node3D
 ## A placed charge. Blinks while the fuse burns, then the server detonates it: damages
 ## everything with health inside the radius and announces an `explosion`, which the world
-## module turns into a crater and clients turn into flash, dust and debris.
+## module turns into a crater (and nearby buildings into holes) and clients into flash, dust
+## and debris. A remote charge (`stats.remote`, a breaching charge) has no fuse: it blinks
+## slowly and waits for its placer to set it off, or for a bullet.
 
 var stats: Dictionary = {}
 var owner_player: Node
@@ -12,6 +14,7 @@ var _light := OmniLight3D.new()
 
 
 func _ready() -> void:
+	add_to_group(&"charges")
 	_fuse = stats["fuse_seconds"]
 	var body := MeshInstance3D.new()
 	var box := BoxMesh.new()
@@ -34,8 +37,8 @@ func _process(_delta: float) -> void:
 
 
 func _process_tick(_delta: float) -> void:
-	# Blinks faster as the fuse runs down.
-	var rate := lerpf(3.0, 14.0, 1.0 - _fuse / float(stats["fuse_seconds"]))
+	# Blinks faster as the fuse runs down; a remote one blinks slowly, waiting.
+	var rate := 1.0 if is_remote() else lerpf(3.0, 14.0, 1.0 - _fuse / float(stats["fuse_seconds"]))
 	_light.light_energy = 2.0 if fmod(Time.get_ticks_msec() / 1000.0 * rate, 1.0) < 0.5 else 0.0
 
 
@@ -45,7 +48,13 @@ func _physics_process(delta: float) -> void:
 	Prof.stop(&"weapons/demolition_charge:physics", prof)
 
 
+func is_remote() -> bool:
+	return bool(stats.get("remote", false))
+
+
 func _physics_tick(delta: float) -> void:
+	if is_remote():
+		return
 	_fuse -= delta
 	if _fuse <= 0.0 and multiplayer.is_server():
 		server_explode()
