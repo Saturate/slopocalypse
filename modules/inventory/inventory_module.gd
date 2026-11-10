@@ -460,15 +460,21 @@ func server_spawn_crate(at: Vector3) -> LootCrate:
 	return crate
 
 
-## Server: a crate holding exactly `items` that never refills and is not saved with the world
-## (a mission's objective). `server_remove_container` takes it away again.
+## Server: a crate at `at` (the caller puts it on a floor) holding exactly `items` that never
+## refills and is not saved with the world (a mission's objective, a building's loot). `server_remove_container` takes it away again.
 func server_spawn_mission_crate(at: Vector3, items: Array) -> LootCrate:
 	_loot_count += 1
-	var crate: LootCrate = _crate_spawner.spawn({"index": _loot_count, "position": _on_ground(at)})
+	# Exactly where asked: a probe down from above would land it on a building's roof.
+	var crate: LootCrate = _crate_spawner.spawn({"index": _loot_count, "position": at})
 	crate.set_meta(&"no_refill", true)
 	var id := _new_container(crate, _crate_grid())
 	_fill(_containers[id], items)
 	return crate
+
+
+## A roll of crate loot (item ids) from the crate table, for crates other modules place.
+func roll_crate_loot() -> Array:
+	return _roll(_crates_data())
 
 
 ## Server: removes a crate or body and whatever is still in it.

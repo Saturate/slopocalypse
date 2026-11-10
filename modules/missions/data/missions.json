@@ -9,6 +9,16 @@
   "dropoff_side": 5.0,
   "zone": { "beyond_dropoff": 70.0, "radius": 45.0, "objective_side": -6.0 },
   "objective_item": "usb_drive",
+  "buildings": {
+    "count": [3, 6],
+    "width": [5.0, 8.5],
+    "depth": [4.0, 6.5],
+    "wall_height": [2.7, 3.2],
+    "off_road": [9.0, 22.0],
+    "spread": 35.0,
+    "gap": 3.0,
+    "strike_share": 0.5
+  },
   "strikes": {
     "waves": [
       { "at": 0.0, "drones": 2 },
