@@ -15,3 +15,7 @@ Every third-party asset, generated asset and vendored code in this repo, with it
 | `modules/world/textures/Concrete034/` | Concrete texture set (1K) | https://ambientcg.com/view?id=Concrete034 | CC0 | 2026-11-06 |
 | `modules/world/textures/Planks037A/` | Wood planks texture set (1K) | https://ambientcg.com/view?id=Planks037A | CC0 | 2026-11-06 |
 | `modules/world/textures/Bark014/` | Bark texture set (Color, NormalGL 1K) | https://ambientcg.com/view?id=Bark014 | CC0 | 2026-11-06 |
+
+## Tools (not shipped)
+
+- **ffmpeg 9.0.2**, the "essentials" Windows build from gyan.dev (https://github.com/GyanD/codexffmpeg), GPL-3.0. Fetched by `tools/get-ffmpeg.ts` into the git-ignored `tools/ffmpeg/` to encode trailers; never bundled with the game.

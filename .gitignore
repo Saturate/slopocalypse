@@ -33,3 +33,5 @@ Thumbs.db
 
 # Benchmark results and this machine's baselines (tools/bench.ts)
 /bench/
+# Pinned ffmpeg for the trailer pipeline (fetch with tools/get-ffmpeg.ts)
+/tools/ffmpeg/
