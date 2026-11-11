@@ -18,7 +18,7 @@ const REQUIRED := {
 	"ride_home_reach": TYPE_FLOAT, "drop_spread": TYPE_FLOAT, "board": TYPE_DICTIONARY,
 	"transport": TYPE_DICTIONARY, "dropoff_side": TYPE_FLOAT, "offered": TYPE_FLOAT,
 	"seed": TYPE_FLOAT, "missions": TYPE_ARRAY, "zone": TYPE_DICTIONARY, "types": TYPE_DICTIONARY,
-	"codenames": TYPE_DICTIONARY, "buildings": TYPE_DICTIONARY,
+	"codenames": TYPE_DICTIONARY, "buildings": TYPE_DICTIONARY, "starting_tokens": TYPE_FLOAT,
 }
 ## How squarely you must face the board or a car to use it.
 const FACING := 0.7
@@ -491,10 +491,13 @@ func _local_player() -> Node3D:
 	return null
 
 
-## Server: a friend who joins late sees the board and the mission as they are.
+## Server: a friend who joins late sees the board and the mission as they are. Everyone
+## starts with the starting tokens; persistence then puts back a returning player's own.
 func _on_peer_joined(peer: int) -> void:
 	if multiplayer.is_server():
-		_sync.rpc_id(peer, _snapshot())
+		if multiplayer.get_peers().has(peer):
+			_sync.rpc_id(peer, _snapshot())
+		server_set_tokens(peer, int(config.get("starting_tokens", 0.0)))
 
 
 @rpc("authority", "call_remote", "reliable")
