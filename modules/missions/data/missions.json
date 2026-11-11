@@ -40,6 +40,7 @@
     "sign_distance": 32.0
   },
   "offered": 3,
+  "starting_tokens": 150.0,
   "seed": 11,
   "codenames": {
     "first": ["Rusty", "Silent", "Broken", "Hollow", "Crimson", "Velvet", "Iron", "Paper", "Static", "Copper", "Glass", "Feral", "Midnight", "Sunken", "Neon", "Grim"],

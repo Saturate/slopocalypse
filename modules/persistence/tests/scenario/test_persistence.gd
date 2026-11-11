@@ -170,3 +170,22 @@ func test_tokens_come_back_with_the_player() -> void:
 	_spawn(72)
 	assert_bool(_saves.call(&"server_admit", 72, "Courier", "key-c")).is_true()
 	assert_int(missions.call(&"server_tokens_of", 72)).is_equal(340)
+
+
+func test_a_new_player_starts_with_the_starting_tokens_and_a_save_keeps_its_own() -> void:
+	var missions: Node = auto_free((load("res://modules/missions/missions_module.gd") as GDScript).new())
+	add_child(missions)
+	var start := int((missions.get(&"config") as Dictionary)["starting_tokens"])
+	assert_int(start).is_greater(0)
+	# What Net does on connect, before the player spawns and the save is looked up.
+	missions.call(&"_on_peer_joined", 73)
+	var first := _spawn(73)
+	assert_bool(_saves.call(&"server_admit", 73, "Rookie", "key-r")).is_true()
+	assert_int(missions.call(&"server_tokens_of", 73)).is_equal(start)
+
+	missions.call(&"server_set_tokens", 73, 0)
+	_leave(73, first)
+	missions.call(&"_on_peer_joined", 74)
+	_spawn(74)
+	assert_bool(_saves.call(&"server_admit", 74, "Rookie", "key-r")).is_true()
+	assert_int(missions.call(&"server_tokens_of", 74)).is_equal(0)
