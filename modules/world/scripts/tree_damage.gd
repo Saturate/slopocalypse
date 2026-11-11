@@ -28,7 +28,6 @@ const BLAST_CUT_MIN := 0.3
 const BLAST_CUT_MAX := 1.6
 ## Bullet cuts never go higher than this share of the trunk's collision height.
 const CUT_MAX_SHARE := 0.9
-const SPLINTERS := 6
 ## The cut-away part of a model is everything in this half-size box above or below the cut.
 const FAR := 100.0
 ## The top is rebuilt this many times as it withers (each rebuild costs tens of milliseconds).
@@ -122,7 +121,7 @@ func bite(id: Vector2i, point: Vector3, from: Vector3) -> void:
 	var bites: Array = _bites.get(id, [])
 	bites.append(Vector4(local.x, local.y, local.z, BITE / _scale(id)))
 	_bites[id] = bites
-	VoxelDebris.burst(scatter, point, (from - point).normalized(), BARK, SPLINTERS, 3.0)
+	VoxelDebris.burst(scatter, point, (from - point).normalized(), BARK, &"tree")
 
 
 ## Every machine: tree `id` is cut at `cut` (metres above its foot) and the top falls
@@ -140,9 +139,9 @@ func fell(id: Vector2i, direction: Vector3, cut: float, blast: Vector4 = Vector4
 	apply(id, seconds_ago <= 0.0)
 	if visual:
 		var at := scatter.tree_record(id)["xform"] as Transform3D
-		VoxelDebris.burst(scatter, at * Vector3(0.0, cut, 0.0), Vector3.UP, BARK, SPLINTERS * 2, 4.0)
+		VoxelDebris.burst(scatter, at * Vector3(0.0, cut, 0.0), Vector3.UP, BARK, &"tree_cut")
 		if blast.w > 0.0:
-			VoxelDebris.burst(scatter, at * Vector3(blast.x, blast.y, blast.z), Vector3.UP, LEAVES, SPLINTERS * 2, 6.0)
+			VoxelDebris.burst(scatter, at * Vector3(blast.x, blast.y, blast.z), Vector3.UP, LEAVES, &"tree_blast")
 
 
 ## A felled tree in a loaded chunk: its trunk collision becomes the stump, its sight blocker
@@ -350,7 +349,7 @@ func _add_top(id: Vector2i, model: VoxelModel, animate: bool) -> void:
 	tween.tween_method(func(t: float) -> void: pose.call(t, 0.0), 0.0, 1.0, float(config["tree_fall_seconds"])).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tween.tween_callback(func() -> void:
 		var crown := pivot.global_transform * top.transform * top.mesh.get_aabb().get_center()
-		VoxelDebris.burst(scatter, crown, Vector3.UP, leaves, SPLINTERS * 3, 3.5))
+		VoxelDebris.burst(scatter, crown, Vector3.UP, leaves, &"tree_crown"))
 	tween.tween_method(func(s: float) -> void: pose.call(1.0, s), 0.0, 1.0, COLLAPSE_SECONDS).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 

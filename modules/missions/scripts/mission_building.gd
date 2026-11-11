@@ -22,8 +22,6 @@ const ROOF_THICKNESS := 0.25
 const WALL := 0.2
 ## Voxel size of the mesh: coarse enough to build quickly during a ride.
 const VOXEL := 0.15
-const DEBRIS_COUNT := 24
-const DEBRIS_SPEED := 4.5
 ## Bullet holes rebuild the mesh at most this often, seconds.
 const REMESH_EVERY := 0.2
 
@@ -189,7 +187,7 @@ func bullet_mark(point: Vector3) -> void:
 	var hole := float(material_cfg.get("hole", 0.0))
 	var colour := Color(0.55, 0.55, 0.52) if material() == "concrete" else Color(0.55, 0.42, 0.3)
 	if is_inside_tree():
-		VoxelDebris.burst(get_parent(), point, (point - global_position).normalized(), colour, 5, 2.5)
+		VoxelDebris.burst(get_parent(), point, (point - global_position).normalized(), colour, &"building_chip")
 	if hole <= 0.0:
 		return
 	var local := global_transform.affine_inverse() * point
@@ -232,8 +230,10 @@ func _remove(ids: Array, debris: bool) -> void:
 			box = AABB(box.position, Vector3(box.size.x, d * 0.6 + 0.6, box.size.z))
 		_model.carve_box(box.position, box.end)
 		if debris and is_inside_tree():
-			var at := global_transform * _segments[id].get_center()
-			VoxelDebris.burst(get_parent(), at, Vector3.UP, Color(0.5, 0.42, 0.33), DEBRIS_COUNT, DEBRIS_SPEED)
+			var centre := _segments[id].get_center()
+			# Wall pieces fly out from the building, roof pieces up.
+			var out := Vector3.UP if centre.y >= wh - 0.1 else (Vector3(centre.x, 0.0, centre.z).normalized() + Vector3.UP * 0.5)
+			VoxelDebris.burst(get_parent(), global_transform * centre, global_transform.basis * out, Color(0.5, 0.42, 0.33), &"building")
 
 
 ## A spot on the floor inside, `along` (0..1 from the door to the back wall) and `side`

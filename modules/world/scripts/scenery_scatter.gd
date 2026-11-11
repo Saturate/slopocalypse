@@ -640,7 +640,10 @@ func on_dug(center: Vector3, radius: float) -> void:
 		var on_road := _heights.road != null and _heights.road.distance(center.x, center.z) < _heights.road.half_width
 		dig_road(center, radius)
 		# Bigger holes throw more; a bullet's scrape throws a pinch.
-		VoxelDebris.burst(self, center + Vector3.UP * 0.3, Vector3.UP, ASPHALT_CHIPS if on_road else DIRT, clampi(int(radius * radius * 10.0), 2, 40), 3.0 + radius * 2.5)
+		var cfg := VoxelDebris.config(&"crater")
+		if not cfg.is_empty():
+			var count := clampi(int(radius * radius * float(cfg["count_per_m2"])), int(cfg["count_min"]), int(cfg["count"]))
+			VoxelDebris.burst(self, center + Vector3.UP * 0.3, Vector3.UP, ASPHALT_CHIPS if on_road else DIRT, &"crater", count, float(cfg["speed"]) + radius * float(cfg["speed_per_metre"]))
 
 
 func _grass_mesh() -> Mesh:
