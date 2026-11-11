@@ -202,6 +202,52 @@ impl Grid {
         out
     }
 
+    /// A new grid holding a copy of the cells whose centres are inside the box `min..max`
+    /// (metres), and where the copy's model origin sits in this model's space, so the copy
+    /// drawn there lines up with the original.
+    pub fn copy_box(&self, min: [f32; 3], max: [f32; 3]) -> (Grid, [f32; 3]) {
+        let [(x0, x1), (y0, y1), (z0, z1)] = self.range_centres(min, max);
+        let n = [x1 - x0, y1 - y0, z1 - z0].map(|v| v.max(1));
+        let mut out = Grid::new(n.map(|v| v as f32 * self.voxel), self.voxel);
+        // Grid::new rounds the size up from metres; make sure it matches exactly.
+        out.nx = n[0];
+        out.ny = n[1];
+        out.nz = n[2];
+        out.cells = vec![EMPTY; n[0] * n[1] * n[2]];
+        out.chunks = n.map(|v| v.div_ceil(CHUNK));
+        out.dirty = vec![true; out.chunks[0] * out.chunks[1] * out.chunks[2]];
+        for y in y0..y1 {
+            for z in z0..z1 {
+                for x in x0..x1 {
+                    let c = self.cells[self.index(x, y, z)];
+                    let i = out.index(x - x0, y - y0, z - z0);
+                    out.cells[i] = c;
+                }
+            }
+        }
+        let o = self.origin();
+        let v = self.voxel;
+        let at = [
+            o[0] + x0 as f32 * v + n[0] as f32 * v / 2.0,
+            o[1] + y0 as f32 * v,
+            o[2] + z0 as f32 * v + n[2] as f32 * v / 2.0,
+        ];
+        (out, at)
+    }
+
+    /// Cells whose centres are inside `min..max`, as ranges per axis.
+    fn range_centres(&self, min: [f32; 3], max: [f32; 3]) -> [(usize, usize); 3] {
+        let o = self.origin();
+        let n = [self.nx, self.ny, self.nz];
+        let mut out = [(0, 0); 3];
+        for a in 0..3 {
+            let lo = ((min[a] - o[a]) / self.voxel - 0.5).ceil().max(0.0) as usize;
+            let hi = (((max[a] - o[a]) / self.voxel - 0.5).floor() + 1.0).max(0.0) as usize;
+            out[a] = (lo.min(n[a]), hi.min(n[a]).max(lo.min(n[a])));
+        }
+        out
+    }
+
     /// Runs `f` on every cell whose centre is inside the box `min..max`, with the centre.
     fn each_in(
         &mut self,
@@ -707,6 +753,30 @@ mod tests {
             area_by_colour(&meshes, g.voxel),
             area_by_colour(&[g.mesh()], g.voxel)
         );
+    }
+
+    #[test]
+    fn a_copied_box_holds_the_same_cells_where_they_were() {
+        let mut g = Grid::new([2.0, 1.0, 2.0], 0.1);
+        g.fill_box([-1.0, 0.0, -1.0], [1.0, 0.5, 1.0], fill(RED));
+        g.fill_box([0.2, 0.0, 0.2], [0.4, 0.3, 0.6], fill(BLUE));
+        let (copy, at) = g.copy_box([0.0, 0.0, 0.0], [0.6, 0.4, 0.8]);
+        assert_eq!((copy.nx, copy.ny, copy.nz), (6, 4, 8));
+        for y in 0..copy.ny {
+            for z in 0..copy.nz {
+                for x in 0..copy.nx {
+                    let here = copy.centre(x, y, z);
+                    let there = [here[0] + at[0], here[1] + at[1], here[2] + at[2]];
+                    let (sx, sy, sz) = (
+                        ((there[0] + 1.0) / 0.1).floor() as i64,
+                        (there[1] / 0.1).floor() as i64,
+                        ((there[2] + 1.0) / 0.1).floor() as i64,
+                    );
+                    assert_eq!(copy.get(x as i64, y as i64, z as i64), g.get(sx, sy, sz));
+                }
+            }
+        }
+        assert_eq!(copy.filled(), 6 * 4 * 8);
     }
 
     #[test]

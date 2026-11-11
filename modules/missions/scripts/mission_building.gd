@@ -11,6 +11,10 @@ extends StaticBody3D
 ## the model with a burst of debris, leaving a hole you can walk or shoot through. The entry's
 ## `broken` list carries which are gone, so late joiners see the same holes.
 ##
+## Pieces nothing holds up any more fall (see `BuildingSupport`): the server takes them
+## away with the pieces that broke and hurts whoever is under them when they land; clients
+## drop their voxels as one piece per connected group, then break it into debris.
+##
 ## Its material decides what bullets do: wood takes a small hole where each one hits and
 ## enough of them break a piece out; concrete only chips (no hole, next to no damage) and
 ## needs a blast, a breaching charge or a heavy enough round. Blasts hurt concrete less too.
@@ -29,6 +33,10 @@ var spec: Dictionary = {}
 ## Segment size and health from the missions config (`buildings`).
 var segment_size := 1.2
 var segment_hp := 100.0
+## Collapse: roof pieces further than this many pieces from a standing wall fall, and how long
+## a falling piece takes to land (from the missions config's `buildings`).
+var max_span := 2
+var fall_seconds := 0.6
 ## What its material takes: `{bullet, blast, min_bullet_damage, hole}` (from the missions
 ## config's `materials`).
 var material_cfg: Dictionary = {}
@@ -40,6 +48,11 @@ var _shapes: Dictionary[int, CollisionShape3D] = {}
 ## Server: segment id -> health left.
 var _hp: Dictionary[int, float] = {}
 var _segments: Array[AABB] = []
+## The support graph (built on first use): connected segment pairs, roof flags and the
+## segments standing on the slab.
+var _edges := PackedInt32Array()
+var _roof := PackedByteArray()
+var _anchors := PackedInt32Array()
 ## Client: holes were carved this frame; the changed chunks are rebuilt once, next process.
 var _remesh := false
 
@@ -202,15 +215,128 @@ func _process(_delta: float) -> void:
 
 
 ## Everywhere: takes the segments away (collision, and on clients the voxels with debris).
-func break_segments(ids: Array) -> void:
+## `fallen` ones lost their support: on clients they drop as whole pieces first.
+func break_segments(ids: Array, fallen: Array = []) -> void:
 	_remove(ids, true)
-	if _visual and _model != null and not ids.is_empty():
+	if _visual and _model != null and is_inside_tree():
+		for group in _groups(fallen):
+			_drop(group)
+	_remove(fallen, false)
+	if _visual and _model != null and not (ids.is_empty() and fallen.is_empty()):
 		_mesh.refresh()
+
+
+## Server: once `newly` break, the standing segments nothing holds up any more.
+func server_unsupported(newly: Array[int]) -> Array[int]:
+	if _roof.is_empty():
+		_build_graph()
+	var broken := PackedInt32Array(newly)
+	for id in _segments.size():
+		if not _shapes.has(id) and not newly.has(id):
+			broken.append(id)
+	var out: Array[int] = []
+	for id in BuildingSupport.unsupported(_roof, _edges, _anchors, broken, max_span):
+		out.append(id)
+	return out
+
+
+## Server: fallen segments land: everyone under them takes `damage` once.
+func server_crush(fallen: Array[int], damage: float) -> void:
+	var to_local := global_transform.affine_inverse()
+	for group: StringName in [&"players", &"enemies", &"vehicles"]:
+		for node: Node in get_tree().get_nodes_in_group(group):
+			var body := node as Node3D
+			if body == null:
+				continue
+			var at := to_local * body.global_position
+			for id in fallen:
+				var box := _segments[id]
+				if at.x >= box.position.x and at.x <= box.end.x and at.z >= box.position.z and at.z <= box.end.z and at.y < box.position.y:
+					var health := HealthComponent.find_on(body)
+					if health != null:
+						health.server_apply_damage(damage, self)
+					break
+
+
+## Segments connect where their boxes touch (a shared face or edge); anchors stand on the slab.
+func _build_graph() -> void:
+	var wh := float(spec.get("wall_height", 2.8))
+	_roof.resize(_segments.size())
+	for i in _segments.size():
+		var box := _segments[i]
+		_roof[i] = 1 if box.position.y >= wh - 0.01 else 0
+		if _roof[i] == 0 and box.position.y <= 0.01:
+			_anchors.append(i)
+		for j in range(i + 1, _segments.size()):
+			if box.grow(0.01).intersects(_segments[j].grow(0.01)):
+				_edges.append(i)
+				_edges.append(j)
+
+
+## `ids` split into groups connected through each other.
+func _groups(ids: Array) -> Array[Array]:
+	if _roof.is_empty():
+		_build_graph()
+	var left: Dictionary[int, bool] = {}
+	for v: Variant in ids:
+		left[int(v)] = true
+	var out: Array[Array] = []
+	while not left.is_empty():
+		var start: int = left.keys()[0]
+		left.erase(start)
+		var group: Array[int] = [start]
+		var k := 0
+		while k < group.size():
+			var at := group[k]
+			k += 1
+			for e in range(0, _edges.size(), 2):
+				var other := -1
+				if _edges[e] == at:
+					other = _edges[e + 1]
+				elif _edges[e + 1] == at:
+					other = _edges[e]
+				if other >= 0 and left.has(other):
+					left.erase(other)
+					group.append(other)
+		out.append(group)
+	return out
+
+
+## Client: the voxels of a connected group of fallen segments drop as one piece, land after
+## `fall_seconds`, then burst into debris.
+func _drop(group: Array) -> void:
+	var piece := Node3D.new()
+	piece.name = "Falling"
+	add_child(piece)
+	var lowest := INF
+	var centres: Array[Vector3] = []
+	for v: Variant in group:
+		var box := _carve_box(int(v))
+		var copy: Dictionary = _model.copy_box(box.position, box.end)
+		if copy.is_empty():
+			continue
+		var part := MeshInstance3D.new()
+		part.mesh = VoxGenerator.to_mesh(copy["model"])
+		part.position = copy["offset"]
+		piece.add_child(part)
+		lowest = minf(lowest, _segments[int(v)].position.y)
+		centres.append(_segments[int(v)].get_center())
+	if centres.is_empty():
+		piece.queue_free()
+		return
+	var drop := maxf(lowest - SLAB, 0.0)
+	var tween := piece.create_tween()
+	tween.tween_property(piece, "position:y", -drop, fall_seconds).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tween.tween_callback(func() -> void:
+		if is_inside_tree():
+			for c in centres:
+				var at := global_transform * (c + Vector3.DOWN * drop)
+				VoxelDebris.burst(get_parent(), at, Vector3.UP, Color(0.5, 0.42, 0.33), &"building")
+		piece.queue_free())
 
 
 func _remove(ids: Array, debris: bool) -> void:
 	var wh := float(spec.get("wall_height", 2.8))
-	var d := float(spec.get("depth", 4.0))
 	for v: Variant in ids:
 		var id := int(v)
 		if not _shapes.has(id):
@@ -220,16 +346,23 @@ func _remove(ids: Array, debris: bool) -> void:
 		shape.queue_free()
 		if _model == null:
 			continue
-		var box := _segments[id].grow(VOXEL * 0.5)
-		# A roof tile takes the sloping roof above it too.
-		if box.position.y >= wh - 0.1:
-			box = AABB(box.position, Vector3(box.size.x, d * 0.6 + 0.6, box.size.z))
+		var box := _carve_box(id)
 		_model.carve_box(box.position, box.end)
 		if debris and is_inside_tree():
 			var centre := _segments[id].get_center()
 			# Wall pieces fly out from the building, roof pieces up.
 			var out := Vector3.UP if centre.y >= wh - 0.1 else (Vector3(centre.x, 0.0, centre.z).normalized() + Vector3.UP * 0.5)
 			VoxelDebris.burst(get_parent(), global_transform * centre, global_transform.basis * out, Color(0.5, 0.42, 0.33), &"building")
+
+
+## The voxels segment `id` takes with it (a roof tile takes the sloping roof above it too).
+func _carve_box(id: int) -> AABB:
+	var wh := float(spec.get("wall_height", 2.8))
+	var d := float(spec.get("depth", 4.0))
+	var box := _segments[id].grow(VOXEL * 0.5)
+	if box.position.y >= wh - 0.1:
+		box = AABB(box.position, Vector3(box.size.x, d * 0.6 + 0.6, box.size.z))
+	return box
 
 
 ## A spot on the floor inside, `along` (0..1 from the door to the back wall) and `side`

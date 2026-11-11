@@ -213,6 +213,26 @@ impl VoxelModel {
         arrays_of(&grid.mesh())
     }
 
+    /// A copy of the cells inside the box `min..max` (model space) as its own model:
+    /// `{model, offset}`, where `offset` is where the copy's origin sits in this model, so a
+    /// mesh of it placed there lines up with the original (a falling piece of wall).
+    #[func]
+    fn copy_box(&self, min: Vector3, max: Vector3) -> VarDictionary {
+        let mut out = VarDictionary::new();
+        let Some(grid) = self.grid.as_ref() else {
+            return out;
+        };
+        let (copy, at) = grid.copy_box(v3(min), v3(max));
+        let model = Gd::from_init_fn(|base| VoxelModel {
+            base,
+            grid: Some(copy),
+            jitter_scale: self.jitter_scale,
+        });
+        out.set("model", &model);
+        out.set("offset", Vector3::new(at[0], at[1], at[2]));
+        out
+    }
+
     /// How many 16-cell chunks the model is split into.
     #[func]
     fn chunk_count(&self) -> i64 {
