@@ -222,6 +222,9 @@ func test_under_fire_a_soldier_gets_behind_cover() -> void:
 	var brain := _brain(enemy)
 	# Its patrol steps, aim jitter and peek timing are random; the same every run here.
 	(brain.get(&"_rng") as RandomNumberGenerator).seed = 7
+	# It may have picked a spot from its random spawn offset before being moved here.
+	brain.set(&"_has_cover", false)
+	brain.set(&"_cover_search_in", 0.0)
 	# Give it time to pick a spot and get there (a busy machine runs fewer ticks a second).
 	for i in 60 * 8:
 		await get_tree().physics_frame
@@ -230,6 +233,59 @@ func test_under_fire_a_soldier_gets_behind_cover() -> void:
 	assert_bool(brain.has_cover()).is_true()
 	# What counts: crouched where it now stands, the player cannot see it.
 	assert_bool(brain.hidden_at(enemy.global_position, _player.global_position)).is_true()
+
+
+func test_from_any_side_it_ends_up_hidden_behind_the_wall() -> void:
+	_player.global_position = Vector3(0, 0.1, -20)
+	_box(Vector3(3, 0.6, -1.5), Vector3(2.4, 1.2, 0.3))
+	await get_tree().physics_frame
+	var enemy := await _enemy_at(Vector3(0, 0, 0))
+	var brain := _brain(enemy)
+	# Behind the wall and off its ends; the starts that used to settle in sight.
+	for start: Vector3 in [Vector3(-3, 0, 0), Vector3(0, 0, 2), Vector3(1, 0, 0), Vector3(-1, 0, -1), Vector3(-3, 0, -1), Vector3(0, 0, -2)]:
+		enemy.global_position = start + Vector3.UP * 0.1
+		enemy.velocity = Vector3.ZERO
+		brain.set(&"_has_cover", false)
+		brain.set(&"_cover_search_in", 0.0)
+		await _frames(60 * 5)
+		assert_bool(brain.has_cover()).override_failure_message("no cover from %s" % start).is_true()
+		var ok := brain.hidden_at(enemy.global_position, _player.global_position)
+		assert_bool(ok).override_failure_message("from %s it settled at %s, in sight" % [start, enemy.global_position]).is_true()
+
+
+func test_a_spot_it_cannot_reach_does_not_stop_it_fighting() -> void:
+	_player.global_position = Vector3(0, 0.1, -20)
+	_box(Vector3(3, 0.6, -1.5), Vector3(2.4, 1.2, 0.3))
+	await get_tree().physics_frame
+	var enemy := await _enemy_at(Vector3(3, 0, -2.3))
+	var brain := _brain(enemy)
+	# A "hidden" spot inside the wall, which its body can never get onto.
+	brain.set(&"_has_cover", true)
+	brain.set(&"_cover", Vector3(3, 0, -1.5))
+	brain.set(&"_cover_search_in", 100.0)
+	# Firing, not hitting: aim error is random.
+	var fired := false
+	for i in 60 * 6:
+		await get_tree().physics_frame
+		fired = fired or enemy.intent().fire
+	assert_bool(fired).is_true()
+
+
+func test_when_the_player_moves_it_edges_back_out_of_sight() -> void:
+	_player.global_position = Vector3(0, 0.1, -20)
+	_box(Vector3(3, 0.6, -1.5), Vector3(2.4, 1.2, 0.3))
+	await get_tree().physics_frame
+	# Settled hidden, a step short of its spot near the wall's right end.
+	var enemy := await _enemy_at(Vector3(4, 0, -1))
+	var brain := _brain(enemy)
+	brain.set(&"_has_cover", true)
+	brain.set(&"_cover", Vector3(3.4, 0, -1))
+	brain.set(&"_cover_search_in", 100.0)
+	await _frames(60 * 2)
+	# Off to the right, the wall's end no longer hides where it stands; the spot still does.
+	_player.global_position = Vector3(16, 0.1, -20)
+	await _frames(60 * 5)
+	assert_bool(brain.hidden_at(enemy.global_position, _player.global_position)).override_failure_message("it stayed at %s, in sight" % enemy.global_position).is_true()
 
 
 func test_out_in_the_open_it_fights_where_it_stands() -> void:

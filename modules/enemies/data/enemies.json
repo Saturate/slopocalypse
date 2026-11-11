@@ -41,6 +41,8 @@
     "search_every": 1.5,
     "min_threat_distance": 5.0,
     "crouch_height": 0.9,
+    "settle_distance": 0.2,
+    "settle_seconds": 1.0,
     "stand_eye": 1.5,
     "threat_eye": 1.5,
     "no_shot_penalty": 8.0,

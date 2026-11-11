@@ -70,6 +70,8 @@ var _evaluate_in := 0.0
 var _has_cover := false
 var _cover := Vector3.ZERO
 var _cover_search_in := 0.0
+## How long it has been edging onto the current spot while in sight.
+var _settle_for := 0.0
 var _peeking := false
 var _peek_left := 0.0
 
@@ -231,11 +233,11 @@ func _hold_post(delta: float, intent: PlayerIntent) -> void:
 
 ## Turns towards `at` and moves straight at it whatever way it faces yet (forward plus a
 ## sidestep), so it never circles a spot it is turning too slowly to face.
-func _walk_toward(at: Vector3, delta: float, intent: PlayerIntent, speed: float) -> void:
+func _walk_toward(at: Vector3, delta: float, intent: PlayerIntent, speed: float, stop := ARRIVED * 0.5) -> void:
 	var want := look_angles(body.global_position, at).x
 	_turn_to(want, 0.0, delta)
 	var flat := Vector2(at.x - body.global_position.x, at.z - body.global_position.z)
-	if flat.length() <= ARRIVED * 0.5:
+	if flat.length() <= stop:
 		intent.move = Vector2.ZERO
 		return
 	var dir := flat.normalized()
@@ -458,6 +460,7 @@ func _use_cover(delta: float, intent: PlayerIntent) -> bool:
 		_has_cover = found is Vector3
 		if _has_cover:
 			_cover = found
+			_settle_for = 0.0
 	if not _has_cover:
 		return false
 	var flat := Vector2(_cover.x - body.global_position.x, _cover.z - body.global_position.z)
@@ -472,6 +475,16 @@ func _use_cover(delta: float, intent: PlayerIntent) -> bool:
 		return true
 	body.set_meta(&"moving_to_cover", false)
 	intent.move = Vector2.ZERO
+	# Arriving counts from a step short of the spot; at the end of a wall, or once the threat
+	# has moved, that step can be in sight, so it edges onto the spot itself.
+	# A spot its body cannot get onto (in a wall, against a squad mate) must not hold it there
+	# in the open, so after a while it fights from where it got to.
+	var settle := float(_cover_cfg().get("settle_distance", 0.2))
+	if _settle_for < float(_cover_cfg().get("settle_seconds", 1.0)) and flat.length() > settle and not hidden_at(body.global_position, threat):
+		_settle_for += delta
+		_walk_toward(_cover, delta, intent, float(config["walk_speed_share"]), settle)
+		intent.crouch = true
+		return true
 	_peek_left -= delta
 	if _peek_left <= 0.0:
 		_peeking = not _peeking
@@ -524,6 +537,7 @@ func find_cover(threat: Vector3) -> Variant:
 	var spokes := int(cfg.get("spokes", 12))
 	var keep_off := float(cfg.get("min_threat_distance", 5.0))
 	var stand := float(cfg.get("stand_eye", 1.5))
+	var margin := float(cfg.get("settle_distance", 0.2))
 	var best: Variant = null
 	var best_score := INF
 	var candidates: Array[Vector3] = [body.global_position]
@@ -538,6 +552,10 @@ func find_cover(threat: Vector3) -> Variant:
 			continue
 		var at: Vector3 = spot
 		if Vector2(at.x - threat.x, at.z - threat.z).length() < keep_off or not hidden_at(at, threat):
+			continue
+		# Not on the very edge of the shadow: it settles within `margin` of the spot.
+		var across := Vector3(at.z - threat.z, 0.0, threat.x - at.x).normalized() * margin
+		if not hidden_at(at + across, threat) or not hidden_at(at - across, threat):
 			continue
 		var can_fire := not _blocked(at + Vector3.UP * stand, threat + Vector3.UP * CHEST, PhysicsLayers.SOLID | PhysicsLayers.SIGHT)
 		var score := at.distance_to(body.global_position) + (0.0 if can_fire else float(cfg.get("no_shot_penalty", 8.0)))
