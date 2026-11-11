@@ -69,6 +69,8 @@ var _evaluate_in := 0.0
 ## Cover: the spot it uses (valid while `_has_cover`), when it looks again, and the peek cycle.
 var _has_cover := false
 var _cover := Vector3.ZERO
+## Corners to pass on the way to `_cover` when the straight way is blocked.
+var _cover_via: Array[Vector3] = []
 var _cover_search_in := 0.0
 ## How long it has been edging onto the current spot while in sight.
 var _settle_for := 0.0
@@ -456,10 +458,12 @@ func _use_cover(delta: float, intent: PlayerIntent) -> bool:
 	_cover_search_in -= delta
 	if _cover_search_in <= 0.0 and (not _has_cover or not hidden_at(_cover, threat)):
 		_cover_search_in = float(_cover_cfg().get("search_every", 1.5))
-		var found: Variant = find_cover(threat)
-		_has_cover = found is Vector3
+		var way := find_cover_route(threat)
+		_has_cover = not way.is_empty()
 		if _has_cover:
-			_cover = found
+			_cover = way[-1]
+			way.remove_at(way.size() - 1)
+			_cover_via = way
 			_settle_for = 0.0
 	if not _has_cover:
 		return false
@@ -470,7 +474,12 @@ func _use_cover(delta: float, intent: PlayerIntent) -> bool:
 			body.set_meta(&"moving_to_cover", false)
 			return false
 		body.set_meta(&"moving_to_cover", true)
-		_walk_toward(_cover, delta, intent, 1.0)
+		# Round the corner first when the straight way is blocked.
+		if not _cover_via.is_empty():
+			var to_corner := Vector2(_cover_via[0].x - body.global_position.x, _cover_via[0].z - body.global_position.z)
+			if to_corner.length() <= ARRIVED * 0.4:
+				_cover_via.remove_at(0)
+		_walk_toward(_cover if _cover_via.is_empty() else _cover_via[0], delta, intent, 1.0, 0.0)
 		intent.sprint = true
 		return true
 	body.set_meta(&"moving_to_cover", false)
@@ -507,6 +516,7 @@ func _use_cover(delta: float, intent: PlayerIntent) -> bool:
 
 func _drop_cover() -> void:
 	_has_cover = false
+	_cover_via.clear()
 	_peeking = false
 	if body.get_meta(&"moving_to_cover", false):
 		body.set_meta(&"moving_to_cover", false)
@@ -531,6 +541,15 @@ func hidden_at(spot: Vector3, threat: Vector3) -> bool:
 ## The best spot near it that hides it from `threat` (preferring ones it can stand up from to
 ## fire, and short runs), or null.
 func find_cover(threat: Vector3) -> Variant:
+	var way := find_cover_route(threat)
+	return null if way.is_empty() else way[-1]
+
+
+## The way to the best cover spot: `[spot]` when it can walk straight there, `[corner, spot]`
+## when something is in the way and it goes round by a corner first, or empty when there is
+## no spot it can get to. Runs are scored by their walked length, so a spot behind the wall
+## it stands in front of loses to one it can reach directly unless going round is short.
+func find_cover_route(threat: Vector3) -> Array[Vector3]:
 	var cfg := _cover_cfg()
 	var reach := float(cfg.get("search_radius", 12.0))
 	var rings := int(cfg.get("rings", 4))
@@ -538,19 +557,17 @@ func find_cover(threat: Vector3) -> Variant:
 	var keep_off := float(cfg.get("min_threat_distance", 5.0))
 	var stand := float(cfg.get("stand_eye", 1.5))
 	var margin := float(cfg.get("settle_distance", 0.2))
-	var best: Variant = null
-	var best_score := INF
-	var candidates: Array[Vector3] = [body.global_position]
-	for ring in rings:
-		var r := reach * float(ring + 1) / rings
-		for i in spokes:
-			var a := TAU * (float(i) + 0.5 * (ring % 2)) / spokes
-			candidates.append(body.global_position + Vector3(cos(a), 0.0, sin(a)) * r)
-	for c in candidates:
+	var tries := int(cfg.get("detour_tries", 6))
+	var here := body.global_position
+	var floors: Array[Vector3] = []
+	for c: Vector3 in _cover_candidates(here, reach, rings, spokes):
 		var spot: Variant = _floor_at(c)
-		if not spot is Vector3:
-			continue
-		var at: Vector3 = spot
+		if spot is Vector3:
+			floors.append(spot)
+	# Hidden spots with what they are worth before the walk is known.
+	var spots: Array[Vector3] = []
+	var extra: Array[float] = []
+	for at in floors:
 		if Vector2(at.x - threat.x, at.z - threat.z).length() < keep_off or not hidden_at(at, threat):
 			continue
 		# Not on the very edge of the shadow: it settles within `margin` of the spot.
@@ -558,11 +575,66 @@ func find_cover(threat: Vector3) -> Variant:
 		if not hidden_at(at + across, threat) or not hidden_at(at - across, threat):
 			continue
 		var can_fire := not _blocked(at + Vector3.UP * stand, threat + Vector3.UP * CHEST, PhysicsLayers.SOLID | PhysicsLayers.SIGHT)
-		var score := at.distance_to(body.global_position) + (0.0 if can_fire else float(cfg.get("no_shot_penalty", 8.0)))
-		if score < best_score:
-			best_score = score
-			best = at
+		spots.append(at)
+		extra.append(0.0 if can_fire else float(cfg.get("no_shot_penalty", 8.0)))
+	var order: Array[int] = []
+	for i in spots.size():
+		order.append(i)
+	order.sort_custom(func(a: int, b: int) -> bool: return spots[a].distance_to(here) + extra[a] < spots[b].distance_to(here) + extra[b])
+	# Corners it can walk straight to, worked out only once a spot needs one.
+	var corners: Array[Vector3] = []
+	var corners_known := false
+	var best: Array[Vector3] = []
+	var best_score := INF
+	for i in order:
+		var at := spots[i]
+		# Walks are never shorter than the straight line, so nothing later can win.
+		if at.distance_to(here) + extra[i] >= best_score:
+			break
+		if at.distance_to(here) <= ARRIVED * 0.6 or can_walk(here, at):
+			best = [at]
+			best_score = at.distance_to(here) + extra[i]
+			continue
+		if not corners_known:
+			corners_known = true
+			for f in floors:
+				if f.distance_to(here) > ARRIVED * 0.6 and can_walk(here, f):
+					corners.append(f)
+		var via: Array[Vector3] = corners.duplicate()
+		via.sort_custom(func(a: Vector3, b: Vector3) -> bool: return here.distance_to(a) + a.distance_to(at) < here.distance_to(b) + b.distance_to(at))
+		for k in mini(tries, via.size()):
+			var length := here.distance_to(via[k]) + via[k].distance_to(at)
+			if length + extra[i] >= best_score:
+				break
+			if can_walk(via[k], at):
+				best = [via[k], at]
+				best_score = length + extra[i]
+				break
 	return best
+
+
+static func _cover_candidates(here: Vector3, reach: float, rings: int, spokes: int) -> Array[Vector3]:
+	var out: Array[Vector3] = [here]
+	for ring in rings:
+		var r := reach * float(ring + 1) / rings
+		for i in spokes:
+			var a := TAU * (float(i) + 0.5 * (ring % 2)) / spokes
+			out.append(here + Vector3(cos(a), 0.0, sin(a)) * r)
+	return out
+
+
+## Whether its body fits along the straight line from `from` to `to` (floor points): nothing
+## solid across the middle or either side of a body-wide lane, above ankle height.
+func can_walk(from: Vector3, to: Vector3) -> bool:
+	var h := Vector3.UP * float(_cover_cfg().get("sweep_height", 0.6))
+	var flat := Vector3(to.x - from.x, 0.0, to.z - from.z)
+	if flat.length() < 0.01:
+		return true
+	var side := flat.normalized().cross(Vector3.UP) * float(_cover_cfg().get("body_radius", 0.5))
+	for offset: Vector3 in [Vector3.ZERO, side, -side]:
+		if _blocked(from + h + offset, to + h + offset, PhysicsLayers.SOLID):
+			return false
+	return true
 
 
 ## The floor under `at` (a ray down from a little above), or null where there is none.
