@@ -22,8 +22,6 @@ const ROOF_THICKNESS := 0.25
 const WALL := 0.2
 ## Voxel size of the mesh: coarse enough to build quickly during a ride.
 const VOXEL := 0.15
-## Bullet holes rebuild the mesh at most this often, seconds.
-const REMESH_EVERY := 0.2
 
 ## The layout entry: `{position, yaw, width, depth, wall_height, windows, paint, seed,
 ## broken}`.
@@ -37,13 +35,13 @@ var material_cfg: Dictionary = {}
 
 var _visual := DisplayServer.get_name() != "headless"
 var _model: VoxelModel
-var _mesh: MeshInstance3D
+var _mesh: VoxelChunkedMesh
 var _shapes: Dictionary[int, CollisionShape3D] = {}
 ## Server: segment id -> health left.
 var _hp: Dictionary[int, float] = {}
 var _segments: Array[AABB] = []
-## Client: the mesh needs rebuilding after bullet holes (done at most a few times a second).
-var _remesh_in := -1.0
+## Client: holes were carved this frame; the changed chunks are rebuilt once, next process.
+var _remesh := false
 
 
 func _ready() -> void:
@@ -64,12 +62,13 @@ func _ready() -> void:
 			"windows": float(spec.get("windows", 2)), "voxel": VOXEL,
 			"material": 1 if material() == "concrete" else 0,
 		})
-		_mesh = MeshInstance3D.new()
+		_mesh = VoxelChunkedMesh.new()
 		_mesh.name = "Mesh"
+		_mesh.model = _model
 		add_child(_mesh)
 	_remove(spec.get("broken", []), false)
 	if _visual:
-		_mesh.mesh = VoxGenerator.to_mesh(_model)
+		_mesh.refresh()
 
 
 func _add_shape(id: int, box: AABB) -> void:
@@ -180,7 +179,7 @@ func server_shot(point: Vector3, damage: float) -> int:
 
 
 ## Client: where a bullet hit, a hole in wood (and a puff of splinters) or a chip of concrete
-## dust; the mesh catches up a moment later.
+## dust; the mesh catches up on the next frame.
 func bullet_mark(point: Vector3) -> void:
 	if not _visual or _model == null:
 		return
@@ -192,24 +191,21 @@ func bullet_mark(point: Vector3) -> void:
 		return
 	var local := global_transform.affine_inverse() * point
 	_model.carve_ellipsoid(local, Vector3.ONE * hole)
-	if _remesh_in < 0.0:
-		_remesh_in = REMESH_EVERY
+	_remesh = true
 
 
-func _process(delta: float) -> void:
-	if _remesh_in < 0.0:
+func _process(_delta: float) -> void:
+	if not _remesh:
 		return
-	_remesh_in -= delta
-	if _remesh_in <= 0.0:
-		_remesh_in = -1.0
-		_mesh.mesh = VoxGenerator.to_mesh(_model)
+	_remesh = false
+	_mesh.refresh()
 
 
 ## Everywhere: takes the segments away (collision, and on clients the voxels with debris).
 func break_segments(ids: Array) -> void:
 	_remove(ids, true)
 	if _visual and _model != null and not ids.is_empty():
-		_mesh.mesh = VoxGenerator.to_mesh(_model)
+		_mesh.refresh()
 
 
 func _remove(ids: Array, debris: bool) -> void:

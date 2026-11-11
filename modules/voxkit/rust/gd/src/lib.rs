@@ -212,6 +212,25 @@ impl VoxelModel {
         };
         arrays_of(&grid.mesh())
     }
+
+    /// How many 16-cell chunks the model is split into.
+    #[func]
+    fn chunk_count(&self) -> i64 {
+        self.grid.as_ref().map_or(0, |g| g.chunk_count() as i64)
+    }
+
+    /// Meshes every chunk changed since the last call (all of them the first time) and marks
+    /// them clean: `{chunk id: arrays}`, empty arrays where a chunk has nothing to draw.
+    #[func]
+    fn remesh_dirty(&mut self) -> VarDictionary {
+        let mut out = VarDictionary::new();
+        if let Some(grid) = self.grid.as_mut() {
+            for (id, mesh) in grid.remesh_dirty() {
+                out.set(id as i64, &arrays_of(&mesh));
+            }
+        }
+        out
+    }
 }
 
 impl VoxelModel {
