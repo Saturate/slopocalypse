@@ -63,13 +63,9 @@ func test_a_hole_rebuilds_only_the_chunks_it_touched() -> void:
 	assert_int(shown.refresh()).is_equal(0)
 
 
-func test_fallen_pieces_come_loose_as_chunks_then_go() -> void:
+func test_fallen_pieces_come_loose_as_chunks_that_settle_into_rubble() -> void:
 	var b := _building()
 	b.fall_seconds = 0.1
-	var cfg := LooseChunks.config()
-	var saved := cfg.duplicate()
-	cfg["seconds"] = 0.1
-	cfg["sink_seconds"] = 0.1
 	var model: VoxelModel = b.get(&"_model")
 	var before := model.voxel_count()
 	var wh := float(b.spec["wall_height"])
@@ -79,12 +75,33 @@ func test_fallen_pieces_come_loose_as_chunks_then_go() -> void:
 			roof.append(id)
 	b.break_segments([], roof)
 	var chunks := get_children().filter(func(n: Node) -> bool: return n is RigidBody3D and (n as RigidBody3D).collision_layer == PhysicsLayers.DEBRIS)
-	# The roof's voxels left the model and came loose as several chunks, on the debris layer.
+	# The roof's voxels left the model and came loose as several flying chunks.
 	assert_int(chunks.size()).is_greater(1)
-	assert_int((chunks[0] as RigidBody3D).collision_layer).is_equal(PhysicsLayers.DEBRIS)
 	assert_int(model.voxel_count()).is_less(before)
 	for id: int in roof:
 		assert_bool(b.is_broken(id)).is_true()
-	await get_tree().create_timer(0.6).timeout
-	assert_bool(chunks.all(func(c: Variant) -> bool: return not is_instance_valid(c))).is_true()
-	cfg.merge(saved, true)
+	await get_tree().create_timer(0.3).timeout
+	# Settled where they lie: frozen, solid, and they stay.
+	var rubble := b.server_settle()
+	assert_int(rubble.size()).is_equal(chunks.size())
+	assert_int(b.rubble_count()).is_equal(chunks.size())
+	assert_bool(chunks.all(func(c: Variant) -> bool: return (c as RigidBody3D).freeze and (c as RigidBody3D).collision_layer == PhysicsLayers.SOLID)).is_true()
+
+
+func test_a_late_joiner_places_the_same_rubble() -> void:
+	var b := _building()
+	var wh := float(b.spec["wall_height"])
+	var piece := 0
+	b.break_segments([piece])
+	await get_tree().create_timer(0.2).timeout
+	var rubble := b.server_settle()
+	assert_array(rubble).is_not_empty()
+	var entry: Dictionary = (b.spec as Dictionary).duplicate()
+	entry["broken"] = [piece]
+	entry["rubble"] = rubble
+	var late: MissionBuilding = auto_free(MissionBuilding.new())
+	late.spec = entry
+	late.material_cfg = VoxMaterials.named("wood")
+	late.set(&"_visual", true)
+	add_child(late)
+	assert_int(late.rubble_count()).is_equal(rubble.size())

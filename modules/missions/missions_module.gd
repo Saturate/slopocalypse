@@ -85,6 +85,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"missions.building_broken", _on_building_broken)
 	EventBus.subscribe(&"missions.panes_broken", _on_panes_broken)
 	EventBus.subscribe(&"missions.bricks_knocked", _on_bricks_knocked)
+	EventBus.subscribe(&"missions.rubble_settled", _on_rubble_settled)
 	EventBus.subscribe(&"world.ready", _on_world_ready)
 	EventBus.subscribe(&"player.interact", _on_player_interact)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
@@ -105,6 +106,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"missions.building_broken", _on_building_broken)
 	EventBus.unsubscribe(&"missions.panes_broken", _on_panes_broken)
 	EventBus.unsubscribe(&"missions.bricks_knocked", _on_bricks_knocked)
+	EventBus.unsubscribe(&"missions.rubble_settled", _on_rubble_settled)
 	if Net.peer_joined.is_connected(_on_peer_joined):
 		Net.peer_joined.disconnect(_on_peer_joined)
 	if Net.peer_left.is_connected(_on_peer_left):
@@ -653,6 +655,13 @@ func _server_broke(i: int, broke: Array[int]) -> void:
 		broke.append_array(over)
 		fell = b.server_unsupported(broke)
 	Net.server_broadcast(&"missions.building_broken", {"index": i, "segments": broke, "fallen": fell})
+	# Once the chunks that came loose have come to rest, everyone freezes them where they lie.
+	var settle_after := float(((config["buildings"] as Dictionary).get("chunks", {}) as Dictionary).get("settle_seconds", 2.5))
+	get_tree().create_timer(settle_after).timeout.connect(func() -> void:
+		if is_instance_valid(b) and b.is_inside_tree():
+			var rubble := b.server_settle()
+			if not rubble.is_empty():
+				Net.server_broadcast(&"missions.rubble_settled", {"index": _building_nodes.find(b), "rubble": rubble}))
 	if fell.is_empty():
 		return
 	var damage := float((config["buildings"] as Dictionary).get("fall_damage", 60.0))
@@ -693,6 +702,22 @@ func _on_panes_broken(p: Dictionary) -> void:
 			gone.append(int(v))
 	entry["panes_broken"] = gone
 	_building_nodes[i].break_panes(p.get("panes", []), true)
+
+
+## Everywhere: chunks of a building came to rest; the layout entry keeps them (the newest
+## `rubble_max`) for late joiners.
+func _on_rubble_settled(p: Dictionary) -> void:
+	var i := int(p.get("index", -1))
+	if i < 0 or i >= _building_nodes.size() or i >= buildings.size():
+		return
+	var entry: Dictionary = buildings[i]
+	var rubble: Array = entry.get("rubble", [])
+	rubble.append_array(p.get("rubble", []))
+	var cap := int((config["buildings"] as Dictionary).get("rubble_max", 200))
+	while rubble.size() > cap:
+		rubble.remove_at(0)
+	entry["rubble"] = rubble
+	_building_nodes[i].settle_rubble(p.get("rubble", []))
 
 
 ## Everywhere: bricks came out of a building; the layout entry remembers them for late joiners.
