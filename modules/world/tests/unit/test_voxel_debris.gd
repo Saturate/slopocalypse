@@ -78,3 +78,20 @@ func test_burst_frees_itself_after_its_lifetime() -> void:
 	d._process(float(VoxelDebris.config(&"tree")["lifetime_seconds"]) + 0.1)
 	await get_tree().process_frame
 	assert_bool(is_instance_valid(d)).is_false()
+
+
+func test_past_the_cap_the_oldest_go_and_the_count_never_exceeds_it() -> void:
+	VoxelDebris.config(&"building")
+	var cap := VoxelDebris.max_pieces()
+	assert_int(cap).is_greater(0)
+	var per := int(VoxelDebris.config(&"building")["count"])
+	var bursts: Array[VoxelDebris] = []
+	var before := VoxelDebris.live_count()
+	for i in ceili(float(cap) / per) + 3:
+		bursts.append(VoxelDebris.burst(_parent, Vector3.ZERO, Vector3.UP, Color.WHITE, &"building"))
+		assert_int(VoxelDebris.live_count()).is_less_equal(cap)
+	assert_int(VoxelDebris.live_count()).is_equal(cap)
+	# The first bursts went (or lost cubes); the newest is whole.
+	assert_bool(bursts[0].pieces() == 0 or bursts[0].is_queued_for_deletion()).is_true()
+	assert_int(bursts[-1].pieces()).is_equal(per)
+	assert_int(before).is_less_equal(cap)
