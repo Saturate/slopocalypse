@@ -512,6 +512,7 @@ func _make_tile(key: Vector2i, voxel: float, samples: PackedFloat32Array, colour
 	var spacing := _tile_spacing(voxel)
 	var cn := int(TILE / spacing) + 1
 	var cc := int(TILE / COLOUR_SPACING) + 1
+	VoxShading.ensure()
 	var arrays := VoxelGround.tile_arrays(samples, cn, spacing, colours, cc, int(TILE / voxel), voxel, STEEP_SLOPE, ROCK, SOIL, SKIRT, hash(key))
 	var inst := MeshInstance3D.new()
 	if not arrays.is_empty():

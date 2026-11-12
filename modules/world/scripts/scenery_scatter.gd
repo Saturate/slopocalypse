@@ -662,6 +662,7 @@ func _mesh_road(entry: Dictionary) -> void:
 	var road := _heights.road
 	var model: VoxelModel = entry["model"]
 	var inst: MeshInstance3D = entry["mesh"]
+	VoxShading.ensure()
 	var arrays := model.mesh_arrays_bendable(int(ROAD_BEND_STEP / ROAD_VOXEL))
 	if arrays.is_empty():
 		inst.mesh = null
