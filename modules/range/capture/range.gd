@@ -60,8 +60,8 @@ func _physics_process(_delta: float) -> void:
 	var spec: Dictionary = b.get(&"spec")
 	var d := float(spec["depth"])
 	if t % DWELL == 0:
-		# Square on to its front, a few metres out, a little above head height.
-		_cam.global_position = b.global_transform * Vector3(0.6, 1.9, -d / 2.0 - 6.5)
+		# Square on to its front, 5 m out (between it and the road), above head height.
+		_cam.global_position = b.global_transform * Vector3(0.6, 2.6, -d / 2.0 - 5.0)
 		_cam.look_at(b.global_transform * Vector3(0.0, 1.3, -d / 2.0), Vector3.UP)
 		_cam.current = true
 	if t % DWELL < FIRING:

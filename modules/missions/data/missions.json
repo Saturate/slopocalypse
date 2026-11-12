@@ -10,11 +10,11 @@
   "zone": { "beyond_dropoff": 70.0, "radius": 45.0 },
   "buildings": {
     "count": [3, 6],
-    "width": [5.0, 8.5],
-    "depth": [4.0, 6.5],
+    "width": [6.5, 11.0],
+    "depth": [5.0, 8.0],
     "wall_height": [2.7, 3.2],
     "off_road": [9.0, 22.0],
-    "spread": 35.0,
+    "spread": 45.0,
     "gap": 3.0,
     "segment": 1.2,
     "segment_hp": 100.0,
@@ -23,7 +23,9 @@
     "fall_damage": 60.0,
     "blast_damage": 140.0,
     "blast_reach": 1.6,
-    "concrete_share": 0.3
+    "concrete_share": 0.3,
+    "pad_margin": 1.5,
+    "pad_blend": 6.0
   },
   "hazards": {
     "trigger_radius": 0.9,

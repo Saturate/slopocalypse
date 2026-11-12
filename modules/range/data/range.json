@@ -16,11 +16,11 @@
       "row_off_road": 10.0,
       "row_clear": 14.0,
       "row": [
-        { "material": "wood", "glass": "window_glass", "width": 5.0, "depth": 4.0, "paint": 0 },
-        { "material": "brick", "glass": "window_glass", "width": 5.0, "depth": 4.0 },
-        { "material": "concrete", "glass": "window_glass", "width": 5.0, "depth": 4.0 },
-        { "material": "wood", "glass": "security_glass", "width": 5.0, "depth": 4.0, "paint": 2 },
-        { "material": "concrete", "glass": "security_glass", "width": 6.5, "depth": 5.0 }
+        { "material": "wood", "glass": "window_glass", "width": 8.0, "depth": 6.0, "paint": 0 },
+        { "material": "brick", "glass": "window_glass", "width": 8.0, "depth": 6.0 },
+        { "material": "concrete", "glass": "window_glass", "width": 7.0, "depth": 6.0 },
+        { "material": "wood", "glass": "security_glass", "width": 8.0, "depth": 6.0, "paint": 2 },
+        { "material": "concrete", "glass": "security_glass", "width": 10.0, "depth": 7.0 }
       ]
     }
   },

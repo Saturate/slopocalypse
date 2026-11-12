@@ -34,8 +34,10 @@ const DOOR_HEIGHT := 2.0
 const SLAB := 0.15
 const ROOF_THICKNESS := 0.25
 const WALL := 0.2
-## Voxel size of the mesh: coarse enough to build quickly during a ride.
+## Voxel size of the mesh: coarse enough to build quickly during a ride. Brick buildings
+## use a finer one, so each brick and its mortar joint show (see `VoxShed`).
 const VOXEL := 0.15
+const BRICK_VOXEL := 0.075
 ## How far into a wall a hit looks for the voxel it struck, metres.
 const STRIKE_DEPTH := 0.6
 ## A crack mark's radius on glass, metres.
@@ -56,6 +58,8 @@ var fall_seconds := 0.6
 var material_cfg: Dictionary = {}
 
 var _visual := DisplayServer.get_name() != "headless"
+## This building's voxel size (`BRICK_VOXEL` for brick, else `VOXEL`).
+var voxel := VOXEL
 var _model: VoxelModel
 var _mesh: VoxelChunkedMesh
 var _shapes: Dictionary[int, CollisionShape3D] = {}
@@ -86,6 +90,7 @@ func _ready() -> void:
 	set_meta(&"surface_sounds", true)
 	if material_cfg.is_empty():
 		material_cfg = VoxMaterials.named(material())
+	voxel = BRICK_VOXEL if material() == "brick" else VOXEL
 	collision_layer = PhysicsLayers.SOLID
 	var w := float(spec.get("width", 5.0))
 	var d := float(spec.get("depth", 4.0))
@@ -98,7 +103,7 @@ func _ready() -> void:
 	_model = VoxShed.new().build({
 		"seed": int(spec.get("seed", 1)), "paint": int(spec.get("paint", 1)), "width": w,
 		"depth": d, "wall_height": wh, "pitch": float(spec.get("pitch", 0.45)), "door": 1,
-		"windows": float(spec.get("windows", 2)), "voxel": VOXEL,
+		"windows": float(spec.get("windows", 2)), "voxel": voxel,
 		"material": maxi(0, VoxShed.WALL_MATERIALS.find(material())),
 		"glass": maxi(0, VoxShed.GLASS_TYPES.find(str(spec.get("glass", "window_glass")))),
 	})
@@ -176,7 +181,7 @@ func material() -> String:
 ## The material of the voxel at a hit `point` (world) on a face with `normal`: half a voxel
 ## into the surface.
 func material_at(point: Vector3, normal: Vector3) -> String:
-	var local := global_transform.affine_inverse() * (point - normal.normalized() * VOXEL * 0.5)
+	var local := global_transform.affine_inverse() * (point - normal.normalized() * voxel * 0.5)
 	return str(VoxMaterials.at(_model.material_at(local))["name"])
 
 
@@ -235,7 +240,7 @@ func struck_voxel(point: Vector3, direction: Vector3) -> Vector3:
 	var to_local := global_transform.affine_inverse()
 	var at := to_local * point
 	var dir := (to_local.basis * direction).normalized() if direction.length_squared() > 0.0 else -Vector3(at.x, 0.0, at.z).normalized()
-	var step := VOXEL * 0.5
+	var step := voxel * 0.5
 	var p := at - dir * step
 	var travelled := -step
 	while travelled <= STRIKE_DEPTH:
@@ -270,7 +275,7 @@ func pane_at(point: Vector3, direction: Vector3) -> int:
 	var m := _model.material_at(v)
 	for i in _panes.size():
 		var pane: Dictionary = _panes[i]
-		if int(pane["material"]) == m and not _panes_gone.has(i) and (pane["box"] as AABB).grow(VOXEL * 0.5).has_point(v):
+		if int(pane["material"]) == m and not _panes_gone.has(i) and (pane["box"] as AABB).grow(voxel * 0.5).has_point(v):
 			return i
 	return -1
 
@@ -314,7 +319,7 @@ func break_panes(indices: Array, debris: bool) -> void:
 		var box: AABB = pane["box"]
 		var rules := VoxMaterials.at(int(pane["material"]))
 		var colour := _model.colour_at(box.get_center())
-		_model.carve_material_box(box.position - Vector3.ONE * VOXEL * 0.1, box.end + Vector3.ONE * VOXEL * 0.1, int(pane["material"]))
+		_model.carve_material_box(box.position - Vector3.ONE * voxel * 0.1, box.end + Vector3.ONE * voxel * 0.1, int(pane["material"]))
 		if debris and _visual and is_inside_tree():
 			var at := global_transform * box.get_center()
 			var source := &"glass_bits" if str(rules.get("name", "")) == "tempered_glass" else &"glass_shards"
@@ -337,12 +342,12 @@ func bullet_exit(point: Vector3, direction: Vector3, damage: float) -> Dictionar
 	var dir := (to_local.basis * direction).normalized()
 	var v := struck_voxel(point, direction)
 	if v == Vector3.INF:
-		return {"exit": point + direction.normalized() * (STRIKE_DEPTH + VOXEL), "scale": 1.0}
+		return {"exit": point + direction.normalized() * (STRIKE_DEPTH + voxel), "scale": 1.0}
 	var rules := VoxMaterials.at(_model.material_at(v))
 	var pass_share := float(rules.get("pass", 0.0))
 	if pass_share <= 0.0 or damage < float(rules.get("min_bullet_damage", 0.0)):
 		return {}
-	var step := VOXEL * 0.25
+	var step := voxel * 0.25
 	var thickness := 0.0
 	var p := v
 	var limit := float(rules.get("thickness_max", 0.0))
@@ -354,7 +359,7 @@ func bullet_exit(point: Vector3, direction: Vector3, damage: float) -> Dictionar
 			return {}
 		thickness += step
 		# Nothing is thinner than a voxel here, so a thin pane or sheet counts as one.
-		if thickness > maxf(limit, VOXEL) + step:
+		if thickness > maxf(limit, voxel) + step:
 			return {}
 		p += dir * step
 	return {"exit": global_transform * (p + dir * step), "scale": pass_share}
@@ -619,7 +624,7 @@ func _colour_of(id: int) -> Color:
 func _carve_box(id: int) -> AABB:
 	var wh := float(spec.get("wall_height", 2.8))
 	var d := float(spec.get("depth", 4.0))
-	var box := _segments[id].grow(VOXEL * 0.5)
+	var box := _segments[id].grow(voxel * 0.5)
 	if box.position.y >= wh - 0.1:
 		box = AABB(box.position, Vector3(box.size.x, d * 0.6 + 0.6, box.size.z))
 	return box

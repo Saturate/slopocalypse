@@ -1,7 +1,7 @@
 class_name VoxShed
 extends VoxGenerator
 ## A shed on a concrete slab: vertical plank boards (or cast concrete walls for a
-## blockhouse, or brick courses), gable roof in ribbed metal, a door gap at the front and
+## blockhouse, or brickwork: every brick its own block in mortar joints, a running bond), gable roof in ribbed metal, a door gap at the front and
 ## framed windows around the sides. Hollow inside. Every voxel gets its material (see
 ## `VoxMaterials`): slab concrete, walls by the wall choice, trim wood, roof sheet metal, panes
 ## glass.
@@ -17,9 +17,14 @@ const MATERIALS: Array[String] = ["Planks", "Concrete", "Brick"]
 const WALL_MATERIALS: Array[String] = ["wood", "concrete", "brick"]
 const GLASS_TYPES: Array[String] = ["window_glass", "security_glass"]
 const BRICK := Color(0.55, 0.27, 0.2)
-const MORTAR := Color(0.62, 0.6, 0.55)
-## One brick course, metres.
-const COURSE := 0.2
+const MORTAR := Color(0.6, 0.58, 0.53)
+## A brick in voxels: long, tall, and the mortar joint around it (one voxel), so a brick
+## wall wants a fine voxel (mission buildings use 0.075 m: bricks 0.3 by 0.15).
+const BRICK_LONG := 4
+const BRICK_TALL := 2
+const JOINT := 1
+## Brick walls are this thick, metres (a brick and a bit; thinner reads as a skin).
+const BRICK_WALL := 0.225
 const CAST := Color(0.56, 0.56, 0.53)
 ## Concrete walls are poured in lifts: a slightly different shade every this many metres up.
 const LIFT := 0.6
@@ -82,16 +87,11 @@ func build(values: Dictionary) -> VoxelModel:
 			y = y1
 			lift += 1
 	elif wall_choice == 2:
-		# Brick courses, each brick its own shade, a mortar line under every course.
+		# Mortar first; the bricks are laid into it once the inside is hollowed out.
 		wall = BRICK
-		var y := slab
-		var course := 0
-		while y < wh - 0.001:
-			var y1 := minf(y + COURSE, wh)
-			m.fill_box(Vector3(-w / 2, y, -d / 2), Vector3(w / 2, y1, d / 2), BRICK * rng.randf_range(0.88, 1.06), 0.12, seed + course)
-			m.paint_box(Vector3(-w / 2 - v, y, -d / 2 - v), Vector3(w / 2 + v, y + v * 0.5, d / 2 + v), MORTAR, 0.04, seed)
-			y = y1
-			course += 1
+		m.set_material(VoxMaterials.index_of("mortar"))
+		m.fill_box(Vector3(-w / 2, slab, -d / 2), Vector3(w / 2, wh, d / 2), MORTAR, 0.04, seed)
+		m.set_material(wall_material)
 	else:
 		# Walls as vertical boards, each its own shade.
 		var x := -w / 2
@@ -106,9 +106,12 @@ func build(values: Dictionary) -> VoxelModel:
 	for k in steps:
 		var half := d / 2 * (1.0 - float(k + 1) / (steps + 1))
 		m.fill_box(Vector3(-w / 2, wh + k * v, -half), Vector3(w / 2, wh + (k + 1) * v, half), wall, 0.07, seed + 40)
-	var t := maxf(v * 2.0, 0.15)
+	var t := maxf(v * 2.0, 0.15) if wall_choice != 2 else maxf(v * 2.0, BRICK_WALL)
 	m.set_material(wood)
 	m.carve_box(Vector3(-w / 2 + t, slab, -d / 2 + t), Vector3(w / 2 - t, wh, d / 2 - t))
+	if wall_choice == 2:
+		_lay_bricks(m, w, d, wh, slab, t, v, rng, seed)
+		m.set_material(wood)
 	# Corner trim.
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
@@ -125,6 +128,57 @@ func build(values: Dictionary) -> VoxelModel:
 	for spot in spots:
 		_window(m, spot, d, w, v, t, slab, wood, glass)
 	return m
+
+
+## Lays the bricks into the mortar walls: courses `BRICK_TALL` voxels high with a joint
+## between, each brick `BRICK_LONG` voxels long, every other course shifted half a brick (a
+## running bond). Bricks sit on whole voxels of the model's grid, so every joint is exactly one
+## voxel wide. Each brick is its own shade.
+func _lay_bricks(m: VoxelModel, w: float, d: float, wh: float, slab: float, t: float, v: float, rng: RandomNumberGenerator, seed: int) -> void:
+	var cells := m.cells()
+	# Where cell boundaries fall: the grid is centred on x and z and starts at 0 on y.
+	var ox := -float(cells.x) * v / 2.0
+	var oz := -float(cells.z) * v / 2.0
+	var brick := VoxMaterials.index_of("brick")
+	m.set_material(brick)
+	var course_cells := BRICK_TALL + JOINT
+	var step := BRICK_LONG + JOINT
+	var y0 := ceili(slab / v - 0.001)
+	var y_top := floori(wh / v + 0.001)
+	var course := 0
+	var row := y0
+	while row + BRICK_TALL <= y_top:
+		var ya := row * v
+		var yb := (row + BRICK_TALL) * v
+		var shift := (step / 2) if course % 2 == 1 else 0
+		# Front and back walls run along x, the sides along z.
+		for side: float in [-1.0, 1.0]:
+			var z_in := side * (d / 2.0 - t)
+			var z_out := side * d / 2.0
+			for span: Vector2 in _brick_spans(-w / 2.0, w / 2.0, ox, v, step, shift):
+				m.fill_box(Vector3(span.x, ya, minf(z_in, z_out)), Vector3(span.y, yb, maxf(z_in, z_out)), BRICK * rng.randf_range(0.82, 1.1), 0.05, seed + course)
+			var x_in := side * (w / 2.0 - t)
+			var x_out := side * w / 2.0
+			for span: Vector2 in _brick_spans(-d / 2.0, d / 2.0, oz, v, step, shift + 2):
+				m.fill_box(Vector3(minf(x_in, x_out), ya, span.x), Vector3(maxf(x_in, x_out), yb, span.y), BRICK * rng.randf_range(0.82, 1.1), 0.05, seed + course + 500)
+		row += course_cells
+		course += 1
+
+
+## Where the bricks of one course go along a wall from `from` to `to` (metres), as start and
+## end on cell boundaries of a grid whose boundaries are at `origin + k * v`.
+static func _brick_spans(from: float, to: float, origin: float, v: float, step: int, shift: int) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	var first := ceili((from - origin) / v - 0.001)
+	var last := floori((to - origin) / v + 0.001)
+	var k := first - posmod(first - shift, step)
+	while k < last:
+		var a := maxi(k, first)
+		var b := mini(k + BRICK_LONG, last)
+		if b > a:
+			out.append(Vector2(origin + a * v, origin + b * v))
+		k += step
+	return out
 
 
 ## Ribbed metal: rows down each slope, alternating shade, overhanging the walls.

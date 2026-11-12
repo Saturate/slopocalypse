@@ -330,36 +330,40 @@ static func _hurt() -> PackedFloat32Array:
 	return out
 
 
-## A mild breeze that loops without a seam: soft mid-band noise for the air, a faint brighter
-## rustle for leaves, both swelling on slow gusts that never repeat on a beat (several slow
-## waves at unrelated rates). Long, so the loop isn't heard; no low rumble, which reads as surf.
+## Wind: dark, slowly breathing air. Brown noise through a low-pass whose cutoff rides each
+## gust (calm and low, brighter as it builds), gusts that swell and settle over many seconds,
+## and now and then a soft rustle of leaves, mostly in the gusts. No constant hiss.
 static func _wind() -> PackedFloat32Array:
 	var rng := _rng(9)
 	var n := int(WIND_SECONDS * RATE)
 	var raw := PackedFloat32Array()
 	raw.resize(n)
-	var low := 0.0
-	var high := 0.0
-	var rustle_low := 0.0
-	var rustle_high := 0.0
-	var air_hp := _one_pole(180.0)
-	var air_lp := _one_pole(900.0)
-	var leaf_hp := _one_pole(1800.0)
-	var leaf_lp := _one_pole(5200.0)
+	var brown := 0.0
+	var lp1 := 0.0
+	var lp2 := 0.0
+	var rustle := 0.0
+	var rustle_lp := 0.0
+	var rustle_env := 0.0
+	var rustle_hp := 0.0
 	for i in n:
 		var t := float(i) / RATE
+		# Gusts: three slow swells that don't line up, from calm (0) to a full gust (1).
+		var gust := clampf(0.45 + 0.3 * sin(TAU * t / 17.0) + 0.2 * sin(TAU * t / 9.3 + 1.1) + 0.12 * sin(TAU * t / 5.1 + 2.3), 0.0, 1.0)
 		var white := rng.randf_range(-1.0, 1.0)
-		# Band-pass as the difference of two low-passes.
-		low += (white - low) * air_hp
-		high += (white - high) * air_lp
-		var air := high - low
-		rustle_low += (white - rustle_low) * leaf_hp
-		rustle_high += (white - rustle_high) * leaf_lp
-		var leaves := rustle_high - rustle_low
-		var gust := 0.55 + 0.2 * sin(TAU * t / 7.3) + 0.15 * sin(TAU * t / 3.1 + 1.7) + 0.1 * sin(TAU * t / 11.9 + 0.4)
-		var flutter := maxf(0.0, sin(TAU * t / 2.3 + 0.9) * sin(TAU * t / 5.7))
-		raw[i] = air * 2.2 * gust + leaves * 1.6 * (0.3 + flutter) * gust
-	return _seamless(raw, int(0.8 * RATE))
+		brown = clampf(brown + white * 0.02, -1.0, 1.0) * 0.999
+		var a := _one_pole(lerpf(220.0, 650.0, gust))
+		lp1 += (brown - lp1) * a
+		lp2 += (lp1 - lp2) * a
+		var air := lp2 * (0.35 + 0.65 * gust * gust)
+		# Leaves: a rustle starts now and then, likelier in a gust, and dies away.
+		if rng.randf() < 0.00004 * (0.2 + gust * 2.0):
+			rustle_env = rng.randf_range(0.4, 1.0)
+		rustle_env *= 0.99993
+		rustle += (white - rustle) * _one_pole(2600.0)
+		rustle_hp += (rustle - rustle_hp) * _one_pole(700.0)
+		rustle_lp = rustle - rustle_hp
+		raw[i] = air * 3.2 + rustle_lp * rustle_env * 0.18
+	return _seamless(raw, int(1.5 * RATE))
 
 
 ## Crossfades the end of a sound into its start, so it loops without a click.
