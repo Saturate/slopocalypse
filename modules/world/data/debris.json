@@ -1,0 +1,12 @@
+{
+  "max_pieces": 400,
+  "sources": {
+    "building": {"count": 24, "speed": 4.5, "speed_jitter": 0.3, "angle_jitter_degrees": 20, "spin_max": 8, "lifetime_seconds": 1.6},
+    "building_chip": {"count": 5, "speed": 2.5, "speed_jitter": 0.3, "angle_jitter_degrees": 20, "spin_max": 8, "lifetime_seconds": 1.6},
+    "crater": {"count": 40, "count_min": 2, "count_per_m2": 10, "speed": 3.0, "speed_per_metre": 2.5, "speed_jitter": 0.3, "angle_jitter_degrees": 20, "spin_max": 8, "lifetime_seconds": 1.6},
+    "tree": {"count": 6, "speed": 3.0, "speed_jitter": 0.3, "angle_jitter_degrees": 20, "spin_max": 8, "lifetime_seconds": 1.6},
+    "tree_cut": {"count": 12, "speed": 4.0, "speed_jitter": 0.3, "angle_jitter_degrees": 20, "spin_max": 8, "lifetime_seconds": 1.6},
+    "tree_blast": {"count": 12, "speed": 6.0, "speed_jitter": 0.3, "angle_jitter_degrees": 20, "spin_max": 8, "lifetime_seconds": 1.6},
+    "tree_crown": {"count": 18, "speed": 3.5, "speed_jitter": 0.3, "angle_jitter_degrees": 20, "spin_max": 8, "lifetime_seconds": 1.6}
+  }
+}
