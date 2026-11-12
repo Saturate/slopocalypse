@@ -28,6 +28,12 @@ const REACH := 0.6
 const BATH_CLEAR := 0.5
 ## How far a piece may reach past its footprint (about half a voxel at the usual 0.15 m).
 const SPILL := 0.08
+## A person, for keeping ways through rooms: the player's radius (the proportions test
+## checks it against the player's data), the cell size the check works in, and how far
+## inside a door its walk point sits.
+const BODY_RADIUS := 0.35
+const WALK_CELL := 0.1
+const WALK_IN := 0.45
 ## Spacing of the places tried along a wall.
 const SPOT_STEP := 0.1
 ## Width of the strip kept open along the stairwell wall from the front door to the hall.
@@ -53,7 +59,8 @@ const FACINGS: Array[Vector3] = [Vector3(0, 0, 1), Vector3(0, 0, -1), Vector3(1,
 ## `rooms` ({kind, rect, first} with kind kitchen, living, bedroom, bath or hall), `walls`
 ## (partition footprints), `doors` ({rect, across}: openings; `across` is the axis people walk
 ## through them along, 0 for x, 1 for z), `clear` (floor kept free of furniture), `entry`
-## (the way from the front door to the hall) and `bedrooms`.
+## (the way from the front door to the hall), `extra` (the `extra_clear` given) and
+## `bedrooms`.
 ## `inner` is the flat's floor inside its walls, `stair_high` whether the stairwell is on its
 ## +X side, `windows` the x of its windows (the same on both sides), `extra_clear` floor
 ## to keep free (balcony doors) and `tall_avoid` floor in front of windows.
@@ -185,7 +192,7 @@ static func _plan(inner: Rect2, stair_high: bool, order: Array[float], n_front: 
 	var entry := _span_rect(Vector2(start, start + dir * ENTRY_STRIP), z0, zs)
 	clear.append(entry)
 	clear.append_array(extra_clear)
-	return {"rooms": rooms, "walls": walls, "doors": doors, "clear": clear, "tall_avoid": tall_avoid, "bedrooms": bedrooms, "entry": entry}
+	return {"rooms": rooms, "walls": walls, "doors": doors, "clear": clear, "tall_avoid": tall_avoid, "bedrooms": bedrooms, "entry": entry, "extra": extra_clear}
 
 
 ## How many windows each of `n` rooms in a row gets (from the stairwell out) so the
@@ -280,8 +287,10 @@ static func furnish(m: VoxelModel, plan: Dictionary, level: float, ceiling: floa
 		var tall: Array[Rect2] = taken.duplicate()
 		tall.append_array(plan["tall_avoid"])
 		var solid: Array[Rect2] = []
-		var lists: Array = [taken, tall, solid]
 		var r: Rect2 = room["rect"]
+		# Everything placed must leave a way, wide enough for a person, between the room's
+		# doors (and the front door and balcony door where it has them).
+		var lists: Array = [taken, tall, solid, {"room": r, "points": walk_points(room, plan)}]
 		match room["kind"]:
 			"living":
 				_living(m, r, level, ceiling, lists, rng, fabric, wood)
@@ -318,6 +327,8 @@ static func _living(m: VoxelModel, r: Rect2, level: float, ceiling: float, lists
 			# A way through may cross between the sofa and the TV; furniture may not.
 			if not _free(spot["rect"], taken) or not _free(tv_rect, tall) or not _free(table_rect, taken) or not _free(view, lists[2]):
 				continue
+			if not _keeps_way([spot["rect"], tv_rect, table_rect], lists):
+				continue
 			VoxFurniture.sofa(m, _lift(at, level), across, fabric)
 			VoxFurniture.tv(m, _lift(tv_at, level), -across, wood)
 			VoxFurniture.coffee_table(m, _lift(table_at, level), across)
@@ -327,16 +338,22 @@ static func _living(m: VoxelModel, r: Rect2, level: float, ceiling: float, lists
 			var right := Vector3(across.z, 0.0, -across.x)
 			for side: float in [1.0, -1.0]:
 				var lamp := at + right * side * (VoxFurniture.SOFA.x / 2.0 + 0.3)
-				if r.encloses(_rect(lamp, VoxFurniture.FLOOR_LAMP, across)) and _free(_rect(lamp, VoxFurniture.FLOOR_LAMP, across), tall):
+				var lamp_rect := _rect(lamp, VoxFurniture.FLOOR_LAMP, across)
+				if r.encloses(lamp_rect) and _free(lamp_rect, tall) and _keeps_way([lamp_rect], lists):
 					VoxFurniture.floor_lamp(m, _lift(lamp, level))
 					_take(_rect(lamp, VoxFurniture.FLOOR_LAMP, across), lists)
 					break
 			seated = true
 			break
+	# Too narrow for a TV across from it: the sofa alone, with room in front to sit down.
+	if not seated:
+		for spot in _reach_spots(r, VoxFurniture.SOFA, rng, lists, false):
+			VoxFurniture.sofa(m, _lift(spot["at"], level), spot["facing"], fabric)
+			_take_reach(spot, lists)
 	# A dining table with chairs and a pendant over it, where there is room.
 	var ends := r.get_area() > 22.0
 	var size := VoxFurniture.DINING_TABLE if r.get_area() > 14.0 else VoxFurniture.KITCHEN_TABLE
-	var dining = _floor_spot(r, VoxFurniture.dining_extent(size, ends), taken, rng)
+	var dining = _floor_spot(r, VoxFurniture.dining_extent(size, ends), lists, rng)
 	if dining != null:
 		var at: Vector3 = dining["at"]
 		VoxFurniture.table_with_chairs(m, _lift(at, level), dining["facing"], size, wood, ends)
@@ -345,7 +362,7 @@ static func _living(m: VoxelModel, r: Rect2, level: float, ceiling: float, lists
 	for spot in _reach_spots(r, VoxFurniture.BOOKSHELF, rng, lists, true):
 		VoxFurniture.bookshelf(m, _lift(spot["at"], level), spot["facing"], rng)
 		_take_reach(spot, lists)
-	for spot in _first_spots(r, VoxFurniture.PLANT, rng, tall):
+	for spot in _first_spots(r, VoxFurniture.PLANT, rng, tall, lists):
 		VoxFurniture.plant(m, _lift(spot["at"], level))
 		_take(spot["rect"], lists)
 
@@ -366,7 +383,7 @@ static func _kitchen(m: VoxelModel, r: Rect2, level: float, ceiling: float, list
 	for spot in _reach_spots(r, VoxFurniture.FRIDGE, rng, lists, true):
 		VoxFurniture.fridge(m, _lift(spot["at"], level), spot["facing"])
 		_take_reach(spot, lists)
-	var table = _floor_spot(r, VoxFurniture.dining_extent(VoxFurniture.KITCHEN_TABLE, false), lists[0], rng)
+	var table = _floor_spot(r, VoxFurniture.dining_extent(VoxFurniture.KITCHEN_TABLE, false), lists, rng)
 	if table != null:
 		VoxFurniture.table_with_chairs(m, _lift(table["at"], level), table["facing"], VoxFurniture.KITCHEN_TABLE, wood, false)
 		VoxFurniture.pendant(m, _lift(table["at"], level), ceiling - level, false)
@@ -385,7 +402,7 @@ static func _bedroom(m: VoxelModel, r: Rect2, level: float, lists: Array, rng: R
 	var done := false
 	for side in sides:
 		for spot in _wall_spots(r, block, side, rng, true):
-			if not _free(spot["rect"], taken):
+			if not _free(spot["rect"], taken) or not _keeps_way([spot["rect"]], lists):
 				continue
 			var facing: Vector3 = spot["facing"]
 			var right := Vector3(facing.z, 0.0, -facing.x)
@@ -415,7 +432,7 @@ static func _bath(m: VoxelModel, r: Rect2, level: float, lists: Array) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 1
 	for item: Array in [[VoxFurniture.SHOWER, "shower"], [VoxFurniture.TOILET, "toilet"], [VoxFurniture.BASIN, "basin"]]:
-		for spot in _first_spots(r, item[0], rng, taken):
+		for spot in _first_spots(r, item[0], rng, taken, lists):
 			var at := _lift(spot["at"], level)
 			match item[1]:
 				"shower":
@@ -479,7 +496,7 @@ static func _reach_spots(r: Rect2, size: Vector2, rng: RandomNumberGenerator, li
 			var at: Vector3 = spot["at"] - facing * REACH / 2.0
 			var body := _rect(at, size, facing)
 			var front := _rect(at + facing * (size.y + REACH) / 2.0, Vector2(size.x, REACH), facing)
-			if _free(body, avoid) and _free(front, lists[2]):
+			if _free(body, avoid) and _free(front, lists[2]) and _keeps_way([body], lists):
 				return [{"at": at, "facing": facing, "rect": body, "front": front}]
 	return []
 
@@ -491,23 +508,23 @@ static func _take_reach(spot: Dictionary, lists: Array) -> void:
 
 
 ## The first free wall spot for `size` on any wall, tried in a random order; empty if none.
-static func _first_spots(r: Rect2, size: Vector2, rng: RandomNumberGenerator, avoid: Array[Rect2]) -> Array[Dictionary]:
+static func _first_spots(r: Rect2, size: Vector2, rng: RandomNumberGenerator, avoid: Array[Rect2], lists: Array) -> Array[Dictionary]:
 	var sides: Array[int] = [0, 1, 2, 3]
 	_shuffle(sides, rng)
 	for side in sides:
 		for spot in _wall_spots(r, size, side, rng, false):
-			if _free(spot["rect"], avoid):
+			if _free(spot["rect"], avoid) and _keeps_way([spot["rect"]], lists):
 				return [spot]
 	return []
 
 
 ## A free place out in the floor for a footprint `ext` (across, along its facing), as
 ## `{at, facing}`, or null.
-static func _floor_spot(r: Rect2, ext: Vector2, taken: Array[Rect2], rng: RandomNumberGenerator) -> Variant:
+static func _floor_spot(r: Rect2, ext: Vector2, lists: Array, rng: RandomNumberGenerator) -> Variant:
+	var taken: Array[Rect2] = lists[0]
 	var facings: Array[Vector3] = [Vector3(0, 0, 1), Vector3(1, 0, 0)]
 	_shuffle(facings, rng)
-	var best: Variant = null
-	var best_score := -1.0
+	var spots: Array[Dictionary] = []
 	for facing in facings:
 		var e := VoxFurniture.extent(ext, facing)
 		var x := r.position.x + e.x / 2.0 + 0.3
@@ -517,13 +534,14 @@ static func _floor_spot(r: Rect2, ext: Vector2, taken: Array[Rect2], rng: Random
 				var rect := Rect2(x - e.x / 2.0, z - e.y / 2.0, e.x, e.y)
 				if _free(rect, taken):
 					# Prefer the middle of the free floor: furthest from anything taken.
-					var score := _distance_to(rect, taken, r)
-					if score > best_score:
-						best_score = score
-						best = {"at": Vector3(x, 0.0, z), "facing": facing}
+					spots.append({"at": Vector3(x, 0.0, z), "facing": facing, "rect": rect, "score": _distance_to(rect, taken, r)})
 				z += 0.3
 			x += 0.3
-	return best
+	spots.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["score"]) > float(b["score"]))
+	for spot in spots:
+		if _keeps_way([spot["rect"]], lists):
+			return spot
+	return null
 
 
 static func _distance_to(rect: Rect2, taken: Array[Rect2], room: Rect2) -> float:
@@ -534,6 +552,108 @@ static func _distance_to(rect: Rect2, taken: Array[Rect2], room: Rect2) -> float
 		var cz := clampf(c.y, t.position.y, t.end.y)
 		d = minf(d, Vector2(cx, cz).distance_to(c))
 	return d
+
+
+## Points in a room that must stay joined by a way a person fits through: just inside each
+## of its doors, the front door for the kitchen, and the balcony door where there is one.
+static func walk_points(room: Dictionary, plan: Dictionary) -> Array[Vector2]:
+	var r: Rect2 = room["rect"]
+	var out: Array[Vector2] = []
+	for door: Dictionary in plan["doors"]:
+		var d: Rect2 = door["rect"]
+		if d.grow(0.05).intersects(r):
+			out.append(_inside(d.get_center(), r))
+	var entry: Rect2 = plan["entry"]
+	if room["kind"] == "kitchen":
+		out.append(_inside(Vector2(entry.get_center().x, entry.position.y + 0.65), r))
+	for e: Rect2 in plan["extra"]:
+		if e.intersects(r):
+			out.append(_inside(e.get_center(), r))
+	return out
+
+
+static func _inside(p: Vector2, r: Rect2) -> Vector2:
+	var m := minf(WALK_IN, minf(r.size.x, r.size.y) / 2.0)
+	return Vector2(clampf(p.x, r.position.x + m, r.end.x - m), clampf(p.y, r.position.y + m, r.end.y - m))
+
+
+## Whether a person still gets between the room's walk points once `more` is taken too.
+static func _keeps_way(more: Array, lists: Array) -> bool:
+	var ctx: Dictionary = lists[3]
+	var area: Rect2 = ctx["room"]
+	var solids: Array[Rect2] = (lists[2] as Array[Rect2]).duplicate()
+	for rect: Rect2 in more:
+		solids.append(rect)
+	return connected(area, blocked_by(area, solids), ctx["points"])
+
+
+## Floor cells of `area` (WALK_CELL square, row by row along x) where a person's centre
+## cannot be: within BODY_RADIUS of the walls or of any of `solids`.
+static func blocked_by(area: Rect2, solids: Array[Rect2]) -> PackedByteArray:
+	var nx := maxi(1, int(ceilf(area.size.x / WALK_CELL)))
+	var nz := maxi(1, int(ceilf(area.size.y / WALK_CELL)))
+	var cells := PackedByteArray()
+	cells.resize(nx * nz)
+	for rect in solids:
+		var g := rect.grow(BODY_RADIUS)
+		var i0 := maxi(0, int(floorf((g.position.x - area.position.x) / WALK_CELL)))
+		var i1 := mini(nx - 1, int(ceilf((g.end.x - area.position.x) / WALK_CELL)) - 1)
+		var j0 := maxi(0, int(floorf((g.position.y - area.position.y) / WALK_CELL)))
+		var j1 := mini(nz - 1, int(ceilf((g.end.y - area.position.y) / WALK_CELL)) - 1)
+		for j in range(j0, j1 + 1):
+			for i in range(i0, i1 + 1):
+				cells[j * nx + i] = 1
+	return cells
+
+
+## Whether every point is reachable from the first through cells not `blocked` (and not
+## within BODY_RADIUS of the edge of `area`).
+static func connected(area: Rect2, blocked: PackedByteArray, points: Array[Vector2]) -> bool:
+	if points.size() < 2:
+		return true
+	var nx := maxi(1, int(ceilf(area.size.x / WALK_CELL)))
+	var nz := maxi(1, int(ceilf(area.size.y / WALK_CELL)))
+	var edge := int(ceilf(BODY_RADIUS / WALK_CELL - 0.5))
+	# Cells a centre may be in: open, and far enough from the room's walls.
+	var open := PackedByteArray()
+	open.resize(nx * nz)
+	for j in range(edge, nz - edge):
+		for i in range(edge, nx - edge):
+			if blocked[j * nx + i] == 0:
+				open[j * nx + i] = 1
+	var start := _cell_of(points[0], area, nx, nz)
+	if open[start] == 0:
+		return false
+	# Flood from the first point; `open` turns 2 where reached.
+	var queue := PackedInt32Array([start])
+	open[start] = 2
+	var head := 0
+	while head < queue.size():
+		var c := queue[head]
+		head += 1
+		var i := c % nx
+		if i > 0 and open[c - 1] == 1:
+			open[c - 1] = 2
+			queue.append(c - 1)
+		if i < nx - 1 and open[c + 1] == 1:
+			open[c + 1] = 2
+			queue.append(c + 1)
+		if c >= nx and open[c - nx] == 1:
+			open[c - nx] = 2
+			queue.append(c - nx)
+		if c + nx < nx * nz and open[c + nx] == 1:
+			open[c + nx] = 2
+			queue.append(c + nx)
+	for k in range(1, points.size()):
+		if open[_cell_of(points[k], area, nx, nz)] != 2:
+			return false
+	return true
+
+
+static func _cell_of(p: Vector2, area: Rect2, nx: int, nz: int) -> int:
+	var i := clampi(int((p.x - area.position.x) / WALK_CELL), 0, nx - 1)
+	var j := clampi(int((p.y - area.position.y) / WALK_CELL), 0, nz - 1)
+	return j * nx + i
 
 
 static func _free(rect: Rect2, taken: Array[Rect2]) -> bool:
@@ -547,8 +667,8 @@ static func _free(rect: Rect2, taken: Array[Rect2]) -> bool:
 
 ## Something now stands on `rect`: everything else keeps off it.
 static func _take(rect: Rect2, lists: Array) -> void:
-	for list: Array[Rect2] in lists:
-		list.append(rect)
+	for k in 3:
+		(lists[k] as Array[Rect2]).append(rect)
 
 
 static func _rect(at: Vector3, size: Vector2, facing: Vector3) -> Rect2:

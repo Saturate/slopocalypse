@@ -264,6 +264,8 @@ func test_everything_is_sized_for_the_player() -> void:
 	var flight := (bay.y - bay.x - float(plan["wall"])) / 2.0
 	assert_float(flight).is_greater_equal(wide + 0.3)
 	assert_float(ApartmentRooms.MIN_ROOM).is_greater_equal(wide * 3.0)
+	# Furniture leaves ways through rooms for a body at least the player's size.
+	assert_float(ApartmentRooms.BODY_RADIUS).is_greater_equal(float(body["radius"]))
 	# Standing at a window you can see out of it: the sill below the eyes, the top above.
 	assert_float(VoxApartment.WINDOW_SILL).is_less(eye - 0.3)
 	assert_float(VoxApartment.WINDOW_SILL + VoxApartment.WINDOW.y).is_greater(eye + 0.2)
@@ -275,3 +277,50 @@ func test_everything_is_sized_for_the_player() -> void:
 func _headroom() -> float:
 	var body := _player()
 	return 1.9 if body.is_empty() else float(body["stand_height"]) + 0.1
+
+
+func test_a_person_can_walk_between_every_door_of_every_furnished_room() -> void:
+	for seed in [1.0, 5.0]:
+		for width in [6.0, 7.5]:
+			var p := {"stairwells": 1.0, "floors": 1.0, "elevators": 0.0, "seed": seed, "flat_width": width, "windows": 2.0 if width < 7.0 else 3.0}
+			var model := _gen.build(p)
+			var plan := _gen.layout(p)
+			var v: float = plan["voxel"]
+			for level: float in plan["levels"]:
+				for fp: Dictionary in plan["flat_plans"]:
+					for room: Dictionary in fp["rooms"]:
+						if room["kind"] == "hall":
+							continue
+						var points := ApartmentRooms.walk_points(room, fp)
+						var r: Rect2 = room["rect"]
+						assert_bool(ApartmentRooms.connected(r, _blocked(model, r, level, v), points)).override_failure_message("no way through the %s at %s, level %.1f (seed %d)" % [room["kind"], r, level, seed]).is_true()
+
+
+## Floor cells of `r` where a person's centre can't be, from the voxels actually built between
+## ankle and head height. Voxel rounding can widen a piece by half a voxel, so the body is
+## taken a little slimmer than the planner's.
+func _blocked(model: VoxelModel, r: Rect2, level: float, v: float) -> PackedByteArray:
+	var cell := ApartmentRooms.WALK_CELL
+	var nx := maxi(1, int(ceilf(r.size.x / cell)))
+	var nz := maxi(1, int(ceilf(r.size.y / cell)))
+	var solid := PackedByteArray()
+	solid.resize(nx * nz)
+	for j in nz:
+		for i in nx:
+			var c := Vector3(r.position.x + (i + 0.5) * cell, level + 0.05, r.position.y + (j + 0.5) * cell)
+			if _solid(model, AABB(c - Vector3(v / 2.0, 0.0, v / 2.0), Vector3(v, 1.65, v))) > 0:
+				solid[j * nx + i] = 1
+	var reach := int(floorf((ApartmentRooms.BODY_RADIUS - v / 2.0) / cell))
+	var out := PackedByteArray()
+	out.resize(nx * nz)
+	for j in nz:
+		for i in nx:
+			if solid[j * nx + i] == 0:
+				continue
+			for dj in range(-reach, reach + 1):
+				for di in range(-reach, reach + 1):
+					var a := i + di
+					var b := j + dj
+					if a >= 0 and b >= 0 and a < nx and b < nz:
+						out[b * nx + a] = 1
+	return out

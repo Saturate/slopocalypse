@@ -155,7 +155,8 @@ static func table_lamp(m: VoxelModel, at: Vector3, lift: float) -> void:
 ## A pendant of stacked shades hanging from a ceiling at height `ceiling` above `at`.
 static func pendant(m: VoxelModel, at: Vector3, ceiling: float, brass: bool) -> void:
 	var colour := Color(0.75, 0.5, 0.28) if brass else WHITE
-	part(m, at, Vector3.BACK, Vector3(-0.01, ceiling - 0.6, -0.01), Vector3(0.01, ceiling, 0.01), BLACK)
+	# The cord widens to a whole voxel, so it takes the ceiling's colour and doesn't read as a rod.
+	part(m, at, Vector3.BACK, Vector3(-0.01, ceiling - 0.6, -0.01), Vector3(0.01, ceiling, 0.01), WHITE.darkened(0.08), 0.0)
 	part(m, at, Vector3.BACK, Vector3(-0.12, ceiling - 0.62, -0.12), Vector3(0.12, ceiling - 0.55, 0.12), colour, 0.0)
 	part(m, at, Vector3.BACK, Vector3(-0.2, ceiling - 0.72, -0.2), Vector3(0.2, ceiling - 0.65, 0.2), colour, 0.0)
 	part(m, at, Vector3.BACK, Vector3(-0.28, ceiling - 0.82, -0.28), Vector3(0.28, ceiling - 0.76, 0.28), colour, 0.0)
