@@ -219,6 +219,45 @@ impl VoxelModel {
             .map_or(0, |g| g.dominant_material(v3(min), v3(max)) as i64)
     }
 
+    /// Each connected patch of material `index`, as an `AABB` in model space, in the same
+    /// order on every instance (panes of glass, numbered alike everywhere).
+    #[func]
+    fn components(&self, index: i64) -> Array<Aabb> {
+        let mut out = Array::new();
+        if let Some(g) = self.grid.as_ref() {
+            for (min, max) in g.components(index.clamp(0, 255) as u8) {
+                let lo = Vector3::new(min[0], min[1], min[2]);
+                let hi = Vector3::new(max[0], max[1], max[2]);
+                out.push(Aabb::new(lo, hi - lo));
+            }
+        }
+        out
+    }
+
+    /// Empties the cells of material `index` inside the box, leaving every other material.
+    #[func]
+    fn carve_material_box(&mut self, min: Vector3, max: Vector3, index: i64) {
+        self.with(|g, _| {
+            g.fill_box(
+                v3(min),
+                v3(max),
+                Op::CarveMaterial(index.clamp(0, 255) as u8),
+            )
+        });
+    }
+
+    /// Recolours only the cells of material `index` inside the ellipsoid (a crack mark).
+    #[func]
+    fn recolour_ellipsoid(&mut self, centre: Vector3, radii: Vector3, colour: Color, index: i64) {
+        self.with(|g, _| {
+            g.fill_ellipsoid(
+                v3(centre),
+                v3(radii),
+                Op::Recolour(paint(colour, 0.0, 0), index.clamp(0, 255) as u8),
+            )
+        });
+    }
+
     /// Scales the colour jitter of every fill after this call (0 = flat colours).
     #[func]
     fn set_jitter_scale(&mut self, scale: f32) {

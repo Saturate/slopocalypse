@@ -83,6 +83,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.subscribe(&"explosion", _on_explosion)
 	EventBus.subscribe(&"missions.building_broken", _on_building_broken)
+	EventBus.subscribe(&"missions.panes_broken", _on_panes_broken)
 	EventBus.subscribe(&"world.ready", _on_world_ready)
 	EventBus.subscribe(&"player.interact", _on_player_interact)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
@@ -101,6 +102,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.unsubscribe(&"explosion", _on_explosion)
 	EventBus.unsubscribe(&"missions.building_broken", _on_building_broken)
+	EventBus.unsubscribe(&"missions.panes_broken", _on_panes_broken)
 	if Net.peer_joined.is_connected(_on_peer_joined):
 		Net.peer_joined.disconnect(_on_peer_joined)
 	if Net.peer_left.is_connected(_on_peer_left):
@@ -623,6 +625,9 @@ func _on_explosion(p: Dictionary) -> void:
 		var broke := b.server_blast(at, radius, float(cfg.get("blast_damage", 140.0)), float(cfg.get("blast_reach", 1.6)))
 		if not broke.is_empty():
 			_server_broke(i, broke)
+		var panes := b.server_blast_panes(at, radius, float(cfg.get("blast_reach", 1.6)))
+		if not panes.is_empty():
+			Net.server_broadcast(&"missions.panes_broken", {"index": i, "panes": panes})
 
 
 ## Server: segments of building `i` broke. Whatever they held up comes down in the same
@@ -655,6 +660,20 @@ func _on_building_broken(p: Dictionary) -> void:
 	_building_nodes[i].break_segments(segs, fallen)
 
 
+## Everywhere: panes of a building broke; the layout entry remembers them for late joiners.
+func _on_panes_broken(p: Dictionary) -> void:
+	var i := int(p.get("index", -1))
+	if i < 0 or i >= _building_nodes.size() or i >= buildings.size():
+		return
+	var entry: Dictionary = buildings[i]
+	var gone: Array = entry.get("panes_broken", [])
+	for v: Variant in p.get("panes", []):
+		if not gone.has(int(v)):
+			gone.append(int(v))
+	entry["panes_broken"] = gone
+	_building_nodes[i].break_panes(p.get("panes", []), true)
+
+
 ## A bullet that hits a building: everyone sees the hole or chip; the server wears the
 ## piece down and may break it. A bullet that hits close to a mine sets it off.
 func _on_weapon_fired(p: Dictionary) -> void:
@@ -668,6 +687,9 @@ func _on_weapon_fired(p: Dictionary) -> void:
 			var weapon: Object = p.get("weapon")
 			var stats: Variant = weapon.get(&"stats") if weapon != null else null
 			var damage := float((stats as Dictionary).get("damage", 0.0)) if stats is Dictionary else float(p.get("damage", 0.0))
+			var pane := building.server_pane_hit(p["to"], direction)
+			if pane >= 0:
+				Net.server_broadcast(&"missions.panes_broken", {"index": _building_nodes.find(building), "panes": [pane]})
 			var broke := building.server_shot(p["to"], damage, direction)
 			if broke >= 0:
 				_server_broke(_building_nodes.find(building), [broke])

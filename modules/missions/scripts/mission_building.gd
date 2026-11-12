@@ -20,8 +20,11 @@ extends StaticBody3D
 ## voxel's colour. How much a piece of wall suffers comes from that piece's main material,
 ## so a wooden window frame in a concrete wall doesn't make the concrete easy to break: wood
 ## breaks to rounds, brick and concrete only to blasts, charges or rounds heavy enough. Glass
-## panes take marks but no structural damage (panes breaking on their own come with #248's
-## glass part).
+## panes take no structural damage: they break on their own. Each pane (a connected patch of
+## one glass material) counts its hits on the server and goes whole once it has taken its
+## material's `hits_to_break` (window and tempered glass on the first, laminated after six,
+## security glass after twelve), or at once in a blast; panes that crack get a lighter mark
+## where each round struck. Broken panes travel in the entry's `panes_broken`.
 ##
 ## Every instance builds the voxel model, the server too (without a mesh), so a hit looks up
 ## the same voxels everywhere.
@@ -35,6 +38,8 @@ const WALL := 0.2
 const VOXEL := 0.15
 ## How far into a wall a hit looks for the voxel it struck, metres.
 const STRIKE_DEPTH := 0.6
+## A crack mark's radius on glass, metres.
+const CRACK_RADIUS := 0.12
 
 ## The layout entry: `{position, yaw, width, depth, wall_height, windows, paint, seed,
 ## broken}`.
@@ -59,6 +64,11 @@ var _hp: Dictionary[int, float] = {}
 var _segments: Array[AABB] = []
 ## Segment id -> its main material's index (0: none, use `material_cfg`).
 var _segment_material := PackedByteArray()
+## The panes, numbered alike everywhere: `{box: AABB (local), material: int}`.
+var _panes: Array[Dictionary] = []
+## Server: pane index -> hits taken.
+var _pane_hits: Dictionary[int, int] = {}
+var _panes_gone: Dictionary[int, bool] = {}
 ## The support graph (built on first use): connected segment pairs, roof flags and the
 ## segments standing on the slab.
 var _edges := PackedInt32Array()
@@ -92,6 +102,10 @@ func _ready() -> void:
 		"material": maxi(0, VoxShed.WALL_MATERIALS.find(material())),
 		"glass": maxi(0, VoxShed.GLASS_TYPES.find(str(spec.get("glass", "window_glass")))),
 	})
+	for i in VoxMaterials.all().size():
+		if bool(VoxMaterials.at(i).get("breaks_whole", false)):
+			for box: AABB in _model.components(i):
+				_panes.append({"box": box, "material": i})
 	_segment_material.resize(_segments.size())
 	for i in _segments.size():
 		var box := _carve_box(i)
@@ -102,6 +116,7 @@ func _ready() -> void:
 		_mesh.model = _model
 		add_child(_mesh)
 	_remove(spec.get("broken", []), false)
+	break_panes(spec.get("panes_broken", []), false)
 	if _visual:
 		_mesh.refresh()
 
@@ -238,6 +253,78 @@ func struck_rules(point: Vector3, direction: Vector3) -> Dictionary:
 	return VoxMaterials.at(_model.material_at(v)) if v != Vector3.INF else material_cfg
 
 
+func pane_count() -> int:
+	return _panes.size()
+
+
+func is_pane_broken(index: int) -> bool:
+	return _panes_gone.has(index)
+
+
+## The pane a round travelling along `direction` struck at `point`, or -1 (not glass that
+## breaks whole).
+func pane_at(point: Vector3, direction: Vector3) -> int:
+	var v := struck_voxel(point, direction)
+	if v == Vector3.INF:
+		return -1
+	var m := _model.material_at(v)
+	for i in _panes.size():
+		var pane: Dictionary = _panes[i]
+		if int(pane["material"]) == m and not _panes_gone.has(i) and (pane["box"] as AABB).grow(VOXEL * 0.5).has_point(v):
+			return i
+	return -1
+
+
+## Server: a round struck at `point` along `direction`. If it was a pane, it counts the hit
+## (rounds too light to go through still wear it); returns the pane's index once it breaks,
+## else -1.
+func server_pane_hit(point: Vector3, direction: Vector3) -> int:
+	var i := pane_at(point, direction)
+	if i < 0:
+		return -1
+	_pane_hits[i] = int(_pane_hits.get(i, 0)) + 1
+	var rules := VoxMaterials.at(int(_panes[i]["material"]))
+	return i if _pane_hits[i] >= maxi(1, int(rules.get("hits_to_break", 1))) else -1
+
+
+## Server: the panes a blast at `centre` (world) reaches: every one within `radius * reach`
+## goes at once.
+func server_blast_panes(centre: Vector3, radius: float, reach: float) -> Array[int]:
+	var local := global_transform.affine_inverse() * centre
+	var out: Array[int] = []
+	for i in _panes.size():
+		if _panes_gone.has(i):
+			continue
+		var box: AABB = _panes[i]["box"]
+		var nearest := Vector3(clampf(local.x, box.position.x, box.end.x), clampf(local.y, box.position.y, box.end.y), clampf(local.z, box.position.z, box.end.z))
+		if nearest.distance_to(local) < radius * reach:
+			out.append(i)
+	return out
+
+
+## Everywhere: the panes go, leaving their frames; on clients with shards (big ones for
+## window glass, a spray of small ones for tempered) and a break sound.
+func break_panes(indices: Array, debris: bool) -> void:
+	for v: Variant in indices:
+		var i := int(v)
+		if i < 0 or i >= _panes.size() or _panes_gone.has(i):
+			continue
+		_panes_gone[i] = true
+		var pane: Dictionary = _panes[i]
+		var box: AABB = pane["box"]
+		var rules := VoxMaterials.at(int(pane["material"]))
+		var colour := _model.colour_at(box.get_center())
+		_model.carve_material_box(box.position - Vector3.ONE * VOXEL * 0.1, box.end + Vector3.ONE * VOXEL * 0.1, int(pane["material"]))
+		if debris and _visual and is_inside_tree():
+			var at := global_transform * box.get_center()
+			var source := &"glass_bits" if str(rules.get("name", "")) == "tempered_glass" else &"glass_shards"
+			var out := (global_transform.basis * Vector3(box.get_center().x, 0.0, box.get_center().z)).normalized()
+			VoxelDebris.burst(get_parent(), at, out + Vector3.DOWN * 0.3, colour if colour.a > 0.0 else Color(0.2, 0.27, 0.32), source)
+			_sound(&"missions.surface_broke", at, str(rules.get("name", "")), 1)
+	if _visual and not indices.is_empty():
+		_remesh = true
+
+
 ## Server, for the weapons' trace: whether a round travelling along `direction` that hit
 ## at `point` with `damage` goes on through. `{exit, scale}` lets it carry on from `exit`
 ## (world, just past the wall) with its damage times `scale`; `{}` stops it. Through a hole
@@ -317,6 +404,11 @@ func _mark(point: Vector3, direction: Vector3) -> void:
 		var colour := _model.colour_at(v)
 		var out := -direction.normalized() if direction.length_squared() > 0.0 else (point - global_position).normalized()
 		VoxelDebris.burst(get_parent(), point, out, colour if colour.a > 0.0 else Color(0.55, 0.5, 0.45), &"building_chip")
+	if bool(rules.get("crack", false)):
+		# A lighter star where it struck; only the glass, not its frame.
+		var glass := _model.colour_at(v)
+		_model.recolour_ellipsoid(v, Vector3.ONE * CRACK_RADIUS, glass.lerp(Color(0.92, 0.94, 0.95), 0.6), _model.material_at(v))
+		_remesh = _visual
 	var hole := float(rules.get("hole", 0.0))
 	if hole <= 0.0:
 		return

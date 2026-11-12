@@ -2,6 +2,8 @@
   "max_pieces": 400,
   "sources": {
     "building": {"count": 24, "speed": 4.5, "speed_jitter": 0.3, "angle_jitter_degrees": 20, "spin_max": 8, "lifetime_seconds": 1.6},
+    "glass_shards": {"count": 10, "size": 0.18, "speed": 2.5, "speed_jitter": 0.4, "angle_jitter_degrees": 35, "spin_max": 10, "lifetime_seconds": 1.4},
+    "glass_bits": {"count": 45, "size": 0.04, "speed": 2.0, "speed_jitter": 0.5, "angle_jitter_degrees": 40, "spin_max": 12, "lifetime_seconds": 1.2},
     "building_chip": {"count": 5, "speed": 2.5, "speed_jitter": 0.3, "angle_jitter_degrees": 20, "spin_max": 8, "lifetime_seconds": 1.6},
     "crater": {"count": 40, "count_min": 2, "count_per_m2": 10, "speed": 3.0, "speed_per_metre": 2.5, "speed_jitter": 0.3, "angle_jitter_degrees": 20, "spin_max": 8, "lifetime_seconds": 1.6},
     "tree": {"count": 6, "speed": 3.0, "speed_jitter": 0.3, "angle_jitter_degrees": 20, "spin_max": 8, "lifetime_seconds": 1.6},
