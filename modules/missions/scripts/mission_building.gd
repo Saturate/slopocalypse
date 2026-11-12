@@ -16,8 +16,11 @@ extends StaticBody3D
 ## server passes the weight of everything standing down to the ground, and a piece carrying
 ## more than it can gives way, so a house isn't held up by one corner piece.
 ##
-## A piece that breaks comes loose on clients: chunks of its own voxels thrown out (see
-## `LooseChunks`), tumbling and landing, not a square that vanishes. Blasts knock the bricks of
+## A piece that breaks comes loose: chunks of its own voxels thrown out (see `LooseChunks`),
+## tumbling and landing, not a square that vanishes; the server runs the same chunks, and once
+## they rest it says where each lies, and everyone freezes them there as solid rubble. The
+## entry's `rubble` carries them to late joiners, who place them straight from the building's
+## own voxels. Blasts knock the bricks of
 ## a brick wall out one by one within their reach, so brick walls go ragged.
 ##
 ## Pieces nothing holds up any more fall (see `BuildingSupport`): the server takes them
@@ -104,8 +107,10 @@ var _panes_gone: Dictionary[int, bool] = {}
 var _brick_wear: Dictionary[String, float] = {}
 ## Server: the dice for which neighbours a knocked-out brick drags along.
 var _stick_rng := RandomNumberGenerator.new()
-## Client: scatter for loose chunks (looks only).
-var _chunk_rng := RandomNumberGenerator.new()
+## Chunks flying or lying as rubble, by "piece:chunk".
+var _chunks: Dictionary[String, RigidBody3D] = {}
+## The building as it was built, for placing the rubble a late joiner never saw fall.
+var _pristine: VoxelModel
 ## Segment id -> how many brick cells it started with (only pieces that have bricks).
 var _bricks_at_start: Dictionary[int, int] = {}
 ## Per segment: its weight (kg, from its voxels) and how much it can carry (kg).
@@ -140,30 +145,16 @@ func _ready() -> void:
 	for i in _segments.size():
 		_add_shape(i, _segments[i])
 		_hp[i] = segment_hp
-	if is_wall():
-		_model = VoxWall.new().build({
-			"seed": int(spec.get("seed", 1)), "kind": maxi(0, VoxWall.KIND_MATERIALS.find(material())),
-			"width": w, "height": wh, "thickness": d, "voxel": voxel,
-			"window": maxi(0, VoxWall.WINDOW_MATERIALS.find(str(spec.get("window", "")))),
-			"door": 1 if bool(spec.get("door", false)) else 0,
-		})
-		if _visual and spec.has("label"):
-			var label := Label3D.new()
-			label.text = str(spec["label"])
-			label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-			label.font_size = 48
-			label.pixel_size = 0.004
-			label.outline_size = 12
-			label.position.y = wh + 0.6
-			add_child(label)
-	else:
-		_model = VoxShed.new().build({
-			"seed": int(spec.get("seed", 1)), "paint": int(spec.get("paint", 1)), "width": w,
-			"depth": d, "wall_height": wh, "pitch": float(spec.get("pitch", 0.45)), "door": 1,
-			"windows": float(spec.get("windows", 2)), "voxel": voxel,
-			"material": maxi(0, VoxShed.WALL_MATERIALS.find(material())),
-			"glass": maxi(0, VoxShed.GLASS_TYPES.find(str(spec.get("glass", "window_glass")))),
-		})
+	_model = _build_model()
+	if is_wall() and _visual and spec.has("label"):
+		var label := Label3D.new()
+		label.text = str(spec["label"])
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.font_size = 48
+		label.pixel_size = 0.004
+		label.outline_size = 12
+		label.position.y = wh + 0.6
+		add_child(label)
 	for i in VoxMaterials.all().size():
 		if bool(VoxMaterials.at(i).get("breaks_whole", false)):
 			for box: AABB in _model.components(i):
@@ -189,11 +180,33 @@ func _ready() -> void:
 		_mesh.name = "Mesh"
 		_mesh.model = _model
 		add_child(_mesh)
+	_place_rubble(spec.get("rubble", []))
 	_remove(spec.get("broken", []), false)
 	break_panes(spec.get("panes_broken", []), false)
 	knock_out(spec.get("knocked", []), false)
 	if _visual:
 		_mesh.refresh()
+
+
+## The voxel model as built from the entry: a lone wall or a house.
+func _build_model() -> VoxelModel:
+	var w := float(spec.get("width", 5.0))
+	var d := float(spec.get("depth", 4.0))
+	var wh := float(spec.get("wall_height", 2.8))
+	if is_wall():
+		return VoxWall.new().build({
+			"seed": int(spec.get("seed", 1)), "kind": maxi(0, VoxWall.KIND_MATERIALS.find(material())),
+			"width": w, "height": wh, "thickness": d, "voxel": voxel,
+			"window": maxi(0, VoxWall.WINDOW_MATERIALS.find(str(spec.get("window", "")))),
+			"door": 1 if bool(spec.get("door", false)) else 0,
+		})
+	return VoxShed.new().build({
+		"seed": int(spec.get("seed", 1)), "paint": int(spec.get("paint", 1)), "width": w,
+		"depth": d, "wall_height": wh, "pitch": float(spec.get("pitch", 0.45)), "door": 1,
+		"windows": float(spec.get("windows", 2)), "voxel": voxel,
+		"material": maxi(0, VoxShed.WALL_MATERIALS.find(material())),
+		"glass": maxi(0, VoxShed.GLASS_TYPES.find(str(spec.get("glass", "window_glass")))),
+	})
 
 
 func _add_shape(id: int, box: AABB) -> void:
@@ -630,6 +643,84 @@ func server_blast_bricks(centre: Vector3, radius: float) -> Array[Vector3]:
 	return out
 
 
+## Everywhere: piece `seg`'s voxels in `box` come loose as chunks pushed along `push` (local).
+func _let_go(seg: int, box: AABB, push: Vector3) -> void:
+	var bodies := LooseChunks.spawn(self, _model, seg, box, push, int(spec.get("seed", 1)))
+	for k: int in bodies:
+		_chunks["%d:%d" % [seg, k]] = bodies[k]
+
+
+## Server: the chunks that came loose and are still flying, frozen where they lie now as
+## rubble: `[{seg, k, at}]` (`at` local to the building).
+func server_settle() -> Array:
+	var out := []
+	var to_local := global_transform.affine_inverse()
+	for key: String in _chunks:
+		var body := _chunks[key]
+		if not is_instance_valid(body) or body.freeze:
+			continue
+		LooseChunks.settle(body)
+		var parts := key.split(":")
+		out.append({"seg": int(parts[0]), "k": int(parts[1]), "at": to_local * body.global_transform})
+	return out
+
+
+## Everywhere: these chunks lie where the server says, frozen and solid. Ones this instance
+## never had (it joined late, or missed the fall) are made from the building's own voxels.
+func settle_rubble(rubble: Array) -> void:
+	for r: Dictionary in rubble:
+		var key := "%d:%d" % [int(r["seg"]), int(r["k"])]
+		var at := global_transform * (r["at"] as Transform3D)
+		if _chunks.has(key) and is_instance_valid(_chunks[key]):
+			LooseChunks.settle(_chunks[key], at)
+		else:
+			_place_rubble([r])
+
+
+## Late: rubble from the entry, made from the building as it was built and put where it lies.
+func _place_rubble(rubble: Array) -> void:
+	if rubble.is_empty() or not is_inside_tree():
+		return
+	var source := _model if _pristine == null and _chunks.is_empty() and spec.get("broken", []).is_empty() else _pristine_model()
+	for r: Dictionary in rubble:
+		var seg := int(r["seg"])
+		var k := int(r["k"])
+		var key := "%d:%d" % [seg, k]
+		if seg < 0 or seg >= _segments.size() or (_chunks.has(key) and is_instance_valid(_chunks[key])):
+			continue
+		var parts := LooseChunks.boxes(_carve_box(seg))
+		if k < 0 or k >= parts.size():
+			continue
+		var body := LooseChunks.make(self, source, parts[k])
+		if body == null:
+			continue
+		LooseChunks.settle(body)
+		body.global_transform = global_transform * (r["at"] as Transform3D)
+		_chunks[key] = body
+
+
+func rubble_count() -> int:
+	var n := 0
+	for body: RigidBody3D in _chunks.values():
+		if is_instance_valid(body) and body.freeze:
+			n += 1
+	return n
+
+
+## The building as built, before any damage (made once, when rubble needs placing late).
+func _pristine_model() -> VoxelModel:
+	if _pristine == null:
+		_pristine = _build_model()
+	return _pristine
+
+
+func _exit_tree() -> void:
+	for body: RigidBody3D in _chunks.values():
+		if is_instance_valid(body):
+			body.queue_free()
+	_chunks.clear()
+
+
 ## Server: the standing wall pieces that have lost too many bricks to stand.
 func server_weakened() -> Array[int]:
 	var brick := VoxMaterials.index_of("brick")
@@ -893,7 +984,7 @@ func _drop(group: Array) -> void:
 	var landed := Vector3.INF
 	for v: Variant in group:
 		var box := _carve_box(int(v))
-		LooseChunks.spawn(self, _model, box, Vector3.ZERO, _chunk_rng)
+		_let_go(int(v), box, Vector3.ZERO)
 		if landed == Vector3.INF:
 			landed = global_transform * (_segments[int(v)].get_center() + Vector3.DOWN * maxf(_segments[int(v)].position.y - SLAB, 0.0))
 	if landed != Vector3.INF and is_inside_tree():
@@ -914,14 +1005,15 @@ func _remove(ids: Array, debris: bool) -> void:
 			continue
 		var box := _carve_box(id)
 		var colour := _colour_of(id)
-		if debris and _visual and is_inside_tree():
+		if debris and is_inside_tree():
 			var centre := _segments[id].get_center()
-			# Wall pieces fly out from the building, roof pieces up; as chunks of themselves,
-			# with a little dust.
-			var out := Vector3.UP if centre.y >= wh - 0.1 else (Vector3(centre.x, 0.0, centre.z).normalized() + Vector3.UP * 0.4).normalized()
-			var push := float(LooseChunks.config().get("push", 3.5))
-			LooseChunks.spawn(self, _model, box, global_transform.basis * out * push, _chunk_rng)
-			VoxelDebris.burst(get_parent(), global_transform * centre, global_transform.basis * out, colour.lightened(0.15), &"dust")
+			# Wall pieces fly out from the building (a lone wall to one side), roof pieces up;
+			# as chunks of themselves, with a little dust.
+			var flat := Vector3(0.0, 0.0, 1.0 if (id * 7919) % 2 == 0 else -1.0) if is_wall() else Vector3(centre.x, 0.0, centre.z).normalized()
+			var out := Vector3.UP if centre.y >= wh - 0.1 else (flat + Vector3.UP * 0.4).normalized()
+			_let_go(id, box, out * float(LooseChunks.config().get("push", 3.5)))
+			if _visual:
+				VoxelDebris.burst(get_parent(), global_transform * centre, global_transform.basis * out, colour.lightened(0.15), &"dust")
 		_model.carve_box(box.position, box.end)
 
 

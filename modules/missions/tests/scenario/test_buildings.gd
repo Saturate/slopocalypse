@@ -132,7 +132,8 @@ func test_a_blast_beside_a_wall_knocks_a_hole_you_can_see_through() -> void:
 	Net.server_broadcast(&"explosion", {"position": b.global_transform * Vector3(w / 2.0 + 0.3, 1.0, 0), "radius": 3.0})
 	await get_tree().physics_frame
 	await get_tree().physics_frame
-	assert_dict(space.intersect_ray(PhysicsRayQueryParameters3D.create(outside, inside))).is_empty()
+	# As a bullet sees it: chunks still flying through the hole don't count.
+	assert_dict(space.intersect_ray(PhysicsRayQueryParameters3D.create(outside, inside, PhysicsLayers.BULLETS))).is_empty()
 	# The back wall far from it still stands somewhere.
 	var standing := 0
 	for i in before:
