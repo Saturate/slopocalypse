@@ -82,3 +82,58 @@ func test_the_texture_holds_the_cells() -> void:
 		if bytes[i] == 255:
 			filled += 1
 	assert_int(filled).is_equal(m.voxel_count())
+
+
+## The cell at `c` read back out of the packed atlas the way the shader reads it: its 5-6-5
+## bits, or 0 for air.
+func _atlas_bits(packed: Dictionary, c: Vector3i) -> int:
+	var bricks: Vector3i = packed["bricks"]
+	var cells: Vector3i = packed["cells"]
+	var ind: PackedByteArray = packed["indirection"]
+	var atlas: PackedByteArray = packed["atlas"]
+	var b := c / VoxelVolume.BRICK
+	var id := ((b.z * bricks.y + b.y) * bricks.x + b.x) * 4
+	if ind[id + 3] == 0:
+		return 0
+	var at := Vector3i(ind[id], ind[id + 1], ind[id + 2]) * VoxelVolume.BRICK + c % VoxelVolume.BRICK
+	var i := ((at.z * cells.y + at.y) * cells.x + at.x) * 2
+	return atlas[i] | (atlas[i + 1] << 8)
+
+
+func test_the_packed_atlas_holds_every_cell_and_only_occupied_bricks() -> void:
+	var m := _hollow_box()
+	var packed := m.brick_atlas(VoxelVolume.BRICK, VoxelVolume.ATLAS_ROW)
+	var n := m.cells()
+	var dense := m.rgba_slices()
+	for z in n.z:
+		for y in n.y:
+			for x in n.x:
+				var bits := _atlas_bits(packed, Vector3i(x, y, z))
+				assert_bool(bits != 0).override_failure_message("cell %d %d %d" % [x, y, z]).is_equal(m.is_filled(x, y, z))
+				if bits == 0:
+					continue
+				# The colour survives to within one step of five or six bits.
+				var i := ((z * n.y + y) * n.x + x) * 4
+				assert_int(absi(((bits >> 11) & 31) * 255 / 31 - dense[i])).is_less_equal(5)
+				assert_int(absi(((bits >> 5) & 63) * 255 / 63 - dense[i + 1])).is_less_equal(3)
+				assert_int(absi((bits & 31) * 255 / 31 - dense[i + 2])).is_less_equal(5)
+	# Fewer bricks than the whole grid's.
+	var all := (packed["bricks"] as Vector3i)
+	assert_int(int(packed["used"])).is_less(all.x * all.y * all.z)
+
+
+func test_volumes_of_the_same_model_share_one_upload() -> void:
+	var m := _hollow_box()
+	var a: VoxelVolume = auto_free(VoxelVolume.new())
+	var b: VoxelVolume = auto_free(VoxelVolume.new())
+	a.model = m
+	b.model = m
+	a.refresh()
+	b.refresh()
+	assert_object(a.material_override).is_same(b.material_override)
+	assert_object(a.mesh).is_same(b.mesh)
+	var other: VoxelVolume = auto_free(VoxelVolume.new())
+	other.model = _hollow_box()
+	other.refresh()
+	assert_object(other.material_override).is_not_same(a.material_override)
+	assert_int(a.gpu_bytes).is_greater(0)

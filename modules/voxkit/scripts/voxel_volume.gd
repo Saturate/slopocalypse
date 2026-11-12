@@ -1,65 +1,106 @@
 class_name VoxelVolume
 extends MeshInstance3D
-## Draws a `VoxelModel` on the GPU instead of as a mesh (#306): its cells go into a 3D
-## texture and `voxel_volume.gdshader` finds the first filled cell along each pixel's ray, so
-## the cost follows screen pixels, not the number of voxels or faces. The node's origin is the
-## model's origin (x and z centred, y from the ground), like a mesh of the same model.
-## Client only.
+## Draws a `VoxelModel` on the GPU instead of as a mesh (#306): its cells go into 3D
+## textures and `voxel_volume.gdshader` finds the first filled cell along each pixel's ray, so
+## the cost follows screen pixels, not the number of voxels or faces. Only the BRICK-cell
+## cubes that hold anything are uploaded, packed into an atlas with two bytes a cell, plus an
+## indirection texture saying where each brick went (about a seventh of the dense grid's
+## memory for a building). Volumes showing the same model share one upload and one material,
+## so a street of the same building costs one building's memory. The node's origin is the
+## model's origin (x and z centred, y from the ground), like a mesh of the same model. Client
+## only.
 
 const SHADER := preload("res://modules/voxkit/shaders/voxel_volume.gdshader")
-## Cells per side of the empty-space bricks; the shader's BRICK must match.
+## Cells per side of a brick; the shader's BRICK must match.
 const BRICK := 4
+## Bricks per row and column of the atlas (a 128 x 128 cell layer).
+const ATLAS_ROW := 32
 
 var model: VoxelModel
+## Bytes this volume's model takes on the GPU (shared with other volumes of the same model),
+## after `refresh`.
+var gpu_bytes := 0
 
-var _texture: ImageTexture3D
-var _bricks: ImageTexture3D
-var _material: ShaderMaterial
+## Per model (by instance id), what its volumes share: `{indirection, atlas, mesh, material,
+## bytes, users}`. Dropped when the last volume showing it leaves the tree.
+static var _shared: Dictionary[int, Dictionary] = {}
+
+var _key := 0
 
 
-## Uploads the model's cells and sizes the box to it; call after building or editing it.
-func refresh() -> void:
+## Uploads the model's cells and sizes the box to it, or picks up what another volume of the
+## same model already uploaded; call after building it. After editing a shared model, call
+## with `force` so every volume showing it sees the edit.
+func refresh(force := false) -> void:
 	var t := Prof.start()
-	var n := model.cells()
-	var v := model.voxel_size()
-	if n.x * n.y * n.z == 0:
+	_release()
+	if model == null or model.voxel_count() == 0:
 		mesh = null
+		material_override = null
+		gpu_bytes = 0
 		return
-	var bytes := model.rgba_slices()
-	var layer := n.x * n.y * 4
-	var images: Array[Image] = []
-	for z in n.z:
-		images.append(Image.create_from_data(n.x, n.y, false, Image.FORMAT_RGBA8, bytes.slice(z * layer, (z + 1) * layer)))
-	if _texture == null:
-		_texture = ImageTexture3D.new()
-	_texture.create(Image.FORMAT_RGBA8, n.x, n.y, n.z, false, images)
-	var extent := Vector3(n) * v
-	mesh = _box(extent)
-	if _material == null:
-		_material = ShaderMaterial.new()
-		_material.shader = SHADER
-	_bricks = _occupancy_texture(model, _bricks)
-	_material.set_shader_parameter("cells", _texture)
-	_material.set_shader_parameter("bricks", _bricks)
-	_material.set_shader_parameter("size", n)
-	_material.set_shader_parameter("voxel", v)
-	_material.set_shader_parameter("origin", Vector3(-extent.x / 2.0, 0.0, -extent.z / 2.0))
-	VoxShading.ensure()
-	var levels := VoxShading.levels
-	_material.set_shader_parameter("corner_levels", Vector4(levels[0], levels[1], levels[2], levels[3]) if levels.size() == 4 else Vector4.ONE)
-	material_override = _material
+	_key = model.get_instance_id()
+	var entry: Dictionary = _shared.get(_key, {})
+	if entry.is_empty() or force:
+		entry = _upload(model, entry)
+		_shared[_key] = entry
+	entry["users"] = int(entry.get("users", 0)) + 1
+	mesh = entry["mesh"]
+	material_override = entry["material"]
+	gpu_bytes = entry["bytes"]
 	Prof.stop(&"voxkit/volume_upload", t)
 
 
-static func _occupancy_texture(m: VoxelModel, into: ImageTexture3D) -> ImageTexture3D:
-	var counts := m.brick_counts(BRICK)
-	var bytes := m.brick_occupancy(BRICK)
-	var layer := counts.x * counts.y
+func _exit_tree() -> void:
+	_release()
+
+
+func _release() -> void:
+	if _key == 0 or not _shared.has(_key):
+		_key = 0
+		return
+	var entry := _shared[_key]
+	entry["users"] = int(entry["users"]) - 1
+	if int(entry["users"]) <= 0:
+		_shared.erase(_key)
+	_key = 0
+
+
+## The textures, box and material for `m`, reusing `into`'s textures and material if given.
+static func _upload(m: VoxelModel, into: Dictionary) -> Dictionary:
+	var n := m.cells()
+	var v := m.voxel_size()
+	var packed := m.brick_atlas(BRICK, ATLAS_ROW)
+	var indirection := _texture_3d(packed["indirection"], packed["bricks"], Image.FORMAT_RGBA8, 4, into.get("indirection"))
+	var atlas := _texture_3d(packed["atlas"], packed["cells"], Image.FORMAT_RG8, 2, into.get("atlas"))
+	var extent := Vector3(n) * v
+	var material: ShaderMaterial = into.get("material", null)
+	if material == null:
+		material = ShaderMaterial.new()
+		material.shader = SHADER
+	material.set_shader_parameter("indirection", indirection)
+	material.set_shader_parameter("atlas", atlas)
+	material.set_shader_parameter("size", n)
+	material.set_shader_parameter("voxel", v)
+	material.set_shader_parameter("origin", Vector3(-extent.x / 2.0, 0.0, -extent.z / 2.0))
+	VoxShading.ensure()
+	var levels := VoxShading.levels
+	material.set_shader_parameter("corner_levels", Vector4(levels[0], levels[1], levels[2], levels[3]) if levels.size() == 4 else Vector4.ONE)
+	return {
+		"indirection": indirection, "atlas": atlas, "material": material, "mesh": _box(extent),
+		"bytes": (packed["indirection"] as PackedByteArray).size() + (packed["atlas"] as PackedByteArray).size(),
+		"users": into.get("users", 0),
+	}
+
+
+## A 3D texture of `size` texels from `bytes` laid out as z slices of y rows of x.
+static func _texture_3d(bytes: PackedByteArray, size: Vector3i, format: Image.Format, texel: int, into: Variant) -> ImageTexture3D:
+	var layer := size.x * size.y * texel
 	var images: Array[Image] = []
-	for z in counts.z:
-		images.append(Image.create_from_data(counts.x, counts.y, false, Image.FORMAT_R8, bytes.slice(z * layer, (z + 1) * layer)))
-	var out := into if into != null else ImageTexture3D.new()
-	out.create(Image.FORMAT_R8, counts.x, counts.y, counts.z, false, images)
+	for z in size.z:
+		images.append(Image.create_from_data(size.x, size.y, false, format, bytes.slice(z * layer, (z + 1) * layer)))
+	var out: ImageTexture3D = into if into is ImageTexture3D else ImageTexture3D.new()
+	out.create(format, size.x, size.y, size.z, false, images)
 	return out
 
 

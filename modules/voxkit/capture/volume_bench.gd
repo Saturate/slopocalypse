@@ -32,10 +32,12 @@ func _ready() -> void:
 	probe.model = _model
 	probe.refresh()
 	var uploaded := Time.get_ticks_usec()
+	var bytes := probe.gpu_bytes
 	probe.free()
-	_results.append("model: %d voxels, built in %d ms; mesh %d faces in %d ms; volume upload %d ms (%.1f MB)" % [
+	var dense := _model.cells().x * _model.cells().y * _model.cells().z * 4
+	_results.append("model: %d voxels, built in %d ms; mesh %d faces in %d ms; volume upload %d ms (%.1f MB on the GPU, a dense grid would be %.1f MB)" % [
 		_model.voxel_count(), (built - t) / 1000, _mesh.surface_get_array_len(0) / 4, (meshed - built) / 1000,
-		(uploaded - meshed) / 1000, _model.cells().x * _model.cells().y * _model.cells().z * 4 / 1048576.0])
+		(uploaded - meshed) / 1000, bytes / 1048576.0, dense / 1048576.0])
 	_scene()
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
 	_show(false)

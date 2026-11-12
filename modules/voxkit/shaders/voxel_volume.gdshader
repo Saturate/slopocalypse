@@ -1,4 +1,4 @@
-// A voxel model drawn without a mesh (#306): the model's cells are a 3D texture, and each
+// A voxel model drawn without a mesh (#306): the model's cells are in 3D textures, and each
 // pixel of the model's bounding box walks its view ray through the grid one cell at a time
 // (a 3D DDA) until it finds a filled cell. It writes that cell's colour, the normal of the
 // face the ray came in through, and the depth of the hit, so the model sorts against meshes
@@ -8,11 +8,13 @@ shader_type spatial;
 // building); the ray starts at the camera then.
 render_mode cull_front;
 
-// Cell colours (sRGB), alpha 0 for air; read with texelFetch, never filtered.
-uniform sampler3D cells : source_color, filter_nearest, repeat_disable;
-// Which BRICK-cell cubes hold anything (red 1) or nothing (0): the walk jumps over empty
-// ones whole.
-uniform sampler3D bricks : filter_nearest, repeat_disable;
+// Only the BRICK-cell cubes that hold anything are stored, packed side by side in `atlas`
+// (two bytes a cell: the sRGB colour as 5-6-5 bits, 0 for air). `indirection` has a texel
+// per brick of the model: where that brick sits in the atlas, in bricks (red, green, blue
+// times 255), with alpha 0 for an empty brick, which the walk jumps over whole. Both are read
+// with texelFetch, never filtered.
+uniform sampler3D indirection : filter_nearest, repeat_disable;
+uniform sampler3D atlas : filter_nearest, repeat_disable;
 const int BRICK = 4;
 // Cells per axis, metres per cell, and where cell (0, 0, 0)'s corner sits in the node.
 uniform ivec3 size;
@@ -23,11 +25,27 @@ uniform float roughness = 0.92;
 // corner) to 3 (open): the same corner shading the meshes bake in (all 1 for none).
 uniform vec4 corner_levels = vec4(1.0);
 
+// A cell's 5-6-5 colour bits from its brick's place in the atlas (0 for air).
+uint cell_bits(ivec3 c, vec4 place) {
+	ivec3 at = ivec3(round(place.rgb * 255.0)) * BRICK + c % BRICK;
+	vec2 bytes = round(texelFetch(atlas, at, 0).rg * 255.0);
+	return uint(bytes.x) | (uint(bytes.y) << 8u);
+}
+
+vec3 linear_colour(uint bits) {
+	vec3 c = vec3(float((bits >> 11u) & 31u) / 31.0, float((bits >> 5u) & 63u) / 63.0, float(bits & 31u) / 31.0);
+	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+
 float filled(ivec3 c) {
 	if (any(lessThan(c, ivec3(0))) || any(greaterThanEqual(c, size))) {
 		return 0.0;
 	}
-	return step(0.5, texelFetch(cells, c, 0).a);
+	vec4 place = texelFetch(indirection, c / BRICK, 0);
+	if (place.a < 0.5) {
+		return 0.0;
+	}
+	return cell_bits(c, place) != 0u ? 1.0 : 0.0;
 }
 
 // The same rule as `voxkit_core::corner_level`.
@@ -69,11 +87,12 @@ void fragment() {
 	if (enter < 0.0) {
 		normal = -d;
 	}
-	vec4 hit = vec4(0.0);
+	uint hit = 0u;
 	int steps = size.x + size.y + size.z;
 	for (int i = 0; i < steps; i++) {
 		ivec3 brick = cell / BRICK;
-		if (texelFetch(bricks, brick, 0).r < 0.5) {
+		vec4 place = texelFetch(indirection, brick, 0);
+		if (place.a < 0.5) {
 			// Out of this brick in one go: to the first of its faces the ray crosses.
 			vec3 low = vec3(brick * BRICK);
 			vec3 bound = low + vec3(greaterThan(d, vec3(0.0))) * float(BRICK);
@@ -90,9 +109,9 @@ void fragment() {
 			}
 			continue;
 		}
-		vec4 c = texelFetch(cells, cell, 0);
-		if (c.a > 0.5) {
-			hit = c;
+		uint bits = cell_bits(cell, place);
+		if (bits != 0u) {
+			hit = bits;
 			break;
 		}
 		if (t_next.x < t_next.y && t_next.x < t_next.z) {
@@ -115,7 +134,7 @@ void fragment() {
 			break;
 		}
 	}
-	if (hit.a < 0.5) {
+	if (hit == 0u) {
 		discard;
 	}
 	// Corner shading across the face, from the cells around the air cell in front of it.
@@ -144,7 +163,7 @@ void fragment() {
 	DEPTH = clamp(clip.z / clip.w, 0.0, 1.0);
 	// Light and shadows are worked out where the ray hit, not on the box face drawn.
 	LIGHT_VERTEX = view_point;
-	ALBEDO = hit.rgb * shade;
+	ALBEDO = linear_colour(hit) * shade;
 	NORMAL = normalize((VIEW_MATRIX * MODEL_MATRIX * vec4(normal, 0.0)).xyz);
 	ROUGHNESS = roughness;
 }

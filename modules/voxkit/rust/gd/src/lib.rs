@@ -197,6 +197,26 @@ impl VoxelModel {
         })
     }
 
+    /// The cells packed for a GPU volume (see `voxkit_core::Atlas`): `{bricks: Vector3i,
+    /// indirection: PackedByteArray (RGBA8 per brick), cells: Vector3i, atlas:
+    /// PackedByteArray (RG8 per cell, 5-6-5 colour), used: int}`. Only bricks holding
+    /// something are in the atlas, `per_row` bricks to a row and a column.
+    #[func]
+    fn brick_atlas(&self, brick: i64, per_row: i64) -> VarDictionary {
+        let mut out = VarDictionary::new();
+        let Some(grid) = self.grid.as_ref() else {
+            return out;
+        };
+        let a = grid.brick_atlas(brick.max(1) as usize, per_row.max(1) as usize);
+        let v3 = |n: [usize; 3]| Vector3i::new(n[0] as i32, n[1] as i32, n[2] as i32);
+        out.set("bricks", v3(a.bricks));
+        out.set("indirection", &PackedByteArray::from(a.indirection));
+        out.set("cells", v3(a.cells));
+        out.set("atlas", &PackedByteArray::from(a.atlas));
+        out.set("used", a.used as i64);
+        out
+    }
+
     /// Which `brick`-cell cubes hold anything, as one byte each (255 or 0) in `rgba_slices`
     /// order, for an R8 `ImageTexture3D` of `brick_counts(brick)` texels.
     #[func]

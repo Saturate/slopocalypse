@@ -171,6 +171,63 @@ impl Grid {
         (out, size)
     }
 
+    /// The cells packed for the GPU: only the `brick`-cell cubes that hold anything, laid
+    /// side by side in an atlas `per_row` bricks wide and deep, plus an indirection grid that
+    /// says where each brick went. See `Atlas`.
+    pub fn brick_atlas(&self, brick: usize, per_row: usize) -> Atlas {
+        let b = brick.max(1);
+        let row = per_row.clamp(1, 255);
+        let bricks = [self.nx, self.ny, self.nz].map(|v| v.div_ceil(b));
+        let (occupied, _) = self.brick_occupancy(b);
+        let used = occupied.iter().filter(|&&o| o != 0).count();
+        let layers = used.div_ceil(row * row).max(1);
+        let cells = [row * b, row * b, layers * b];
+        let mut atlas = vec![0u8; cells[0] * cells[1] * cells[2] * 2];
+        let mut indirection = vec![0u8; occupied.len() * 4];
+        let mut next = 0usize;
+        for bz in 0..bricks[2] {
+            for by in 0..bricks[1] {
+                for bx in 0..bricks[0] {
+                    let id = (bz * bricks[1] + by) * bricks[0] + bx;
+                    if occupied[id] == 0 {
+                        continue;
+                    }
+                    let slot = [next % row, (next / row) % row, next / (row * row)];
+                    next += 1;
+                    indirection[id * 4..id * 4 + 4].copy_from_slice(&[
+                        slot[0] as u8,
+                        slot[1] as u8,
+                        slot[2] as u8,
+                        255,
+                    ]);
+                    for z in 0..b {
+                        for y in 0..b {
+                            for x in 0..b {
+                                let c = self.get(
+                                    (bx * b + x) as i64,
+                                    (by * b + y) as i64,
+                                    (bz * b + z) as i64,
+                                );
+                                let at = [slot[0] * b + x, slot[1] * b + y, slot[2] * b + z];
+                                let i = ((at[2] * cells[1] + at[1]) * cells[0] + at[0]) * 2;
+                                let packed = pack565(c);
+                                atlas[i] = (packed & 0xFF) as u8;
+                                atlas[i + 1] = (packed >> 8) as u8;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Atlas {
+            bricks,
+            indirection,
+            cells,
+            atlas,
+            used,
+        }
+    }
+
     /// How many chunks the grid is split into (ids run from 0).
     pub fn chunk_count(&self) -> usize {
         self.dirty.len()
@@ -645,6 +702,33 @@ impl Paint {
 }
 
 /// 0..1 from integer coordinates and a seed.
+/// A grid packed for the GPU (`Grid::brick_atlas`). `indirection` has 4 bytes per brick of
+/// the `bricks` grid (z slices, then y rows, then x): the brick's place in the atlas in
+/// bricks (x, y, z) and 255, or all zero for an empty brick. `atlas` has 2 bytes per cell of
+/// the `cells` grid (same order): the colour as 5-6-5 bits, low byte first, 0 for air.
+#[derive(Debug, Clone)]
+pub struct Atlas {
+    pub bricks: [usize; 3],
+    pub indirection: Vec<u8>,
+    pub cells: [usize; 3],
+    pub atlas: Vec<u8>,
+    pub used: usize,
+}
+
+/// A colour as 5-6-5 bits; air is 0, and a filled cell that would round to 0 (black) keeps
+/// one bit of blue so it stays filled.
+pub fn pack565(c: Colour) -> u16 {
+    if c == EMPTY {
+        return 0;
+    }
+    let r = ((c >> 16) & 0xFF) as u16;
+    let g = ((c >> 8) & 0xFF) as u16;
+    let b = (c & 0xFF) as u16;
+    let packed =
+        ((r * 31 + 127) / 255) << 11 | ((g * 63 + 127) / 255) << 5 | ((b * 31 + 127) / 255);
+    packed.max(1)
+}
+
 pub fn hash(x: u32, y: u32, z: u32, seed: u32) -> f32 {
     let mut h = x.wrapping_mul(0x8da6_b343)
         ^ y.wrapping_mul(0xd816_3841)
@@ -901,6 +985,44 @@ mod tests {
         assert_eq!(bytes[at(2, 1, 2)], 255);
         assert_eq!(bytes[at(0, 0, 0)], 255);
         assert_eq!(bytes.iter().filter(|&&b| b == 255).count(), 2);
+    }
+
+    #[test]
+    fn the_atlas_holds_every_filled_cell_where_the_indirection_says() {
+        let mut g = Grid::new([1.3, 0.9, 1.1], 0.1);
+        g.set(0, 0, 0, 0xff0000);
+        g.set(12, 8, 10, 0x00ff00);
+        g.set(5, 4, 5, 0x000000);
+        let a = g.brick_atlas(4, 2);
+        assert_eq!(a.bricks, [4, 3, 3]);
+        assert_eq!(a.used, 3);
+        assert_eq!(a.cells, [8, 8, 4]);
+        let lookup = |x: usize, y: usize, z: usize| -> u16 {
+            let id = ((z / 4) * a.bricks[1] + y / 4) * a.bricks[0] + x / 4;
+            let ind = &a.indirection[id * 4..id * 4 + 4];
+            if ind[3] == 0 {
+                return 0;
+            }
+            let at = [
+                ind[0] as usize * 4 + x % 4,
+                ind[1] as usize * 4 + y % 4,
+                ind[2] as usize * 4 + z % 4,
+            ];
+            let i = ((at[2] * a.cells[1] + at[1]) * a.cells[0] + at[0]) * 2;
+            a.atlas[i] as u16 | (a.atlas[i + 1] as u16) << 8
+        };
+        for z in 0..g.nz {
+            for y in 0..g.ny {
+                for x in 0..g.nx {
+                    let c = g.get(x as i64, y as i64, z as i64);
+                    assert_eq!(lookup(x, y, z), pack565(c), "cell {x} {y} {z}");
+                }
+            }
+        }
+        // Black stays filled; air is the only zero.
+        assert_ne!(lookup(5, 4, 5), 0);
+        assert_eq!(pack565(0xff0000), 0xF800);
+        assert_eq!(pack565(0x00ff00), 0x07E0);
     }
 
     #[test]
