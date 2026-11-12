@@ -662,12 +662,13 @@ func _on_weapon_fired(p: Dictionary) -> void:
 		return
 	var building := p.get("collider") as MissionBuilding
 	if building != null:
-		building.bullet_mark(p["to"])
+		var direction: Vector3 = (p["to"] as Vector3) - (p.get("from", p["to"]) as Vector3)
+		building.bullet_mark(p["to"], direction)
 		if multiplayer.is_server():
 			var weapon: Object = p.get("weapon")
 			var stats: Variant = weapon.get(&"stats") if weapon != null else null
 			var damage := float((stats as Dictionary).get("damage", 0.0)) if stats is Dictionary else float(p.get("damage", 0.0))
-			var broke := building.server_shot(p["to"], damage)
+			var broke := building.server_shot(p["to"], damage, direction)
 			if broke >= 0:
 				_server_broke(_building_nodes.find(building), [broke])
 	if not multiplayer.is_server():

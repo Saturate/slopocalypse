@@ -124,6 +124,34 @@ impl Grid {
         self.material(cell[0] as usize, cell[1] as usize, cell[2] as usize)
     }
 
+    /// Colour of the cell holding `p` (model space, metres); `EMPTY` for air and outside.
+    pub fn colour_at(&self, p: [f32; 3]) -> Colour {
+        let o = self.origin();
+        let cell = [0, 1, 2].map(|a| ((p[a] - o[a]) / self.voxel).floor() as i64);
+        self.get(cell[0], cell[1], cell[2])
+    }
+
+    /// The material most filled cells inside the box `min..max` (by cell centre) have,
+    /// ignoring 0; 0 when none of them has one.
+    pub fn dominant_material(&self, min: [f32; 3], max: [f32; 3]) -> u8 {
+        let [(x0, x1), (y0, y1), (z0, z1)] = self.range_centres(min, max);
+        let mut counts = [0usize; 256];
+        for y in y0..y1 {
+            for z in z0..z1 {
+                for x in x0..x1 {
+                    let i = self.index(x, y, z);
+                    if self.cells[i] != EMPTY {
+                        counts[self.materials[i] as usize] += 1;
+                    }
+                }
+            }
+        }
+        (1..256)
+            .max_by_key(|&m| (counts[m], std::cmp::Reverse(m)))
+            .filter(|&m| counts[m] > 0)
+            .map_or(0, |m| m as u8)
+    }
+
     /// Every write goes through here so the chunks it changes get remeshed. Materials don't
     /// change the mesh, but a cell's material only changes along with a write anyway.
     fn write(&mut self, x: usize, y: usize, z: usize, c: Colour, m: u8) {
@@ -774,6 +802,28 @@ mod tests {
         assert_eq!(g.material_at([0.25, 0.5, 0.0]), 0);
         assert_eq!(g.material_at([9.0, 0.5, 0.0]), 0);
         assert_eq!(g.material_at([-0.25, -1.0, 0.0]), 0);
+    }
+
+    #[test]
+    fn the_dominant_material_is_the_most_common_one_in_the_box() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        g.brush = 8;
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], fill(RED));
+        g.brush = 1;
+        g.fill_box([-0.5, 0.0, -0.5], [-0.3, 1.0, 0.5], fill(BLUE));
+        assert_eq!(g.dominant_material([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5]), 8);
+        assert_eq!(g.dominant_material([-0.5, 0.0, -0.5], [-0.3, 1.0, 0.5]), 1);
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], Op::Carve);
+        assert_eq!(g.dominant_material([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5]), 0);
+    }
+
+    #[test]
+    fn colour_at_reads_the_cell_holding_a_point() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        g.fill_box([-0.5, 0.0, -0.5], [0.0, 1.0, 0.5], fill(RED));
+        assert_eq!(g.colour_at([-0.25, 0.5, 0.0]), RED);
+        assert_eq!(g.colour_at([0.25, 0.5, 0.0]), EMPTY);
+        assert_eq!(g.colour_at([0.0, -3.0, 0.0]), EMPTY);
     }
 
     #[test]
