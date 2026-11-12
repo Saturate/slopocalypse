@@ -87,4 +87,8 @@ static func row(cfg: Dictionary, road_at: Callable, along: float) -> Array:
 			"glass": str(e.get("glass", "window_glass")),
 			"clear": float(cfg.get("row_clear", 3.0)),
 		})
+		# Anything else the row gives (a wall sample's kind, label, window, door) goes along.
+		for key: String in e:
+			if not (out[-1] as Dictionary).has(key):
+				out[-1][key] = e[key]
 	return out
