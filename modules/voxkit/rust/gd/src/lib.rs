@@ -16,7 +16,7 @@ use voxkit_core::{Colour, Grid, Mesh, OPEN, Op, Paint};
 static SHADING: RwLock<Option<[f32; 4]>> = RwLock::new(None);
 
 fn shading() -> Option<[f32; 4]> {
-    SHADING.read().map(|s| *s).unwrap_or(None)
+    SHADING.read().map_or(None, |s| *s)
 }
 
 struct VoxkitExtension;
