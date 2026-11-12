@@ -638,6 +638,16 @@ func _on_explosion(p: Dictionary) -> void:
 func _server_broke(i: int, broke: Array[int]) -> void:
 	var b := _building_nodes[i]
 	var fell := b.server_unsupported(broke)
+	# Weight: pieces now carrying more than they can give way too, and whatever they held
+	# comes down with them; a few rounds of it at most.
+	for _pass in OVERLOAD_ROUNDS:
+		var gone: Array[int] = broke.duplicate()
+		gone.append_array(fell)
+		var over := b.server_overloaded(gone)
+		if over.is_empty():
+			break
+		broke.append_array(over)
+		fell = b.server_unsupported(broke)
 	Net.server_broadcast(&"missions.building_broken", {"index": i, "segments": broke, "fallen": fell})
 	if fell.is_empty():
 		return
@@ -645,6 +655,10 @@ func _server_broke(i: int, broke: Array[int]) -> void:
 	get_tree().create_timer(b.fall_seconds).timeout.connect(func() -> void:
 		if is_instance_valid(b) and b.is_inside_tree():
 			b.server_crush(fell, damage))
+
+
+## How many rounds of overloaded pieces giving way one break may set off.
+const OVERLOAD_ROUNDS := 4
 
 
 ## Everywhere: segments of a building broke; the layout entry remembers it for late joiners.

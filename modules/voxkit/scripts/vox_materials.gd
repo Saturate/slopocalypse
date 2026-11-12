@@ -20,6 +20,9 @@ const FIELDS := {
 	"crack_opacity": TYPE_FLOAT,
 	"pop_damage": TYPE_FLOAT,
 	"stick_chance": TYPE_FLOAT,
+	"density": TYPE_FLOAT,
+	"strength": TYPE_FLOAT,
+	"joint": TYPE_BOOL,
 }
 
 static var _list: Array[Dictionary] = []

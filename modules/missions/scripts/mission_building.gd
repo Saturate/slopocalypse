@@ -11,6 +11,11 @@ extends StaticBody3D
 ## the model with a burst of debris, leaving a hole you can walk or shoot through. The entry's
 ## `broken` list carries which are gone, so late joiners see the same holes.
 ##
+## Weight counts: every piece weighs what its voxels do (each material's `density`) and can
+## carry so many times its own weight (its main material's `strength`). After a break the
+## server passes the weight of everything standing down to the ground, and a piece carrying
+## more than it can gives way, so a house isn't held up by one corner piece.
+##
 ## Pieces nothing holds up any more fall (see `BuildingSupport`): the server takes them
 ## away with the pieces that broke and hurts whoever is under them when they land; clients
 ## drop their voxels as one piece per connected group, then break it into debris.
@@ -95,6 +100,9 @@ var _brick_wear: Dictionary[String, float] = {}
 var _stick_rng := RandomNumberGenerator.new()
 ## Segment id -> how many brick cells it started with (only pieces that have bricks).
 var _bricks_at_start: Dictionary[int, int] = {}
+## Per segment: its weight (kg, from its voxels) and how much it can carry (kg).
+var _mass := PackedFloat32Array()
+var _strength := PackedFloat32Array()
 ## The support graph (built on first use): connected segment pairs, roof flags and the
 ## segments standing on the slab.
 var _edges := PackedInt32Array()
@@ -141,6 +149,7 @@ func _ready() -> void:
 		var bricks := _model.count_material(box.position, box.end, brick)
 		if bricks > 0:
 			_bricks_at_start[i] = bricks
+	_weigh()
 	if _visual:
 		# Glass is drawn see-through.
 		var glass := PackedInt32Array()
@@ -667,6 +676,54 @@ func server_unsupported(newly: Array[int]) -> Array[int]:
 	for id in BuildingSupport.unsupported(_roof, _edges, _anchors, broken, max_span):
 		out.append(id)
 	return out
+
+
+## Server: once `newly` break, the standing segments carrying more than they can.
+func server_overloaded(newly: Array[int]) -> Array[int]:
+	if _roof.is_empty():
+		_build_graph()
+	var broken := PackedInt32Array(newly)
+	for id in _segments.size():
+		if not _shapes.has(id) and not newly.has(id):
+			broken.append(id)
+	var out: Array[int] = []
+	for id in BuildingSupport.overloaded(_edges, _anchors, broken, _mass, _strength):
+		out.append(id)
+	return out
+
+
+## Each segment's weight from its voxels (count of each material times its density), what it
+## can carry (each material's weight there times its strength, added up), and its main
+## material: the most common one that isn't a joint (mortar never is a brick wall's).
+func _weigh() -> void:
+	_mass.resize(_segments.size())
+	_strength.resize(_segments.size())
+	var cell := voxel * voxel * voxel
+	var all := VoxMaterials.all()
+	for i in _segments.size():
+		var box := _carve_box(i)
+		var kg := 0.0
+		var carries := 0.0
+		var main := 0
+		var main_count := 0
+		for m in range(1, all.size()):
+			var n := _model.count_material(box.position, box.end, m)
+			if n <= 0:
+				continue
+			var part := n * cell * float(all[m].get("density", 1000.0))
+			kg += part
+			carries += part * float(all[m].get("strength", 10.0))
+			if not bool(all[m].get("joint", false)) and n > main_count:
+				main = m
+				main_count = n
+		_mass[i] = kg
+		_strength[i] = carries
+		if main > 0:
+			_segment_material[i] = main
+
+
+func segment_mass(id: int) -> float:
+	return _mass[id] if id >= 0 and id < _mass.size() else 0.0
 
 
 ## Server: fallen segments land: everyone under them takes `damage` once.
