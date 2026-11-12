@@ -539,8 +539,9 @@ func _open_zone() -> void:
 	buildings = MissionLayout.buildings(layout, int(config["seed"]) * 7919 + _runs, _road_at, along)
 	for entry: Dictionary in buildings:
 		var at: Vector3 = entry["position"]
-		# A little sunk, so the slab never floats.
-		at.y = ground_y(at.x, at.z) - 0.05
+		# On the average ground under its footprint (the pad levels to it: dug in uphill, built
+		# up downhill), a little sunk so the slab never floats.
+		at.y = footprint_ground(at, float(entry["width"]), float(entry["depth"]), float(entry["yaw"])) - 0.05
 		entry["position"] = at
 	_build_buildings()
 	_sync_type()
@@ -815,9 +816,27 @@ func random_spot(share: float) -> Vector3:
 	return at
 
 
-## The untouched ground's height (0 without a world, as in tests).
+## The average untouched ground under a `width` by `depth` footprint at `at` turned by `yaw`
+## (a 3 by 3 grid of samples), so a pad there cuts as much as it fills.
+func footprint_ground(at: Vector3, width: float, depth: float, yaw: float) -> float:
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	if ground == null or not ground.has_method(&"ground_height"):
+		return ground_y(at.x, at.z)
+	var basis := Basis(Vector3.UP, yaw)
+	var total := 0.0
+	for i in 3:
+		for j in 3:
+			var p := at + basis * Vector3((i - 1) * width * 0.4, 0.0, (j - 1) * depth * 0.4)
+			total += float(ground.call(&"ground_height", p.x, p.z))
+	return total / 9.0
+
+
+## The ground's height as it is now (0 without a world, as in tests).
 func ground_y(x: float, z: float) -> float:
 	var ground := get_tree().get_first_node_in_group(&"ground")
+	# The ground as it is: levelled under buildings (pads), craters in it.
+	if ground != null and ground.has_method(&"surface_height"):
+		return float(ground.call(&"surface_height", x, z))
 	if ground != null and ground.has_method(&"ground_height"):
 		return float(ground.call(&"ground_height", x, z))
 	return 0.0
@@ -847,6 +866,17 @@ func _build_buildings() -> void:
 			# An entry may ask for more open ground round it (the test range's row).
 			circles.append({"at": entry["position"], "radius": float(entry.get("radius", 4.0)) + float(entry.get("clear", CLEARING_MARGIN))})
 		scenery.call(&"set_clearings", circles)
+	# Level the ground under each building and a little round it, so none sits half in a slope.
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	if ground != null and ground.has_method(&"set_pads"):
+		var cfg: Dictionary = config["buildings"]
+		var margin := float(cfg.get("pad_margin", 1.5))
+		var pads := []
+		for entry: Dictionary in buildings:
+			# Entries sit 0.05 m sunk (see _open_zone); the pad is the ground they stand on.
+			pads.append({"at": (entry["position"] as Vector3) + Vector3.UP * 0.05, "yaw": float(entry["yaw"]), "blend": float(cfg.get("pad_blend", 4.0)),
+				"half": Vector2(float(entry["width"]) / 2.0 + margin, float(entry["depth"]) / 2.0 + margin)})
+		ground.call(&"set_pads", pads)
 	for i in buildings.size():
 		var entry: Dictionary = buildings[i]
 		var b := MissionBuilding.new()

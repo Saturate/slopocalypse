@@ -70,3 +70,22 @@ func test_players_standing_on_the_terrain_do_not_fall_through() -> void:
 		await get_tree().physics_frame
 	assert_bool(player.is_on_floor()).is_true()
 	assert_float(player.global_position.y).is_equal_approx(0.0, 0.3)
+
+
+func test_a_pad_levels_the_ground_under_it_and_eases_back_into_the_slope() -> void:
+	var centre := OUT + Vector3(14, 0, -6)
+	var level := _voxels.ground_height(centre.x, centre.z) + 0.7
+	# Turned a quarter: its 6 m length runs along z.
+	_voxels.set_pads([{"at": Vector3(centre.x, level, centre.z), "half": Vector2(6.0, 3.0), "yaw": PI / 2.0, "blend": 3.0}])
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	for offset: Vector3 in [Vector3.ZERO, Vector3(2.5, 0, 5.5), Vector3(-2.5, 0, -5.5)]:
+		var at := centre + offset
+		assert_float(_voxels.surface_height(at.x, at.z)).override_failure_message("inside at %s" % offset).is_equal_approx(level, 0.001)
+		assert_float(_ray_down(at)).override_failure_message("collision at %s" % offset).is_equal_approx(level, 0.1)
+	# Past the blend it's the natural ground again.
+	var far := centre + Vector3(7.0, 0, 0)
+	assert_float(_voxels.surface_height(far.x, far.z)).is_equal_approx(_voxels.ground_height(far.x, far.z), 0.001)
+	# Clearing the pads gives the slope back.
+	_voxels.set_pads([])
+	assert_float(_voxels.surface_height(centre.x, centre.z)).is_equal_approx(_voxels.ground_height(centre.x, centre.z), 0.001)
