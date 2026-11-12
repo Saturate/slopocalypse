@@ -68,7 +68,10 @@ static func to_mesh(model: VoxelModel) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	if model == null:
 		return mesh
+	VoxShading.ensure()
+	var t := Prof.start()
 	var arrays := model.mesh_arrays()
+	Prof.stop(&"voxkit/mesh", t)
 	if arrays.is_empty():
 		return mesh
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)

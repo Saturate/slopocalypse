@@ -7,8 +7,17 @@
 
 use godot::classes::mesh::ArrayType;
 use godot::prelude::*;
+use std::sync::RwLock;
 use voxkit_core::heightfield::{self, Tile};
-use voxkit_core::{Colour, Grid, Mesh, Op, Paint};
+use voxkit_core::{Colour, Grid, Mesh, OPEN, Op, Paint};
+
+/// Brightness per corner level (0 tucked in to 3 open) when corner shading is on, for every
+/// mesh this extension makes. Set once from voxkit's data by `VoxelModel.set_corner_shading`.
+static SHADING: RwLock<Option<[f32; 4]>> = RwLock::new(None);
+
+fn shading() -> Option<[f32; 4]> {
+    SHADING.read().map(|s| *s).unwrap_or(None)
+}
 
 struct VoxkitExtension;
 
@@ -198,18 +207,20 @@ impl VoxelModel {
     /// Like `mesh_arrays`, with no face longer than `max_run` cells along z, for meshes that
     /// get bent afterwards.
     #[func]
-    fn mesh_arrays_bendable(&self, max_run: i64) -> VarArray {
-        let Some(grid) = self.grid.as_ref() else {
+    fn mesh_arrays_bendable(&mut self, max_run: i64) -> VarArray {
+        let Some(grid) = self.grid.as_mut() else {
             return VarArray::new();
         };
+        grid.corners = shading().is_some();
         arrays_of(&grid.mesh_max_run(max_run.max(1) as usize))
     }
 
     #[func]
-    fn mesh_arrays(&self) -> VarArray {
-        let Some(grid) = self.grid.as_ref() else {
+    fn mesh_arrays(&mut self) -> VarArray {
+        let Some(grid) = self.grid.as_mut() else {
             return VarArray::new();
         };
+        grid.corners = shading().is_some();
         arrays_of(&grid.mesh())
     }
 
@@ -233,6 +244,18 @@ impl VoxelModel {
         out
     }
 
+    /// Corner shading for every voxel mesh made from now on: `levels` holds the brightness
+    /// of a face corner at each level (0 tucked into an inside corner, 3 open); empty turns
+    /// it off.
+    #[func]
+    fn set_corner_shading(levels: PackedFloat32Array) {
+        let l = levels.as_slice();
+        let value = (l.len() == 4).then(|| [l[0], l[1], l[2], l[3]].map(|x| x.clamp(0.0, 1.0)));
+        if let Ok(mut s) = SHADING.write() {
+            *s = value;
+        }
+    }
+
     /// How many 16-cell chunks the model is split into.
     #[func]
     fn chunk_count(&self) -> i64 {
@@ -245,6 +268,7 @@ impl VoxelModel {
     fn remesh_dirty(&mut self) -> VarDictionary {
         let mut out = VarDictionary::new();
         if let Some(grid) = self.grid.as_mut() {
+            grid.corners = shading().is_some();
             for (id, mesh) in grid.remesh_dirty() {
                 out.set(id as i64, &arrays_of(&mesh));
             }
@@ -297,7 +321,17 @@ fn arrays_of(mesh: &Mesh) -> VarArray {
         .iter()
         .map(|n| Vector3::new(n[0], n[1], n[2]))
         .collect();
-    let colours: PackedColorArray = mesh.colours.iter().map(|&c| to_color(c)).collect();
+    let levels = shading().unwrap_or([1.0; 4]);
+    let colours: PackedColorArray = mesh
+        .colours
+        .iter()
+        .zip(mesh.shade.iter().chain(std::iter::repeat(&OPEN)))
+        .map(|(&c, &l)| {
+            let k = levels[usize::from(l.min(OPEN))];
+            let col = to_color(c);
+            Color::from_rgba(col.r * k, col.g * k, col.b * k, col.a)
+        })
+        .collect();
     let indices: PackedInt32Array = mesh.indices.iter().map(|&i| i as i32).collect();
     let mut arrays = VarArray::new();
     arrays.resize(ArrayType::MAX.ord() as usize, &Variant::nil());
@@ -365,6 +399,7 @@ impl VoxelGround {
             side: colour_of(side),
             skirt,
             seed: seed as u32,
+            corners: shading().is_some(),
         };
         arrays_of(&heightfield::mesh(&tile))
     }

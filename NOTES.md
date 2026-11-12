@@ -62,4 +62,7 @@ Running notes: playtest feedback, findings, known issues and ideas for later. De
 
 ## Later
 
+- Voxel corner shading (#252) only sees voxels inside one model or ground tile: nothing darkens where a crate, shed or car meets the ground, so objects can still look like they float. A contact shadow (a dark footprint decal or ground-tile darkening under props) would close that.
+- Corner shading on stepped curves (barrel staves, round trunks) darkens every stair step, which reads as even vertical stripes at a distance; pine needles turn speckled rather than shaped. Worth trying a weaker level 2 (`levels` in `modules/voxkit/data/voxkit.json`) or skipping shading where the step is one voxel. Blind review of the library capture found no creases, black faces or dark patches on open faces; the effect is subtle at contact-sheet size.
+
 - Scenario tests step physics in real time (16 s for five player tests). Consider a faster physics tick or Engine.time_scale in tests once the suite grows.

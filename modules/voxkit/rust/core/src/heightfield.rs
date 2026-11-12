@@ -4,7 +4,7 @@
 //! Top faces of equal height and colour merge into rectangles; side faces are drawn only
 //! where a neighbour is lower.
 
-use crate::{Colour, Mesh, hash};
+use crate::{Colour, Mesh, OPEN, corner_level, hash};
 
 pub struct Tile<'a> {
     /// Heights on a `cn` x `cn` grid covering the tile, `spacing` metres apart, row-major
@@ -26,6 +26,8 @@ pub struct Tile<'a> {
     /// How far the outer walls of the tile reach down, hiding cracks to the next tile.
     pub skirt: f32,
     pub seed: u32,
+    /// Darken top-face corners next to higher columns (see `crate::corner_level`).
+    pub corners: bool,
 }
 
 impl Tile<'_> {
@@ -91,8 +93,30 @@ pub fn mesh(t: &Tile) -> Mesh {
             };
         }
     }
+    // Column tops one past each edge too, so corners at the tile's edge see their neighbours.
+    let top_at = |a: i64, b: i64| -> i32 {
+        if a >= 0 && b >= 0 && (a as usize) < n && (b as usize) < n {
+            tops[b as usize * n + a as usize]
+        } else {
+            (t.sample((a as f32 + 0.5) * v, (b as f32 + 0.5) * v) / v).floor() as i32
+        }
+    };
+    // How open each top's four corners are: a neighbour column is in the layer above the top
+    // when it stands higher.
+    let mut levels = vec![[OPEN; 4]; n * n];
+    if t.corners {
+        for b in 0..n {
+            for a in 0..n {
+                let top = tops[b * n + a];
+                let (ai, bi) = (a as i64, b as i64);
+                let up = |da: i64, db: i64| top_at(ai + da, bi + db) > top;
+                levels[b * n + a] = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
+                    .map(|(da, db): (i64, i64)| corner_level(up(da, 0), up(0, db), up(da, db)));
+            }
+        }
+    }
     let mut out = Mesh::default();
-    // Tops, merged greedily by height and colour.
+    // Tops, merged greedily by height, colour and corner levels.
     let mut done = vec![false; n * n];
     for b in 0..n {
         for a in 0..n {
@@ -100,16 +124,16 @@ pub fn mesh(t: &Tile) -> Mesh {
             if done[i] {
                 continue;
             }
-            let key = (tops[i], colours[i]);
+            let key = (tops[i], colours[i], levels[i]);
             let mut w = 1;
-            while a + w < n && !done[i + w] && (tops[i + w], colours[i + w]) == key {
+            while a + w < n && !done[i + w] && (tops[i + w], colours[i + w], levels[i + w]) == key {
                 w += 1;
             }
             let mut h = 1;
             'grow: while b + h < n {
                 for k in 0..w {
                     let j = (b + h) * n + a + k;
-                    if done[j] || (tops[j], colours[j]) != key {
+                    if done[j] || (tops[j], colours[j], levels[j]) != key {
                         break 'grow;
                     }
                 }
@@ -127,6 +151,7 @@ pub fn mesh(t: &Tile) -> Mesh {
                 [0.0, 0.0, h as f32 * v],
                 [0.0, 1.0, 0.0],
                 key.1,
+                key.2,
                 true,
             );
         }
@@ -188,26 +213,40 @@ fn side_quad(
     // The winding flag is set so each wall's front face points along its normal (push_quad's
     // `back` means du x dv points against it).
     match normal {
-        [x, _, _] if x < 0.0 => {
-            out.push_quad([x0, y0, z0], [0.0, 0.0, v], height, normal, colour, false)
-        }
+        [x, _, _] if x < 0.0 => out.push_quad(
+            [x0, y0, z0],
+            [0.0, 0.0, v],
+            height,
+            normal,
+            colour,
+            [OPEN; 4],
+            false,
+        ),
         [x, _, _] if x > 0.0 => out.push_quad(
             [x0 + v, y0, z0],
             [0.0, 0.0, v],
             height,
             normal,
             colour,
+            [OPEN; 4],
             true,
         ),
-        [_, _, z] if z < 0.0 => {
-            out.push_quad([x0, y0, z0], [v, 0.0, 0.0], height, normal, colour, true)
-        }
+        [_, _, z] if z < 0.0 => out.push_quad(
+            [x0, y0, z0],
+            [v, 0.0, 0.0],
+            height,
+            normal,
+            colour,
+            [OPEN; 4],
+            true,
+        ),
         _ => out.push_quad(
             [x0, y0, z0 + v],
             [v, 0.0, 0.0],
             height,
             normal,
             colour,
+            [OPEN; 4],
             false,
         ),
     }
@@ -231,7 +270,42 @@ mod tests {
             side: 0x553311,
             skirt: 1.0,
             seed: 1,
+            corners: false,
         }
+    }
+
+    #[test]
+    fn tops_darken_at_the_foot_of_a_step_only_when_asked() {
+        // Rising along x, so every column has a higher neighbour on its +x side.
+        let heights = [0.0, 6.0, 0.0, 6.0];
+        let colours = [0x00FF00; 4];
+        let mut t = tile(&heights, 2, &colours);
+        let plain = mesh(&t);
+        assert!(plain.shade.iter().all(|&l| l == crate::OPEN));
+        t.corners = true;
+        let shaded = mesh(&t);
+        let tops: Vec<u8> = (0..shaded.positions.len())
+            .filter(|&i| shaded.normals[i] == [0.0, 1.0, 0.0])
+            .map(|i| shaded.shade[i])
+            .collect();
+        assert!(tops.iter().any(|&l| l < crate::OPEN));
+        // Sides stay open.
+        assert!(
+            (0..shaded.positions.len())
+                .filter(|&i| shaded.normals[i][1] == 0.0)
+                .all(|i| shaded.shade[i] == crate::OPEN)
+        );
+    }
+
+    #[test]
+    fn flat_shaded_ground_stays_open_and_merged() {
+        let heights = [2.0; 9];
+        let colours = [0x00FF00; 4];
+        let mut t = tile(&heights, 3, &colours);
+        t.corners = true;
+        let m = mesh(&t);
+        assert_eq!(m.quad_count(), 1 + 4 * 16);
+        assert!(m.shade.iter().all(|&l| l == crate::OPEN));
     }
 
     #[test]

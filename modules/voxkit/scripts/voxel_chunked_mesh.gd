@@ -19,6 +19,7 @@ var _parts: Dictionary[int, MeshInstance3D] = {}
 func refresh() -> int:
 	if model == null:
 		return 0
+	VoxShading.ensure()
 	var t := Prof.start()
 	var rebuilt: Dictionary = model.remesh_dirty()
 	for key: Variant in rebuilt:
