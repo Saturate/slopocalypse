@@ -8,6 +8,9 @@ const RATE := 44100
 const WIND_SECONDS := 24.0
 ## Different bird songs, asked for as "bird0", "bird1", ...
 const BIRD_VARIANTS := 4
+## Surface sounds by material family (see `audio.json` `surface_families`): a hit is
+## "hit_<family>", a piece breaking "break_<family>".
+const SURFACE_FAMILIES: Array[String] = ["wood", "metal", "glass", "glass_small", "brick", "concrete"]
 
 static var _cache: Dictionary[String, AudioStreamWAV] = {}
 
@@ -28,6 +31,18 @@ static func get_sound(sound: String) -> AudioStreamWAV:
 		"reload": samples = _clicks()
 		"pickup": samples = _blip()
 		"hurt": samples = _hurt()
+		"hit_wood": samples = _knock()
+		"hit_metal": samples = _ping()
+		"hit_glass", "hit_glass_small": samples = _tink()
+		"hit_brick": samples = _chip(4200.0, 160.0, 11)
+		"hit_concrete": samples = _chip(2200.0, 110.0, 12)
+		"break_wood": samples = _splinter()
+		"break_metal": samples = _crunch()
+		"break_glass": samples = _shatter(9, 0.7, 1.0, 21)
+		"break_glass_small": samples = _shatter(28, 0.55, 1.6, 22)
+		"break_brick": samples = _crumble(900.0, 0.8, 31)
+		"break_concrete": samples = _crumble(520.0, 1.0, 32)
+		"collapse": samples = _collapse()
 		"dive": samples = _dive()
 		"wind":
 			samples = _wind()
@@ -77,6 +92,152 @@ static func _thud(seconds: float, bright_hz: float, seed: int) -> PackedFloat32A
 		lp += (rng.randf_range(-1.0, 1.0) - lp) * a
 		out.append(lp * exp(-t * 45.0) * 1.8 + sin(TAU * 90.0 * t) * exp(-t * 60.0) * 0.4)
 	return out
+
+
+## A round into a plank: a short bright tap over a hollow body that rings for a moment.
+static func _knock() -> PackedFloat32Array:
+	var rng := _rng(13)
+	var out := PackedFloat32Array()
+	var lp := 0.0
+	var a := _one_pole(2600.0)
+	for i in int(0.16 * RATE):
+		var t := float(i) / RATE
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * a
+		var body := sin(TAU * 185.0 * t) * 0.55 + sin(TAU * 420.0 * t) * 0.3
+		out.append(clampf(lp * exp(-t * 90.0) * 1.4 + body * exp(-t * 38.0), -1.0, 1.0))
+	return out
+
+
+## A round into sheet metal: a click, then out-of-tune partials that ring on.
+static func _ping() -> PackedFloat32Array:
+	var rng := _rng(14)
+	var out := PackedFloat32Array()
+	var partials := [[1180.0, 9.0, 0.45], [2730.0, 13.0, 0.3], [4120.0, 18.0, 0.2], [5960.0, 26.0, 0.12]]
+	for i in int(0.55 * RATE):
+		var t := float(i) / RATE
+		var v := rng.randf_range(-1.0, 1.0) * exp(-t * 160.0) * 0.7
+		for p: Array in partials:
+			v += sin(TAU * float(p[0]) * t) * exp(-t * float(p[1])) * float(p[2])
+		out.append(clampf(v, -1.0, 1.0))
+	return out
+
+
+## A round into glass: a tiny click and a high, glassy ring.
+static func _tink() -> PackedFloat32Array:
+	var rng := _rng(15)
+	var out := PackedFloat32Array()
+	for i in int(0.22 * RATE):
+		var t := float(i) / RATE
+		var v := rng.randf_range(-1.0, 1.0) * exp(-t * 300.0) * 0.5
+		v += sin(TAU * 3350.0 * t) * exp(-t * 28.0) * 0.4 + sin(TAU * 5180.0 * t) * exp(-t * 36.0) * 0.25 + sin(TAU * 7420.0 * t) * exp(-t * 50.0) * 0.15
+		out.append(clampf(v, -1.0, 1.0))
+	return out
+
+
+## A round off masonry: a dry crack (`bright_hz`: brick brighter than concrete) and a low
+## knock under it.
+static func _chip(bright_hz: float, body_hz: float, seed: int) -> PackedFloat32Array:
+	var rng := _rng(seed)
+	var out := PackedFloat32Array()
+	var lp := 0.0
+	var a := _one_pole(bright_hz)
+	for i in int(0.13 * RATE):
+		var t := float(i) / RATE
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * a
+		out.append(clampf(lp * exp(-t * 75.0) * 2.0 + sin(TAU * body_hz * t) * exp(-t * 55.0) * 0.45, -1.0, 1.0))
+	return out
+
+
+## A plank wall giving way: a run of cracks of different sizes and a low groan.
+static func _splinter() -> PackedFloat32Array:
+	var rng := _rng(23)
+	var out := PackedFloat32Array()
+	out.resize(int(0.65 * RATE))
+	for k in 9:
+		_noise_burst(out, rng.randf_range(0.0, 0.4), rng.randf_range(0.03, 0.09), rng.randf_range(1500.0, 4500.0), rng.randf_range(0.4, 1.0), 40 + k)
+	for i in out.size():
+		var t := float(i) / RATE
+		out[i] = clampf(out[i] + sin(TAU * (95.0 - t * 30.0) * t) * exp(-t * 6.0) * 0.3, -1.0, 1.0)
+	return out
+
+
+## Sheet metal tearing: a grinding crunch and a few clanks.
+static func _crunch() -> PackedFloat32Array:
+	var rng := _rng(24)
+	var out := PackedFloat32Array()
+	out.resize(int(0.7 * RATE))
+	_noise_burst(out, 0.0, 0.45, 2400.0, 0.9, 50)
+	for k in 4:
+		var at := rng.randf_range(0.0, 0.35)
+		var hz := rng.randf_range(700.0, 1900.0)
+		for i in range(int(at * RATE), out.size()):
+			var t := float(i) / RATE - at
+			out[i] += sin(TAU * hz * t) * exp(-t * 14.0) * 0.25 + sin(TAU * hz * 2.31 * t) * exp(-t * 20.0) * 0.12
+	for i in out.size():
+		out[i] = clampf(out[i], -1.0, 1.0)
+	return out
+
+
+## A pane going: `count` pieces ringing out at random over the first part of `seconds`, plus
+## a hiss; `bright` pitches the pieces up (small tempered cubes are many and high).
+static func _shatter(count: int, seconds: float, bright: float, seed: int) -> PackedFloat32Array:
+	var rng := _rng(seed)
+	var out := PackedFloat32Array()
+	out.resize(int(seconds * RATE))
+	_noise_burst(out, 0.0, 0.25, 6000.0, 0.6, seed + 100)
+	for k in count:
+		var at := rng.randf_range(0.0, seconds * 0.6)
+		var hz := rng.randf_range(2500.0, 6500.0) * bright
+		var gain := rng.randf_range(0.15, 0.4) * (1.0 - at / seconds)
+		for i in range(int(at * RATE), mini(out.size(), int((at + 0.15) * RATE))):
+			var t := float(i) / RATE - at
+			out[i] += sin(TAU * hz * t) * exp(-t * 40.0) * gain
+	for i in out.size():
+		out[i] = clampf(out[i], -1.0, 1.0)
+	return out
+
+
+## Masonry crumbling: low, rough noise in many small bursts over `seconds`; `bright_hz` is
+## how gritty (brick grittier than concrete).
+static func _crumble(bright_hz: float, seconds: float, seed: int) -> PackedFloat32Array:
+	var rng := _rng(seed)
+	var out := PackedFloat32Array()
+	out.resize(int(seconds * RATE))
+	_noise_burst(out, 0.0, seconds * 0.8, bright_hz * 0.5, 0.7, seed + 100)
+	for k in 14:
+		_noise_burst(out, rng.randf_range(0.0, seconds * 0.7), rng.randf_range(0.02, 0.07), bright_hz * rng.randf_range(1.0, 3.0), rng.randf_range(0.3, 0.8), seed + k)
+	for i in out.size():
+		out[i] = clampf(out[i], -1.0, 1.0)
+	return out
+
+
+## A building part landing: a heavy thud into a long rumble.
+static func _collapse() -> PackedFloat32Array:
+	var rng := _rng(33)
+	var out := PackedFloat32Array()
+	var lp := 0.0
+	var lp2 := 0.0
+	var a := _one_pole(260.0)
+	for i in int(1.6 * RATE):
+		var t := float(i) / RATE
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * a
+		lp2 += (lp - lp2) * a
+		var env := exp(-t * 2.2) * 0.8 + exp(-t * 25.0)
+		out.append(clampf(lp2 * env * 5.0 + sin(TAU * 52.0 * t) * exp(-t * 9.0) * 0.8, -1.0, 1.0))
+	return out
+
+
+## Adds a decaying burst of low-passed noise into `out`, starting `at` seconds in.
+static func _noise_burst(out: PackedFloat32Array, at: float, seconds: float, bright_hz: float, gain: float, seed: int) -> void:
+	var rng := _rng(seed)
+	var lp := 0.0
+	var a := _one_pole(bright_hz)
+	var start := int(at * RATE)
+	var decay := 5.0 / maxf(seconds, 0.001)
+	for i in range(start, mini(out.size(), start + int(seconds * RATE))):
+		var t := float(i - start) / RATE
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * a
+		out[i] += lp * exp(-t * decay) * gain * 2.0
 
 
 ## The hit marker: a bright, dry tick.

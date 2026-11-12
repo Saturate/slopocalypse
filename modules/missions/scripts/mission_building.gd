@@ -72,6 +72,8 @@ var _fall_colour := Color(0.5, 0.42, 0.33)
 
 func _ready() -> void:
 	add_to_group(&"mission_buildings")
+	# Its hits and breaks send their own sounds (`missions.surface_*`); see `_sound`.
+	set_meta(&"surface_sounds", true)
 	if material_cfg.is_empty():
 		material_cfg = VoxMaterials.named(material())
 	collision_layer = PhysicsLayers.SOLID
@@ -157,10 +159,8 @@ func material() -> String:
 
 
 ## The material of the voxel at a hit `point` (world) on a face with `normal`: half a voxel
-## into the surface. Without a model (a dedicated server) it is the walls' material.
+## into the surface.
 func material_at(point: Vector3, normal: Vector3) -> String:
-	if _model == null:
-		return material()
 	var local := global_transform.affine_inverse() * (point - normal.normalized() * VOXEL * 0.5)
 	return str(VoxMaterials.at(_model.material_at(local))["name"])
 
@@ -277,6 +277,7 @@ func _mark(point: Vector3, direction: Vector3) -> void:
 	if v == Vector3.INF:
 		return
 	var rules := VoxMaterials.at(_model.material_at(v))
+	_sound(&"missions.surface_hit", point, str(rules.get("name", "")), 1)
 	if _visual and is_inside_tree():
 		var colour := _model.colour_at(v)
 		var out := -direction.normalized() if direction.length_squared() > 0.0 else (point - global_position).normalized()
@@ -304,6 +305,7 @@ func break_segments(ids: Array, fallen: Array = []) -> void:
 
 
 func _break(ids: Array, fallen: Array) -> void:
+	_sound_breaks(ids)
 	_remove(ids, true)
 	if _visual and _model != null and is_inside_tree():
 		for group in _groups(fallen):
@@ -418,6 +420,8 @@ func _drop(group: Array) -> void:
 	var tween := piece.create_tween()
 	tween.tween_property(piece, "position:y", -drop, fall_seconds).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tween.tween_callback(func() -> void:
+		if is_inside_tree() and not centres.is_empty():
+			_sound(&"missions.surface_landed", global_transform * (centres[0] + Vector3.DOWN * drop), "", centres.size())
 		if is_inside_tree():
 			for c in centres:
 				var at := global_transform * (c + Vector3.DOWN * drop)
@@ -444,6 +448,32 @@ func _remove(ids: Array, debris: bool) -> void:
 			# Wall pieces fly out from the building, roof pieces up.
 			var out := Vector3.UP if centre.y >= wh - 0.1 else (Vector3(centre.x, 0.0, centre.z).normalized() + Vector3.UP * 0.5)
 			VoxelDebris.burst(get_parent(), global_transform * centre, global_transform.basis * out, colour, &"building")
+
+
+## Client: tells the audio what broke, one event per material at the middle of its pieces.
+func _sound_breaks(ids: Array) -> void:
+	var by_material: Dictionary[String, Array] = {}
+	for v: Variant in ids:
+		var id := int(v)
+		if not _shapes.has(id):
+			continue
+		var m := str(segment_rules(id).get("name", material()))
+		if not by_material.has(m):
+			by_material[m] = []
+		by_material[m].append(global_transform * _segments[id].get_center())
+	for m: String in by_material:
+		var points: Array = by_material[m]
+		var mid := Vector3.ZERO
+		for p: Vector3 in points:
+			mid += p
+		_sound(&"missions.surface_broke", mid / points.size(), m, points.size())
+
+
+## Client only (sounds are for people): a surface sound event, `{position, material, count}`.
+func _sound(topic: StringName, at: Vector3, material_name: String, count: int) -> void:
+	if not _visual or not is_inside_tree():
+		return
+	EventBus.publish(topic, {"position": at, "material": material_name, "count": count})
 
 
 ## The colour of segment `id`'s voxels, for its debris: the first filled voxel found up the
