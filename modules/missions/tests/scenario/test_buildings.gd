@@ -206,3 +206,59 @@ func test_a_mission_can_ask_for_concrete() -> void:
 	cfg["material"] = "concrete"
 	for entry: Dictionary in MissionLayout.buildings(cfg, 9, _road, 300.0):
 		assert_str(str(entry["material"])).is_equal("concrete")
+
+
+func _player_at(peer: int, at: Vector3) -> PlayerController:
+	var player: PlayerController = auto_free((load(PLAYER) as PackedScene).instantiate())
+	player.set_meta(&"peer_id", peer)
+	player.add_to_group(&"players")
+	add_child(player)
+	player.set_physics_process(false)
+	player.global_position = at
+	return player
+
+
+func test_breaking_the_walls_brings_the_roof_down_on_whoever_is_under_it() -> void:
+	await _ride_out()
+	var b := get_tree().get_nodes_in_group(&"mission_buildings")[0] as MissionBuilding
+	var w := float(b.spec["width"])
+	var wh := float(b.spec["wall_height"])
+	var under := _player_at(62, b.global_transform * Vector3(0, MissionBuilding.SLAB, 0))
+	var beside := _player_at(63, b.global_transform * Vector3(w / 2.0 + 1.0, 0.0, 0))
+	var walls: Array[int] = []
+	var roof: Array[int] = []
+	for id in b.segment_count():
+		var box := MissionBuilding.segments(w, float(b.spec["depth"]), wh, b.segment_size)[id]
+		if box.position.y >= wh - 0.01:
+			roof.append(id)
+		else:
+			walls.append(id)
+	_missions.call(&"_server_broke", 0, walls)
+	await get_tree().physics_frame
+	# The roof lost its collision with the walls.
+	for id in roof:
+		assert_bool(b.is_broken(id)).override_failure_message("roof piece %d still up" % id).is_true()
+	var under_health := under.get_node("Health") as HealthComponent
+	var beside_health := beside.get_node("Health") as HealthComponent
+	var full := under_health.max_health
+	# Nobody is hurt before it lands.
+	assert_float(under_health.health).is_equal(full)
+	await get_tree().create_timer(b.fall_seconds + 0.2).timeout
+	assert_float(under_health.health).is_equal(full - float(_cfg()["fall_damage"]))
+	assert_float(beside_health.health).is_equal(beside_health.max_health)
+	# A late joiner builds the same holes from the layout entry.
+	var entry: Dictionary = ((_missions.get(&"buildings") as Array)[0] as Dictionary).duplicate()
+	var copy: MissionBuilding = auto_free(MissionBuilding.new())
+	copy.spec = entry
+	add_child(copy)
+	for id in b.segment_count():
+		assert_bool(copy.is_broken(id)).is_equal(b.is_broken(id))
+
+
+func test_one_broken_wall_piece_leaves_the_roof_up() -> void:
+	await _ride_out()
+	var b := get_tree().get_nodes_in_group(&"mission_buildings")[0] as MissionBuilding
+	var w := float(b.spec["width"])
+	var id := b.segment_at(b.global_transform * Vector3(w / 2.0, 0.5, 0.0))
+	assert_int(id).is_greater_equal(0)
+	assert_array(b.server_unsupported([id] as Array[int])).is_empty()

@@ -225,6 +225,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "missions_core"
+version = "0.1.0"
+
+[[package]]
+name = "missions_gd"
+version = "0.1.0"
+dependencies = [
+ "godot",
+ "missions_core",
+]
+
+[[package]]
 name = "nanoserde"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

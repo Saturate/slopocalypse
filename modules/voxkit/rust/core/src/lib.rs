@@ -18,7 +18,16 @@ pub struct Grid {
     pub nz: usize,
     pub voxel: f32,
     cells: Vec<Colour>,
+    /// Chunks per axis, and which chunks changed since they were last meshed.
+    chunks: [usize; 3],
+    dirty: Vec<bool>,
+    /// Darken face corners by how many cells crowd them (see `corner_level`).
+    pub corners: bool,
 }
+
+/// Chunk side in cells: each chunk meshes on its own, so an edit rebuilds only the chunks it
+/// touched.
+pub const CHUNK: usize = 16;
 
 /// Largest grid side in cells, so a typo in a parameter can't ask for gigabytes.
 pub const MAX_SIDE: usize = 1024;
@@ -30,8 +39,14 @@ pub struct Mesh {
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
     pub colours: Vec<Colour>,
+    /// Per vertex, how open its corner is: 0 (tucked into an inside corner) to 3 (nothing
+    /// crowding it). `OPEN` everywhere when corner shading is off.
+    pub shade: Vec<u8>,
     pub indices: Vec<u32>,
 }
+
+/// Corner level of a vertex nothing crowds.
+pub const OPEN: u8 = 3;
 
 impl Mesh {
     pub fn quad_count(&self) -> usize {
@@ -48,12 +63,16 @@ impl Grid {
         while n[0] * n[1] * n[2] > MAX_CELLS {
             n = n.map(|v| (v * 3 / 4).max(1));
         }
+        let chunks = n.map(|v| v.div_ceil(CHUNK));
         Grid {
             nx: n[0],
             ny: n[1],
             nz: n[2],
             voxel,
             cells: vec![EMPTY; n[0] * n[1] * n[2]],
+            chunks,
+            dirty: vec![true; chunks[0] * chunks[1] * chunks[2]],
+            corners: false,
         }
     }
 
@@ -74,9 +93,87 @@ impl Grid {
 
     pub fn set(&mut self, x: usize, y: usize, z: usize, c: Colour) {
         if x < self.nx && y < self.ny && z < self.nz {
-            let i = self.index(x, y, z);
-            self.cells[i] = c;
+            self.write(x, y, z, c);
         }
+    }
+
+    /// Every write goes through here so the chunks it changes get remeshed.
+    fn write(&mut self, x: usize, y: usize, z: usize, c: Colour) {
+        let i = self.index(x, y, z);
+        if self.cells[i] == c {
+            return;
+        }
+        self.cells[i] = c;
+        let p = [x, y, z];
+        let n = [self.nx, self.ny, self.nz];
+        let home = p.map(|v| v / CHUNK);
+        self.mark(home);
+        // A cell on a chunk's face also decides whether the neighbour's facing cell shows a
+        // face, so that neighbour is remeshed too.
+        for a in 0..3 {
+            if p[a].is_multiple_of(CHUNK) && p[a] > 0 {
+                let mut c = home;
+                c[a] -= 1;
+                self.mark(c);
+            }
+            if p[a] % CHUNK == CHUNK - 1 && p[a] + 1 < n[a] {
+                let mut c = home;
+                c[a] += 1;
+                self.mark(c);
+            }
+        }
+    }
+
+    fn mark(&mut self, c: [usize; 3]) {
+        let id = self.chunk_id(c);
+        self.dirty[id] = true;
+    }
+
+    fn chunk_id(&self, c: [usize; 3]) -> usize {
+        (c[1] * self.chunks[2] + c[2]) * self.chunks[0] + c[0]
+    }
+
+    /// How many chunks the grid is split into (ids run from 0).
+    pub fn chunk_count(&self) -> usize {
+        self.dirty.len()
+    }
+
+    /// The chunk holding cell (x, y, z).
+    pub fn chunk_of(&self, x: usize, y: usize, z: usize) -> usize {
+        self.chunk_id([x / CHUNK, y / CHUNK, z / CHUNK])
+    }
+
+    /// Chunks changed since they were last meshed, without clearing them.
+    pub fn dirty_chunks(&self) -> Vec<usize> {
+        (0..self.dirty.len()).filter(|&i| self.dirty[i]).collect()
+    }
+
+    /// Cell range (`lo..hi` per axis) of chunk `id`.
+    pub fn chunk_cells(&self, id: usize) -> ([usize; 3], [usize; 3]) {
+        let [cx, _, cz] = self.chunks;
+        let c = [id % cx, id / (cx * cz), (id / cx) % cz];
+        let n = [self.nx, self.ny, self.nz];
+        let lo = c.map(|v| v * CHUNK);
+        let hi = [0, 1, 2].map(|a| (lo[a] + CHUNK).min(n[a]));
+        (lo, hi)
+    }
+
+    /// The mesh of chunk `id` alone: faces of its own cells, hidden where the neighbouring
+    /// chunk's cell is filled.
+    pub fn mesh_chunk(&self, id: usize) -> Mesh {
+        let (lo, hi) = self.chunk_cells(id);
+        self.mesh_region(lo, hi, usize::MAX)
+    }
+
+    /// Meshes every changed chunk and marks it clean: `(chunk id, mesh)` per chunk, an empty
+    /// mesh where a chunk has nothing left to draw.
+    pub fn remesh_dirty(&mut self) -> Vec<(usize, Mesh)> {
+        let ids = self.dirty_chunks();
+        let out = ids.iter().map(|&id| (id, self.mesh_chunk(id))).collect();
+        for id in ids {
+            self.dirty[id] = false;
+        }
+        out
     }
 
     pub fn filled(&self) -> usize {
@@ -114,6 +211,53 @@ impl Grid {
         out
     }
 
+    /// A new grid holding a copy of the cells whose centres are inside the box `min..max`
+    /// (metres), and where the copy's model origin sits in this model's space, so the copy
+    /// drawn there lines up with the original.
+    pub fn copy_box(&self, min: [f32; 3], max: [f32; 3]) -> (Grid, [f32; 3]) {
+        let [(x0, x1), (y0, y1), (z0, z1)] = self.range_centres(min, max);
+        let n = [x1 - x0, y1 - y0, z1 - z0].map(|v| v.max(1));
+        let mut out = Grid::new(n.map(|v| v as f32 * self.voxel), self.voxel);
+        // Grid::new rounds the size up from metres; make sure it matches exactly.
+        out.nx = n[0];
+        out.ny = n[1];
+        out.nz = n[2];
+        out.cells = vec![EMPTY; n[0] * n[1] * n[2]];
+        out.chunks = n.map(|v| v.div_ceil(CHUNK));
+        out.dirty = vec![true; out.chunks[0] * out.chunks[1] * out.chunks[2]];
+        for y in y0..y1 {
+            for z in z0..z1 {
+                for x in x0..x1 {
+                    let c = self.cells[self.index(x, y, z)];
+                    let i = out.index(x - x0, y - y0, z - z0);
+                    out.cells[i] = c;
+                }
+            }
+        }
+        let o = self.origin();
+        let v = self.voxel;
+        let at = [
+            o[0] + x0 as f32 * v + n[0] as f32 * v / 2.0,
+            o[1] + y0 as f32 * v,
+            o[2] + z0 as f32 * v + n[2] as f32 * v / 2.0,
+        ];
+        (out, at)
+    }
+
+    /// Cells whose centres are inside `min..max`, as ranges per axis.
+    fn range_centres(&self, min: [f32; 3], max: [f32; 3]) -> [(usize, usize); 3] {
+        let o = self.origin();
+        let n = [self.nx, self.ny, self.nz];
+        let mut out = [(0, 0); 3];
+        for a in 0..3 {
+            let lo = ((min[a] - o[a]) / self.voxel - 0.5).ceil().max(0.0) as usize;
+            let hi = (((max[a] - o[a]) / self.voxel - 0.5).floor() + 1.0).max(0.0) as usize;
+            let lo = lo.min(n[a]);
+            out[a] = (lo, hi.clamp(lo, n[a]));
+        }
+        out
+    }
+
     /// Runs `f` on every cell whose centre is inside the box `min..max`, with the centre.
     fn each_in(
         &mut self,
@@ -146,11 +290,11 @@ impl Grid {
             }
             let i = g.index(x, y, z);
             match op {
-                Op::Fill(paint) => g.cells[i] = paint.at(x, y, z),
-                Op::Carve => g.cells[i] = EMPTY,
+                Op::Fill(paint) => g.write(x, y, z, paint.at(x, y, z)),
+                Op::Carve => g.write(x, y, z, EMPTY),
                 Op::Paint(paint) => {
                     if g.cells[i] != EMPTY {
-                        g.cells[i] = paint.at(x, y, z);
+                        g.write(x, y, z, paint.at(x, y, z));
                     }
                 }
             }
@@ -228,6 +372,24 @@ impl Grid {
         });
     }
 
+    fn solid(&self, p: [i64; 3]) -> bool {
+        self.get(p[0], p[1], p[2]) != EMPTY
+    }
+
+    /// Corner levels of a face whose front cell (the air in front of it) is `front`, with
+    /// the face spanning axes `u` and `v`: in the order (-u -v), (+u -v), (+u +v), (-u +v).
+    fn corner_levels(&self, front: [i64; 3], u: usize, v: usize) -> [u8; 4] {
+        [(-1, -1), (1, -1), (1, 1), (-1, 1)].map(|(su, sv): (i64, i64)| {
+            let mut a = front;
+            a[u] += su;
+            let mut b = front;
+            b[v] += sv;
+            let mut d = a;
+            d[v] += sv;
+            corner_level(self.solid(a), self.solid(b), self.solid(d))
+        })
+    }
+
     /// Greedy meshing: faces between a filled cell and air, merged into rectangles of the same
     /// colour on each slice.
     pub fn mesh(&self) -> Mesh {
@@ -237,115 +399,203 @@ impl Grid {
     /// Like `mesh`, but no merged face is longer than `max_run` cells along z, so the mesh
     /// can be bent afterwards (a road following its curve) without faces cutting corners.
     pub fn mesh_max_run(&self, max_run: usize) -> Mesh {
+        self.mesh_region([0, 0, 0], [self.nx, self.ny, self.nz], max_run)
+    }
+
+    /// Greedy mesh of the cells in `lo..hi` (per axis). Neighbours outside the range still
+    /// hide faces, but only cells inside it get faces, so meshes of adjacent ranges meet
+    /// without gaps or doubles.
+    fn mesh_region(&self, lo: [usize; 3], hi: [usize; 3], max_run: usize) -> Mesh {
         let max_run = max_run.max(1);
         let mut out = Mesh::default();
-        let n = [self.nx, self.ny, self.nz];
+        let n = [0, 1, 2].map(|a| hi[a].saturating_sub(lo[a]));
         let o = self.origin();
+        let o = [0, 1, 2].map(|a| o[a] + lo[a] as f32 * self.voxel);
         for axis in 0..3 {
-            let u = (axis + 1) % 3;
-            let v = (axis + 2) % 3;
+            let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+            // Along z (axis 2) runs are capped; u or v may be z.
+            let cap = |a: usize| if a == 2 { max_run } else { usize::MAX };
             for back in [false, true] {
-                let mut mask = vec![EMPTY; n[u] * n[v]];
                 for slice in 0..n[axis] {
-                    // Which faces of this slice look out into air.
-                    for j in 0..n[v] {
-                        for i in 0..n[u] {
-                            let mut p = [0i64; 3];
-                            p[axis] = slice as i64;
-                            p[u] = i as i64;
-                            p[v] = j as i64;
-                            let here = self.get(p[0], p[1], p[2]);
-                            let mut q = p;
-                            q[axis] += if back { -1 } else { 1 };
-                            let next = self.get(q[0], q[1], q[2]);
-                            mask[j * n[u] + i] = if here != EMPTY && next == EMPTY {
-                                here
-                            } else {
-                                EMPTY
-                            };
-                        }
-                    }
-                    // Merge runs into rectangles.
-                    for j in 0..n[v] {
-                        let mut i = 0;
-                        while i < n[u] {
-                            let c = mask[j * n[u] + i];
-                            if c == EMPTY {
-                                i += 1;
-                                continue;
-                            }
-                            // Along z (axis 2) runs are capped; u or v may be z.
-                            let cap_u = if u == 2 { max_run } else { usize::MAX };
-                            let cap_v = if v == 2 { max_run } else { usize::MAX };
-                            let mut w = 1;
-                            while i + w < n[u] && w < cap_u && mask[j * n[u] + i + w] == c {
-                                w += 1;
-                            }
-                            let mut h = 1;
-                            'grow: while j + h < n[v] && h < cap_v {
-                                for k in 0..w {
-                                    if mask[(j + h) * n[u] + i + k] != c {
-                                        break 'grow;
-                                    }
-                                }
-                                h += 1;
-                            }
-                            for jj in 0..h {
-                                for k in 0..w {
-                                    mask[(j + jj) * n[u] + i + k] = EMPTY;
-                                }
-                            }
-                            let plane = if back { slice } else { slice + 1 } as f32;
-                            let mut corner = [0f32; 3];
-                            corner[axis] = o[axis] + plane * self.voxel;
-                            corner[u] = o[u] + i as f32 * self.voxel;
-                            corner[v] = o[v] + j as f32 * self.voxel;
-                            let mut du = [0f32; 3];
-                            du[u] = w as f32 * self.voxel;
-                            let mut dv = [0f32; 3];
-                            dv[v] = h as f32 * self.voxel;
-                            let mut normal = [0f32; 3];
-                            normal[axis] = if back { -1.0 } else { 1.0 };
-                            out.push_quad(corner, du, dv, normal, c, back);
-                            i += w;
-                        }
+                    let s = Slice {
+                        axis,
+                        u,
+                        v,
+                        back,
+                        at: lo[axis] + slice,
+                    };
+                    let mask = self.face_mask(&s, lo, n);
+                    for (i, j, w, h, key) in merge_rects(mask, n[u], n[v], cap(u), cap(v)) {
+                        let plane = if back { slice } else { slice + 1 } as f32;
+                        let mut corner = [0f32; 3];
+                        corner[axis] = o[axis] + plane * self.voxel;
+                        corner[u] = o[u] + i as f32 * self.voxel;
+                        corner[v] = o[v] + j as f32 * self.voxel;
+                        let mut du = [0f32; 3];
+                        du[u] = w as f32 * self.voxel;
+                        let mut dv = [0f32; 3];
+                        dv[v] = h as f32 * self.voxel;
+                        let mut normal = [0f32; 3];
+                        normal[axis] = if back { -1.0 } else { 1.0 };
+                        let (colour, levels) = unpack(key);
+                        out.push_quad(corner, du, dv, normal, colour, levels, back);
                     }
                 }
             }
         }
         out
     }
+
+    /// Which faces of slice `s` look out into air, as merge keys (`NONE` where there is no
+    /// face), over the `n[u]` x `n[v]` cells of the region starting at `lo`.
+    fn face_mask(&self, s: &Slice, lo: [usize; 3], n: [usize; 3]) -> Vec<u64> {
+        let mut mask = vec![NONE; n[s.u] * n[s.v]];
+        for j in 0..n[s.v] {
+            for i in 0..n[s.u] {
+                let mut p = [0i64; 3];
+                p[s.axis] = s.at as i64;
+                p[s.u] = (lo[s.u] + i) as i64;
+                p[s.v] = (lo[s.v] + j) as i64;
+                let here = self.get(p[0], p[1], p[2]);
+                let mut q = p;
+                q[s.axis] += if s.back { -1 } else { 1 };
+                if here == EMPTY || self.solid(q) {
+                    continue;
+                }
+                let levels = if self.corners {
+                    self.corner_levels(q, s.u, s.v)
+                } else {
+                    [OPEN; 4]
+                };
+                mask[j * n[s.u] + i] = pack(here, levels);
+            }
+        }
+        mask
+    }
+}
+
+/// One slice of faces: cells at depth `at` along `axis`, faces spanning `u` and `v`, looking
+/// towards negative `axis` when `back`.
+struct Slice {
+    axis: usize,
+    u: usize,
+    v: usize,
+    back: bool,
+    at: usize,
+}
+
+/// A face's merge key: its colour in the low bits and its four corner levels above, so only
+/// faces that match in both merge. `NONE` is no face.
+const NONE: u64 = u64::MAX;
+
+/// Greedy rectangles of equal keys in a `nu` x `nv` mask, at most `cap_u` by `cap_v` cells:
+/// `(i, j, width, height, key)` each.
+fn merge_rects(
+    mut mask: Vec<u64>,
+    nu: usize,
+    nv: usize,
+    cap_u: usize,
+    cap_v: usize,
+) -> Vec<(usize, usize, usize, usize, u64)> {
+    let mut out = Vec::new();
+    for j in 0..nv {
+        let mut i = 0;
+        while i < nu {
+            let c = mask[j * nu + i];
+            if c == NONE {
+                i += 1;
+                continue;
+            }
+            let mut w = 1;
+            while i + w < nu && w < cap_u && mask[j * nu + i + w] == c {
+                w += 1;
+            }
+            let mut h = 1;
+            while j + h < nv && h < cap_v && (0..w).all(|k| mask[(j + h) * nu + i + k] == c) {
+                h += 1;
+            }
+            for cell in (0..h).flat_map(|jj| (0..w).map(move |k| (j + jj) * nu + i + k)) {
+                mask[cell] = NONE;
+            }
+            out.push((i, j, w, h, c));
+            i += w;
+        }
+    }
+    out
 }
 
 impl Mesh {
-    fn push_quad(
+    /// A quad with corners `corner`, `+du`, `+du+dv`, `+dv`, whose corner levels are
+    /// `levels` in that order.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn push_quad(
         &mut self,
         corner: [f32; 3],
         du: [f32; 3],
         dv: [f32; 3],
         normal: [f32; 3],
         c: Colour,
+        levels: [u8; 4],
         back: bool,
     ) {
         let base = self.positions.len() as u32;
-        for p in [
+        for (k, p) in [
             corner,
             add(corner, du),
             add(add(corner, du), dv),
             add(corner, dv),
-        ] {
+        ]
+        .into_iter()
+        .enumerate()
+        {
             self.positions.push(p);
             self.normals.push(normal);
             self.colours.push(c);
+            self.shade.push(levels[k]);
         }
+        // Shading is blended across each triangle; splitting along the diagonal whose ends
+        // are the brighter pair keeps a dark corner from drawing a crease across the face.
+        let flip = u32::from(levels[0]) + u32::from(levels[2])
+            < u32::from(levels[1]) + u32::from(levels[3]);
         // Godot draws clockwise triangles as front faces.
-        let tris: [u32; 6] = if back {
-            [0, 1, 2, 0, 2, 3]
-        } else {
-            [0, 2, 1, 0, 3, 2]
+        let tris: [u32; 6] = match (back, flip) {
+            (true, false) => [0, 1, 2, 0, 2, 3],
+            (false, false) => [0, 2, 1, 0, 3, 2],
+            (true, true) => [0, 1, 3, 1, 2, 3],
+            (false, true) => [0, 3, 1, 1, 3, 2],
         };
         self.indices.extend(tris.iter().map(|t| base + t));
     }
+}
+
+/// How open a face corner is, from the three cells around it in the layer in front of the
+/// face: the two beside the corner and the one diagonal to it. Both sides filled closes it
+/// (0) whatever the diagonal; otherwise 3 minus how many of the three are filled.
+pub fn corner_level(side_a: bool, side_b: bool, diagonal: bool) -> u8 {
+    if side_a && side_b {
+        return 0;
+    }
+    OPEN - u8::from(side_a) - u8::from(side_b) - u8::from(diagonal)
+}
+
+fn pack(colour: Colour, levels: [u8; 4]) -> u64 {
+    let l = levels
+        .iter()
+        .fold(0u64, |acc, &x| (acc << 2) | u64::from(x & 3));
+    (l << 32) | u64::from(colour)
+}
+
+fn unpack(key: u64) -> (Colour, [u8; 4]) {
+    let l = key >> 32;
+    (
+        (key & 0xFFFF_FFFF) as Colour,
+        [
+            ((l >> 6) & 3) as u8,
+            ((l >> 4) & 3) as u8,
+            ((l >> 2) & 3) as u8,
+            (l & 3) as u8,
+        ],
+    )
 }
 
 /// What a fill does to the cells it covers.
@@ -443,6 +693,333 @@ mod tests {
 
     fn fill(c: Colour) -> Op {
         Op::Fill(Paint::solid(c))
+    }
+
+    /// Face area per (colour, normal), in square cells, so float sums compare exactly.
+    fn area_by_colour(
+        meshes: &[Mesh],
+        voxel: f32,
+    ) -> std::collections::BTreeMap<(Colour, [i32; 3]), i64> {
+        let mut out = std::collections::BTreeMap::new();
+        for m in meshes {
+            for tri in m.indices.chunks(3) {
+                let [a, b, c] = [0, 1, 2].map(|k| m.positions[tri[k] as usize]);
+                let ab = sub(b, a);
+                let ac = sub(c, a);
+                let cross = [
+                    ab[1] * ac[2] - ab[2] * ac[1],
+                    ab[2] * ac[0] - ab[0] * ac[2],
+                    ab[0] * ac[1] - ab[1] * ac[0],
+                ];
+                let area = dot(cross, cross).sqrt() / 2.0 / (voxel * voxel);
+                let n = m.normals[tri[0] as usize].map(|v| v.round() as i32);
+                // Two triangles make a quad of whole cells; halves are summed in doubles.
+                *out.entry((m.colours[tri[0] as usize], n)).or_insert(0) +=
+                    (area * 2.0).round() as i64;
+            }
+        }
+        out
+    }
+
+    fn chunk_meshes(g: &Grid) -> Vec<Mesh> {
+        (0..g.chunk_count()).map(|id| g.mesh_chunk(id)).collect()
+    }
+
+    /// Solid cells' faces that look into air, counted cell by cell (twice, to match the area
+    /// sums in half cells).
+    fn exposed_faces(g: &Grid) -> i64 {
+        let mut count = 0;
+        for y in 0..g.ny as i64 {
+            for z in 0..g.nz as i64 {
+                for x in 0..g.nx as i64 {
+                    if g.get(x, y, z) == EMPTY {
+                        continue;
+                    }
+                    for d in [
+                        [1, 0, 0],
+                        [-1, 0, 0],
+                        [0, 1, 0],
+                        [0, -1, 0],
+                        [0, 0, 1],
+                        [0, 0, -1],
+                    ] {
+                        if g.get(x + d[0], y + d[1], z + d[2]) == EMPTY {
+                            count += 2;
+                        }
+                    }
+                }
+            }
+        }
+        count
+    }
+
+    /// Models shaped like the kit's: a rock (bumpy blob), a shed (walls, a door and windows
+    /// carved out, a roof in another colour), a car (body, cabin, wheels) and a gun at fine
+    /// voxels. All are bigger than one chunk.
+    fn sample_models() -> Vec<Grid> {
+        let jitter = |c: Colour| {
+            Op::Fill(Paint {
+                colour: c,
+                jitter: 0.15,
+                seed: 3,
+            })
+        };
+        let mut rock = Grid::new([3.0, 2.0, 2.6], 0.1);
+        rock.fill_blob(
+            [0.0, 1.0, 0.0],
+            [1.4, 0.9, 1.2],
+            0.3,
+            1.5,
+            7,
+            jitter(0x777066),
+        );
+        let mut shed = Grid::new([5.0, 3.6, 4.0], 0.15);
+        shed.fill_box([-2.5, 0.0, -2.0], [2.5, 2.8, 2.0], jitter(0x8a6a4a));
+        shed.fill_box([-2.3, 0.0, -1.8], [2.3, 2.8, 1.8], Op::Carve);
+        shed.fill_box([-0.5, 0.0, -2.1], [0.5, 2.0, -1.7], Op::Carve);
+        shed.fill_box([1.0, 1.0, -2.1], [1.8, 1.8, -1.7], Op::Carve);
+        shed.fill_box([-2.5, 2.8, -2.0], [2.5, 3.2, 2.0], fill(0x555a60));
+        let mut car = Grid::new([2.0, 1.6, 4.2], 0.05);
+        car.fill_box([-0.9, 0.3, -2.0], [0.9, 0.9, 2.0], jitter(0x6b2a20));
+        car.fill_box([-0.8, 0.9, -0.8], [0.8, 1.4, 0.9], fill(0x99aabb));
+        for (x, z) in [(-0.8, -1.3), (0.8, -1.3), (-0.8, 1.3), (0.8, 1.3)] {
+            car.fill_ellipsoid([x, 0.35, z], [0.15, 0.35, 0.35], fill(0x202020));
+        }
+        let mut gun = Grid::new([0.12, 0.3, 1.0], 0.005);
+        gun.fill_box([-0.02, 0.15, -0.5], [0.02, 0.2, 0.45], fill(0x303030));
+        gun.fill_box([-0.03, 0.05, 0.1], [0.03, 0.17, 0.2], jitter(0x5a4630));
+        gun.fill_capsule(
+            [0.0, 0.18, -0.48],
+            [0.0, 0.18, 0.0],
+            0.01,
+            0.012,
+            fill(0x252525),
+        );
+        vec![rock, shed, car, gun]
+    }
+
+    #[test]
+    fn chunk_meshes_cover_the_same_faces_as_the_whole_mesh() {
+        for g in sample_models() {
+            assert!(g.chunk_count() > 1);
+            let whole = area_by_colour(&[g.mesh()], g.voxel);
+            let chunked = area_by_colour(&chunk_meshes(&g), g.voxel);
+            assert_eq!(chunked, whole);
+        }
+    }
+
+    #[test]
+    fn an_edit_dirties_its_chunk_and_a_neighbour_only_across_a_border() {
+        let mut g = Grid::new([4.8, 1.6, 1.6], 0.1);
+        g.remesh_dirty();
+        assert!(g.dirty_chunks().is_empty());
+        // Middle of the first chunk.
+        g.set(8, 8, 8, RED);
+        assert_eq!(g.dirty_chunks(), vec![g.chunk_of(8, 8, 8)]);
+        g.remesh_dirty();
+        // Last cell of chunk 0 along x: chunk 1 shares that face.
+        g.set(15, 8, 8, RED);
+        assert_eq!(
+            g.dirty_chunks(),
+            vec![g.chunk_of(15, 8, 8), g.chunk_of(16, 8, 8)]
+        );
+        g.remesh_dirty();
+        // First cell of chunk 2 along x.
+        g.set(32, 4, 4, BLUE);
+        assert_eq!(
+            g.dirty_chunks(),
+            vec![g.chunk_of(31, 4, 4), g.chunk_of(32, 4, 4)]
+        );
+        g.remesh_dirty();
+        // Writing what is already there changes nothing.
+        g.set(32, 4, 4, BLUE);
+        assert!(g.dirty_chunks().is_empty());
+    }
+
+    #[test]
+    fn carving_through_a_chunk_border_leaves_every_face_once() {
+        let mut g = Grid::new([4.0, 2.0, 4.0], 0.1);
+        g.fill_box([-2.0, 0.0, -2.0], [2.0, 2.0, 2.0], fill(RED));
+        g.remesh_dirty();
+        // Chunk borders at cells 16 and 32 (metres -0.4 and 1.2 on x and z, 1.6 on y).
+        g.fill_ellipsoid([-0.4, 1.6, -0.4], [0.55, 0.45, 0.35], Op::Carve);
+        g.fill_box([1.1, 0.2, -2.0], [1.3, 0.5, 2.0], Op::Carve);
+        let mut meshes = chunk_meshes(&g);
+        let total: i64 = area_by_colour(&meshes, g.voxel).values().sum();
+        assert_eq!(total, exposed_faces(&g));
+        // Rebuilding only the dirty chunks gives the same faces as rebuilding them all.
+        let mut patched = Grid::new([4.0, 2.0, 4.0], 0.1);
+        patched.fill_box([-2.0, 0.0, -2.0], [2.0, 2.0, 2.0], fill(RED));
+        meshes = chunk_meshes(&patched);
+        patched.remesh_dirty();
+        patched.fill_ellipsoid([-0.4, 1.6, -0.4], [0.55, 0.45, 0.35], Op::Carve);
+        patched.fill_box([1.1, 0.2, -2.0], [1.3, 0.5, 2.0], Op::Carve);
+        for (id, m) in patched.remesh_dirty() {
+            meshes[id] = m;
+        }
+        assert_eq!(
+            area_by_colour(&meshes, g.voxel),
+            area_by_colour(&[g.mesh()], g.voxel)
+        );
+    }
+
+    #[test]
+    fn a_copied_box_holds_the_same_cells_where_they_were() {
+        let mut g = Grid::new([2.0, 1.0, 2.0], 0.1);
+        g.fill_box([-1.0, 0.0, -1.0], [1.0, 0.5, 1.0], fill(RED));
+        g.fill_box([0.2, 0.0, 0.2], [0.4, 0.3, 0.6], fill(BLUE));
+        let (copy, at) = g.copy_box([0.0, 0.0, 0.0], [0.6, 0.4, 0.8]);
+        assert_eq!((copy.nx, copy.ny, copy.nz), (6, 4, 8));
+        for y in 0..copy.ny {
+            for z in 0..copy.nz {
+                for x in 0..copy.nx {
+                    let here = copy.centre(x, y, z);
+                    let there = [here[0] + at[0], here[1] + at[1], here[2] + at[2]];
+                    let (sx, sy, sz) = (
+                        ((there[0] + 1.0) / 0.1).floor() as i64,
+                        (there[1] / 0.1).floor() as i64,
+                        ((there[2] + 1.0) / 0.1).floor() as i64,
+                    );
+                    assert_eq!(copy.get(x as i64, y as i64, z as i64), g.get(sx, sy, sz));
+                }
+            }
+        }
+        assert_eq!(copy.filled(), 6 * 4 * 8);
+    }
+
+    /// Corner levels of the vertices of `m` at `at` on faces facing `normal`.
+    fn levels_at(m: &Mesh, at: [f32; 3], normal: [f32; 3]) -> Vec<u8> {
+        (0..m.positions.len())
+            .filter(|&i| {
+                m.normals[i] == normal && (0..3).all(|a| (m.positions[i][a] - at[a]).abs() < 1e-4)
+            })
+            .map(|i| m.shade[i])
+            .collect()
+    }
+
+    /// Face area per (colour, normal, corner levels) in square cells, quad by quad.
+    fn area_by_shade(
+        meshes: &[Mesh],
+        voxel: f32,
+    ) -> std::collections::BTreeMap<(Colour, [i32; 3], [u8; 4]), i64> {
+        let mut out = std::collections::BTreeMap::new();
+        for m in meshes {
+            for q in (0..m.positions.len()).step_by(4) {
+                let du = sub(m.positions[q + 1], m.positions[q]);
+                let dv = sub(m.positions[q + 3], m.positions[q]);
+                let area =
+                    (dot(du, du).sqrt() * dot(dv, dv).sqrt() / (voxel * voxel)).round() as i64;
+                let n = m.normals[q].map(|v| v.round() as i32);
+                let l = [m.shade[q], m.shade[q + 1], m.shade[q + 2], m.shade[q + 3]];
+                *out.entry((m.colours[q], n, l)).or_insert(0) += area;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn corner_levels_follow_the_rule() {
+        assert_eq!(corner_level(false, false, false), 3);
+        assert_eq!(corner_level(false, false, true), 2);
+        assert_eq!(corner_level(true, false, false), 2);
+        assert_eq!(corner_level(true, false, true), 1);
+        assert_eq!(corner_level(true, true, false), 0);
+        assert_eq!(corner_level(true, true, true), 0);
+    }
+
+    #[test]
+    fn a_cube_on_an_open_plane_is_open_at_every_top_corner() {
+        let mut g = Grid::new([1.0, 0.5, 1.0], 0.1);
+        g.corners = true;
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 0.1, 0.5], fill(BLUE));
+        // One cell, x and z from 0 to 0.1, standing on the plane.
+        g.fill_box([0.0, 0.1, 0.0], [0.1, 0.2, 0.1], fill(RED));
+        let m = g.mesh();
+        for at in [
+            [0.0, 0.2, 0.0],
+            [0.1, 0.2, 0.0],
+            [0.1, 0.2, 0.1],
+            [0.0, 0.2, 0.1],
+        ] {
+            assert_eq!(
+                levels_at(&m, at, [0.0, 1.0, 0.0]),
+                vec![OPEN],
+                "top corner {at:?}"
+            );
+        }
+        // The plane darkens where it meets the cube: its corners touch the cube's edges.
+        let foot = levels_at(&m, [0.0, 0.1, 0.0], [0.0, 1.0, 0.0]);
+        assert!(
+            !foot.is_empty() && foot.iter().all(|&l| l < OPEN),
+            "{foot:?}"
+        );
+        // With shading off every corner is open.
+        g.corners = false;
+        assert!(g.mesh().shade.iter().all(|&l| l == OPEN));
+    }
+
+    #[test]
+    fn an_inside_corner_closes_and_its_edges_darken() {
+        // A floor with two walls meeting at x = 0, z = 0 (an L seen from above).
+        let mut g = Grid::new([2.0, 1.0, 2.0], 0.1);
+        g.corners = true;
+        g.fill_box([-1.0, 0.0, -1.0], [1.0, 0.1, 1.0], fill(BLUE));
+        g.fill_box([-0.1, 0.1, -0.1], [0.0, 0.6, 1.0], fill(BLUE));
+        g.fill_box([-0.1, 0.1, -0.1], [1.0, 0.6, 0.0], fill(BLUE));
+        let m = g.mesh();
+        let up = [0.0, 1.0, 0.0];
+        // The floor's vertex tucked into the corner between the two walls.
+        assert_eq!(levels_at(&m, [0.0, 0.1, 0.0], up), vec![0]);
+        // Along the foot of each wall, away from the corner (merged faces only have vertices
+        // at their ends, so look at whichever lie on the wall's foot).
+        for axis in [0, 2] {
+            let along: Vec<u8> = (0..m.positions.len())
+                .filter(|&i| {
+                    let p = m.positions[i];
+                    m.normals[i] == up
+                        && (p[1] - 0.1).abs() < 1e-4
+                        && p[axis].abs() < 1e-4
+                        && p[2 - axis] > 0.05
+                        && p[2 - axis] < 0.95
+                })
+                .map(|i| m.shade[i])
+                .collect();
+            assert!(
+                !along.is_empty() && along.iter().all(|&x| x == 1 || x == 2),
+                "axis {axis}: {along:?}"
+            );
+        }
+        // Open floor far from both walls.
+        assert!(
+            levels_at(&m, [0.8, 0.1, 0.8], up)
+                .iter()
+                .all(|&x| x == OPEN)
+        );
+    }
+
+    #[test]
+    fn faces_with_different_corner_levels_do_not_merge() {
+        let mut g = Grid::new([1.0, 0.4, 0.2], 0.1);
+        g.fill_box([-0.5, 0.0, -0.1], [0.5, 0.1, 0.1], fill(RED));
+        let plain = g.mesh().quad_count();
+        g.fill_box([-0.5, 0.1, -0.1], [-0.4, 0.2, 0.1], fill(RED));
+        g.corners = false;
+        let without = g.mesh().quad_count();
+        g.corners = true;
+        let with = g.mesh().quad_count();
+        assert_eq!(plain, 6);
+        // The strip's top next to the block is darker than the rest, so it is its own quad.
+        assert!(with > without, "{with} vs {without}");
+    }
+
+    #[test]
+    fn shaded_chunk_meshes_match_the_whole_shaded_mesh() {
+        for mut g in sample_models() {
+            g.corners = true;
+            let whole = area_by_shade(&[g.mesh()], g.voxel);
+            let chunked = area_by_shade(&chunk_meshes(&g), g.voxel);
+            assert_eq!(chunked, whole);
+        }
     }
 
     #[test]

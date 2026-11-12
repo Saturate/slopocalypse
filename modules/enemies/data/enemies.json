@@ -45,7 +45,7 @@
     "settle_seconds": 1.0,
     "stand_eye": 1.5,
     "threat_eye": 1.5,
-    "no_shot_penalty": 8.0,
+    "no_shot_penalty": 8.0, "body_radius": 0.5, "sweep_height": 0.5, "detour_tries": 6,
     "peek_seconds": [1.2, 2.4],
     "hide_seconds": [1.0, 2.0],
     "bound_range": 15.0,

@@ -1,0 +1,16 @@
+[package]
+name = "missions_gd"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+godot.workspace = true
+missions_core = { path = "../core" }
+
+[lints]
+workspace = true
