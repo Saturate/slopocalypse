@@ -3,7 +3,8 @@ extends Node3D
 ## drawn as meshes, then all drawn as GPU voxel volumes, from the same street-level camera.
 ## Prints the GPU and CPU frame time of each, averaged over `FRAMES` after a warm-up, and how
 ## long the model took to mesh and to upload. On a real GPU these are the numbers that count;
-## a software renderer only shows whether it works.
+## a software renderer only shows whether it works. Capture it with `--frames 168 --sheet 4`:
+## the first frame shows the meshes, the last three the volumes.
 
 const VALUES := {"floors": 4.0, "stairwells": 2.0, "voxel": 0.1, "seed": 3.0}
 const GRID := Vector2i(5, 4)

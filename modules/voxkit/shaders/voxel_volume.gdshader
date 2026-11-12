@@ -137,8 +137,13 @@ void fragment() {
 	float c11 = corner(su1, sv1, filled(front + u + v));
 	float shade = mix(mix(c00, c10, fu), mix(c01, c11, fu), fv);
 	vec3 point = origin + (o + d * t) * voxel;
-	vec4 clip = PROJECTION_MATRIX * VIEW_MATRIX * MODEL_MATRIX * vec4(point, 1.0);
-	DEPTH = clip.z / clip.w;
+	vec3 view_point = (VIEW_MATRIX * MODEL_MATRIX * vec4(point, 1.0)).xyz;
+	vec4 clip = PROJECTION_MATRIX * vec4(view_point, 1.0);
+	// Kept in range: a directional light's shadow pass flattens casters in front of its near
+	// plane onto it, and an unclamped depth there would drop them.
+	DEPTH = clamp(clip.z / clip.w, 0.0, 1.0);
+	// Light and shadows are worked out where the ray hit, not on the box face drawn.
+	LIGHT_VERTEX = view_point;
 	ALBEDO = hit.rgb * shade;
 	NORMAL = normalize((VIEW_MATRIX * MODEL_MATRIX * vec4(normal, 0.0)).xyz);
 	ROUGHNESS = roughness;
