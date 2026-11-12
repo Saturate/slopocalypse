@@ -142,7 +142,14 @@ func _ready() -> void:
 		if bricks > 0:
 			_bricks_at_start[i] = bricks
 	if _visual:
+		# Glass is drawn see-through.
+		var glass := PackedInt32Array()
+		for i in VoxMaterials.all().size():
+			if bool(VoxMaterials.at(i).get("breaks_whole", false)):
+				glass.append(i)
+		_model.set_clear_materials(glass)
 		_mesh = VoxelChunkedMesh.new()
+		_mesh.layered = true
 		_mesh.name = "Mesh"
 		_mesh.model = _model
 		add_child(_mesh)
@@ -605,9 +612,11 @@ func _mark(point: Vector3, direction: Vector3) -> void:
 	var rules := VoxMaterials.at(_model.material_at(v))
 	_sound(&"missions.surface_hit", point, str(rules.get("name", "")), 1)
 	if _visual and is_inside_tree():
+		# Something comes off (a hole): a few small chips; nothing does: a puff of dust.
 		var colour := _model.colour_at(v)
 		var out := -direction.normalized() if direction.length_squared() > 0.0 else (point - global_position).normalized()
-		VoxelDebris.burst(get_parent(), point, out, colour if colour.a > 0.0 else Color(0.55, 0.5, 0.45), &"building_chip")
+		var source := &"building_chip" if float(rules.get("hole", 0.0)) > 0.0 else &"dust"
+		VoxelDebris.burst(get_parent(), point, out, (colour if colour.a > 0.0 else Color(0.55, 0.5, 0.45)).lightened(0.15 if source == &"dust" else 0.0), source)
 	if bool(rules.get("crack", false)):
 		# A lighter star where it struck; only the glass, not its frame.
 		var glass := _model.colour_at(v)
