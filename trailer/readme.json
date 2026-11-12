@@ -5,9 +5,10 @@
   "gif": { "width": 720, "fps": 15 },
   "shots": [
     { "title": "SLOPOCALYPSE", "subtitle": "built by AI agents, steered by a person", "seconds": 2.5 },
-    { "setup": "res://modules/missions/capture/home_base.gd", "skip": 3.0, "seconds": 3.0 },
-    { "setup": "res://modules/missions/capture/breaking.gd", "skip": 3.0, "seconds": 3.5, "hud": "off" },
-    { "setup": "res://modules/missions/capture/cabin.gd", "skip": 3.0, "seconds": 2.5 },
+    { "setup": "res://trailer/shots/home_base.gd", "skip": 0.2, "seconds": 4.0, "hud": "off" },
+    { "setup": "res://trailer/shots/breach.gd", "skip": 0.3, "seconds": 5.0, "hud": "off" },
+    { "setup": "res://trailer/shots/firefight.gd", "skip": 0.3, "seconds": 6.0, "hud": "off" },
+    { "setup": "res://trailer/shots/strike.gd", "skip": 0.2, "seconds": 6.5, "hud": "off" },
     { "setup": "res://modules/inventory/capture/loot_body.gd", "skip": 4.0, "seconds": 2.5 },
     { "setup": "res://modules/trader/capture/trader.gd", "skip": 3.0, "seconds": 2.0 },
     { "title": "Free and open source", "subtitle": "github.com/Saturate/slopocalypse", "seconds": 2.5 }

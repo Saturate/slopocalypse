@@ -6,6 +6,10 @@ extends SceneTree
 ## hides the game's HUD layers (prompts, mission lines) for clean shots; screens such as
 ## the loot screen stay.
 
+## A setup that loads for a while (a world) sets meta `rolling` false on itself until it is
+## ready; frames before that are not counted, and the frame it started on is written to
+## `--start-file` so the trim can skip the loading part however long it took.
+
 ## Canvas layers at or below this are HUD (prompts, mission lines, health); higher ones are
 ## screens.
 const HUD_LAYER_MAX := 10
@@ -19,13 +23,26 @@ class Clock:
 
 	var frames := 60
 	var hide_hud := false
-	var _frame := 0
+	var setup: Node
+	var start_file := ""
+	var _written := 0
+	var _start := -1
 
 	func _process(_delta: float) -> void:
+		# Capture setups grab the mouse like the game does; a render shouldn't take it from
+		# whoever is using the machine meanwhile.
+		if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		if hide_hud:
 			_hide(get_tree().root)
-		_frame += 1
-		if _frame >= frames:
+		if _start < 0 and (setup == null or bool(setup.get_meta(&"rolling", true))):
+			_start = _written
+			if not start_file.is_empty():
+				var f := FileAccess.open(start_file, FileAccess.WRITE)
+				f.store_string(str(_start))
+				f.close()
+		_written += 1
+		if _start >= 0 and _written - _start >= frames:
 			get_tree().quit(0)
 
 	func _hide(node: Node) -> void:
@@ -40,15 +57,18 @@ func _initialize() -> void:
 	var clock := Clock.new()
 	clock.frames = int(args.get("frames", "60"))
 	clock.hide_hud = str(args.get("hud", "on")) == "off"
+	clock.start_file = str(args.get("start-file", ""))
 	if args.has("title"):
 		root.add_child(_title_card(str(args["title"]), str(args.get("subtitle", ""))))
 	else:
 		var setup_script: Variant = load(args.get("setup", ""))
-		if not setup_script is GDScript:
+		if not setup_script is GDScript or not (setup_script as GDScript).can_instantiate():
 			push_error("movie: --setup must be a GDScript path, got '%s'" % args.get("setup", ""))
 			quit(1)
 			return
-		root.add_child((setup_script as GDScript).new())
+		var setup: Node = (setup_script as GDScript).new()
+		clock.setup = setup
+		root.add_child(setup)
 	root.add_child(clock)
 
 
