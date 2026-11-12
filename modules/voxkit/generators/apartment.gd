@@ -11,9 +11,10 @@ extends VoxGenerator
 ## windows half a storey out of step with the flats' windows, balconies on the courtyard side,
 ## and elevators added later as metal-clad towers on the back.
 ##
-## Hollow inside: each flat is one open room per storey, and each stairwell has switchback
-## stairs (two flights a storey, a half landing at the turn) with a landing and a door into
-## both flats on every floor. `layout()` gives the plan in metres for tests and collision.
+## Inside, each stairwell has switchback stairs (two flights a storey, a half landing at the
+## turn) with a landing and a door into both flats on every floor, and each flat has rooms
+## off a hall with plastered walls, wooden floors and furniture (see `ApartmentRooms`): how
+## many rooms depends on the flat. `layout()` gives the plan in metres for tests and collision.
 
 const WALLS: Array[String] = ["Yellow brick", "Red brick", "Concrete panels"]
 const WALL_COLOURS := [Color(0.84, 0.71, 0.45), Color(0.6, 0.25, 0.17), Color(0.68, 0.67, 0.63)]
@@ -22,6 +23,7 @@ const ROOF_COLOURS := [Color(0.62, 0.27, 0.18), Color(0.17, 0.17, 0.19), Color(0
 const BALCONIES: Array[String] = ["None", "Cantilevered", "Recessed", "French"]
 const BALCONY_SIDES: Array[String] = ["Courtyard", "Both sides"]
 const RAILINGS: Array[String] = ["Steel bars", "Glass", "Panels"]
+const INTERIORS: Array[String] = ["Empty", "Rooms", "Furnished"]
 ## Front doors: one colour per building, picked by the seed.
 const DOOR_COLOURS := [Color(0.08, 0.34, 0.2), Color(0.52, 0.1, 0.07), Color(0.08, 0.24, 0.48), Color(0.1, 0.1, 0.11)]
 ## Balcony panels in the colours of 1960s and 70s housing estates.
@@ -34,6 +36,10 @@ const PLINTH := Color(0.24, 0.24, 0.24)
 const GRANITE := Color(0.52, 0.52, 0.5)
 const CONCRETE := Color(0.62, 0.61, 0.58)
 const CLADDING := Color(0.27, 0.29, 0.31)
+## Stairwell walls: a painted dado under plaster, and a stone floor.
+const DADO := Color(0.36, 0.46, 0.36)
+const DADO_HEIGHT := 1.1
+const STAIR_FLOOR := Color(0.6, 0.58, 0.55)
 
 ## Floor to floor, and the floor slab's share of it.
 const STOREY := 2.8
@@ -91,6 +97,7 @@ func params() -> Array[Dictionary]:
 		param("flat_width", "Flat width (m)", 4.5, 7.5, 0.25, 6.0),
 		param("depth", "Depth (m)", 8.0, 13.0, 0.25, 10.0),
 		param("windows", "Windows per flat", 1.0, 3.0, 1.0, 2.0),
+		choice("interior", "Inside", INTERIORS, 2),
 		voxel_param(0.1, 0.25, 0.15),
 	]
 
@@ -98,8 +105,9 @@ func params() -> Array[Dictionary]:
 ## The plan in metres, model space (x and z centred, y up from the street):
 ## `length`, `depth`, `floors`, `levels` (walking height of each floor), `eaves`, `wall`
 ## (outer wall thickness), `bays` (stairwell bays as Vector2 x0, x1, outside), `flats`
-## (Vector2 x0, x1, outside), `doors` (front door centres), `elevators` (tower boxes) and
-## `steps` (every stair step as a box, its top the tread).
+## (Vector2 x0, x1, outside), `doors` (front door centres), `elevators` (tower boxes),
+## `steps` (every stair step as a box, its top the tread) and `flat_plans` (per flat, its
+## rooms, partitions and doors, the same on every storey; see `ApartmentRooms.plan_flat`).
 func layout(values: Dictionary) -> Dictionary:
 	var p := with_defaults(values)
 	var v := _voxel(p)
@@ -154,11 +162,55 @@ func layout(values: Dictionary) -> Dictionary:
 				var top := level + STOREY / 2.0 + k * rise
 				var z0 := zh - k * TREAD
 				steps.append(AABB(Vector3(mid, top - STEP_THICKNESS, z0), Vector3(inner.y - mid, STEP_THICKNESS, TREAD)))
-	return {
+	var plan := {
 		"length": length, "depth": d, "floors": floors, "levels": levels, "eaves": eaves,
 		"wall": wall, "bays": bays, "flats": flats, "doors": doors, "elevators": elevators,
 		"steps": steps, "voxel": v, "ground": ground, "half_landing_z": zh,
 	}
+	var plans: Array[Dictionary] = []
+	for f in flats.size():
+		plans.append(_flat_plan(p, plan, f))
+	plan["flat_plans"] = plans
+	return plan
+
+
+## A flat's floor inside its walls, as x and z.
+static func inner_rect(plan: Dictionary, flat: Vector2) -> Rect2:
+	var wall: float = plan["wall"]
+	var half := float(plan["length"]) / 2.0
+	var x0 := flat.x + (wall if is_equal_approx(flat.x, -half) else wall / 2.0)
+	var x1 := flat.y - (wall if is_equal_approx(flat.y, half) else wall / 2.0)
+	var z := float(plan["depth"]) / 2.0 - wall
+	return Rect2(x0, -z, x1 - x0, z * 2.0)
+
+
+func _flat_plan(p: Dictionary, plan: Dictionary, f: int) -> Dictionary:
+	var flat: Vector2 = (plan["flats"] as Array)[f]
+	var inner := inner_rect(plan, flat)
+	var count := int(p["windows"])
+	var wall: float = plan["wall"]
+	var windows: Array[float] = []
+	var tall: Array[Rect2] = []
+	for k in count:
+		var x := window_x(flat, count, k)
+		windows.append(x)
+		tall.append(Rect2(x - 0.8, inner.position.y, 1.6, 0.7))
+		tall.append(Rect2(x - 0.8, inner.end.y - 0.7, 1.6, 0.7))
+	# Balcony doors keep their floor clear; a loggia takes a bite out of the room behind it.
+	var clear: Array[Rect2] = []
+	var bx := window_x(flat, count, balcony_window(f, count))
+	for side: float in [-1.0, 1.0]:
+		if not _has_balconies(p, side):
+			continue
+		var reach := 1.0
+		var half := 0.7
+		if int(p["balconies"]) == 2:
+			reach += BALCONY.y + wall
+			half = maxf(1.0, minf(BALCONY.x, (flat.y - flat.x) / count - 0.4)) / 2.0 + 0.1
+		var z0 := inner.end.y - reach if side > 0.0 else inner.position.y
+		clear.append(Rect2(bx - half, z0, half * 2.0, reach))
+	var seed := int(p["seed"]) * 7919 + f * 104729
+	return ApartmentRooms.plan_flat(inner, f % 2 == 0, windows, seed, float(plan["voxel"]), clear, tall)
 
 
 func build(values: Dictionary) -> VoxelModel:
@@ -178,11 +230,15 @@ func build(values: Dictionary) -> VoxelModel:
 	var wall_colour: Color = WALL_COLOURS[int(p["walls"])]
 	_walls(m, p, plan, wall_colour, rng, seed)
 	_interior(m, plan, v)
+	var interior := int(p["interior"])
+	_rooms(m, plan, interior >= 1)
 	_stairs(m, plan, seed)
 	var door_colour: Color = DOOR_COLOURS[rng.randi() % DOOR_COLOURS.size()]
 	_windows(m, p, plan, v)
 	_entrances(m, plan, door_colour, v, seed)
 	_balconies(m, p, plan, rng, v, seed)
+	if interior == 2:
+		_furnish(m, plan, seed)
 	_elevators(m, plan, v, seed)
 	if roof_kind == 2:
 		_flat_roof(m, plan, wall_colour, v, seed)
@@ -261,17 +317,41 @@ func _interior(m: VoxelModel, plan: Dictionary, v: float) -> void:
 		var level: float = levels[i]
 		var ceiling := level + STOREY - SLAB
 		for flat: Vector2 in plan["flats"]:
-			var x0 := flat.x + (wall if is_equal_approx(flat.x, -float(plan["length"]) / 2.0) else inner)
-			var x1 := flat.y - (wall if is_equal_approx(flat.y, float(plan["length"]) / 2.0) else inner)
-			m.carve_box(Vector3(x0, level, -z), Vector3(x1, ceiling, z))
+			var r := inner_rect(plan, flat)
+			m.carve_box(Vector3(r.position.x, level, r.position.y), Vector3(r.end.x, ceiling, r.end.y))
 		for bay: Vector2 in plan["bays"]:
 			m.carve_box(Vector3(bay.x + inner, level, -z), Vector3(bay.y - inner, ceiling, z))
+			m.paint_box(Vector3(bay.x + inner - v, level, -z - v), Vector3(bay.y - inner + v, ceiling + v, z + v), ApartmentRooms.PLASTER, 0.02, 0)
+			m.paint_box(Vector3(bay.x + inner - v, level, -z - v), Vector3(bay.y - inner + v, level + DADO_HEIGHT, z + v), DADO, 0.04, 0)
+			m.paint_box(Vector3(bay.x + inner, level - v, -z), Vector3(bay.y - inner, level, z), STAIR_FLOOR, 0.08, 0)
 			if i < levels.size() - 1:
 				# The stairs come up through the slab above.
 				m.carve_box(Vector3(bay.x + inner, ceiling - v, zf + LANDING), Vector3(bay.y - inner, ceiling + SLAB, zh + HALF_LANDING))
 			# A door from the landing into each flat.
 			for side: float in [bay.x, bay.y]:
 				m.carve_box(Vector3(side - inner - v, level, zf + 0.2), Vector3(side + inner + v, level + FLAT_DOOR.y, zf + 0.2 + FLAT_DOOR.x))
+
+
+## Each flat's partitions, doorways and finishes on every storey; with `partitions` off, one
+## plastered room with a wooden floor.
+func _rooms(m: VoxelModel, plan: Dictionary, partitions: bool) -> void:
+	var flats: Array = plan["flats"]
+	var plans: Array = plan["flat_plans"]
+	for level: float in plan["levels"]:
+		for f in flats.size():
+			ApartmentRooms.build_rooms(m, plans[f], inner_rect(plan, flats[f]), level, level + STOREY - SLAB, partitions)
+
+
+## Furniture in every room, different on every storey.
+func _furnish(m: VoxelModel, plan: Dictionary, seed: int) -> void:
+	var levels: Array = plan["levels"]
+	var plans: Array = plan["flat_plans"]
+	for i in levels.size():
+		for f in plans.size():
+			var rng := RandomNumberGenerator.new()
+			rng.seed = seed * 31 + f * 977 + i * 7
+			var level: float = levels[i]
+			ApartmentRooms.furnish(m, plans[f], level, level + STOREY - SLAB, rng)
 
 
 func _stairs(m: VoxelModel, plan: Dictionary, seed: int) -> void:
