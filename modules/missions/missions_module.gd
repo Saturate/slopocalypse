@@ -826,7 +826,6 @@ func _build_buildings() -> void:
 		b.segment_hp = float((config["buildings"] as Dictionary).get("segment_hp", 100.0))
 		b.max_span = int((config["buildings"] as Dictionary).get("max_span", 2))
 		b.fall_seconds = float((config["buildings"] as Dictionary).get("fall_seconds", 0.6))
-		b.material_cfg = ((config["buildings"] as Dictionary).get("materials", {}) as Dictionary).get(str(entry.get("material", "wood")), {})
 		add_child(b)
 		b.global_position = entry["position"]
 		b.rotation.y = float(entry["yaw"])

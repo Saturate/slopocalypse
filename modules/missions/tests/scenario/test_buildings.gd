@@ -172,7 +172,7 @@ func _building(material: String) -> MissionBuilding:
 	entry["position"] = Vector3(0, 0, -40)
 	var b: MissionBuilding = auto_free(MissionBuilding.new())
 	b.spec = entry
-	b.material_cfg = (_cfg()["materials"] as Dictionary)[material]
+	b.material_cfg = VoxMaterials.named(material)
 	add_child(b)
 	b.global_position = entry["position"]
 	return b

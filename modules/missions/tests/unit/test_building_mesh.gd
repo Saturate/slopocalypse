@@ -9,7 +9,7 @@ func _building() -> MissionBuilding:
 	var cfg: Dictionary = (Data.load_json(CONFIG) as Dictionary)["buildings"]
 	var b: MissionBuilding = auto_free(MissionBuilding.new())
 	b.spec = {"width": 6.0, "depth": 5.0, "wall_height": 3.0, "seed": 4, "paint": 1, "windows": 2.0}
-	b.material_cfg = (cfg["materials"] as Dictionary)["wood"]
+	b.material_cfg = VoxMaterials.named("wood")
 	# Headless runs skip the model; this test is about the model.
 	b.set(&"_visual", true)
 	add_child(b)

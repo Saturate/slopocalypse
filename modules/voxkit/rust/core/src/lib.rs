@@ -1,5 +1,7 @@
 //! Voxel models made by code: a grid of coloured cells filled with shapes given in metres,
-//! and a greedy mesher that turns it into as few quads as possible.
+//! and a greedy mesher that turns it into as few quads as possible. Each filled cell also
+//! carries a material index (wood, glass, concrete...), which decides how it takes hits; the
+//! names and rules behind the indices live in the voxkit materials data file.
 //!
 //! Model space: x and z are centred on the grid, y starts at 0, so a model stands on the
 //! ground at its origin. Each model picks its own voxel size (a gun wants centimetres, a
@@ -18,6 +20,10 @@ pub struct Grid {
     pub nz: usize,
     pub voxel: f32,
     cells: Vec<Colour>,
+    /// Material index per cell, 0 ("default") for air and for models that never set one.
+    materials: Vec<u8>,
+    /// Material that fills write into the cells they fill.
+    pub brush: u8,
     /// Chunks per axis, and which chunks changed since they were last meshed.
     chunks: [usize; 3],
     dirty: Vec<bool>,
@@ -70,6 +76,8 @@ impl Grid {
             nz: n[2],
             voxel,
             cells: vec![EMPTY; n[0] * n[1] * n[2]],
+            materials: vec![0; n[0] * n[1] * n[2]],
+            brush: 0,
             chunks,
             dirty: vec![true; chunks[0] * chunks[1] * chunks[2]],
             corners: false,
@@ -93,13 +101,34 @@ impl Grid {
 
     pub fn set(&mut self, x: usize, y: usize, z: usize, c: Colour) {
         if x < self.nx && y < self.ny && z < self.nz {
-            self.write(x, y, z, c);
+            let m = if c == EMPTY { 0 } else { self.brush };
+            self.write(x, y, z, c, m);
         }
     }
 
-    /// Every write goes through here so the chunks it changes get remeshed.
-    fn write(&mut self, x: usize, y: usize, z: usize, c: Colour) {
+    /// Material index of cell (x, y, z); 0 for air and outside the grid.
+    pub fn material(&self, x: usize, y: usize, z: usize) -> u8 {
+        if x >= self.nx || y >= self.ny || z >= self.nz {
+            return 0;
+        }
+        self.materials[self.index(x, y, z)]
+    }
+
+    /// Material index of the cell holding `p` (model space, metres); 0 for air and outside.
+    pub fn material_at(&self, p: [f32; 3]) -> u8 {
+        let o = self.origin();
+        let cell = [0, 1, 2].map(|a| ((p[a] - o[a]) / self.voxel).floor());
+        if cell.iter().any(|&c| c < 0.0) {
+            return 0;
+        }
+        self.material(cell[0] as usize, cell[1] as usize, cell[2] as usize)
+    }
+
+    /// Every write goes through here so the chunks it changes get remeshed. Materials don't
+    /// change the mesh, but a cell's material only changes along with a write anyway.
+    fn write(&mut self, x: usize, y: usize, z: usize, c: Colour, m: u8) {
         let i = self.index(x, y, z);
+        self.materials[i] = m;
         if self.cells[i] == c {
             return;
         }
@@ -223,14 +252,17 @@ impl Grid {
         out.ny = n[1];
         out.nz = n[2];
         out.cells = vec![EMPTY; n[0] * n[1] * n[2]];
+        out.materials = vec![0; n[0] * n[1] * n[2]];
+        out.brush = self.brush;
         out.chunks = n.map(|v| v.div_ceil(CHUNK));
         out.dirty = vec![true; out.chunks[0] * out.chunks[1] * out.chunks[2]];
         for y in y0..y1 {
             for z in z0..z1 {
                 for x in x0..x1 {
-                    let c = self.cells[self.index(x, y, z)];
+                    let from = self.index(x, y, z);
                     let i = out.index(x - x0, y - y0, z - z0);
-                    out.cells[i] = c;
+                    out.cells[i] = self.cells[from];
+                    out.materials[i] = self.materials[from];
                 }
             }
         }
@@ -290,11 +322,16 @@ impl Grid {
             }
             let i = g.index(x, y, z);
             match op {
-                Op::Fill(paint) => g.write(x, y, z, paint.at(x, y, z)),
-                Op::Carve => g.write(x, y, z, EMPTY),
+                Op::Fill(paint) => g.write(x, y, z, paint.at(x, y, z), g.brush),
+                Op::Carve => g.write(x, y, z, EMPTY, 0),
                 Op::Paint(paint) => {
                     if g.cells[i] != EMPTY {
-                        g.write(x, y, z, paint.at(x, y, z));
+                        g.write(x, y, z, paint.at(x, y, z), g.materials[i]);
+                    }
+                }
+                Op::Mark(m) => {
+                    if g.cells[i] != EMPTY {
+                        g.materials[i] = m;
                     }
                 }
             }
@@ -605,6 +642,8 @@ pub enum Op {
     Carve,
     /// Recolour only cells already filled (road markings on asphalt, moss on stone).
     Paint(Paint),
+    /// Set the material of cells already filled, leaving their colour.
+    Mark(u8),
 }
 
 /// A colour with per-cell brightness jitter, so big surfaces don't look flat.
@@ -693,6 +732,57 @@ mod tests {
 
     fn fill(c: Colour) -> Op {
         Op::Fill(Paint::solid(c))
+    }
+
+    #[test]
+    fn fills_take_the_brush_material_and_carving_clears_it() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        assert_eq!(g.material(0, 0, 0), 0);
+        g.brush = 3;
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 0.5, 0.5], fill(RED));
+        g.brush = 5;
+        g.fill_box([-0.5, 0.5, -0.5], [0.5, 1.0, 0.5], fill(RED));
+        assert_eq!(g.material(2, 1, 2), 3);
+        assert_eq!(g.material(2, 8, 2), 5);
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 0.25, 0.5], Op::Carve);
+        assert_eq!(g.material(2, 1, 2), 0);
+        // Same colour, new material: still a change.
+        g.brush = 7;
+        g.fill_box([-0.5, 0.5, -0.5], [0.5, 1.0, 0.5], fill(RED));
+        assert_eq!(g.material(2, 8, 2), 7);
+    }
+
+    #[test]
+    fn mark_changes_the_material_of_filled_cells_only() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        g.brush = 1;
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 0.45, 0.5], fill(RED));
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], Op::Mark(4));
+        assert_eq!(g.material(0, 0, 0), 4);
+        assert_eq!(g.get(0, 0, 0), RED);
+        // Air stays air with no material.
+        assert_eq!(g.material(0, 9, 0), 0);
+        assert_eq!(g.get(0, 9, 0), EMPTY);
+    }
+
+    #[test]
+    fn material_at_reads_the_cell_holding_a_point() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        g.brush = 2;
+        g.fill_box([-0.5, 0.0, -0.5], [0.0, 1.0, 0.5], fill(RED));
+        assert_eq!(g.material_at([-0.25, 0.5, 0.0]), 2);
+        assert_eq!(g.material_at([0.25, 0.5, 0.0]), 0);
+        assert_eq!(g.material_at([9.0, 0.5, 0.0]), 0);
+        assert_eq!(g.material_at([-0.25, -1.0, 0.0]), 0);
+    }
+
+    #[test]
+    fn a_copied_box_keeps_its_materials() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        g.brush = 6;
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], fill(BLUE));
+        let (copy, _) = g.copy_box([-0.2, 0.2, -0.2], [0.2, 0.6, 0.2]);
+        assert_eq!(copy.material(0, 0, 0), 6);
     }
 
     /// Face area per (colour, normal), in square cells, so float sums compare exactly.
