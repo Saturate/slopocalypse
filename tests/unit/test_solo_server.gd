@@ -24,8 +24,9 @@ func test_feature_flags_carry_over_but_client_only_args_do_not() -> void:
 
 
 func test_the_test_range_flag_reaches_the_server() -> void:
-	var args := SoloServer.server_args(7801, PackedStringArray(["--range", "--bot=range"]), "", "log.txt")
+	var args := SoloServer.server_args(7801, PackedStringArray(["--range", "--world=flat", "--bot=range"]), "", "log.txt")
 	assert_bool(args.has("--range")).is_true()
+	assert_bool(args.has("--world=flat")).is_true()
 	assert_bool(args.has("--bot=range")).is_false()
 
 
