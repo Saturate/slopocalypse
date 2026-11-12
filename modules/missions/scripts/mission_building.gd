@@ -69,7 +69,9 @@ const JOINT_SHARE := 0.5
 const BRICK_HOLD := 0.4
 
 ## The layout entry: `{position, yaw, width, depth, wall_height, windows, paint, seed,
-## broken}`.
+## broken}`. `kind: "wall"` makes a single free-standing wall instead of a house (the test
+## range's samples): `depth` is its thickness, `window` a glass name or "", `door` true for a
+## door gap, `label` a name shown over it.
 var spec: Dictionary = {}
 ## Segment size and health from the missions config (`buildings`).
 var segment_size := 1.2
@@ -129,18 +131,39 @@ func _ready() -> void:
 	var w := float(spec.get("width", 5.0))
 	var d := float(spec.get("depth", 4.0))
 	var wh := float(spec.get("wall_height", 2.8))
-	_add_shape(-1, AABB(Vector3(-w / 2.0, 0.0, -d / 2.0), Vector3(w, SLAB, d)))
-	_segments = segments(w, d, wh, segment_size)
+	if is_wall():
+		_add_shape(-1, AABB(Vector3(-w / 2.0 - 0.1, 0.0, -d / 2.0 - 0.1), Vector3(w + 0.2, SLAB, d + 0.2)))
+		_segments = wall_segments(w, d, wh, segment_size, bool(spec.get("door", false)), str(spec.get("window", "")) != "")
+	else:
+		_add_shape(-1, AABB(Vector3(-w / 2.0, 0.0, -d / 2.0), Vector3(w, SLAB, d)))
+		_segments = segments(w, d, wh, segment_size)
 	for i in _segments.size():
 		_add_shape(i, _segments[i])
 		_hp[i] = segment_hp
-	_model = VoxShed.new().build({
-		"seed": int(spec.get("seed", 1)), "paint": int(spec.get("paint", 1)), "width": w,
-		"depth": d, "wall_height": wh, "pitch": float(spec.get("pitch", 0.45)), "door": 1,
-		"windows": float(spec.get("windows", 2)), "voxel": voxel,
-		"material": maxi(0, VoxShed.WALL_MATERIALS.find(material())),
-		"glass": maxi(0, VoxShed.GLASS_TYPES.find(str(spec.get("glass", "window_glass")))),
-	})
+	if is_wall():
+		_model = VoxWall.new().build({
+			"seed": int(spec.get("seed", 1)), "kind": maxi(0, VoxWall.KIND_MATERIALS.find(material())),
+			"width": w, "height": wh, "thickness": d, "voxel": voxel,
+			"window": maxi(0, VoxWall.WINDOW_MATERIALS.find(str(spec.get("window", "")))),
+			"door": 1 if bool(spec.get("door", false)) else 0,
+		})
+		if _visual and spec.has("label"):
+			var label := Label3D.new()
+			label.text = str(spec["label"])
+			label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			label.font_size = 48
+			label.pixel_size = 0.004
+			label.outline_size = 12
+			label.position.y = wh + 0.6
+			add_child(label)
+	else:
+		_model = VoxShed.new().build({
+			"seed": int(spec.get("seed", 1)), "paint": int(spec.get("paint", 1)), "width": w,
+			"depth": d, "wall_height": wh, "pitch": float(spec.get("pitch", 0.45)), "door": 1,
+			"windows": float(spec.get("windows", 2)), "voxel": voxel,
+			"material": maxi(0, VoxShed.WALL_MATERIALS.find(material())),
+			"glass": maxi(0, VoxShed.GLASS_TYPES.find(str(spec.get("glass", "window_glass")))),
+		})
 	for i in VoxMaterials.all().size():
 		if bool(VoxMaterials.at(i).get("breaks_whole", false)):
 			for box: AABB in _model.components(i):
@@ -209,6 +232,36 @@ static func segments(w: float, d: float, wh: float, size: float) -> Array[AABB]:
 		for pz in _cuts(-d / 2.0, d / 2.0, size * 1.5):
 			out.append(AABB(Vector3(px.x, wh, pz.x), Vector3(px.y - px.x, ROOF_THICKNESS, pz.y - pz.x)))
 	return out
+
+
+## A single wall's pieces (`kind: "wall"`), local: along x in pieces of about `size`, two rows
+## up, `d` thick round z = 0; a door gap (at the middle, or a quarter in with a window) leaves
+## a lintel over it.
+static func wall_segments(w: float, d: float, wh: float, size: float, door: bool, window: bool) -> Array[AABB]:
+	var out: Array[AABB] = []
+	var rows := [[SLAB, (SLAB + wh) / 2.0], [(SLAB + wh) / 2.0, wh]]
+	var door_x := -w / 4.0 if window else 0.0
+	var gap := Vector2(door_x - VoxWall.DOOR.x / 2.0, door_x + VoxWall.DOOR.x / 2.0)
+	var top := SLAB + VoxWall.DOOR.y
+	for row: Array in rows:
+		var y0 := float(row[0])
+		var y1 := float(row[1])
+		var spans: Array[Vector2] = [Vector2(-w / 2.0, w / 2.0)]
+		if door and y0 < top:
+			spans = [Vector2(-w / 2.0, gap.x), Vector2(gap.y, w / 2.0)]
+		for span in spans:
+			if span.y - span.x < 0.05:
+				continue
+			for piece in _cuts(span.x, span.y, size):
+				out.append(AABB(Vector3(piece.x, y0, -d / 2.0), Vector3(piece.y - piece.x, y1 - y0, d)))
+	# The lintel over the door gap, from the door's top to the wall's.
+	if door and wh - top > 0.05:
+		out.append(AABB(Vector3(gap.x, top, -d / 2.0), Vector3(gap.y - gap.x, wh - top, d)))
+	return out
+
+
+func is_wall() -> bool:
+	return str(spec.get("kind", "house")) == "wall"
 
 
 ## `from`..`to` cut into equal pieces of about `size`, as (start, end) pairs.
@@ -547,8 +600,9 @@ func server_blast_bricks(centre: Vector3, radius: float) -> Array[Vector3]:
 	var mid := VoxShed.BRICK_WALL / 2.0
 	var seen: Dictionary[String, bool] = {}
 	var step := voxel * 2.0
-	# Each wall as the axis it faces along and where its middle is.
-	for wall: Array in [[0, w / 2.0 - mid], [0, -w / 2.0 + mid], [2, d / 2.0 - mid], [2, -d / 2.0 + mid]]:
+	# Each wall as the axis it faces along and where its middle is (a lone wall: just one).
+	var walls: Array = [[2, 0.0]] if is_wall() else [[0, w / 2.0 - mid], [0, -w / 2.0 + mid], [2, d / 2.0 - mid], [2, -d / 2.0 + mid]]
+	for wall: Array in walls:
 		var axis := int(wall[0])
 		var plane := float(wall[1])
 		var off := absf(local[axis] - plane)
@@ -795,7 +849,8 @@ func _build_graph() -> void:
 	for i in _segments.size():
 		var box := _segments[i]
 		_roof[i] = 1 if box.position.y >= wh - 0.01 else 0
-		if _roof[i] == 0 and box.position.y <= 0.01:
+		# On the ground, or on a lone wall's footing.
+		if _roof[i] == 0 and box.position.y <= SLAB + 0.01:
 			_anchors.append(i)
 		for j in range(i + 1, _segments.size()):
 			if box.grow(0.01).intersects(_segments[j].grow(0.01)):

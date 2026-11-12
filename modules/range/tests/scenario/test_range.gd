@@ -48,17 +48,35 @@ func _arrive(peer: int) -> PlayerController:
 	return player
 
 
-func test_arriving_rides_out_to_one_building_per_material() -> void:
+func test_arriving_rides_out_to_a_row_of_wall_samples() -> void:
 	var player := await _arrive(71)
 	assert_str(str(_missions.get(&"state"))).is_equal("in_mission")
 	assert_str(str((_missions.get(&"current") as Dictionary)["type"])).is_equal("test_range")
-	var materials: Array = (_missions.get(&"buildings") as Array).map(func(b: Dictionary) -> String: return "%s/%s" % [b["material"], b["glass"]])
-	assert_array(materials).contains_exactly(["wood/window_glass", "brick/window_glass", "concrete/window_glass", "wood/security_glass", "concrete/security_glass"])
+	var entries: Array = _missions.get(&"buildings")
+	var row: Array = ((_range.get(&"config") as Dictionary)["mission"]["buildings"] as Dictionary)["row"]
+	assert_int(entries.size()).is_equal(row.size())
+	for i in entries.size():
+		assert_str(str(entries[i].get("kind"))).is_equal("wall")
+		assert_str(str(entries[i]["material"])).is_equal(str(row[i]["material"]))
+	# Every material is there, glass of each kind too.
+	var materials := entries.map(func(b: Dictionary) -> String: return str(b["material"]))
+	for m in ["wood", "brick", "concrete", "sheet_metal", "window_glass", "tempered_glass", "laminated_glass", "security_glass"]:
+		assert_bool(materials.has(m)).override_failure_message(m).is_true()
 	assert_float(player.global_position.distance_to(SPAWN)).is_greater(50.0)
-	# Set down across the road from the row, within easy reach of every building.
+	# Set down across the road from the row, within reach of every sample.
 	await get_tree().physics_frame
-	for b: Dictionary in _missions.get(&"buildings"):
-		assert_float(player.global_position.distance_to(b["position"])).is_less(40.0)
+	for b: Dictionary in entries:
+		assert_float(player.global_position.distance_to(b["position"])).is_less(50.0)
+
+
+func test_every_sample_stands_on_its_own() -> void:
+	await _arrive(73)
+	await get_tree().physics_frame
+	for node in get_tree().get_nodes_in_group(&"mission_buildings"):
+		var b := node as MissionBuilding
+		var none: Array[int] = []
+		assert_array(b.server_unsupported(none)).override_failure_message(str(b.spec.get("label"))).is_empty()
+		assert_array(b.server_overloaded(none)).override_failure_message(str(b.spec.get("label"))).is_empty()
 
 
 func test_the_range_hands_out_its_charges() -> void:

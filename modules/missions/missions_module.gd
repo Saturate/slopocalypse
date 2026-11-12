@@ -916,7 +916,7 @@ func _build_buildings() -> void:
 		for entry: Dictionary in buildings:
 			# Entries sit 0.05 m sunk (see _open_zone); the pad is the ground they stand on.
 			pads.append({"at": (entry["position"] as Vector3) + Vector3.UP * 0.05, "yaw": float(entry["yaw"]), "blend": float(cfg.get("pad_blend", 4.0)),
-				"half": Vector2(float(entry["width"]) / 2.0 + margin, float(entry["depth"]) / 2.0 + margin)})
+				"half": Vector2(float(entry["width"]) / 2.0 + float(entry.get("pad_margin", margin)), float(entry["depth"]) / 2.0 + float(entry.get("pad_margin", margin)))})
 		ground.call(&"set_pads", pads)
 	for i in buildings.size():
 		var entry: Dictionary = buildings[i]
