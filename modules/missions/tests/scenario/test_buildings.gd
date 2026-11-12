@@ -211,7 +211,11 @@ func test_brick_shrugs_off_rifle_rounds_but_a_charge_breaks_it() -> void:
 	assert_str(str(b.struck_rules(point, inward)["name"])).is_equal("brick")
 	for i in 40:
 		assert_int(b.server_shot(point, 25.0, inward)).is_equal(-1)
-	assert_int(b.server_blast(point + b.global_transform.basis.x * 0.3, 3.0, 150.0, 1.6).size()).is_greater(0)
+	# A charge knocks its bricks out, and the piece that lost them gives way.
+	var bricks := b.server_blast_bricks(point + b.global_transform.basis.x * 0.3, 2.1)
+	assert_int(bricks.size()).is_greater(10)
+	b.knock_out(bricks, false)
+	assert_bool(b.server_weakened().has(b.segment_at(point))).is_true()
 
 
 func test_a_wooden_frame_in_a_concrete_wall_does_not_make_the_wall_easy_to_break() -> void:
