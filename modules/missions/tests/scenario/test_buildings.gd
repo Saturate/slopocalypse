@@ -484,6 +484,43 @@ func test_a_late_joiner_sees_the_same_bricks_gone() -> void:
 	assert_int(model.material_at(inside)).is_equal(0)
 
 
+func test_every_whole_building_stands_under_its_own_weight() -> void:
+	for material in ["wood", "brick", "concrete"]:
+		var b := _building(material)
+		var none: Array[int] = []
+		var over := b.server_overloaded(none)
+		var why := ""
+		for id in over:
+			why += " %d %s %.0fkg %s;" % [id, MissionBuilding.segments(float(b.spec["width"]), float(b.spec["depth"]), float(b.spec["wall_height"]), b.segment_size)[id], b.segment_mass(id), b.segment_rules(id).get("name")]
+		assert_array(over).override_failure_message(material + why).is_empty()
+		assert_float(b.segment_mass(0)).override_failure_message(material).is_greater(1.0)
+
+
+func test_a_house_left_on_one_corner_column_loses_it() -> void:
+	for material in ["wood", "brick", "concrete"]:
+		var b := _building(material)
+		var w := float(b.spec["width"])
+		var d := float(b.spec["depth"])
+		var wh := float(b.spec["wall_height"])
+		var all := MissionBuilding.segments(w, d, wh, b.segment_size)
+		# Keep only the wall pieces at the back right corner; break every other wall piece.
+		var corner := Vector3(w / 2.0, 0.0, d / 2.0)
+		var broke: Array[int] = []
+		var kept: Array[int] = []
+		for id in all.size():
+			var box := all[id]
+			if box.position.y >= wh - 0.01:
+				continue
+			var near := Vector2(box.get_center().x - corner.x, box.get_center().z - corner.z).length() < b.segment_size
+			if near:
+				kept.append(id)
+			else:
+				broke.append(id)
+		assert_array(kept).override_failure_message(material).is_not_empty()
+		var over := b.server_overloaded(broke)
+		assert_bool(kept.any(func(id: int) -> bool: return over.has(id))).override_failure_message("%s: kept %s, overloaded %s" % [material, kept, over]).is_true()
+
+
 func test_a_mission_can_ask_for_concrete() -> void:
 	var cfg := _cfg().duplicate()
 	cfg["material"] = "concrete"
