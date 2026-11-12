@@ -318,6 +318,27 @@ func test_a_window_pane_goes_on_the_first_round_and_leaves_its_frame() -> void:
 	assert_str(str(b.struck_rules(frame, c[2])["name"])).is_equal("wood")
 
 
+func test_a_broken_pane_leaves_shards_that_lie_on_the_ground_but_stop_nothing() -> void:
+	var c := _pane("window_glass")
+	var b: MissionBuilding = c[0]
+	var pane := b.pane_at(c[1], c[2])
+	b.break_panes([pane], true)
+	await get_tree().create_timer(0.2).timeout
+	var rubble := b.server_settle()
+	var shards := rubble.filter(func(r: Dictionary) -> bool: return r.has("pane"))
+	assert_int(shards.size()).is_greater(3)
+	assert_int(b.rubble_count()).is_equal(shards.size())
+	# Late joiners get the same shards.
+	var entry: Dictionary = (b.spec as Dictionary).duplicate()
+	entry["panes_broken"] = [pane]
+	entry["rubble"] = rubble
+	entry["position"] = Vector3(40, 0, -40)
+	var late: MissionBuilding = auto_free(MissionBuilding.new())
+	late.spec = entry
+	add_child(late)
+	assert_int(late.rubble_count()).is_equal(shards.size())
+
+
 func test_security_glass_stops_rounds_cracks_and_gives_out_after_twelve() -> void:
 	var c := _pane("security_glass")
 	var b: MissionBuilding = c[0]

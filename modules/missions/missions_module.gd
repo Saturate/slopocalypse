@@ -656,18 +656,27 @@ func _server_broke(i: int, broke: Array[int]) -> void:
 		fell = b.server_unsupported(broke)
 	Net.server_broadcast(&"missions.building_broken", {"index": i, "segments": broke, "fallen": fell})
 	# Once the chunks that came loose have come to rest, everyone freezes them where they lie.
-	var settle_after := float(((config["buildings"] as Dictionary).get("chunks", {}) as Dictionary).get("settle_seconds", 2.5))
-	get_tree().create_timer(settle_after).timeout.connect(func() -> void:
-		if is_instance_valid(b) and b.is_inside_tree():
-			var rubble := b.server_settle()
-			if not rubble.is_empty():
-				Net.server_broadcast(&"missions.rubble_settled", {"index": _building_nodes.find(b), "rubble": rubble}))
+	_server_settle_later(b)
 	if fell.is_empty():
 		return
 	var damage := float((config["buildings"] as Dictionary).get("fall_damage", 60.0))
 	get_tree().create_timer(b.fall_seconds).timeout.connect(func() -> void:
 		if is_instance_valid(b) and b.is_inside_tree():
 			b.server_crush(fell, damage))
+
+
+## Server: after the settle time, freezes `b`'s chunks that have had that long to land (and
+## tells everyone where they lie), and keeps checking while any are still flying.
+func _server_settle_later(b: MissionBuilding) -> void:
+	var settle_after := float(((config["buildings"] as Dictionary).get("chunks", {}) as Dictionary).get("settle_seconds", 2.5))
+	get_tree().create_timer(settle_after).timeout.connect(func() -> void:
+		if not is_instance_valid(b) or not b.is_inside_tree():
+			return
+		var rubble := b.server_settle(int(settle_after * 1000.0) - 50)
+		if not rubble.is_empty():
+			Net.server_broadcast(&"missions.rubble_settled", {"index": _building_nodes.find(b), "rubble": rubble})
+		if b.has_flying_chunks():
+			_server_settle_later(b))
 
 
 ## How many rounds of overloaded pieces giving way one break may set off.
@@ -701,7 +710,11 @@ func _on_panes_broken(p: Dictionary) -> void:
 		if not gone.has(int(v)):
 			gone.append(int(v))
 	entry["panes_broken"] = gone
-	_building_nodes[i].break_panes(p.get("panes", []), true)
+	var b := _building_nodes[i]
+	b.break_panes(p.get("panes", []), true)
+	# The shards settle where they land, like rubble.
+	if multiplayer.is_server():
+		_server_settle_later(b)
 
 
 ## Everywhere: chunks of a building came to rest; the layout entry keeps them (the newest

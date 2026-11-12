@@ -107,8 +107,10 @@ var _panes_gone: Dictionary[int, bool] = {}
 var _brick_wear: Dictionary[String, float] = {}
 ## Server: the dice for which neighbours a knocked-out brick drags along.
 var _stick_rng := RandomNumberGenerator.new()
-## Chunks flying or lying as rubble, by "piece:chunk".
+## Chunks flying or lying as rubble, by "piece:chunk" ("p<pane>:chunk" for glass shards).
 var _chunks: Dictionary[String, RigidBody3D] = {}
+## When each chunk came loose (milliseconds), so only those that had time to land settle.
+var _chunk_born: Dictionary[String, int] = {}
 ## The building as it was built, for placing the rubble a late joiner never saw fall.
 var _pristine: VoxelModel
 ## Segment id -> how many brick cells it started with (only pieces that have bricks).
@@ -431,14 +433,17 @@ func break_panes(indices: Array, debris: bool) -> void:
 		var pane: Dictionary = _panes[i]
 		var box: AABB = pane["box"]
 		var rules := VoxMaterials.at(int(pane["material"]))
-		var colour := _model.colour_at(box.get_center())
+		if debris and is_inside_tree():
+			# Shards of the pane itself, flying out and down; they land and stay.
+			var centre := box.get_center()
+			var out := Vector3(0.0, 0.0, 1.0 if i % 2 == 0 else -1.0) if is_wall() else Vector3(centre.x, 0.0, centre.z).normalized()
+			var bodies := LooseChunks.spawn(self, _model, -1 - i, box, (out + Vector3.DOWN * 0.2) * 2.0, int(spec.get("seed", 1)), _shard_boxes(i), true)
+			for k: int in bodies:
+				_chunks["p%d:%d" % [i, k]] = bodies[k]
+				_chunk_born["p%d:%d" % [i, k]] = Time.get_ticks_msec()
+			if _visual:
+				_sound(&"missions.surface_broke", global_transform * centre, str(rules.get("name", "")), 1)
 		_model.carve_material_box(box.position - Vector3.ONE * voxel * 0.1, box.end + Vector3.ONE * voxel * 0.1, int(pane["material"]))
-		if debris and _visual and is_inside_tree():
-			var at := global_transform * box.get_center()
-			var source := &"glass_bits" if str(rules.get("name", "")) == "tempered_glass" else &"glass_shards"
-			var out := (global_transform.basis * Vector3(box.get_center().x, 0.0, box.get_center().z)).normalized()
-			VoxelDebris.burst(get_parent(), at, out + Vector3.DOWN * 0.3, colour if colour.a > 0.0 else Color(0.2, 0.27, 0.32), source)
-			_sound(&"missions.surface_broke", at, str(rules.get("name", "")), 1)
 	if _visual and not indices.is_empty():
 		_remesh = true
 
@@ -648,33 +653,77 @@ func _let_go(seg: int, box: AABB, push: Vector3) -> void:
 	var bodies := LooseChunks.spawn(self, _model, seg, box, push, int(spec.get("seed", 1)))
 	for k: int in bodies:
 		_chunks["%d:%d" % [seg, k]] = bodies[k]
+		_chunk_born["%d:%d" % [seg, k]] = Time.get_ticks_msec()
+
+
+## Pane `i`'s shards: big for most glass, a spray of small bits for tempered.
+func _shard_boxes(i: int) -> Array[AABB]:
+	var pane: Dictionary = _panes[i]
+	var cfg := LooseChunks.config()
+	var small := str(VoxMaterials.at(int(pane["material"])).get("name", "")) == "tempered_glass"
+	var size := float(cfg.get("bits_size", 0.08)) if small else float(cfg.get("shard_size", 0.2))
+	return LooseChunks.boxes(pane["box"], size, int(cfg.get("max_shards", 24)))
+
+
+## True while some chunk this building let go is still flying.
+func has_flying_chunks() -> bool:
+	for body: RigidBody3D in _chunks.values():
+		if is_instance_valid(body) and not body.freeze:
+			return true
+	return false
 
 
 ## Server: the chunks that came loose and are still flying, frozen where they lie now as
-## rubble: `[{seg, k, at}]` (`at` local to the building).
-func server_settle() -> Array:
+## rubble: `[{seg, k, at}]` for wall pieces, `[{pane, k, at}]` for glass shards (`at` local to
+## the building).
+func server_settle(min_age_ms: int = 0) -> Array:
 	var out := []
 	var to_local := global_transform.affine_inverse()
+	var now := Time.get_ticks_msec()
 	for key: String in _chunks:
 		var body := _chunks[key]
 		if not is_instance_valid(body) or body.freeze:
 			continue
-		LooseChunks.settle(body)
+		# Only chunks that have had time to land (or already lie still).
+		if now - int(_chunk_born.get(key, 0)) < min_age_ms and not body.sleeping:
+			continue
 		var parts := key.split(":")
-		out.append({"seg": int(parts[0]), "k": int(parts[1]), "at": to_local * body.global_transform})
+		if key.begins_with("p"):
+			LooseChunks.settle(body, null, false)
+			out.append({"pane": int(parts[0].trim_prefix("p")), "k": int(parts[1]), "at": to_local * body.global_transform})
+		else:
+			LooseChunks.settle(body)
+			out.append({"seg": int(parts[0]), "k": int(parts[1]), "at": to_local * body.global_transform})
 	return out
 
 
 ## Everywhere: these chunks lie where the server says, frozen and solid. Ones this instance
-## never had (it joined late, or missed the fall) are made from the building's own voxels.
+## never had (it joined late, or missed the fall) are made from the building's own voxels;
+## ones it had from the same pieces that the server never had (a sliver its copy of the
+## voxels kept and the server's didn't) go, so nothing lies there twice.
 func settle_rubble(rubble: Array) -> void:
+	var told: Dictionary[String, bool] = {}
+	var pieces: Dictionary[String, bool] = {}
 	for r: Dictionary in rubble:
-		var key := "%d:%d" % [int(r["seg"]), int(r["k"])]
+		var key := _rubble_key(r)
+		told[key] = true
+		pieces[key.split(":")[0]] = true
+	for key: String in _chunks.keys():
+		var body := _chunks[key]
+		if pieces.has(key.split(":")[0]) and not told.has(key) and is_instance_valid(body) and not body.freeze:
+			body.queue_free()
+			_chunks.erase(key)
+	for r: Dictionary in rubble:
+		var key := _rubble_key(r)
 		var at := global_transform * (r["at"] as Transform3D)
 		if _chunks.has(key) and is_instance_valid(_chunks[key]):
-			LooseChunks.settle(_chunks[key], at)
+			LooseChunks.settle(_chunks[key], at, not r.has("pane"))
 		else:
 			_place_rubble([r])
+
+
+static func _rubble_key(r: Dictionary) -> String:
+	return "p%d:%d" % [int(r["pane"]), int(r["k"])] if r.has("pane") else "%d:%d" % [int(r["seg"]), int(r["k"])]
 
 
 ## Late: rubble from the entry, made from the building as it was built and put where it lies.
@@ -683,18 +732,26 @@ func _place_rubble(rubble: Array) -> void:
 		return
 	var source := _model if _pristine == null and _chunks.is_empty() and spec.get("broken", []).is_empty() else _pristine_model()
 	for r: Dictionary in rubble:
-		var seg := int(r["seg"])
+		var key := _rubble_key(r)
 		var k := int(r["k"])
-		var key := "%d:%d" % [seg, k]
-		if seg < 0 or seg >= _segments.size() or (_chunks.has(key) and is_instance_valid(_chunks[key])):
+		var glass := r.has("pane")
+		if _chunks.has(key) and is_instance_valid(_chunks[key]):
 			continue
-		var parts := LooseChunks.boxes(_carve_box(seg))
+		var parts: Array[AABB] = []
+		if glass:
+			if int(r["pane"]) < 0 or int(r["pane"]) >= _panes.size():
+				continue
+			parts = _shard_boxes(int(r["pane"]))
+		else:
+			if int(r["seg"]) < 0 or int(r["seg"]) >= _segments.size():
+				continue
+			parts = LooseChunks.boxes(_carve_box(int(r["seg"])))
 		if k < 0 or k >= parts.size():
 			continue
-		var body := LooseChunks.make(self, source, parts[k])
+		var body := LooseChunks.make(self, source, parts[k], glass)
 		if body == null:
 			continue
-		LooseChunks.settle(body)
+		LooseChunks.settle(body, null, not glass)
 		body.global_transform = global_transform * (r["at"] as Transform3D)
 		_chunks[key] = body
 
