@@ -1,4 +1,5 @@
 {
+  "flags": "drones:off,enemies:off",
   "type": {
     "name": "Test range",
     "script": "res://modules/range/types/test_range.gd",
@@ -23,9 +24,10 @@
       ]
     }
   },
+  "stand_across": 6.0,
   "gifts": { "breach_charge": 6 },
   "bot": {
-    "fire_seconds": 3.0,
+    "fire_seconds": 6.0,
     "aim_heights": [0.8, 1.6, 2.3],
     "charge_wait_seconds": 1.0,
     "settle_seconds": 2.0

@@ -6,7 +6,8 @@ import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { argv } from "node:process";
 import { localGodot } from "./lib/godot.ts";
+import { rangeArgs } from "./lib/range.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const extra = argv.includes("--bot") ? ["--bot=range"] : [];
-spawn(localGodot(root), ["--path", root, "--", "--solo", "--range", "--no-save", ...extra], { cwd: root, stdio: "inherit" });
+spawn(localGodot(root), ["--path", root, "--", "--solo", ...rangeArgs(root), ...extra], { cwd: root, stdio: "inherit" });
