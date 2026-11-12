@@ -1,4 +1,5 @@
 {
+  "max_pieces": 400,
   "sources": {
     "building": {"count": 24, "speed": 4.5, "speed_jitter": 0.3, "angle_jitter_degrees": 20, "spin_max": 8, "lifetime_seconds": 1.6},
     "building_chip": {"count": 5, "speed": 2.5, "speed_jitter": 0.3, "angle_jitter_degrees": 20, "spin_max": 8, "lifetime_seconds": 1.6},

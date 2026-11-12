@@ -4,7 +4,8 @@ extends MultiMeshInstance3D
 ## asphalt from the road, planks from a building). Client-only and purely for show, so the
 ## randomness needs no sync: every burst rolls its own speeds, directions and spins. Each
 ## source's numbers come from `debris.json` (`sources.<source>`). The burst moves its own
-## cubes and frees itself when their lifetime is up.
+## cubes and frees itself when their lifetime is up. At most `max_pieces` cubes (from the same
+## file) fly at once on a client; past that, the oldest go first.
 
 const CONFIG := "res://modules/world/data/debris.json"
 const REQUIRED := {
@@ -21,6 +22,10 @@ const SCALE_MIN := 0.6
 const SCALE_MAX := 1.4
 
 static var _sources: Dictionary = {}
+static var _max_pieces := -1
+## Live bursts, oldest first, and how many cubes they hold together.
+static var _live: Array[VoxelDebris] = []
+static var _live_count := 0
 
 ## Per cube: launch velocity (metres per second) and spin (radians per second about each axis).
 var velocities: Array[Vector3] = []
@@ -44,6 +49,9 @@ static func config(source: StringName) -> Dictionary:
 			Log.error(&"debris", "%s: needs a `sources` object" % CONFIG)
 			return {}
 		_sources = data["sources"]
+		_max_pieces = int((data as Dictionary).get("max_pieces", -1))
+		if _max_pieces < 0:
+			Log.error(&"debris", "%s: needs `max_pieces`" % CONFIG)
 	var entry: Variant = _sources.get(String(source))
 	if not entry is Dictionary or not Data.require("%s sources.%s" % [CONFIG, source], entry, REQUIRED):
 		Log.error(&"debris", "%s: no usable entry for `%s`" % [CONFIG, source])
@@ -70,7 +78,63 @@ static func burst(parent: Node, at: Vector3, towards: Vector3, colour: Color, so
 	debris.top_level = true
 	parent.add_child(debris)
 	debris.global_position = at
+	_live.append(debris)
+	_live_count += n
+	_trim()
 	return debris
+
+
+## Most cubes that fly at once (from the data; -1 before it is loaded).
+static func max_pieces() -> int:
+	return _max_pieces
+
+
+## Cubes flying on this client right now.
+static func live_count() -> int:
+	return _live_count
+
+
+## Over the cap: drops the oldest cubes (whole bursts first, then the front of the next).
+static func _trim() -> void:
+	while _max_pieces >= 0 and _live_count > _max_pieces and not _live.is_empty():
+		var oldest := _live[0]
+		var excess := _live_count - _max_pieces
+		if not is_instance_valid(oldest):
+			_live.remove_at(0)
+			continue
+		oldest.drop(mini(excess, oldest.pieces()))
+
+
+func pieces() -> int:
+	return _positions.size()
+
+
+## Removes the first `k` cubes; the burst goes once it has none.
+func drop(k: int) -> void:
+	k = mini(k, pieces())
+	if k <= 0:
+		return
+	for list: Array in [velocities, spins, _positions, _moving, _bases, _scales]:
+		for i in k:
+			list.remove_at(0)
+	_live_count -= k
+	if pieces() == 0:
+		_unlist()
+		queue_free()
+		return
+	multimesh.instance_count = pieces()
+	_place()
+
+
+func _unlist() -> void:
+	var i := _live.find(self)
+	if i >= 0:
+		_live.remove_at(i)
+		_live_count -= pieces()
+
+
+func _exit_tree() -> void:
+	_unlist()
 
 
 ## One cube's launch velocity: `speed` scaled by up to +/- `speed_jitter`, along `base`
