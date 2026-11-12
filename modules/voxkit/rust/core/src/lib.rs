@@ -152,6 +152,59 @@ impl Grid {
             .map_or(0, |m| m as u8)
     }
 
+    /// Each connected patch (cells sharing a face) of material `m`, as its bounding box in
+    /// metres `(min, max)`, in a fixed order (by first cell in storage order), so every
+    /// instance numbers them alike.
+    pub fn components(&self, m: u8) -> Vec<([f32; 3], [f32; 3])> {
+        if m == 0 {
+            return Vec::new();
+        }
+        let n = [self.nx, self.ny, self.nz];
+        let mut seen = vec![false; self.cells.len()];
+        let mut out = Vec::new();
+        let o = self.origin();
+        for start in 0..self.cells.len() {
+            if seen[start] || self.cells[start] == EMPTY || self.materials[start] != m {
+                continue;
+            }
+            seen[start] = true;
+            let mut lo = [usize::MAX; 3];
+            let mut hi = [0usize; 3];
+            let mut stack = vec![start];
+            while let Some(i) = stack.pop() {
+                let x = i % self.nx;
+                let z = (i / self.nx) % self.nz;
+                let y = i / (self.nx * self.nz);
+                let p = [x, y, z];
+                for a in 0..3 {
+                    lo[a] = lo[a].min(p[a]);
+                    hi[a] = hi[a].max(p[a]);
+                }
+                for a in 0..3 {
+                    for d in [-1i64, 1] {
+                        let v = p[a] as i64 + d;
+                        if v < 0 || v as usize >= n[a] {
+                            continue;
+                        }
+                        let mut q = p;
+                        q[a] = v as usize;
+                        let j = self.index(q[0], q[1], q[2]);
+                        if !seen[j] && self.cells[j] != EMPTY && self.materials[j] == m {
+                            seen[j] = true;
+                            stack.push(j);
+                        }
+                    }
+                }
+            }
+            let v = self.voxel;
+            out.push((
+                [0, 1, 2].map(|a| o[a] + lo[a] as f32 * v),
+                [0, 1, 2].map(|a| o[a] + (hi[a] + 1) as f32 * v),
+            ));
+        }
+        out
+    }
+
     /// Every write goes through here so the chunks it changes get remeshed. Materials don't
     /// change the mesh, but a cell's material only changes along with a write anyway.
     fn write(&mut self, x: usize, y: usize, z: usize, c: Colour, m: u8) {
@@ -360,6 +413,16 @@ impl Grid {
                 Op::Mark(m) => {
                     if g.cells[i] != EMPTY {
                         g.materials[i] = m;
+                    }
+                }
+                Op::CarveMaterial(m) => {
+                    if g.cells[i] != EMPTY && g.materials[i] == m {
+                        g.write(x, y, z, EMPTY, 0);
+                    }
+                }
+                Op::Recolour(paint, m) => {
+                    if g.cells[i] != EMPTY && g.materials[i] == m {
+                        g.write(x, y, z, paint.at(x, y, z), m);
                     }
                 }
             }
@@ -672,6 +735,10 @@ pub enum Op {
     Paint(Paint),
     /// Set the material of cells already filled, leaving their colour.
     Mark(u8),
+    /// Empty the cells of one material, leaving the rest (a pane out of its frame).
+    CarveMaterial(u8),
+    /// Recolour only the cells of one material (a crack mark on glass, not its frame).
+    Recolour(Paint, u8),
 }
 
 /// A colour with per-cell brightness jitter, so big surfaces don't look flat.
@@ -824,6 +891,52 @@ mod tests {
         assert_eq!(g.colour_at([-0.25, 0.5, 0.0]), RED);
         assert_eq!(g.colour_at([0.25, 0.5, 0.0]), EMPTY);
         assert_eq!(g.colour_at([0.0, -3.0, 0.0]), EMPTY);
+    }
+
+    #[test]
+    fn components_find_each_connected_patch_of_a_material() {
+        let mut g = Grid::new([2.0, 1.0, 1.0], 0.1);
+        g.brush = 1;
+        g.fill_box([-1.0, 0.0, -0.5], [1.0, 1.0, 0.5], fill(RED));
+        g.brush = 4;
+        // Two panes apart, and a third material between them.
+        g.fill_box([-0.8, 0.3, -0.05], [-0.4, 0.7, 0.05], fill(BLUE));
+        g.fill_box([0.4, 0.3, -0.05], [0.8, 0.7, 0.05], fill(BLUE));
+        let panes = g.components(4);
+        assert_eq!(panes.len(), 2);
+        for (min, max) in &panes {
+            assert!(max[0] - min[0] > 0.35 && max[0] - min[0] < 0.6);
+        }
+        assert!(g.components(9).is_empty());
+    }
+
+    #[test]
+    fn carving_one_material_leaves_the_rest() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        g.brush = 1;
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], fill(RED));
+        g.brush = 4;
+        g.fill_box([-0.2, 0.3, -0.1], [0.2, 0.7, 0.1], fill(BLUE));
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], Op::CarveMaterial(4));
+        assert_eq!(g.colour_at([0.0, 0.5, 0.0]), EMPTY);
+        assert_eq!(g.colour_at([-0.4, 0.5, 0.0]), RED);
+    }
+
+    #[test]
+    fn recolour_changes_only_one_material() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        g.brush = 1;
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], fill(RED));
+        g.brush = 4;
+        g.fill_box([-0.2, 0.3, -0.1], [0.2, 0.7, 0.1], fill(BLUE));
+        g.fill_box(
+            [-0.5, 0.0, -0.5],
+            [0.5, 1.0, 0.5],
+            Op::Recolour(Paint::solid(0xFFFFFF), 4),
+        );
+        assert_eq!(g.colour_at([0.0, 0.5, 0.0]), 0xFFFFFF);
+        assert_eq!(g.colour_at([-0.4, 0.5, 0.0]), RED);
+        assert_eq!(g.material_at([0.0, 0.5, 0.0]), 4);
     }
 
     #[test]

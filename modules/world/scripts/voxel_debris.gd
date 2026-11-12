@@ -163,7 +163,8 @@ func setup(towards: Vector3, colour: Color, cfg: Dictionary, count: int, speed: 
 		_bases.append(Basis.from_euler(Vector3(rng.randf_range(0.0, TAU), rng.randf_range(0.0, TAU), 0.0)))
 		_scales.append(rng.randf_range(SCALE_MIN, SCALE_MAX))
 	var box := BoxMesh.new()
-	box.size = Vector3.ONE * CUBE
+	# A source may ask for its own cube size (glass shards, tempered glass bits).
+	box.size = Vector3.ONE * float(cfg.get("size", CUBE))
 	var material := StandardMaterial3D.new()
 	material.albedo_color = colour
 	box.material = material

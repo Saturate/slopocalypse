@@ -283,6 +283,72 @@ func test_a_round_into_a_hole_carries_on_whole() -> void:
 	assert_float(float(b.bullet_exit(point, inward, 25.0).get("scale", 0.0))).is_equal(1.0)
 
 
+## A building whose right-hand window has `glass` panes, and that pane's centre with the way in.
+func _pane(glass: String) -> Array:
+	var entry: Dictionary = MissionLayout.buildings(_cfg(), 3, _road, 300.0)[0]
+	entry["material"] = "wood"
+	entry["windows"] = 2
+	entry["glass"] = glass
+	entry["position"] = Vector3(0, 0, -40)
+	var b: MissionBuilding = auto_free(MissionBuilding.new())
+	b.spec = entry
+	add_child(b)
+	b.global_position = entry["position"]
+	var w := float(entry["width"])
+	var point := b.global_transform * Vector3(w / 2.0, MissionBuilding.SLAB + VoxShed.WINDOW_SILL + VoxShed.WINDOW.y / 2.0, 0.0)
+	return [b, point, -b.global_transform.basis.x]
+
+
+func test_a_window_pane_goes_on_the_first_round_and_leaves_its_frame() -> void:
+	var c := _pane("window_glass")
+	var b: MissionBuilding = c[0]
+	assert_int(b.pane_count()).is_greater_equal(2)
+	var pane := b.server_pane_hit(c[1], c[2])
+	assert_int(pane).is_greater_equal(0)
+	b.break_panes([pane], false)
+	assert_bool(b.is_pane_broken(pane)).is_true()
+	# The glass is gone, so the next round flies on through the opening.
+	assert_float(float(b.bullet_exit(c[1], c[2], 25.0).get("scale", 0.0))).is_equal(1.0)
+	var frame := b.global_transform * Vector3(float(b.spec["width"]) / 2.0, MissionBuilding.SLAB + VoxShed.WINDOW_SILL - 0.07, 0.0)
+	assert_str(str(b.struck_rules(frame, c[2])["name"])).is_equal("wood")
+
+
+func test_security_glass_stops_rounds_cracks_and_gives_out_after_twelve() -> void:
+	var c := _pane("security_glass")
+	var b: MissionBuilding = c[0]
+	assert_bool(b.bullet_exit(c[1], c[2], 25.0).is_empty()).is_true()
+	var model: VoxelModel = b.get(&"_model")
+	var v := b.struck_voxel(c[1], c[2])
+	var before := model.colour_at(v)
+	var hits := int(VoxMaterials.named("security_glass")["hits_to_break"])
+	for i in hits - 1:
+		assert_int(b.server_pane_hit(c[1], c[2])).is_equal(-1)
+	b.bullet_mark(c[1], c[2])
+	assert_float(model.colour_at(v).v).is_greater(before.v)
+	assert_int(b.server_pane_hit(c[1], c[2])).is_greater_equal(0)
+
+
+func test_a_blast_takes_security_glass_out_at_once() -> void:
+	var c := _pane("security_glass")
+	var b: MissionBuilding = c[0]
+	var pane := b.pane_at(c[1], c[2])
+	assert_bool(b.server_blast_panes((c[1] as Vector3) - (c[2] as Vector3) * 0.5, 2.5, 1.6).has(pane)).is_true()
+
+
+func test_a_late_joiner_sees_the_same_panes_gone() -> void:
+	var c := _pane("window_glass")
+	var first: MissionBuilding = c[0]
+	var pane := first.pane_at(c[1], c[2])
+	var entry: Dictionary = (first.spec as Dictionary).duplicate()
+	entry["panes_broken"] = [pane]
+	var late: MissionBuilding = auto_free(MissionBuilding.new())
+	late.spec = entry
+	add_child(late)
+	late.global_position = entry["position"]
+	assert_bool(late.is_pane_broken(pane)).is_true()
+	assert_int(late.pane_at(c[1], c[2])).is_equal(-1)
+
+
 func test_a_mission_can_ask_for_concrete() -> void:
 	var cfg := _cfg().duplicate()
 	cfg["material"] = "concrete"
