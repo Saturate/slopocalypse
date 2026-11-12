@@ -21,6 +21,7 @@
     "ads_zoom": 1.25,
     "draw_seconds": 0.35
   },
+  "max_pass_throughs": 2,
   "charge": {
     "fuse_seconds": 1.5,
     "radius": 3.0,
