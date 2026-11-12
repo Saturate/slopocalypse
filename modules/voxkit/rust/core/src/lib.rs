@@ -34,6 +34,15 @@ pub struct Grid {
     pub corners: bool,
 }
 
+/// One piece of a `Grid::fracture`: its cells as their own grid, where that grid's origin sits
+/// in the source model, and the filled cells' bounds in its own space.
+pub struct Fragment {
+    pub grid: Grid,
+    pub offset: [f32; 3],
+    pub lo: [f32; 3],
+    pub hi: [f32; 3],
+}
+
 /// Chunk side in cells: each chunk meshes on its own, so an edit rebuilds only the chunks it
 /// touched.
 pub const CHUNK: usize = 16;
@@ -286,6 +295,165 @@ impl Grid {
             [0, 1, 2].map(|a| o[a] + lo[a] as f32 * v),
             [0, 1, 2].map(|a| o[a] + (hi[a] + 1) as f32 * v),
         ))
+    }
+
+    /// Breaks the cells inside the box (by centre) into fragments round `seeds` (model space):
+    /// each cell goes to the nearest seed, its distance pushed by up to `jag` voxels of noise
+    /// so the breaks are ragged. Cells of material `unit` (bricks) that touch go together, by
+    /// their middle, so a block is never split. Returns one `(grid, offset, lo, hi)` per seed
+    /// that got cells, in seed order: the fragment as its own grid, where its origin sits in
+    /// this model, and its filled cells' bounds in its own space.
+    pub fn fracture(
+        &self,
+        min: [f32; 3],
+        max: [f32; 3],
+        seeds: &[[f32; 3]],
+        unit: u8,
+        jag: f32,
+        seed: u32,
+    ) -> Vec<Fragment> {
+        if seeds.is_empty() {
+            return Vec::new();
+        }
+        let r = self.range_centres(min, max);
+        let [(x0, x1), (y0, y1), (z0, z1)] = r;
+        let nearest = |p: [f32; 3], x: usize, y: usize, z: usize| -> usize {
+            let n = (hash(x as u32, y as u32, z as u32, seed) * 2.0 - 1.0) * jag * self.voxel;
+            let mut best = 0;
+            let mut best_d = f32::MAX;
+            for (i, s) in seeds.iter().enumerate() {
+                let d = sub(p, *s);
+                let dist = dot(d, d).sqrt() + n;
+                if dist < best_d {
+                    best_d = dist;
+                    best = i;
+                }
+            }
+            best
+        };
+        let owner = self.unit_owners(r, unit, &nearest);
+        let n = [x1 - x0, y1 - y0, z1 - z0].map(|v| v.max(1));
+        let mut parts: Vec<Grid> = seeds.iter().map(|_| self.blank(n)).collect();
+        let mut lo = vec![[usize::MAX; 3]; seeds.len()];
+        let mut hi = vec![[0usize; 3]; seeds.len()];
+        for y in y0..y1 {
+            for z in z0..z1 {
+                for x in x0..x1 {
+                    let i = self.index(x, y, z);
+                    if self.cells[i] == EMPTY {
+                        continue;
+                    }
+                    let to = match owner.get(&i) {
+                        Some(&o) => o,
+                        None => nearest(self.centre(x, y, z), x, y, z),
+                    };
+                    let g = &mut parts[to];
+                    let local = [x - x0, y - y0, z - z0];
+                    let k = g.index(local[0], local[1], local[2]);
+                    g.cells[k] = self.cells[i];
+                    g.materials[k] = self.materials[i];
+                    for a in 0..3 {
+                        lo[to][a] = lo[to][a].min(local[a]);
+                        hi[to][a] = hi[to][a].max(local[a]);
+                    }
+                }
+            }
+        }
+        let o = self.origin();
+        let v = self.voxel;
+        let at = [
+            o[0] + x0 as f32 * v + n[0] as f32 * v / 2.0,
+            o[1] + y0 as f32 * v,
+            o[2] + z0 as f32 * v + n[2] as f32 * v / 2.0,
+        ];
+        let mut out = Vec::new();
+        for (i, g) in parts.into_iter().enumerate() {
+            if lo[i][0] == usize::MAX {
+                continue;
+            }
+            let go = g.origin();
+            let l = [0, 1, 2].map(|a| go[a] + lo[i][a] as f32 * v);
+            let h = [0, 1, 2].map(|a| go[a] + (hi[i][a] + 1) as f32 * v);
+            out.push(Fragment {
+                grid: g,
+                offset: at,
+                lo: l,
+                hi: h,
+            });
+        }
+        out
+    }
+
+    /// For `fracture`: every cell of material `unit` inside the cell range `r`, mapped to the
+    /// seed its whole connected patch goes to (the one nearest the patch's middle).
+    fn unit_owners(
+        &self,
+        r: [(usize, usize); 3],
+        unit: u8,
+        nearest: &impl Fn([f32; 3], usize, usize, usize) -> usize,
+    ) -> std::collections::HashMap<usize, usize> {
+        let mut owner = std::collections::HashMap::new();
+        if unit == 0 {
+            return owner;
+        }
+        let [(x0, x1), (y0, y1), (z0, z1)] = r;
+        let inside = |q: [i64; 3]| (0..3).all(|a| q[a] >= r[a].0 as i64 && q[a] < r[a].1 as i64);
+        let mut seen = std::collections::HashSet::new();
+        for y in y0..y1 {
+            for z in z0..z1 {
+                for x in x0..x1 {
+                    let i = self.index(x, y, z);
+                    if self.cells[i] == EMPTY || self.materials[i] != unit || !seen.insert(i) {
+                        continue;
+                    }
+                    let mut patch = vec![[x, y, z]];
+                    let mut stack = vec![[x, y, z]];
+                    while let Some(q) = stack.pop() {
+                        for a in 0..3 {
+                            for d in [-1i64, 1] {
+                                let mut p = q.map(|v| v as i64);
+                                p[a] += d;
+                                if !inside(p) {
+                                    continue;
+                                }
+                                let c = p.map(|v| v as usize);
+                                let k = self.index(c[0], c[1], c[2]);
+                                if self.cells[k] != EMPTY
+                                    && self.materials[k] == unit
+                                    && seen.insert(k)
+                                {
+                                    patch.push(c);
+                                    stack.push(c);
+                                }
+                            }
+                        }
+                    }
+                    let mut mid = [0f32; 3];
+                    for q in &patch {
+                        mid = add(mid, self.centre(q[0], q[1], q[2]));
+                    }
+                    let to = nearest(scale(mid, 1.0 / patch.len() as f32), x, y, z);
+                    for q in patch {
+                        owner.insert(self.index(q[0], q[1], q[2]), to);
+                    }
+                }
+            }
+        }
+        owner
+    }
+
+    /// An empty grid of exactly `n` cells at this one's voxel size.
+    fn blank(&self, n: [usize; 3]) -> Grid {
+        let mut g = Grid::new(n.map(|v| v as f32 * self.voxel), self.voxel);
+        g.nx = n[0];
+        g.ny = n[1];
+        g.nz = n[2];
+        g.cells = vec![EMPTY; n[0] * n[1] * n[2]];
+        g.materials = vec![0; n[0] * n[1] * n[2]];
+        g.chunks = n.map(|v| v.div_ceil(CHUNK));
+        g.dirty = vec![true; g.chunks[0] * g.chunks[1] * g.chunks[2]];
+        g.brush = self.brush;
+        g
     }
 
     /// How many filled cells of material `m` have their centres inside the box.
@@ -1115,6 +1283,31 @@ mod tests {
         assert!(glass.normals.iter().all(|n| n[2].abs() == 1.0));
         let layers = g.remesh_dirty_layers();
         assert_eq!(layers.len(), g.chunk_count());
+    }
+
+    #[test]
+    fn fracture_keeps_every_cell_and_never_splits_a_brick() {
+        let mut g = Grid::new([2.0, 1.0, 1.0], 0.1);
+        g.brush = 9;
+        g.fill_box([-1.0, 0.0, -0.1], [1.0, 1.0, 0.1], fill(RED));
+        g.brush = 7;
+        g.fill_box([-0.6, 0.2, -0.1], [-0.2, 0.4, 0.1], fill(BLUE));
+        let before = g.filled();
+        let seeds = [[-0.4, 0.3, 0.0], [-0.35, 0.35, 0.0], [0.5, 0.5, 0.0]];
+        let parts = g.fracture([-1.0, 0.0, -0.5], [1.0, 1.0, 0.5], &seeds, 7, 1.5, 3);
+        assert!(parts.len() >= 2);
+        assert_eq!(parts.iter().map(|p| p.grid.filled()).sum::<usize>(), before);
+        let with_brick = parts
+            .iter()
+            .filter(|p| {
+                (0..p.grid.cells.len())
+                    .any(|i| p.grid.cells[i] != EMPTY && p.grid.materials[i] == 7)
+            })
+            .count();
+        assert_eq!(with_brick, 1);
+        let again = g.fracture([-1.0, 0.0, -0.5], [1.0, 1.0, 0.5], &seeds, 7, 1.5, 3);
+        let sizes = |f: &[Fragment]| f.iter().map(|p| p.grid.filled()).collect::<Vec<_>>();
+        assert_eq!(sizes(&parts), sizes(&again));
     }
 
     #[test]

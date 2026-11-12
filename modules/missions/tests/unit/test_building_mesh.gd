@@ -63,9 +63,12 @@ func test_a_hole_rebuilds_only_the_chunks_it_touched() -> void:
 	assert_int(shown.refresh()).is_equal(0)
 
 
-func test_fallen_pieces_come_loose_as_chunks_that_settle_into_rubble() -> void:
+func _fragments_under(node: Node) -> Array:
+	return node.get_children().filter(func(n: Node) -> bool: return n is StaticBody3D and n.has_meta(&"fragment"))
+
+
+func test_fallen_pieces_fall_apart_into_fragments_that_come_to_rest_as_rubble() -> void:
 	var b := _building()
-	b.fall_seconds = 0.1
 	var model: VoxelModel = b.get(&"_model")
 	var before := model.voxel_count()
 	var wh := float(b.spec["wall_height"])
@@ -74,34 +77,32 @@ func test_fallen_pieces_come_loose_as_chunks_that_settle_into_rubble() -> void:
 		if MissionBuilding.segments(6.0, 5.0, wh, b.segment_size)[id].position.y >= wh - 0.01:
 			roof.append(id)
 	b.break_segments([], roof)
-	var chunks := get_children().filter(func(n: Node) -> bool: return n is RigidBody3D and (n as RigidBody3D).collision_layer == PhysicsLayers.DEBRIS)
-	# The roof's voxels left the model and came loose as several flying chunks.
-	assert_int(chunks.size()).is_greater(1)
+	var frags := _fragments_under(self)
+	# The roof's voxels left the model and fell apart into several fragments, none solid yet.
+	assert_int(frags.size()).is_greater(roof.size())
 	assert_int(model.voxel_count()).is_less(before)
-	for id: int in roof:
-		assert_bool(b.is_broken(id)).is_true()
-	await get_tree().create_timer(0.3).timeout
-	# Settled where they lie: frozen, solid, and they stay.
-	var rubble := b.server_settle()
-	assert_int(rubble.size()).is_equal(chunks.size())
-	assert_int(b.rubble_count()).is_equal(chunks.size())
-	assert_bool(chunks.all(func(c: Variant) -> bool: return (c as RigidBody3D).freeze and (c as RigidBody3D).collision_layer == PhysicsLayers.SOLID)).is_true()
+	assert_bool(frags.all(func(f: Variant) -> bool: return (f as StaticBody3D).collision_layer == 0)).is_true()
+	await get_tree().create_timer(2.0).timeout
+	# Landed: solid rubble on the ground, all of it.
+	assert_int(b.rubble_count()).is_equal(frags.size())
+	assert_bool(frags.all(func(f: Variant) -> bool: return (f as StaticBody3D).collision_layer == PhysicsLayers.SOLID)).is_true()
 
 
-func test_a_late_joiner_places_the_same_rubble() -> void:
+func test_the_same_break_comes_to_rest_in_the_same_place_for_a_late_joiner() -> void:
 	var b := _building()
-	var wh := float(b.spec["wall_height"])
-	var piece := 0
-	b.break_segments([piece])
-	await get_tree().create_timer(0.2).timeout
-	var rubble := b.server_settle()
-	assert_array(rubble).is_not_empty()
+	b.break_segments([0, 1])
+	await get_tree().create_timer(2.0).timeout
+	var here := _fragments_under(self).map(func(f: Variant) -> Vector3: return (f as Node3D).global_position)
 	var entry: Dictionary = (b.spec as Dictionary).duplicate()
-	entry["broken"] = [piece]
-	entry["rubble"] = rubble
+	entry["broken"] = [0, 1]
 	var late: MissionBuilding = auto_free(MissionBuilding.new())
 	late.spec = entry
 	late.material_cfg = VoxMaterials.named("wood")
 	late.set(&"_visual", true)
-	add_child(late)
-	assert_int(late.rubble_count()).is_equal(rubble.size())
+	var holder: Node3D = auto_free(Node3D.new())
+	add_child(holder)
+	holder.add_child(late)
+	assert_int(late.rubble_count()).is_equal(here.size())
+	var there := _fragments_under(holder).map(func(f: Variant) -> Vector3: return (f as Node3D).global_position)
+	for p: Vector3 in there:
+		assert_bool(here.any(func(q: Vector3) -> bool: return q.distance_to(p) < 0.01)).override_failure_message("a late fragment at %s lies where nobody else's does" % p).is_true()

@@ -85,7 +85,6 @@ func _ready() -> void:
 	EventBus.subscribe(&"missions.building_broken", _on_building_broken)
 	EventBus.subscribe(&"missions.panes_broken", _on_panes_broken)
 	EventBus.subscribe(&"missions.bricks_knocked", _on_bricks_knocked)
-	EventBus.subscribe(&"missions.rubble_settled", _on_rubble_settled)
 	EventBus.subscribe(&"world.ready", _on_world_ready)
 	EventBus.subscribe(&"player.interact", _on_player_interact)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
@@ -106,7 +105,6 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"missions.building_broken", _on_building_broken)
 	EventBus.unsubscribe(&"missions.panes_broken", _on_panes_broken)
 	EventBus.unsubscribe(&"missions.bricks_knocked", _on_bricks_knocked)
-	EventBus.unsubscribe(&"missions.rubble_settled", _on_rubble_settled)
 	if Net.peer_joined.is_connected(_on_peer_joined):
 		Net.peer_joined.disconnect(_on_peer_joined)
 	if Net.peer_left.is_connected(_on_peer_left):
@@ -655,28 +653,12 @@ func _server_broke(i: int, broke: Array[int]) -> void:
 		broke.append_array(over)
 		fell = b.server_unsupported(broke)
 	Net.server_broadcast(&"missions.building_broken", {"index": i, "segments": broke, "fallen": fell})
-	# Once the chunks that came loose have come to rest, everyone freezes them where they lie.
-	_server_settle_later(b)
 	if fell.is_empty():
 		return
 	var damage := float((config["buildings"] as Dictionary).get("fall_damage", 60.0))
 	get_tree().create_timer(b.fall_seconds).timeout.connect(func() -> void:
 		if is_instance_valid(b) and b.is_inside_tree():
 			b.server_crush(fell, damage))
-
-
-## Server: after the settle time, freezes `b`'s chunks that have had that long to land (and
-## tells everyone where they lie), and keeps checking while any are still flying.
-func _server_settle_later(b: MissionBuilding) -> void:
-	var settle_after := float(((config["buildings"] as Dictionary).get("chunks", {}) as Dictionary).get("settle_seconds", 2.5))
-	get_tree().create_timer(settle_after).timeout.connect(func() -> void:
-		if not is_instance_valid(b) or not b.is_inside_tree():
-			return
-		var rubble := b.server_settle(int(settle_after * 1000.0) - 50)
-		if not rubble.is_empty():
-			Net.server_broadcast(&"missions.rubble_settled", {"index": _building_nodes.find(b), "rubble": rubble})
-		if b.has_flying_chunks():
-			_server_settle_later(b))
 
 
 ## How many rounds of overloaded pieces giving way one break may set off.
@@ -696,6 +678,12 @@ func _on_building_broken(p: Dictionary) -> void:
 		if not broken.has(int(s)):
 			broken.append(int(s))
 	entry["broken"] = broken
+	# Which ones just dropped (no push), so a late joiner's rubble lies where everyone's does.
+	var dropped: Array = entry.get("fallen", [])
+	for s: Variant in fallen:
+		if not dropped.has(int(s)):
+			dropped.append(int(s))
+	entry["fallen"] = dropped
 	_building_nodes[i].break_segments(segs, fallen)
 
 
@@ -712,25 +700,6 @@ func _on_panes_broken(p: Dictionary) -> void:
 	entry["panes_broken"] = gone
 	var b := _building_nodes[i]
 	b.break_panes(p.get("panes", []), true)
-	# The shards settle where they land, like rubble.
-	if multiplayer.is_server():
-		_server_settle_later(b)
-
-
-## Everywhere: chunks of a building came to rest; the layout entry keeps them (the newest
-## `rubble_max`) for late joiners.
-func _on_rubble_settled(p: Dictionary) -> void:
-	var i := int(p.get("index", -1))
-	if i < 0 or i >= _building_nodes.size() or i >= buildings.size():
-		return
-	var entry: Dictionary = buildings[i]
-	var rubble: Array = entry.get("rubble", [])
-	rubble.append_array(p.get("rubble", []))
-	var cap := int((config["buildings"] as Dictionary).get("rubble_max", 200))
-	while rubble.size() > cap:
-		rubble.remove_at(0)
-	entry["rubble"] = rubble
-	_building_nodes[i].settle_rubble(p.get("rubble", []))
 
 
 ## Everywhere: bricks came out of a building; the layout entry remembers them for late joiners.
