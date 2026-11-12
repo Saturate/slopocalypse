@@ -26,6 +26,12 @@ extends StaticBody3D
 ## security glass after twelve), or at once in a blast; panes that crack get a lighter mark
 ## where each round struck. Broken panes travel in the entry's `panes_broken`.
 ##
+## Bricks come out one at a time: a material with `pop_damage` (brick) is laid as blocks
+## walled in by another (mortar), and once the rounds into one block add up to that much damage
+## it pops out, leaving a brick-shaped hole. The server counts it per brick and names a point
+## inside it; every instance finds the same brick from that point, and the entry's `knocked`
+## carries them to late joiners. A wall piece that has lost most of its bricks gives way.
+##
 ## Every instance builds the voxel model, the server too (without a mesh), so a hit looks up
 ## the same voxels everywhere.
 
@@ -42,6 +48,10 @@ const BRICK_VOXEL := 0.075
 const STRIKE_DEPTH := 0.6
 ## A crack mark's radius on glass, metres.
 const CRACK_RADIUS := 0.12
+## The most cells one brick can have; a bigger patch of brick is a wall, not a brick.
+const BRICK_CAP := 400
+## A wall piece left with less than this share of its bricks gives way.
+const BRICK_HOLD := 0.4
 
 ## The layout entry: `{position, yaw, width, depth, wall_height, windows, paint, seed,
 ## broken}`.
@@ -73,6 +83,10 @@ var _panes: Array[Dictionary] = []
 ## Server: pane index -> hits taken.
 var _pane_hits: Dictionary[int, int] = {}
 var _panes_gone: Dictionary[int, bool] = {}
+## Server: damage taken per brick, keyed by the brick's box.
+var _brick_wear: Dictionary[String, float] = {}
+## Segment id -> how many brick cells it started with (only pieces that have bricks).
+var _bricks_at_start: Dictionary[int, int] = {}
 ## The support graph (built on first use): connected segment pairs, roof flags and the
 ## segments standing on the slab.
 var _edges := PackedInt32Array()
@@ -112,9 +126,13 @@ func _ready() -> void:
 			for box: AABB in _model.components(i):
 				_panes.append({"box": box, "material": i})
 	_segment_material.resize(_segments.size())
+	var brick := VoxMaterials.index_of("brick")
 	for i in _segments.size():
 		var box := _carve_box(i)
 		_segment_material[i] = _model.dominant_material(box.position, box.end)
+		var bricks := _model.count_material(box.position, box.end, brick)
+		if bricks > 0:
+			_bricks_at_start[i] = bricks
 	if _visual:
 		_mesh = VoxelChunkedMesh.new()
 		_mesh.name = "Mesh"
@@ -122,6 +140,7 @@ func _ready() -> void:
 		add_child(_mesh)
 	_remove(spec.get("broken", []), false)
 	break_panes(spec.get("panes_broken", []), false)
+	knock_out(spec.get("knocked", []), false)
 	if _visual:
 		_mesh.refresh()
 
@@ -328,6 +347,63 @@ func break_panes(indices: Array, debris: bool) -> void:
 			_sound(&"missions.surface_broke", at, str(rules.get("name", "")), 1)
 	if _visual and not indices.is_empty():
 		_remesh = true
+
+
+## Server: a round with `damage` struck at `point` along `direction`. If it struck a block
+## that pops out (a brick), it adds to that brick's wear; once the wear reaches its
+## material's `pop_damage`, returns a point inside the brick (local) to knock out, else INF.
+func server_brick_hit(point: Vector3, direction: Vector3, damage: float) -> Vector3:
+	var v := struck_voxel(point, direction)
+	if v == Vector3.INF:
+		return Vector3.INF
+	var m := _model.material_at(v)
+	var pop := float(VoxMaterials.at(m).get("pop_damage", 0.0))
+	if pop <= 0.0:
+		return Vector3.INF
+	var box := _model.component_at(v, m, BRICK_CAP)
+	if box.size == Vector3.ZERO:
+		return Vector3.INF
+	var key := str(box.position)
+	_brick_wear[key] = float(_brick_wear.get(key, 0.0)) + damage
+	if _brick_wear[key] < pop:
+		return Vector3.INF
+	_brick_wear.erase(key)
+	return v
+
+
+## Everywhere: the bricks holding these points (local) come out, with a little debris and a
+## crumble on clients.
+func knock_out(points: Array, debris: bool) -> void:
+	for p: Variant in points:
+		var at: Vector3 = p
+		var m := _model.material_at(at)
+		if m == 0:
+			continue
+		var box := _model.component_at(at, m, BRICK_CAP)
+		if box.size == Vector3.ZERO:
+			continue
+		var colour := _model.colour_at(at)
+		_model.carve_material_box(box.position - Vector3.ONE * voxel * 0.1, box.end + Vector3.ONE * voxel * 0.1, m)
+		if debris and _visual and is_inside_tree():
+			var world := global_transform * box.get_center()
+			var out := (global_transform.basis * Vector3(box.get_center().x, 0.0, box.get_center().z)).normalized()
+			VoxelDebris.burst(get_parent(), world, out, colour if colour.a > 0.0 else Color(0.55, 0.27, 0.2), &"brick")
+			_sound(&"missions.surface_broke", world, str(VoxMaterials.at(m).get("name", "")), 1)
+	if _visual and not points.is_empty():
+		_remesh = true
+
+
+## Server: the standing wall pieces that have lost too many bricks to stand.
+func server_weakened() -> Array[int]:
+	var brick := VoxMaterials.index_of("brick")
+	var out: Array[int] = []
+	for id: int in _bricks_at_start:
+		if not _shapes.has(id):
+			continue
+		var box := _carve_box(id)
+		if float(_model.count_material(box.position, box.end, brick)) < float(_bricks_at_start[id]) * BRICK_HOLD:
+			out.append(id)
+	return out
 
 
 ## Server, for the weapons' trace: whether a round travelling along `direction` that hit

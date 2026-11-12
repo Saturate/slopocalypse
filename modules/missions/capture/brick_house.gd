@@ -1,6 +1,7 @@
 extends Node3D
-## Capture setup: a brick mission building up close, then a few rifle rounds into its front:
-## bricks in mortar joints, a running bond, chips off brick and mortar.
+## Capture setup: a brick mission building up close, then rifle rounds into its back wall:
+## bricks in mortar joints, a running bond, chips off brick and mortar, and single bricks
+## knocked out where five rounds went.
 
 const BUILDING_AT := Vector3(0.0, 0.0, -8.0)
 
@@ -34,7 +35,12 @@ func _ready() -> void:
 func _physics_process(_delta: float) -> void:
 	_ticks += 1
 	if _ticks >= 60 and _ticks < 90:
+		# Six spots, five rounds each: enough to knock a brick out of each.
 		var k := _ticks - 60
-		var to := _building.global_transform * Vector3(-2.5 + k * 0.17, 0.5 + fmod(k * 0.37, 1.0) * 1.8, -3.0)
+		var spot := k % 6
+		var to := _building.global_transform * Vector3(-2.4 + spot * 0.9, 0.7 + (spot % 3) * 0.6, 3.0)
 		var from := to + Vector3(0.0, 0.2, 10.0)
 		_building.bullet_mark(to, to - from)
+		var inside := _building.server_brick_hit(to, to - from, 25.0)
+		if inside != Vector3.INF:
+			_building.knock_out([inside], true)

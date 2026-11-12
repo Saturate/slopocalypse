@@ -205,6 +205,76 @@ impl Grid {
         out
     }
 
+    /// The connected patch (cells sharing a face) of material `m` holding the cell at `p`
+    /// (model space), as its bounding box in metres `(min, max)`; `None` when that cell isn't
+    /// `m`, or the patch is bigger than `cap` cells (not a single brick but a whole wall).
+    pub fn component_at(&self, p: [f32; 3], m: u8, cap: usize) -> Option<([f32; 3], [f32; 3])> {
+        let o = self.origin();
+        let cell = [0, 1, 2].map(|a| ((p[a] - o[a]) / self.voxel).floor());
+        let n = [self.nx, self.ny, self.nz];
+        if (0..3).any(|a| cell[a] < 0.0 || cell[a] as usize >= n[a]) {
+            return None;
+        }
+        let start = self.index(cell[0] as usize, cell[1] as usize, cell[2] as usize);
+        if m == 0 || self.cells[start] == EMPTY || self.materials[start] != m {
+            return None;
+        }
+        let mut seen = std::collections::HashSet::new();
+        seen.insert(start);
+        let mut stack = vec![start];
+        let mut lo = [usize::MAX; 3];
+        let mut hi = [0usize; 3];
+        while let Some(i) = stack.pop() {
+            let x = i % self.nx;
+            let z = (i / self.nx) % self.nz;
+            let y = i / (self.nx * self.nz);
+            let q = [x, y, z];
+            for a in 0..3 {
+                lo[a] = lo[a].min(q[a]);
+                hi[a] = hi[a].max(q[a]);
+            }
+            for a in 0..3 {
+                for d in [-1i64, 1] {
+                    let v = q[a] as i64 + d;
+                    if v < 0 || v as usize >= n[a] {
+                        continue;
+                    }
+                    let mut r = q;
+                    r[a] = v as usize;
+                    let j = self.index(r[0], r[1], r[2]);
+                    if self.cells[j] != EMPTY && self.materials[j] == m && seen.insert(j) {
+                        if seen.len() > cap {
+                            return None;
+                        }
+                        stack.push(j);
+                    }
+                }
+            }
+        }
+        let v = self.voxel;
+        Some((
+            [0, 1, 2].map(|a| o[a] + lo[a] as f32 * v),
+            [0, 1, 2].map(|a| o[a] + (hi[a] + 1) as f32 * v),
+        ))
+    }
+
+    /// How many filled cells of material `m` have their centres inside the box.
+    pub fn count_material(&self, min: [f32; 3], max: [f32; 3], m: u8) -> usize {
+        let [(x0, x1), (y0, y1), (z0, z1)] = self.range_centres(min, max);
+        let mut count = 0;
+        for y in y0..y1 {
+            for z in z0..z1 {
+                for x in x0..x1 {
+                    let i = self.index(x, y, z);
+                    if self.cells[i] != EMPTY && self.materials[i] == m {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        count
+    }
+
     /// Every write goes through here so the chunks it changes get remeshed. Materials don't
     /// change the mesh, but a cell's material only changes along with a write anyway.
     fn write(&mut self, x: usize, y: usize, z: usize, c: Colour, m: u8) {
@@ -937,6 +1007,26 @@ mod tests {
         assert_eq!(g.colour_at([0.0, 0.5, 0.0]), 0xFFFFFF);
         assert_eq!(g.colour_at([-0.4, 0.5, 0.0]), RED);
         assert_eq!(g.material_at([0.0, 0.5, 0.0]), 4);
+    }
+
+    #[test]
+    fn component_at_finds_the_one_brick_round_a_point() {
+        let mut g = Grid::new([2.0, 1.0, 1.0], 0.1);
+        g.brush = 9;
+        g.fill_box([-1.0, 0.0, -0.5], [1.0, 1.0, 0.5], fill(RED));
+        g.brush = 7;
+        // Two bricks with a joint between them.
+        g.fill_box([-0.6, 0.2, -0.2], [-0.2, 0.4, 0.2], fill(BLUE));
+        g.fill_box([-0.1, 0.2, -0.2], [0.3, 0.4, 0.2], fill(BLUE));
+        let (min, max) = g.component_at([-0.4, 0.3, 0.0], 7, 1000).unwrap();
+        assert!(min[0] > -0.65 && max[0] < -0.15);
+        assert!(g.component_at([0.6, 0.3, 0.0], 7, 1000).is_none());
+        // A patch bigger than the cap isn't a brick.
+        assert!(g.component_at([0.6, 0.3, 0.0], 9, 50).is_none());
+        assert_eq!(
+            g.count_material([-1.0, 0.0, -0.5], [1.0, 1.0, 0.5], 7),
+            2 * 4 * 2 * 4
+        );
     }
 
     #[test]

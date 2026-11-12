@@ -349,6 +349,84 @@ func test_a_late_joiner_sees_the_same_panes_gone() -> void:
 	assert_int(late.pane_at(c[1], c[2])).is_equal(-1)
 
 
+## A spot on the right-hand wall, below the window, where a round strikes a brick (not a
+## joint), with the way in.
+func _brick_spot(b: MissionBuilding) -> Array:
+	var w := float(b.spec["width"])
+	var inward := -b.global_transform.basis.x
+	for i in 40:
+		var point := b.global_transform * Vector3(w / 2.0, 0.4 + i * 0.02, -1.0 + i * 0.03)
+		if str(b.struck_rules(point, inward)["name"]) == "brick":
+			return [point, inward]
+	return []
+
+
+func test_four_rifle_rounds_knock_out_one_brick_and_leave_the_mortar() -> void:
+	var b := _building("brick")
+	var spot := _brick_spot(b)
+	assert_array(spot).is_not_empty()
+	for i in 3:
+		assert_vector(b.server_brick_hit(spot[0], spot[1], 25.0)).is_equal(Vector3.INF)
+	var inside := b.server_brick_hit(spot[0], spot[1], 25.0)
+	assert_vector(inside).is_not_equal(Vector3.INF)
+	var model: VoxelModel = b.get(&"_model")
+	var brick := VoxMaterials.index_of("brick")
+	var box := model.component_at(inside, brick, MissionBuilding.BRICK_CAP)
+	var mortar_before := model.count_material(box.grow(b.voxel).position, box.grow(b.voxel).end, VoxMaterials.index_of("mortar"))
+	b.knock_out([inside], false)
+	assert_int(model.material_at(inside)).is_equal(0)
+	assert_int(model.count_material(box.position, box.end, brick)).is_equal(0)
+	assert_int(model.count_material(box.grow(b.voxel).position, box.grow(b.voxel).end, VoxMaterials.index_of("mortar"))).is_equal(mortar_before)
+
+
+func test_a_pistol_takes_a_round_more() -> void:
+	var b := _building("brick")
+	var spot := _brick_spot(b)
+	for i in 4:
+		assert_vector(b.server_brick_hit(spot[0], spot[1], 20.0)).is_equal(Vector3.INF)
+	assert_vector(b.server_brick_hit(spot[0], spot[1], 20.0)).is_not_equal(Vector3.INF)
+
+
+func test_a_wall_piece_that_loses_most_of_its_bricks_gives_way() -> void:
+	var b := _building("brick")
+	var w := float(b.spec["width"])
+	var point := b.global_transform * Vector3(w / 2.0, 0.6, 0.0)
+	var id := b.segment_at(point)
+	assert_array(b.server_weakened()).is_empty()
+	var model: VoxelModel = b.get(&"_model")
+	var brick := VoxMaterials.index_of("brick")
+	var seg: AABB = b.call(&"_carve_box", id)
+	# Knock out every brick in that piece, one point per brick found.
+	var points: Array = []
+	var y := seg.position.y + b.voxel * 0.5
+	while y < seg.end.y:
+		var z := seg.position.z + b.voxel * 0.5
+		while z < seg.end.z:
+			var p := Vector3(w / 2.0 - b.voxel * 0.5, y, z)
+			if model.material_at(p) == brick:
+				points.append(p)
+				b.knock_out([p], false)
+			z += b.voxel
+		y += b.voxel
+	assert_int(points.size()).is_greater(3)
+	assert_bool(b.server_weakened().has(id)).is_true()
+
+
+func test_a_late_joiner_sees_the_same_bricks_gone() -> void:
+	var b := _building("brick")
+	var spot := _brick_spot(b)
+	var inside := b.struck_voxel(spot[0], spot[1])
+	var entry: Dictionary = (b.spec as Dictionary).duplicate()
+	entry["knocked"] = [inside]
+	var late: MissionBuilding = auto_free(MissionBuilding.new())
+	late.spec = entry
+	late.material_cfg = VoxMaterials.named("brick")
+	add_child(late)
+	late.global_position = entry["position"]
+	var model: VoxelModel = late.get(&"_model")
+	assert_int(model.material_at(inside)).is_equal(0)
+
+
 func test_a_mission_can_ask_for_concrete() -> void:
 	var cfg := _cfg().duplicate()
 	cfg["material"] = "concrete"
