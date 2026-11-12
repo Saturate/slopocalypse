@@ -16,11 +16,10 @@ extends StaticBody3D
 ## server passes the weight of everything standing down to the ground, and a piece carrying
 ## more than it can gives way, so a house isn't held up by one corner piece.
 ##
-## A piece that breaks comes loose: chunks of its own voxels thrown out (see `LooseChunks`),
-## tumbling and landing, not a square that vanishes; the server runs the same chunks, and once
-## they rest it says where each lies, and everyone freezes them there as solid rubble. The
-## entry's `rubble` carries them to late joiners, who place them straight from the building's
-## own voxels. Blasts knock the bricks of
+## A piece that breaks falls apart into ragged fragments of its own voxels (see
+## `LooseChunks`), tumbling to rest as solid rubble; every crack and fall comes from a seed, so
+## the server, every client and anyone joining later (from the entry's `broken` and `fallen`)
+## put each fragment in the same place without anything more being sent. Blasts knock the bricks of
 ## a brick wall out one by one within their reach, so brick walls go ragged.
 ##
 ## Pieces nothing holds up any more fall (see `BuildingSupport`): the server takes them
@@ -103,16 +102,14 @@ var _panes: Array[Dictionary] = []
 ## Server: pane index -> hits taken.
 var _pane_hits: Dictionary[int, int] = {}
 var _panes_gone: Dictionary[int, bool] = {}
+## Per segment: how many voxels it started with, so it can tell when it has lost too many.
+var _cells_at_start: Dictionary[int, int] = {}
 ## Server: damage taken per brick, keyed by the brick's box.
 var _brick_wear: Dictionary[String, float] = {}
 ## Server: the dice for which neighbours a knocked-out brick drags along.
 var _stick_rng := RandomNumberGenerator.new()
-## Chunks flying or lying as rubble, by "piece:chunk" ("p<pane>:chunk" for glass shards).
-var _chunks: Dictionary[String, RigidBody3D] = {}
-## When each chunk came loose (milliseconds), so only those that had time to land settle.
-var _chunk_born: Dictionary[String, int] = {}
-## The building as it was built, for placing the rubble a late joiner never saw fall.
-var _pristine: VoxelModel
+## Fragments falling or lying as rubble.
+var _fragments: Array[Node3D] = []
 ## Segment id -> how many brick cells it started with (only pieces that have bricks).
 var _bricks_at_start: Dictionary[int, int] = {}
 ## Per segment: its weight (kg, from its voxels) and how much it can carry (kg).
@@ -169,6 +166,10 @@ func _ready() -> void:
 		var bricks := _model.count_material(box.position, box.end, brick)
 		if bricks > 0:
 			_bricks_at_start[i] = bricks
+		var cells := 0
+		for m in range(1, VoxMaterials.all().size()):
+			cells += _model.count_material(box.position, box.end, m)
+		_cells_at_start[i] = cells
 	_weigh()
 	if _visual:
 		# Glass is drawn see-through.
@@ -182,9 +183,12 @@ func _ready() -> void:
 		_mesh.name = "Mesh"
 		_mesh.model = _model
 		add_child(_mesh)
-	_place_rubble(spec.get("rubble", []))
+	# Someone joining late: the rubble of what already broke, lying where it came to rest.
+	var fallen: Array = spec.get("fallen", [])
+	var thrown: Array = (spec.get("broken", []) as Array).filter(func(v: Variant) -> bool: return not fallen.has(v))
+	_shatter(thrown, fallen, false)
 	_remove(spec.get("broken", []), false)
-	break_panes(spec.get("panes_broken", []), false)
+	break_panes(spec.get("panes_broken", []), true, false)
 	knock_out(spec.get("knocked", []), false)
 	if _visual:
 		_mesh.refresh()
@@ -424,7 +428,7 @@ func server_blast_panes(centre: Vector3, radius: float, reach: float) -> Array[i
 
 ## Everywhere: the panes go, leaving their frames; on clients with shards (big ones for
 ## window glass, a spray of small ones for tempered) and a break sound.
-func break_panes(indices: Array, debris: bool) -> void:
+func break_panes(indices: Array, debris: bool, animate := true) -> void:
 	for v: Variant in indices:
 		var i := int(v)
 		if i < 0 or i >= _panes.size() or _panes_gone.has(i):
@@ -437,11 +441,8 @@ func break_panes(indices: Array, debris: bool) -> void:
 			# Shards of the pane itself, flying out and down; they land and stay.
 			var centre := box.get_center()
 			var out := Vector3(0.0, 0.0, 1.0 if i % 2 == 0 else -1.0) if is_wall() else Vector3(centre.x, 0.0, centre.z).normalized()
-			var bodies := LooseChunks.spawn(self, _model, -1 - i, box, (out + Vector3.DOWN * 0.2) * 2.0, int(spec.get("seed", 1)), _shard_boxes(i), true)
-			for k: int in bodies:
-				_chunks["p%d:%d" % [i, k]] = bodies[k]
-				_chunk_born["p%d:%d" % [i, k]] = Time.get_ticks_msec()
-			if _visual:
+			_fragments.append_array(LooseChunks.break_up(self, _model, box, -1 - i, (out + Vector3.DOWN * 0.2) * 2.0, int(spec.get("seed", 1)), true, animate))
+			if _visual and animate:
 				_sound(&"missions.surface_broke", global_transform * centre, str(rules.get("name", "")), 1)
 		_model.carve_material_box(box.position - Vector3.ONE * voxel * 0.1, box.end + Vector3.ONE * voxel * 0.1, int(pane["material"]))
 	if _visual and not indices.is_empty():
@@ -648,134 +649,32 @@ func server_blast_bricks(centre: Vector3, radius: float) -> Array[Vector3]:
 	return out
 
 
-## Everywhere: piece `seg`'s voxels in `box` come loose as chunks pushed along `push` (local).
-func _let_go(seg: int, box: AABB, push: Vector3) -> void:
-	var bodies := LooseChunks.spawn(self, _model, seg, box, push, int(spec.get("seed", 1)))
-	for k: int in bodies:
-		_chunks["%d:%d" % [seg, k]] = bodies[k]
-		_chunk_born["%d:%d" % [seg, k]] = Time.get_ticks_msec()
+## How piece `id` is thrown when it breaks (local): wall pieces out from the building (a lone
+## wall to one side), roof pieces up; a piece that lost its support just drops.
+func _push_for(id: int, fallen: bool) -> Vector3:
+	if fallen:
+		return Vector3.ZERO
+	var centre := _segments[id].get_center()
+	var wh := float(spec.get("wall_height", 2.8))
+	var flat := Vector3(0.0, 0.0, 1.0 if (id * 7919) % 2 == 0 else -1.0) if is_wall() else Vector3(centre.x, 0.0, centre.z).normalized()
+	var out := Vector3.UP if centre.y >= wh - 0.1 else (flat + Vector3.UP * 0.4).normalized()
+	return out * float(LooseChunks.config().get("push", 3.5))
 
 
-## Pane `i`'s shards: big for most glass, a spray of small bits for tempered.
-func _shard_boxes(i: int) -> Array[AABB]:
-	var pane: Dictionary = _panes[i]
-	var cfg := LooseChunks.config()
-	var small := str(VoxMaterials.at(int(pane["material"])).get("name", "")) == "tempered_glass"
-	var size := float(cfg.get("bits_size", 0.08)) if small else float(cfg.get("shard_size", 0.2))
-	return LooseChunks.boxes(pane["box"], size, int(cfg.get("max_shards", 24)))
-
-
-## True while some chunk this building let go is still flying.
-func has_flying_chunks() -> bool:
-	for body: RigidBody3D in _chunks.values():
-		if is_instance_valid(body) and not body.freeze:
-			return true
-	return false
-
-
-## Server: the chunks that came loose and are still flying, frozen where they lie now as
-## rubble: `[{seg, k, at}]` for wall pieces, `[{pane, k, at}]` for glass shards (`at` local to
-## the building).
-func server_settle(min_age_ms: int = 0) -> Array:
-	var out := []
-	var to_local := global_transform.affine_inverse()
-	var now := Time.get_ticks_msec()
-	for key: String in _chunks:
-		var body := _chunks[key]
-		if not is_instance_valid(body) or body.freeze:
-			continue
-		# Only chunks that have had time to land (or already lie still).
-		if now - int(_chunk_born.get(key, 0)) < min_age_ms and not body.sleeping:
-			continue
-		var parts := key.split(":")
-		if key.begins_with("p"):
-			LooseChunks.settle(body, null, false)
-			out.append({"pane": int(parts[0].trim_prefix("p")), "k": int(parts[1]), "at": to_local * body.global_transform})
-		else:
-			LooseChunks.settle(body)
-			out.append({"seg": int(parts[0]), "k": int(parts[1]), "at": to_local * body.global_transform})
-	return out
-
-
-## Everywhere: these chunks lie where the server says, frozen and solid. Ones this instance
-## never had (it joined late, or missed the fall) are made from the building's own voxels;
-## ones it had from the same pieces that the server never had (a sliver its copy of the
-## voxels kept and the server's didn't) go, so nothing lies there twice.
-func settle_rubble(rubble: Array) -> void:
-	var told: Dictionary[String, bool] = {}
-	var pieces: Dictionary[String, bool] = {}
-	for r: Dictionary in rubble:
-		var key := _rubble_key(r)
-		told[key] = true
-		pieces[key.split(":")[0]] = true
-	for key: String in _chunks.keys():
-		var body := _chunks[key]
-		if pieces.has(key.split(":")[0]) and not told.has(key) and is_instance_valid(body) and not body.freeze:
-			body.queue_free()
-			_chunks.erase(key)
-	for r: Dictionary in rubble:
-		var key := _rubble_key(r)
-		var at := global_transform * (r["at"] as Transform3D)
-		if _chunks.has(key) and is_instance_valid(_chunks[key]):
-			LooseChunks.settle(_chunks[key], at, not r.has("pane"))
-		else:
-			_place_rubble([r])
-
-
-static func _rubble_key(r: Dictionary) -> String:
-	return "p%d:%d" % [int(r["pane"]), int(r["k"])] if r.has("pane") else "%d:%d" % [int(r["seg"]), int(r["k"])]
-
-
-## Late: rubble from the entry, made from the building as it was built and put where it lies.
-func _place_rubble(rubble: Array) -> void:
-	if rubble.is_empty() or not is_inside_tree():
-		return
-	var source := _model if _pristine == null and _chunks.is_empty() and spec.get("broken", []).is_empty() else _pristine_model()
-	for r: Dictionary in rubble:
-		var key := _rubble_key(r)
-		var k := int(r["k"])
-		var glass := r.has("pane")
-		if _chunks.has(key) and is_instance_valid(_chunks[key]):
-			continue
-		var parts: Array[AABB] = []
-		if glass:
-			if int(r["pane"]) < 0 or int(r["pane"]) >= _panes.size():
-				continue
-			parts = _shard_boxes(int(r["pane"]))
-		else:
-			if int(r["seg"]) < 0 or int(r["seg"]) >= _segments.size():
-				continue
-			parts = LooseChunks.boxes(_carve_box(int(r["seg"])))
-		if k < 0 or k >= parts.size():
-			continue
-		var body := LooseChunks.make(self, source, parts[k], glass)
-		if body == null:
-			continue
-		LooseChunks.settle(body, null, not glass)
-		body.global_transform = global_transform * (r["at"] as Transform3D)
-		_chunks[key] = body
-
-
+## Fragments lying at rest as rubble.
 func rubble_count() -> int:
 	var n := 0
-	for body: RigidBody3D in _chunks.values():
-		if is_instance_valid(body) and body.freeze:
+	for f in _fragments:
+		if is_instance_valid(f) and f.has_meta(&"landed"):
 			n += 1
 	return n
 
 
-## The building as built, before any damage (made once, when rubble needs placing late).
-func _pristine_model() -> VoxelModel:
-	if _pristine == null:
-		_pristine = _build_model()
-	return _pristine
-
-
 func _exit_tree() -> void:
-	for body: RigidBody3D in _chunks.values():
-		if is_instance_valid(body):
-			body.queue_free()
-	_chunks.clear()
+	for f in _fragments:
+		if is_instance_valid(f):
+			f.queue_free()
+	_fragments.clear()
 
 
 ## Server: the standing wall pieces that have lost too many bricks to stand.
@@ -837,17 +736,26 @@ func server_shot(point: Vector3, damage: float, direction := Vector3.ZERO) -> in
 	return broke
 
 
-func _shot(point: Vector3, damage: float, direction: Vector3) -> int:
+## Rounds only take out what they strike (the hole `bullet_mark` carved, a brick); a piece
+## gives way once it has lost most of its voxels that way, not after so many hits anywhere on
+## it, so shooting one spot makes a hole there rather than knocking the whole piece out.
+func _shot(point: Vector3, _damage: float, _direction: Vector3) -> int:
 	var id := segment_at(point)
-	if id < 0:
+	if id < 0 or not _shapes.has(id):
 		return -1
-	if bool(struck_rules(point, direction).get("breaks_whole", false)):
-		return -1
-	var rules := segment_rules(id)
-	if damage < float(rules.get("min_bullet_damage", 0.0)):
-		return -1
-	_hp[id] = float(_hp.get(id, segment_hp)) - damage * float(rules.get("bullet", 1.0))
-	return id if _hp[id] <= 0.0 else -1
+	return id if _riddled(id) else -1
+
+
+## True once piece `id` has lost more than `BRICK_HOLD` of its voxels' worth of what it held.
+func _riddled(id: int) -> bool:
+	var start := int(_cells_at_start.get(id, 0))
+	if start <= 0:
+		return false
+	var box := _carve_box(id)
+	var left := 0
+	for m in range(1, VoxMaterials.all().size()):
+		left += _model.count_material(box.position, box.end, m)
+	return float(left) < float(start) * BRICK_HOLD
 
 
 ## Everywhere: where a bullet travelling along `direction` hit, the voxel it struck takes it:
@@ -901,13 +809,31 @@ func break_segments(ids: Array, fallen: Array = []) -> void:
 
 func _break(ids: Array, fallen: Array) -> void:
 	_sound_breaks(ids)
+	_shatter(ids, fallen, true)
 	_remove(ids, true)
-	if _visual and _model != null and is_inside_tree():
-		for group in _groups(fallen):
-			_drop(group)
 	_remove(fallen, false)
+	_land_sound(fallen)
 	if _visual and _model != null and not (ids.is_empty() and fallen.is_empty()):
 		_mesh.refresh()
+
+
+## Everywhere: the pieces `ids` and `fallen` fall apart into fragments (thrown out, or for
+## `fallen` just dropping), each split and carved out in ascending order so pieces sharing
+## edge voxels split the same way on every machine; `animate` false lays the fragments
+## straight at rest (someone joining late).
+func _shatter(ids: Array, fallen: Array, animate: bool) -> void:
+	if _model == null or not is_inside_tree():
+		return
+	var all: Array[int] = []
+	for v: Variant in ids + fallen:
+		if not all.has(int(v)) and int(v) >= 0 and int(v) < _segments.size():
+			all.append(int(v))
+	all.sort()
+	var seed := int(spec.get("seed", 1))
+	for id in all:
+		var box := _carve_box(id)
+		_fragments.append_array(LooseChunks.break_up(self, _model, box, id, _push_for(id, fallen.has(id)), seed, false, animate))
+		_model.carve_box(box.position, box.end)
 
 
 ## Server: once `newly` break, the standing segments nothing holds up any more.
@@ -1006,48 +932,17 @@ func _build_graph() -> void:
 				_edges.append(j)
 
 
-## `ids` split into groups connected through each other.
-func _groups(ids: Array) -> Array[Array]:
-	if _roof.is_empty():
-		_build_graph()
-	var left: Dictionary[int, bool] = {}
-	for v: Variant in ids:
-		left[int(v)] = true
-	var out: Array[Array] = []
-	while not left.is_empty():
-		var start: int = left.keys()[0]
-		left.erase(start)
-		var group: Array[int] = [start]
-		var k := 0
-		while k < group.size():
-			var at := group[k]
-			k += 1
-			for e in range(0, _edges.size(), 2):
-				var other := -1
-				if _edges[e] == at:
-					other = _edges[e + 1]
-				elif _edges[e + 1] == at:
-					other = _edges[e]
-				if other >= 0 and left.has(other):
-					left.erase(other)
-					group.append(other)
-		out.append(group)
-	return out
 
+## Client: a rumble where the pieces that lost their support land.
+func _land_sound(fallen: Array) -> void:
+	if fallen.is_empty() or not is_inside_tree():
+		return
+	var id := int(fallen[0])
+	var landed := global_transform * (_segments[id].get_center() + Vector3.DOWN * maxf(_segments[id].position.y - SLAB, 0.0))
+	get_tree().create_timer(fall_seconds).timeout.connect(func() -> void:
+		if is_inside_tree():
+			_sound(&"missions.surface_landed", landed, "", fallen.size()))
 
-## Client: the voxels of a connected group of fallen segments come loose as chunks that fall
-## and tumble (see `LooseChunks`); a rumble when they land, after `fall_seconds`.
-func _drop(group: Array) -> void:
-	var landed := Vector3.INF
-	for v: Variant in group:
-		var box := _carve_box(int(v))
-		_let_go(int(v), box, Vector3.ZERO)
-		if landed == Vector3.INF:
-			landed = global_transform * (_segments[int(v)].get_center() + Vector3.DOWN * maxf(_segments[int(v)].position.y - SLAB, 0.0))
-	if landed != Vector3.INF and is_inside_tree():
-		get_tree().create_timer(fall_seconds).timeout.connect(func() -> void:
-			if is_inside_tree():
-				_sound(&"missions.surface_landed", landed, "", group.size()))
 
 func _remove(ids: Array, debris: bool) -> void:
 	var wh := float(spec.get("wall_height", 2.8))
@@ -1061,16 +956,10 @@ func _remove(ids: Array, debris: bool) -> void:
 		if _model == null:
 			continue
 		var box := _carve_box(id)
-		var colour := _colour_of(id)
-		if debris and is_inside_tree():
-			var centre := _segments[id].get_center()
-			# Wall pieces fly out from the building (a lone wall to one side), roof pieces up;
-			# as chunks of themselves, with a little dust.
-			var flat := Vector3(0.0, 0.0, 1.0 if (id * 7919) % 2 == 0 else -1.0) if is_wall() else Vector3(centre.x, 0.0, centre.z).normalized()
-			var out := Vector3.UP if centre.y >= wh - 0.1 else (flat + Vector3.UP * 0.4).normalized()
-			_let_go(id, box, out * float(LooseChunks.config().get("push", 3.5)))
-			if _visual:
-				VoxelDebris.burst(get_parent(), global_transform * centre, global_transform.basis * out, colour.lightened(0.15), &"dust")
+		if debris and _visual and is_inside_tree():
+			# The voxels already fell apart (`_shatter`); a little dust where they were.
+			var push := _push_for(id, false)
+			VoxelDebris.burst(get_parent(), global_transform * _segments[id].get_center(), global_transform.basis * push.normalized(), Color(0.6, 0.57, 0.52), &"dust")
 		_model.carve_box(box.position, box.end)
 
 
@@ -1098,18 +987,6 @@ func _sound(topic: StringName, at: Vector3, material_name: String, count: int) -
 	if not _visual or not is_inside_tree():
 		return
 	EventBus.publish(topic, {"position": at, "material": material_name, "count": count})
-
-
-## The colour of segment `id`'s voxels, for its debris: the first filled voxel found up the
-## middle of its box.
-func _colour_of(id: int) -> Color:
-	var box := _carve_box(id)
-	var c := box.get_center()
-	for share: float in [0.5, 0.3, 0.7, 0.15, 0.85]:
-		var colour := _model.colour_at(Vector3(c.x, box.position.y + box.size.y * share, c.z))
-		if colour.a > 0.0:
-			return colour
-	return Color(0.5, 0.42, 0.33)
 
 
 ## The voxels segment `id` takes with it (a roof tile takes the sloping roof above it too).

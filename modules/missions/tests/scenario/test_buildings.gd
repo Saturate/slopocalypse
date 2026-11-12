@@ -181,15 +181,25 @@ func _building(material: String) -> MissionBuilding:
 	return b
 
 
-func test_rifle_rounds_break_a_wooden_wall_piece() -> void:
+func test_rounds_into_one_spot_make_a_hole_but_riddling_a_wooden_piece_brings_it_down() -> void:
 	var b := _building("wood")
 	var w := float(b.spec["width"])
+	var inward := -b.global_transform.basis.x
 	var point := b.global_transform * Vector3(w / 2.0, 0.6, 0.0)
 	var id := b.segment_at(point)
 	assert_int(id).is_greater_equal(0)
-	var broke := -1
+	# Ten rounds into the same spot: a hole through it, the piece still standing.
 	for i in 10:
-		broke = b.server_shot(point, 25.0)
+		b.bullet_mark(point, inward)
+		assert_int(b.server_shot(point, 25.0, inward)).is_equal(-1)
+	assert_vector(b.struck_voxel(point, inward)).is_equal(Vector3.INF)
+	# Rounds all over it: once most of it is shot away, it gives way.
+	var box := MissionBuilding.segments(w, float(b.spec["depth"]), float(b.spec["wall_height"]), b.segment_size)[id]
+	var broke := -1
+	for i in 400:
+		var at := b.global_transform * Vector3(w / 2.0, box.position.y + fmod(i * 0.137, 1.0) * box.size.y, box.position.z + fmod(i * 0.291, 1.0) * box.size.z)
+		b.bullet_mark(at, inward)
+		broke = b.server_shot(at, 25.0, inward)
 		if broke >= 0:
 			break
 	assert_int(broke).is_equal(id)
@@ -323,20 +333,19 @@ func test_a_broken_pane_leaves_shards_that_lie_on_the_ground_but_stop_nothing() 
 	var b: MissionBuilding = c[0]
 	var pane := b.pane_at(c[1], c[2])
 	b.break_panes([pane], true)
-	await get_tree().create_timer(0.2).timeout
-	var rubble := b.server_settle()
-	var shards := rubble.filter(func(r: Dictionary) -> bool: return r.has("pane"))
-	assert_int(shards.size()).is_greater(3)
-	assert_int(b.rubble_count()).is_equal(shards.size())
+	await get_tree().create_timer(2.0).timeout
+	var shards := b.rubble_count()
+	assert_int(shards).is_greater(1)
+	for f in get_children().filter(func(n: Node) -> bool: return n is StaticBody3D and n.has_meta(&"fragment")):
+		assert_int((f as StaticBody3D).collision_layer).is_equal(PhysicsLayers.DEBRIS)
 	# Late joiners get the same shards.
 	var entry: Dictionary = (b.spec as Dictionary).duplicate()
 	entry["panes_broken"] = [pane]
-	entry["rubble"] = rubble
 	entry["position"] = Vector3(40, 0, -40)
 	var late: MissionBuilding = auto_free(MissionBuilding.new())
 	late.spec = entry
 	add_child(late)
-	assert_int(late.rubble_count()).is_equal(shards.size())
+	assert_int(late.rubble_count()).is_equal(shards)
 
 
 func test_security_glass_stops_rounds_cracks_and_gives_out_after_twelve() -> void:

@@ -1,6 +1,6 @@
 # 0002. Rubble is the broken voxels, settled by the server
 
-Status: accepted
+Status: superseded by 0005
 Date: 2026-11-12
 Issue or PR: #279, #297, #301, #302
 
@@ -29,3 +29,7 @@ mention.
 One small message per settle. Clients may see a chunk glide a little at the end, where their
 physics disagreed with the server's. The server runs short-lived rigid bodies after breaks.
 Revisit if chunk counts climb into the thousands per zone.
+
+## Superseded
+Played on the range the same day: the last-moment glide (where a client's physics disagreed
+with the server's) looked wrong, and grid-cut chunks read as squares. Replaced by 0005.

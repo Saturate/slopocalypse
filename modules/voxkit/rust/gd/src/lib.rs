@@ -283,6 +283,51 @@ impl VoxelModel {
         });
     }
 
+    /// Breaks the cells inside the box into fragments round `seeds` (model space), ragged by up
+    /// to `jag` voxels; touching cells of material `unit` (bricks) stay together. Returns
+    /// `[{model, offset, lo, hi}]` in seed order (seeds that got nothing are left out): each
+    /// fragment as its own model, where its origin sits in this one, and its filled bounds.
+    #[func]
+    fn fracture(
+        &self,
+        min: Vector3,
+        max: Vector3,
+        seeds: PackedVector3Array,
+        unit: i64,
+        jag: f32,
+        seed: i64,
+    ) -> VarArray {
+        let mut out = VarArray::new();
+        let Some(grid) = self.grid.as_ref() else {
+            return out;
+        };
+        let points: Vec<[f32; 3]> = seeds.as_slice().iter().map(|p| v3(*p)).collect();
+        for f in grid.fracture(
+            v3(min),
+            v3(max),
+            &points,
+            unit.clamp(0, 255) as u8,
+            jag,
+            seed as u32,
+        ) {
+            let model = Gd::from_init_fn(|base| VoxelModel {
+                base,
+                grid: Some(f.grid),
+                jitter_scale: self.jitter_scale,
+            });
+            let mut d = VarDictionary::new();
+            d.set("model", &model);
+            d.set(
+                "offset",
+                Vector3::new(f.offset[0], f.offset[1], f.offset[2]),
+            );
+            d.set("lo", Vector3::new(f.lo[0], f.lo[1], f.lo[2]));
+            d.set("hi", Vector3::new(f.hi[0], f.hi[1], f.hi[2]));
+            out.push(&d.to_variant());
+        }
+        out
+    }
+
     /// Scales the colour jitter of every fill after this call (0 = flat colours).
     #[func]
     fn set_jitter_scale(&mut self, scale: f32) {
