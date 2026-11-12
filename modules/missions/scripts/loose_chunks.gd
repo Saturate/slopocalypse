@@ -21,12 +21,14 @@ static func config() -> Dictionary:
 	return _cfg
 
 
-## The chunks `box` splits into, about `size` across, at most `max_per_piece`: the same boxes
-## for the same piece everywhere.
-static func boxes(box: AABB) -> Array[AABB]:
+## The chunks `box` splits into, about `size` across (the data's when 0), at most
+## `per_piece` (likewise): the same boxes for the same piece everywhere.
+static func boxes(box: AABB, size: float = 0.0, per_piece: int = 0) -> Array[AABB]:
 	var cfg := config()
-	var size := float(cfg.get("size", 0.45))
-	var per_piece := int(cfg.get("max_per_piece", 10))
+	if size <= 0.0:
+		size = float(cfg.get("size", 0.45))
+	if per_piece <= 0:
+		per_piece = int(cfg.get("max_per_piece", 10))
 	var counts := Vector3i((box.size / size).ceil().max(Vector3.ONE))
 	# Coarser when a piece would make too many: halve the most-split side until it fits.
 	while counts.x * counts.y * counts.z > per_piece:
@@ -48,14 +50,15 @@ static func boxes(box: AABB) -> Array[AABB]:
 ## Lets the chunks of piece `seg` (its voxels in `box` of `model`, local to `building`) go,
 ## pushed along `push` (local, metres per second) with seeded scatter. Returns `{index: body}`
 ## for the chunks that have voxels.
-static func spawn(building: Node3D, model: VoxelModel, seg: int, box: AABB, push: Vector3, seed: int) -> Dictionary:
+static func spawn(building: Node3D, model: VoxelModel, seg: int, box: AABB, push: Vector3, seed: int, parts: Array[AABB] = [], glass := false) -> Dictionary:
 	var out := {}
 	if building == null or not building.is_inside_tree() or model == null:
 		return out
 	var cfg := config()
-	var parts := boxes(box)
+	if parts.is_empty():
+		parts = boxes(box)
 	for k in parts.size():
-		var body := make(building, model, parts[k])
+		var body := make(building, model, parts[k], glass)
 		if body == null:
 			continue
 		var rng := RandomNumberGenerator.new()
@@ -68,12 +71,14 @@ static func spawn(building: Node3D, model: VoxelModel, seg: int, box: AABB, push
 
 
 ## One chunk of `part` (local to `building`) of `model`, where it sits in the building, flying;
-## null when there's nothing there.
-static func make(building: Node3D, model: VoxelModel, part: AABB) -> RigidBody3D:
+## null when there's nothing there. `glass`: a shard, drawn see-through like the pane it was.
+static func make(building: Node3D, model: VoxelModel, part: AABB, glass := false) -> RigidBody3D:
 	var copy: Dictionary = model.copy_box(part.position, part.end)
 	if copy.is_empty() or (copy["model"] as VoxelModel).voxel_count() == 0:
 		return null
 	var chunk_model: VoxelModel = copy["model"]
+	# The copy keeps the see-through marks, which would leave a shard's normal mesh empty.
+	chunk_model.set_clear_materials(PackedInt32Array())
 	var body := RigidBody3D.new()
 	body.name = "Chunk"
 	body.collision_layer = PhysicsLayers.DEBRIS
@@ -90,18 +95,21 @@ static func make(building: Node3D, model: VoxelModel, part: AABB) -> RigidBody3D
 	if DisplayServer.get_name() != "headless":
 		var mesh := MeshInstance3D.new()
 		mesh.mesh = VoxGenerator.to_mesh(chunk_model)
+		if glass:
+			mesh.material_override = VoxelChunkedMesh.glass_material()
 		body.add_child(mesh)
 	building.get_parent().add_child(body)
 	body.global_transform = building.global_transform * Transform3D(Basis.IDENTITY, copy["offset"] as Vector3)
 	return body
 
 
-## Freezes `body` where it lies (or, given `to`, eases it there first), solid: rubble.
-static func settle(body: RigidBody3D, to: Variant = null) -> void:
+## Freezes `body` where it lies (or, given `to`, eases it there first): rubble, solid unless
+## `solid` is false (glass shards lie there but stop nothing).
+static func settle(body: RigidBody3D, to: Variant = null, solid := true) -> void:
 	if not is_instance_valid(body):
 		return
 	body.freeze = true
-	body.collision_layer = PhysicsLayers.SOLID
+	body.collision_layer = PhysicsLayers.SOLID if solid else PhysicsLayers.DEBRIS
 	body.collision_mask = 0
 	if to is Transform3D and body.is_inside_tree():
 		var tween := body.create_tween()

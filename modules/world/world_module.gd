@@ -1,9 +1,11 @@
 extends Node
 ## Loads the world, waits until the ground around the spawn has collision, then announces
-## it. Also owns terrain-side reactions: shots that hit the ground dig a small crater, and
+## it. `--world=flat` loads the flat test world instead (a plain plane: no terrain, scenery
+## or road; the test range uses it). Also owns terrain-side reactions: shots that hit the ground dig a small crater, and
 ## explosions a big one. The ground follows players, enemies and vehicles on its own.
 
 const SCENE := "res://modules/world/scenes/world.tscn"
+const FLAT_SCENE := "res://modules/world/scenes/flat_world.tscn"
 const CONFIG := "res://modules/world/data/world.json"
 ## Give up waiting for the spawn area after this long rather than hang a headless server.
 const READY_TIMEOUT_SECONDS := 30.0
@@ -32,12 +34,13 @@ func _ready() -> void:
 	var data: Variant = Data.load_json(CONFIG)
 	if not data is Dictionary or not Data.require(CONFIG, data, {"kill_y": TYPE_FLOAT, "rescue_depth": TYPE_FLOAT}):
 		return
-	var scene: PackedScene = load(SCENE)
+	var scene: PackedScene = load(FLAT_SCENE if Net.session_args().has("--world=flat") else SCENE)
 	var world := scene.instantiate()
 	add_child(world)
-	_voxels = world.get_node("Terrain")
-	_scenery = world.get_node("Scenery")
-	_voxels.dug.connect(_scenery.on_dug)
+	_voxels = world.get_node_or_null("Terrain") as VoxelWorld
+	_scenery = world.get_node_or_null("Scenery") as SceneryScatter
+	if _voxels != null and _scenery != null:
+		_voxels.dug.connect(_scenery.on_dug)
 	var spawn: Marker3D = world.get_node("SpawnPoint")
 	var car: Marker3D = world.get_node("CarSpawn")
 	# `front` and `forward`: players start inside the tunnel, so things spread "around the
@@ -72,8 +75,10 @@ func _exit_tree() -> void:
 
 
 func _on_explosion(p: Dictionary) -> void:
+	if _voxels == null:
+		return
 	_voxels.server_dig(p["position"], float(p["radius"]))
-	if _is_server():
+	if _is_server() and _scenery != null:
 		var blasted := _scenery.server_blast_trees(p["position"], float(p["radius"]))
 		for id: Vector2i in blasted:
 			var hit: Dictionary = blasted[id]
@@ -89,12 +94,14 @@ func _broadcast_fell(id: Vector2i, direction: Vector3, cut: float, blast: Vector
 
 
 func _on_tree_felled(p: Dictionary) -> void:
+	if _scenery == null:
+		return
 	_scenery.fell_tree(Vector2i(int(p["chunk"]), int(p["index"])), p["direction"], float(p.get("cut", 1.0)), p.get("blast", Vector4.ZERO))
 
 
 ## Someone joining late gets every tree already down, lying where it fell, as dry as it is.
 func _on_peer_joined(peer: int) -> void:
-	if not _is_server():
+	if not _is_server() or _scenery == null:
 		return
 	var felled := _scenery.felled()
 	if felled.is_empty():
@@ -127,7 +134,7 @@ func _process_tick(delta: float) -> void:
 	var spawn: Vector3 = _announcement["spawn"]
 	# Meshes can be ready a frame or two before their collision, and things spawn up to ~8 m
 	# from the spawn point (the car), so wait for a wider area and a real physics hit.
-	var ready := _voxels.is_ready_at(spawn, SPAWN_AREA_RADIUS) and _ground_hit(spawn)
+	var ready := (_voxels == null or _voxels.is_ready_at(spawn, SPAWN_AREA_RADIUS)) and _ground_hit(spawn)
 	if ready or _waited > READY_TIMEOUT_SECONDS:
 		if _waited > READY_TIMEOUT_SECONDS:
 			Log.warn(&"world", "spawn terrain not ready after %.0f s, announcing anyway" % READY_TIMEOUT_SECONDS)

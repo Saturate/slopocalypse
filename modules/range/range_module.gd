@@ -16,10 +16,11 @@ var config: Dictionary = {}
 var active := false
 
 
-## What a session needs to be the range: the flag, nothing saved, and the modules that would
-## send something hostile switched off (`flags` in the range data). The menu adds these.
+## What a session needs to be the range: the flag, nothing saved, the flat test world, and
+## the modules that would send something hostile switched off (`flags` in the range data).
+## The menu adds these.
 static func session_args() -> PackedStringArray:
-	var out := PackedStringArray(["--range", "--no-save"])
+	var out := PackedStringArray(["--range", "--no-save", "--world=flat"])
 	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(CONFIG))
 	if data is Dictionary and (data as Dictionary).get("flags") is String:
 		out.append("--flags=%s" % data["flags"])

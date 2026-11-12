@@ -24,7 +24,7 @@
     "blast_damage": 140.0,
     "blast_reach": 1.6,
     "concrete_share": 0.3,
-    "chunks": { "size": 0.45, "max_per_piece": 10, "push": 3.5, "scatter": 1.5, "spin": 4.0, "settle_seconds": 2.5, "ease_seconds": 0.35, "kg_per_m3": 600.0 },
+    "chunks": { "size": 0.45, "max_per_piece": 10, "push": 3.5, "scatter": 1.5, "spin": 4.0, "settle_seconds": 2.5, "ease_seconds": 0.35, "shard_size": 0.2, "bits_size": 0.08, "max_shards": 24, "kg_per_m3": 600.0 },
     "brick_blast_share": 0.7,
     "rubble_max": 200,
     "pad_margin": 1.5,
