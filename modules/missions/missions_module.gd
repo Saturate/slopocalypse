@@ -625,6 +625,10 @@ func _on_explosion(p: Dictionary) -> void:
 		var b := _building_nodes[i]
 		if b.global_position.distance_to(at) > radius * float(cfg.get("blast_reach", 1.6)) + 8.0:
 			continue
+		# Brick walls lose their bricks one by one within the blast's reach first.
+		var bricks := b.server_blast_bricks(at, radius * float(cfg.get("brick_blast_share", 0.7)))
+		if not bricks.is_empty():
+			Net.server_broadcast(&"missions.bricks_knocked", {"index": i, "points": bricks})
 		var broke := b.server_blast(at, radius, float(cfg.get("blast_damage", 140.0)), float(cfg.get("blast_reach", 1.6)))
 		if not broke.is_empty():
 			_server_broke(i, broke)

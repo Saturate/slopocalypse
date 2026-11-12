@@ -24,6 +24,8 @@
     "blast_damage": 140.0,
     "blast_reach": 1.6,
     "concrete_share": 0.3,
+    "chunks": { "size": 0.45, "max_per_piece": 10, "max_live": 80, "push": 3.5, "scatter": 1.5, "spin": 4.0, "seconds": 6.0, "sink_seconds": 1.5, "kg_per_m3": 600.0 },
+    "brick_blast_share": 0.7,
     "pad_margin": 1.5,
     "pad_blend": 6.0
   },

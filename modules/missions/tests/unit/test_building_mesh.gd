@@ -63,9 +63,13 @@ func test_a_hole_rebuilds_only_the_chunks_it_touched() -> void:
 	assert_int(shown.refresh()).is_equal(0)
 
 
-func test_fallen_pieces_drop_as_one_piece_then_go() -> void:
+func test_fallen_pieces_come_loose_as_chunks_then_go() -> void:
 	var b := _building()
 	b.fall_seconds = 0.1
+	var cfg := LooseChunks.config()
+	var saved := cfg.duplicate()
+	cfg["seconds"] = 0.1
+	cfg["sink_seconds"] = 0.1
 	var model: VoxelModel = b.get(&"_model")
 	var before := model.voxel_count()
 	var wh := float(b.spec["wall_height"])
@@ -74,12 +78,13 @@ func test_fallen_pieces_drop_as_one_piece_then_go() -> void:
 		if MissionBuilding.segments(6.0, 5.0, wh, b.segment_size)[id].position.y >= wh - 0.01:
 			roof.append(id)
 	b.break_segments([], roof)
-	var falling := b.get_children().filter(func(n: Node) -> bool: return n.name.begins_with("Falling"))
-	# The whole roof is connected: one piece, holding the roof's voxels, which left the model.
-	assert_int(falling.size()).is_equal(1)
-	assert_int((falling[0] as Node3D).get_child_count()).is_equal(roof.size())
+	var chunks := get_children().filter(func(n: Node) -> bool: return n is RigidBody3D and (n as RigidBody3D).collision_layer == PhysicsLayers.DEBRIS)
+	# The roof's voxels left the model and came loose as several chunks, on the debris layer.
+	assert_int(chunks.size()).is_greater(1)
+	assert_int((chunks[0] as RigidBody3D).collision_layer).is_equal(PhysicsLayers.DEBRIS)
 	assert_int(model.voxel_count()).is_less(before)
 	for id: int in roof:
 		assert_bool(b.is_broken(id)).is_true()
-	await get_tree().create_timer(0.3).timeout
-	assert_bool(is_instance_valid(falling[0])).is_false()
+	await get_tree().create_timer(0.6).timeout
+	assert_bool(chunks.all(func(c: Variant) -> bool: return not is_instance_valid(c))).is_true()
+	cfg.merge(saved, true)

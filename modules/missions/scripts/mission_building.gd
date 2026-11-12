@@ -16,6 +16,10 @@ extends StaticBody3D
 ## server passes the weight of everything standing down to the ground, and a piece carrying
 ## more than it can gives way, so a house isn't held up by one corner piece.
 ##
+## A piece that breaks comes loose on clients: chunks of its own voxels thrown out (see
+## `LooseChunks`), tumbling and landing, not a square that vanishes. Blasts knock the bricks of
+## a brick wall out one by one within their reach, so brick walls go ragged.
+##
 ## Pieces nothing holds up any more fall (see `BuildingSupport`): the server takes them
 ## away with the pieces that broke and hurts whoever is under them when they land; clients
 ## drop their voxels as one piece per connected group, then break it into debris.
@@ -98,6 +102,8 @@ var _panes_gone: Dictionary[int, bool] = {}
 var _brick_wear: Dictionary[String, float] = {}
 ## Server: the dice for which neighbours a knocked-out brick drags along.
 var _stick_rng := RandomNumberGenerator.new()
+## Client: scatter for loose chunks (looks only).
+var _chunk_rng := RandomNumberGenerator.new()
 ## Segment id -> how many brick cells it started with (only pieces that have bricks).
 var _bricks_at_start: Dictionary[int, int] = {}
 ## Per segment: its weight (kg, from its voxels) and how much it can carry (kg).
@@ -110,8 +116,6 @@ var _roof := PackedByteArray()
 var _anchors := PackedInt32Array()
 ## Client: holes were carved this frame; the changed chunks are rebuilt once, next process.
 var _remesh := false
-## Colour of the group falling now, for its landing debris.
-var _fall_colour := Color(0.5, 0.42, 0.33)
 
 
 func _ready() -> void:
@@ -532,6 +536,46 @@ func _crumble_loose(box: AABB, m: int) -> void:
 		x += voxel
 
 
+## Server: the bricks a blast at `centre` (world) knocks out of the walls within `radius`:
+## points inside each (local), found by sampling the middle of each wall near it.
+func server_blast_bricks(centre: Vector3, radius: float) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	var local := global_transform.affine_inverse() * centre
+	var w := float(spec.get("width", 5.0))
+	var d := float(spec.get("depth", 4.0))
+	var wh := float(spec.get("wall_height", 2.8))
+	var mid := VoxShed.BRICK_WALL / 2.0
+	var seen: Dictionary[String, bool] = {}
+	var step := voxel * 2.0
+	# Each wall as the axis it faces along and where its middle is.
+	for wall: Array in [[0, w / 2.0 - mid], [0, -w / 2.0 + mid], [2, d / 2.0 - mid], [2, -d / 2.0 + mid]]:
+		var axis := int(wall[0])
+		var plane := float(wall[1])
+		var off := absf(local[axis] - plane)
+		if off >= radius:
+			continue
+		var reach := sqrt(radius * radius - off * off)
+		var along := 2 if axis == 0 else 0
+		var a := local[along] - reach
+		while a <= local[along] + reach:
+			var y := maxf(SLAB, local.y - reach)
+			while y <= minf(wh, local.y + reach):
+				var p := Vector3.ZERO
+				p[axis] = plane
+				p[along] = a
+				p.y = y
+				if p.distance_to(local) <= radius:
+					var m := _model.material_at(p)
+					if m != 0 and float(VoxMaterials.at(m).get("pop_damage", 0.0)) > 0.0:
+						var box := _model.component_at(p, m, BRICK_CAP)
+						if box.size != Vector3.ZERO and not seen.has(str(box.position)):
+							seen[str(box.position)] = true
+							out.append(p)
+				y += step
+			a += step
+	return out
+
+
 ## Server: the standing wall pieces that have lost too many bricks to stand.
 func server_weakened() -> Array[int]:
 	var brick := VoxMaterials.index_of("brick")
@@ -788,43 +832,19 @@ func _groups(ids: Array) -> Array[Array]:
 	return out
 
 
-## Client: the voxels of a connected group of fallen segments drop as one piece, land after
-## `fall_seconds`, then burst into debris.
+## Client: the voxels of a connected group of fallen segments come loose as chunks that fall
+## and tumble (see `LooseChunks`); a rumble when they land, after `fall_seconds`.
 func _drop(group: Array) -> void:
-	var piece := Node3D.new()
-	piece.name = "Falling"
-	add_child(piece)
-	var lowest := INF
-	var centres: Array[Vector3] = []
+	var landed := Vector3.INF
 	for v: Variant in group:
 		var box := _carve_box(int(v))
-		var copy: Dictionary = _model.copy_box(box.position, box.end)
-		if copy.is_empty():
-			continue
-		if centres.is_empty():
-			_fall_colour = _colour_of(int(v))
-		var part := MeshInstance3D.new()
-		part.mesh = VoxGenerator.to_mesh(copy["model"])
-		part.position = copy["offset"]
-		piece.add_child(part)
-		lowest = minf(lowest, _segments[int(v)].position.y)
-		centres.append(_segments[int(v)].get_center())
-	if centres.is_empty():
-		piece.queue_free()
-		return
-	var drop := maxf(lowest - SLAB, 0.0)
-	var colour := _fall_colour
-	var tween := piece.create_tween()
-	tween.tween_property(piece, "position:y", -drop, fall_seconds).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	tween.tween_callback(func() -> void:
-		if is_inside_tree() and not centres.is_empty():
-			_sound(&"missions.surface_landed", global_transform * (centres[0] + Vector3.DOWN * drop), "", centres.size())
-		if is_inside_tree():
-			for c in centres:
-				var at := global_transform * (c + Vector3.DOWN * drop)
-				VoxelDebris.burst(get_parent(), at, Vector3.UP, colour, &"building")
-		piece.queue_free())
-
+		LooseChunks.spawn(self, _model, box, Vector3.ZERO, _chunk_rng)
+		if landed == Vector3.INF:
+			landed = global_transform * (_segments[int(v)].get_center() + Vector3.DOWN * maxf(_segments[int(v)].position.y - SLAB, 0.0))
+	if landed != Vector3.INF and is_inside_tree():
+		get_tree().create_timer(fall_seconds).timeout.connect(func() -> void:
+			if is_inside_tree():
+				_sound(&"missions.surface_landed", landed, "", group.size()))
 
 func _remove(ids: Array, debris: bool) -> void:
 	var wh := float(spec.get("wall_height", 2.8))
@@ -839,12 +859,15 @@ func _remove(ids: Array, debris: bool) -> void:
 			continue
 		var box := _carve_box(id)
 		var colour := _colour_of(id)
-		_model.carve_box(box.position, box.end)
 		if debris and _visual and is_inside_tree():
 			var centre := _segments[id].get_center()
-			# Wall pieces fly out from the building, roof pieces up.
-			var out := Vector3.UP if centre.y >= wh - 0.1 else (Vector3(centre.x, 0.0, centre.z).normalized() + Vector3.UP * 0.5)
-			VoxelDebris.burst(get_parent(), global_transform * centre, global_transform.basis * out, colour, &"building")
+			# Wall pieces fly out from the building, roof pieces up; as chunks of themselves,
+			# with a little dust.
+			var out := Vector3.UP if centre.y >= wh - 0.1 else (Vector3(centre.x, 0.0, centre.z).normalized() + Vector3.UP * 0.4).normalized()
+			var push := float(LooseChunks.config().get("push", 3.5))
+			LooseChunks.spawn(self, _model, box, global_transform.basis * out * push, _chunk_rng)
+			VoxelDebris.burst(get_parent(), global_transform * centre, global_transform.basis * out, colour.lightened(0.15), &"dust")
+		_model.carve_box(box.position, box.end)
 
 
 ## Client: tells the audio what broke, one event per material at the middle of its pieces.
