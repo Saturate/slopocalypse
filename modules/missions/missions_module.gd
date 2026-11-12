@@ -708,9 +708,9 @@ func _on_weapon_fired(p: Dictionary) -> void:
 			var weapon: Object = p.get("weapon")
 			var stats: Variant = weapon.get(&"stats") if weapon != null else null
 			var damage := float((stats as Dictionary).get("damage", 0.0)) if stats is Dictionary else float(p.get("damage", 0.0))
-			var brick := building.server_brick_hit(p["to"], direction, damage)
-			if brick != Vector3.INF:
-				Net.server_broadcast(&"missions.bricks_knocked", {"index": _building_nodes.find(building), "points": [brick]})
+			var bricks := building.server_brick_hit(p["to"], direction, damage)
+			if not bricks.is_empty():
+				Net.server_broadcast(&"missions.bricks_knocked", {"index": _building_nodes.find(building), "points": bricks})
 			var pane := building.server_pane_hit(p["to"], direction)
 			if pane >= 0:
 				Net.server_broadcast(&"missions.panes_broken", {"index": _building_nodes.find(building), "panes": [pane]})

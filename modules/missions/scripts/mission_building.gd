@@ -30,7 +30,11 @@ extends StaticBody3D
 ## walled in by another (mortar), and once the rounds into one block add up to that much damage
 ## it pops out, leaving a brick-shaped hole. The server counts it per brick and names a point
 ## inside it; every instance finds the same brick from that point, and the entry's `knocked`
-## carries them to late joiners. A wall piece that has lost most of its bricks gives way.
+## carries them to late joiners. Mortar sticks bricks together: each brick touching one that
+## comes out may come too (`stick_chance`, half as likely a step further), rolled on the server
+## so everyone loses the same cluster, and mortar left touching no brick crumbles away. Rounds
+## into a joint wear the bricks either side of it. A wall piece that has lost most of its
+## bricks gives way.
 ##
 ## Every instance builds the voxel model, the server too (without a mesh), so a hit looks up
 ## the same voxels everywhere.
@@ -50,6 +54,8 @@ const STRIKE_DEPTH := 0.6
 const CRACK_RADIUS := 0.12
 ## The most cells one brick can have; a bigger patch of brick is a wall, not a brick.
 const BRICK_CAP := 400
+## A round into a joint wears each brick beside it by this share of its damage.
+const JOINT_SHARE := 0.5
 ## A wall piece left with less than this share of its bricks gives way.
 const BRICK_HOLD := 0.4
 
@@ -85,6 +91,8 @@ var _pane_hits: Dictionary[int, int] = {}
 var _panes_gone: Dictionary[int, bool] = {}
 ## Server: damage taken per brick, keyed by the brick's box.
 var _brick_wear: Dictionary[String, float] = {}
+## Server: the dice for which neighbours a knocked-out brick drags along.
+var _stick_rng := RandomNumberGenerator.new()
 ## Segment id -> how many brick cells it started with (only pieces that have bricks).
 var _bricks_at_start: Dictionary[int, int] = {}
 ## The support graph (built on first use): connected segment pairs, roof flags and the
@@ -350,25 +358,114 @@ func break_panes(indices: Array, debris: bool) -> void:
 
 
 ## Server: a round with `damage` struck at `point` along `direction`. If it struck a block
-## that pops out (a brick), it adds to that brick's wear; once the wear reaches its
-## material's `pop_damage`, returns a point inside the brick (local) to knock out, else INF.
-func server_brick_hit(point: Vector3, direction: Vector3, damage: float) -> Vector3:
+## that pops out (a brick), it adds to that brick's wear, or, in a joint, to the bricks either
+## side. Returns points inside the bricks to knock out (local): any that reached their
+## material's `pop_damage`, and the neighbours they drag along; empty for none.
+func server_brick_hit(point: Vector3, direction: Vector3, damage: float) -> Array[Vector3]:
+	var out: Array[Vector3] = []
 	var v := struck_voxel(point, direction)
 	if v == Vector3.INF:
-		return Vector3.INF
+		return out
 	var m := _model.material_at(v)
-	var pop := float(VoxMaterials.at(m).get("pop_damage", 0.0))
-	if pop <= 0.0:
-		return Vector3.INF
-	var box := _model.component_at(v, m, BRICK_CAP)
-	if box.size == Vector3.ZERO:
-		return Vector3.INF
-	var key := str(box.position)
-	_brick_wear[key] = float(_brick_wear.get(key, 0.0)) + damage
-	if _brick_wear[key] < pop:
-		return Vector3.INF
-	_brick_wear.erase(key)
-	return v
+	var targets: Array[Vector3] = []
+	if float(VoxMaterials.at(m).get("pop_damage", 0.0)) > 0.0:
+		targets.append(v)
+	else:
+		# A joint: the bricks touching this spot share the round.
+		for p in _brick_points_near(v, voxel * 1.5):
+			targets.append(p)
+	for t in targets:
+		var tm := _model.material_at(t)
+		var pop := float(VoxMaterials.at(tm).get("pop_damage", 0.0))
+		var box := _model.component_at(t, tm, BRICK_CAP)
+		if pop <= 0.0 or box.size == Vector3.ZERO:
+			continue
+		var key := str(box.position)
+		# Straight into a brick it takes the round; in a joint, each brick beside it half.
+		var share := 1.0 if targets.size() == 1 and t == v else JOINT_SHARE
+		_brick_wear[key] = float(_brick_wear.get(key, 0.0)) + damage * share
+		if _brick_wear[key] >= pop:
+			_brick_wear.erase(key)
+			out.append(t)
+	if not out.is_empty():
+		out.append_array(_dragged_along(out))
+	return out
+
+
+## Points inside the bricks touching `at` (local) within `reach`, one per brick.
+func _brick_points_near(at: Vector3, reach: float) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	var seen: Dictionary[String, bool] = {}
+	for d: Vector3 in [Vector3.LEFT, Vector3.RIGHT, Vector3.UP, Vector3.DOWN, Vector3.FORWARD, Vector3.BACK]:
+		var p := at + d * reach
+		var m := _model.material_at(p)
+		if m == 0 or float(VoxMaterials.at(m).get("pop_damage", 0.0)) <= 0.0:
+			continue
+		var box := _model.component_at(p, m, BRICK_CAP)
+		if box.size == Vector3.ZERO or seen.has(str(box.position)):
+			continue
+		seen[str(box.position)] = true
+		out.append(p)
+	return out
+
+
+## Server: the bricks the knocked-out ones drag along: each brick touching one across a joint
+## comes with its material's `stick_chance`, and those with half that again, two steps at
+## most. Points inside them (local).
+func _dragged_along(knocked: Array[Vector3]) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	var gone: Dictionary[String, bool] = {}
+	var ring := knocked.duplicate()
+	for p in knocked:
+		gone[str(_model.component_at(p, _model.material_at(p), BRICK_CAP).position)] = true
+	var share := 1.0
+	for step in 2:
+		var next: Array[Vector3] = []
+		for p in ring:
+			var m := _model.material_at(p)
+			var box := _model.component_at(p, m, BRICK_CAP)
+			if box.size == Vector3.ZERO:
+				continue
+			var chance := float(VoxMaterials.at(m).get("stick_chance", 0.0)) * share
+			for q in _neighbour_bricks(box, m):
+				var key := str(_model.component_at(q, m, BRICK_CAP).position)
+				if gone.has(key):
+					continue
+				gone[key] = true
+				if _stick_rng.randf() < chance:
+					next.append(q)
+		out.append_array(next)
+		ring = next
+		share *= 0.5
+	return out
+
+
+## A point inside each brick of material `m` across a joint from `box` (local).
+func _neighbour_bricks(box: AABB, m: int) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	var seen: Dictionary[String, bool] = {str(box.position): true}
+	var reach := voxel * 1.5
+	var c := box.get_center()
+	var probes: Array[Vector3] = []
+	for a in 3:
+		for side: float in [-1.0, 1.0]:
+			var face := c
+			face[a] = (box.end[a] + reach) if side > 0.0 else (box.position[a] - reach)
+			# A few points along the face, so a brick offset by half a length is found too.
+			var b := (a + 1) % 3
+			for k: float in [-0.35, 0.0, 0.35]:
+				var p := face
+				p[b] = c[b] + k * box.size[b]
+				probes.append(p)
+	for p in probes:
+		if _model.material_at(p) != m:
+			continue
+		var other := _model.component_at(p, m, BRICK_CAP)
+		if other.size == Vector3.ZERO or seen.has(str(other.position)):
+			continue
+		seen[str(other.position)] = true
+		out.append(p)
+	return out
 
 
 ## Everywhere: the bricks holding these points (local) come out, with a little debris and a
@@ -384,6 +481,7 @@ func knock_out(points: Array, debris: bool) -> void:
 			continue
 		var colour := _model.colour_at(at)
 		_model.carve_material_box(box.position - Vector3.ONE * voxel * 0.1, box.end + Vector3.ONE * voxel * 0.1, m)
+		_crumble_loose(box.grow(voxel), m)
 		if debris and _visual and is_inside_tree():
 			var world := global_transform * box.get_center()
 			var out := (global_transform.basis * Vector3(box.get_center().x, 0.0, box.get_center().z)).normalized()
@@ -391,6 +489,31 @@ func knock_out(points: Array, debris: bool) -> void:
 			_sound(&"missions.surface_broke", world, str(VoxMaterials.at(m).get("name", "")), 1)
 	if _visual and not points.is_empty():
 		_remesh = true
+
+
+## Everywhere: in `box` (local), joint material left touching no brick of material `m` (no
+## brick on any face) crumbles away, so a hole opens clean instead of leaving a mortar grid.
+func _crumble_loose(box: AABB, m: int) -> void:
+	var half := voxel * 0.5
+	var x := box.position.x + half
+	while x < box.end.x:
+		var y := box.position.y + half
+		while y < box.end.y:
+			var z := box.position.z + half
+			while z < box.end.z:
+				var p := Vector3(x, y, z)
+				var here := _model.material_at(p)
+				if here != 0 and here != m and float(VoxMaterials.at(here).get("pop_damage", 0.0)) <= 0.0 and str(VoxMaterials.at(here).get("name", "")) == "mortar":
+					var held := false
+					for d: Vector3 in [Vector3.LEFT, Vector3.RIGHT, Vector3.UP, Vector3.DOWN, Vector3.FORWARD, Vector3.BACK]:
+						if _model.material_at(p + d * voxel) == m:
+							held = true
+							break
+					if not held:
+						_model.carve_material_box(p - Vector3.ONE * half * 0.9, p + Vector3.ONE * half * 0.9, here)
+				z += voxel
+			y += voxel
+		x += voxel
 
 
 ## Server: the standing wall pieces that have lost too many bricks to stand.
