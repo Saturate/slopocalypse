@@ -140,7 +140,8 @@
   },
   "stand_across": 6.0,
   "gifts": {
-    "breach_charge": 6
+    "breach_charge": 6,
+    "gun_rocket": 1
   },
   "bot": {
     "fire_seconds": 6.0,

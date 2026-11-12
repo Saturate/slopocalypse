@@ -27,7 +27,8 @@
     "break_glass_small": -5.0,
     "break_brick": -3.0,
     "break_concrete": -3.0,
-    "collapse": 0.0
+    "collapse": 0.0,
+    "launch": 0.0
   },
   "surface_families": {
     "wood": "wood",

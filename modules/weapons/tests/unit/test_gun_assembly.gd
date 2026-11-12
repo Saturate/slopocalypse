@@ -61,7 +61,7 @@ func test_markers_come_from_the_outermost_part() -> void:
 	assert_int(model.find_children("Sight", "Marker3D", true, false).size()).is_equal(1)
 
 
-func test_every_build_has_battlebit_level_detail() -> void:
+func test_every_build_has_the_detail_budget_the_spec_asks() -> void:
 	# The spec's budget for one assembled gun: detailed enough to read rails and slots up
 	# close, cheap enough for four players and their kit.
 	for name: String in GunAssembly.build_names():
