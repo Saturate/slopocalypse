@@ -740,6 +740,12 @@ func _physics_tick(delta: float) -> void:
 
 # --- For mission types -------------------------------------------------------------------
 
+## Everywhere, before any run: adds a mission kind from another module (the test range),
+## as an entry like those under `types` in missions.json.
+func add_type(id: String, kind: Dictionary) -> void:
+	(config["types"] as Dictionary)[id] = kind
+
+
 func building_nodes() -> Array[MissionBuilding]:
 	return _building_nodes
 
@@ -815,7 +821,8 @@ func _build_buildings() -> void:
 	if scenery != null:
 		var circles := []
 		for entry: Dictionary in buildings:
-			circles.append({"at": entry["position"], "radius": float(entry.get("radius", 4.0)) + CLEARING_MARGIN})
+			# An entry may ask for more open ground round it (the test range's row).
+			circles.append({"at": entry["position"], "radius": float(entry.get("radius", 4.0)) + float(entry.get("clear", CLEARING_MARGIN))})
 		scenery.call(&"set_clearings", circles)
 	for i in buildings.size():
 		var entry: Dictionary = buildings[i]

@@ -23,6 +23,12 @@ func test_feature_flags_carry_over_but_client_only_args_do_not() -> void:
 	assert_bool(args.has("--net-report-after=900")).is_false()
 
 
+func test_the_test_range_flag_reaches_the_server() -> void:
+	var args := SoloServer.server_args(7801, PackedStringArray(["--range", "--bot=range"]), "", "log.txt")
+	assert_bool(args.has("--range")).is_true()
+	assert_bool(args.has("--bot=range")).is_false()
+
+
 func test_picks_a_port_nothing_else_is_bound_to() -> void:
 	# Take whichever port is free first: a running solo game may already hold FIRST_PORT.
 	var first := SoloServer.pick_port()

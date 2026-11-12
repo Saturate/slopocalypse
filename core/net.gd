@@ -52,6 +52,10 @@ const MAX_KEY_LENGTH := 64
 var mode: Mode = Mode.SOLO
 var port := DEFAULT_PORT
 var host := "127.0.0.1"
+## Arguments a menu choice adds to this session (the test range's `--range`): modules read
+## them through `session_args()`, and a solo server gets them like the command line's.
+var extra_args := PackedStringArray()
+
 ## Pid of the server this solo session started, or -1.
 var solo_server_pid := -1
 
@@ -159,7 +163,7 @@ func _start_local_server(listen_port: int, bind: String) -> void:
 	host = "127.0.0.1"
 	_connect_tries = 0
 	var log_file := ProjectSettings.globalize_path("user://logs/solo-server.log")
-	solo_server_pid = SoloServer.start(port, OS.get_cmdline_user_args(), log_file, bind)
+	solo_server_pid = SoloServer.start(port, session_args(), log_file, bind)
 	if solo_server_pid < 0:
 		_fail("Could not start the local server.")
 		return
@@ -341,6 +345,13 @@ func _drop_silent(delta: float) -> void:
 			var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
 			if enet != null:
 				enet.disconnect_peer(peer)
+
+
+## The command line's user arguments plus any a menu choice added (`extra_args`).
+func session_args() -> PackedStringArray:
+	var out := OS.get_cmdline_user_args()
+	out.append_array(extra_args)
+	return out
 
 
 ## True when this instance should have a player of its own (solo or client).

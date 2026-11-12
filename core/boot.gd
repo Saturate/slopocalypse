@@ -7,6 +7,9 @@ const MODULES_ROOT := "res://modules"
 ## The voxel kit's asset library, if that module is there and on.
 const LIBRARY := "res://modules/voxkit/library/asset_library.gd"
 
+## The test range module (a solo game on a row of buildings for breaking things).
+const RANGE := "res://modules/range/range_module.gd"
+
 ## `--library` opens the library straight away, once per launch (Back then goes to the menu).
 static var _library_from_args := OS.get_cmdline_user_args().has("--library")
 
@@ -34,12 +37,17 @@ func _show_menu() -> void:
 	menu.name = "MainMenu"
 	menu.message = Net.menu_message
 	menu.has_library = _library_available()
+	menu.has_range = Features.is_enabled(&"range") and ResourceLoader.exists(RANGE)
 	add_child(menu)
 	menu.solo_requested.connect(func() -> void: _begin(menu, func() -> void:
 		Net.awaiting_menu = false
 		Net.start_solo()))
 	menu.host_requested.connect(func(port: int) -> void: _begin(menu, Net.start_host.bind(port)))
 	menu.join_requested.connect(func(host: String, port: int) -> void: _begin(menu, Net.join.bind(host, port)))
+	menu.range_requested.connect(func() -> void: _begin(menu, func() -> void:
+		Net.awaiting_menu = false
+		Net.extra_args = PackedStringArray(["--range", "--no-save"])
+		Net.start_solo()))
 	menu.library_requested.connect(func() -> void:
 		menu.queue_free()
 		_show_library())

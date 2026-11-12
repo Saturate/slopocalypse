@@ -76,6 +76,7 @@ func _ready() -> void:
 			"depth": d, "wall_height": wh, "pitch": float(spec.get("pitch", 0.45)), "door": 1,
 			"windows": float(spec.get("windows", 2)), "voxel": VOXEL,
 			"material": maxi(0, VoxShed.WALL_MATERIALS.find(material())),
+			"glass": maxi(0, VoxShed.GLASS_TYPES.find(str(spec.get("glass", "window_glass")))),
 		})
 		_mesh = VoxelChunkedMesh.new()
 		_mesh.name = "Mesh"
@@ -136,6 +137,15 @@ static func _cuts(from: float, to: float, size: float) -> Array[Vector2]:
 
 func material() -> String:
 	return str(spec.get("material", "wood"))
+
+
+## The material of the voxel at a hit `point` (world) on a face with `normal`: half a voxel
+## into the surface. Without a model (a dedicated server) it is the walls' material.
+func material_at(point: Vector3, normal: Vector3) -> String:
+	if _model == null:
+		return material()
+	var local := global_transform.affine_inverse() * (point - normal.normalized() * VOXEL * 0.5)
+	return str(VoxMaterials.at(_model.material_at(local))["name"])
 
 
 func segment_count() -> int:
