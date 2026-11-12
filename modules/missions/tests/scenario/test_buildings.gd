@@ -250,6 +250,39 @@ func test_the_server_carves_bullet_holes_so_later_rounds_go_into_them() -> void:
 	assert_bool(through).override_failure_message("a few rounds in the same spot should hole a plank wall through").is_true()
 
 
+func test_rounds_go_through_planks_and_glass_but_not_brick_or_concrete() -> void:
+	var low := Vector3(0.0, 0.6, 0.0)
+	var pane := Vector3(0.0, MissionBuilding.SLAB + VoxShed.WINDOW_SILL + VoxShed.WINDOW.y / 2.0, 0.0)
+	for case: Array in [["wood", low, 0.6], ["wood", pane, 0.9], ["brick", low, 0.0], ["concrete", low, 0.0]]:
+		var b := _building(str(case[0]))
+		var w := float(b.spec["width"])
+		var local: Vector3 = case[1]
+		var point := b.global_transform * Vector3(w / 2.0, local.y, 0.0)
+		var inward := -b.global_transform.basis.x
+		var exit := b.bullet_exit(point, inward, 25.0)
+		var label := "%s at %.2f m" % [case[0], local.y]
+		if float(case[2]) == 0.0:
+			assert_bool(exit.is_empty()).override_failure_message(label + " should stop it").is_true()
+			continue
+		assert_bool(exit.is_empty()).override_failure_message(label + " should let it through").is_false()
+		assert_float(float(exit["scale"])).override_failure_message(label).is_equal_approx(float(case[2]), 0.001)
+		# Out the far side of the wall, inside the building.
+		var out := b.global_transform.affine_inverse() * (exit["exit"] as Vector3)
+		assert_float(out.x).override_failure_message(label).is_less(w / 2.0 - 0.1)
+
+
+func test_a_round_into_a_hole_carries_on_whole() -> void:
+	var b := _building("concrete")
+	var w := float(b.spec["width"])
+	var point := b.global_transform * Vector3(w / 2.0, 0.6, 0.0)
+	var inward := -b.global_transform.basis.x
+	assert_bool(b.bullet_exit(point, inward, 25.0).is_empty()).is_true()
+	var model: VoxelModel = b.get(&"_model")
+	var local := b.global_transform.affine_inverse() * point
+	model.carve_box(local - Vector3(0.6, 0.3, 0.3), local + Vector3(0.1, 0.3, 0.3))
+	assert_float(float(b.bullet_exit(point, inward, 25.0).get("scale", 0.0))).is_equal(1.0)
+
+
 func test_a_mission_can_ask_for_concrete() -> void:
 	var cfg := _cfg().duplicate()
 	cfg["material"] = "concrete"

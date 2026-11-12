@@ -238,6 +238,41 @@ func struck_rules(point: Vector3, direction: Vector3) -> Dictionary:
 	return VoxMaterials.at(_model.material_at(v)) if v != Vector3.INF else material_cfg
 
 
+## Server, for the weapons' trace: whether a round travelling along `direction` that hit
+## at `point` with `damage` goes on through. `{exit, scale}` lets it carry on from `exit`
+## (world, just past the wall) with its damage times `scale`; `{}` stops it. Through a hole
+## already made it carries on whole. Through the wall when the struck material passes
+## rounds (`pass` > 0), the round is heavy enough (`min_bullet_damage`), and the wall along
+## its path is no thicker than that material allows (`thickness_max`); anything on the way
+## that doesn't pass rounds stops it.
+func bullet_exit(point: Vector3, direction: Vector3, damage: float) -> Dictionary:
+	var to_local := global_transform.affine_inverse()
+	var dir := (to_local.basis * direction).normalized()
+	var v := struck_voxel(point, direction)
+	if v == Vector3.INF:
+		return {"exit": point + direction.normalized() * (STRIKE_DEPTH + VOXEL), "scale": 1.0}
+	var rules := VoxMaterials.at(_model.material_at(v))
+	var pass_share := float(rules.get("pass", 0.0))
+	if pass_share <= 0.0 or damage < float(rules.get("min_bullet_damage", 0.0)):
+		return {}
+	var step := VOXEL * 0.25
+	var thickness := 0.0
+	var p := v
+	var limit := float(rules.get("thickness_max", 0.0))
+	while true:
+		var m := _model.material_at(p)
+		if m == 0:
+			break
+		if float(VoxMaterials.at(m).get("pass", 0.0)) <= 0.0:
+			return {}
+		thickness += step
+		# Nothing is thinner than a voxel here, so a thin pane or sheet counts as one.
+		if thickness > maxf(limit, VOXEL) + step:
+			return {}
+		p += dir * step
+	return {"exit": global_transform * (p + dir * step), "scale": pass_share}
+
+
 ## Server: a bullet travelling along `direction` hit it at `point` with `damage`. The piece
 ## it hit takes it by the piece's main material: times its `bullet` factor, and not at all
 ## from rounds lighter than its `min_bullet_damage`. A glass pane takes no structural damage.

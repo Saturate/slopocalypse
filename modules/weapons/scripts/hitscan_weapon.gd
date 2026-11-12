@@ -153,7 +153,12 @@ func request_reload() -> void:
 		rules.start_reload()
 
 
-## Server only: applies fire rules, traces the shot and damages what it hits.
+## Server only: applies fire rules, traces the shot and damages what it hits. A round can go
+## on through what it hit: anything with `bullet_exit(point, direction, damage)` (a
+## building's plank wall) answers `{exit, scale}` to let it carry on from `exit` with its
+## damage times `scale`, or `{}` to stop it; at most `max_pass_throughs` times
+## (weapons.json). Each stretch of the round's path is replayed as its own `weapon.fired`,
+## the ones after the first marked `through`.
 func server_fire(origin: Vector3, direction: Vector3) -> void:
 	if holder != null and holder.get_meta(&"dead", false):
 		return
@@ -168,38 +173,60 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 	var exclude: Array[RID] = []
 	if holder != null:
 		exclude.append(holder.get_rid())
-	# Bullets go through leaves (they only block sight) and stop at anything solid.
-	var query := PhysicsRayQueryParameters3D.create(origin, to, PhysicsLayers.BULLETS, exclude)
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
-	var hit_point := to
-	var damage := 0.0
-	var target: Node = null
-	var collider: Object = null
-	if not hit.is_empty():
-		hit_point = hit["position"]
-		collider = hit["collider"]
-		var health := HealthComponent.find_on(collider as Node) if collider is Node else null
-		# Co-op: players do not hurt each other unless the data says so.
-		if health != null and _is_teammate(health.get_parent()):
-			health = null
-		if health != null:
-			target = health.get_parent()
-			damage = health.server_apply_damage(_damage_for(target, hit_point, health), holder)
-	var target_path := String(target.get_path()) if target != null else ""
-	var collider_path := String((collider as Node).get_path()) if collider is Node else ""
-	# Decided here; replayed everywhere (this instance included) for effects and craters.
-	_replay_shot.rpc(origin, hit_point, damage, target_path, collider_path)
+	var from := origin
+	var damage_scale := 1.0
+	var passes := 0
+	var max_passes := max_pass_throughs()
+	while true:
+		# Bullets go through leaves (they only block sight) and stop at anything solid.
+		var query := PhysicsRayQueryParameters3D.create(from, to, PhysicsLayers.BULLETS, exclude)
+		var hit := get_world_3d().direct_space_state.intersect_ray(query)
+		var hit_point := to
+		var damage := 0.0
+		var target: Node = null
+		var collider: Object = null
+		if not hit.is_empty():
+			hit_point = hit["position"]
+			collider = hit["collider"]
+			var health := HealthComponent.find_on(collider as Node) if collider is Node else null
+			# Co-op: players do not hurt each other unless the data says so.
+			if health != null and _is_teammate(health.get_parent()):
+				health = null
+			if health != null:
+				target = health.get_parent()
+				damage = health.server_apply_damage(_damage_for(target, hit_point, health) * damage_scale, holder)
+		var target_path := String(target.get_path()) if target != null else ""
+		var collider_path := String((collider as Node).get_path()) if collider is Node else ""
+		# Decided here; replayed everywhere (this instance included) for effects and craters.
+		_replay_shot.rpc(from, hit_point, damage, target_path, collider_path, passes > 0)
+		if target != null or collider == null or passes >= max_passes or not collider.has_method(&"bullet_exit"):
+			return
+		var exit: Variant = collider.call(&"bullet_exit", hit_point, dir, float(stats["damage"]) * damage_scale)
+		if not exit is Dictionary or (exit as Dictionary).is_empty():
+			return
+		from = exit["exit"]
+		damage_scale *= float(exit.get("scale", 1.0))
+		passes += 1
+
+
+## How many times one round may go on through something (weapons.json).
+static func max_pass_throughs() -> int:
+	var data: Variant = Data.load_json(CONFIG)
+	return int((data as Dictionary).get("max_pass_throughs", 0)) if data is Dictionary else 0
 
 
 ## Runs on the server and every client: publishes `weapon.fired` locally (tracers, hit
 ## markers, craters) and kicks the aim on the instance that owns this player.
+## `through`: this stretch is the same round carrying on after going through something, so
+## there's no new shot to hear, flash or kick.
 @rpc("authority", "call_local", "reliable")
-func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_path: String, collider_path: String) -> void:
+func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_path: String, collider_path: String, through: bool = false) -> void:
 	var target: Node = get_node_or_null(target_path) if not target_path.is_empty() else null
 	var collider: Node = get_node_or_null(collider_path) if not collider_path.is_empty() else null
-	_play_shot_effects()
+	if not through:
+		_play_shot_effects()
 	# `collider` lets other modules react to what was hit (the world digs into terrain).
-	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "collider": collider, "damage": damage})
+	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "collider": collider, "damage": damage, "through": through})
 
 
 ## A shot's damage: the gun's, unless it hit the head. Headshots kill the teams listed in

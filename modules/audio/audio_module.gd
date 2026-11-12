@@ -94,8 +94,9 @@ static func shot_sound(weapon: Object) -> String:
 func _on_fired(p: Dictionary) -> void:
 	var from: Vector3 = p.get("from", Vector3.ZERO)
 	var to: Vector3 = p.get("to", from)
-	var sound := shot_sound(p.get("weapon"))
-	play_at(sound, from, float(config.get("shot_range", 300.0)))
+	# A round carrying on through a wall is the same shot: no second bang.
+	if not bool(p.get("through", false)):
+		play_at(shot_sound(p.get("weapon")), from, float(config.get("shot_range", 300.0)))
 	if float(p.get("damage", 0.0)) > 0.0 and p.get("holder") == _local:
 		play_flat("hit")
 	elif p.get("target") == null and from.distance_to(to) < float(config.get("shot_range", 300.0)) - 1.0 and not _has_surface_sounds(p.get("collider")):
