@@ -102,6 +102,8 @@ var _panes: Array[Dictionary] = []
 ## Server: pane index -> hits taken.
 var _pane_hits: Dictionary[int, int] = {}
 var _panes_gone: Dictionary[int, bool] = {}
+## Per segment: how many voxels it started with, so it can tell when it has lost too many.
+var _cells_at_start: Dictionary[int, int] = {}
 ## Server: damage taken per brick, keyed by the brick's box.
 var _brick_wear: Dictionary[String, float] = {}
 ## Server: the dice for which neighbours a knocked-out brick drags along.
@@ -164,6 +166,10 @@ func _ready() -> void:
 		var bricks := _model.count_material(box.position, box.end, brick)
 		if bricks > 0:
 			_bricks_at_start[i] = bricks
+		var cells := 0
+		for m in range(1, VoxMaterials.all().size()):
+			cells += _model.count_material(box.position, box.end, m)
+		_cells_at_start[i] = cells
 	_weigh()
 	if _visual:
 		# Glass is drawn see-through.
@@ -730,17 +736,26 @@ func server_shot(point: Vector3, damage: float, direction := Vector3.ZERO) -> in
 	return broke
 
 
-func _shot(point: Vector3, damage: float, direction: Vector3) -> int:
+## Rounds only take out what they strike (the hole `bullet_mark` carved, a brick); a piece
+## gives way once it has lost most of its voxels that way, not after so many hits anywhere on
+## it, so shooting one spot makes a hole there rather than knocking the whole piece out.
+func _shot(point: Vector3, _damage: float, _direction: Vector3) -> int:
 	var id := segment_at(point)
-	if id < 0:
+	if id < 0 or not _shapes.has(id):
 		return -1
-	if bool(struck_rules(point, direction).get("breaks_whole", false)):
-		return -1
-	var rules := segment_rules(id)
-	if damage < float(rules.get("min_bullet_damage", 0.0)):
-		return -1
-	_hp[id] = float(_hp.get(id, segment_hp)) - damage * float(rules.get("bullet", 1.0))
-	return id if _hp[id] <= 0.0 else -1
+	return id if _riddled(id) else -1
+
+
+## True once piece `id` has lost more than `BRICK_HOLD` of its voxels' worth of what it held.
+func _riddled(id: int) -> bool:
+	var start := int(_cells_at_start.get(id, 0))
+	if start <= 0:
+		return false
+	var box := _carve_box(id)
+	var left := 0
+	for m in range(1, VoxMaterials.all().size()):
+		left += _model.count_material(box.position, box.end, m)
+	return float(left) < float(start) * BRICK_HOLD
 
 
 ## Everywhere: where a bullet travelling along `direction` hit, the voxel it struck takes it:
