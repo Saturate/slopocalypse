@@ -48,7 +48,12 @@ func test_a_shed_gives_each_part_its_material() -> void:
 
 func test_wall_choice_and_panes_follow_the_parameters() -> void:
 	assert_str(_name_at(_shed(1), Vector3(0, 1.0, D / 2 - 0.05))).is_equal("concrete")
-	assert_str(_name_at(_shed(2), Vector3(0, 1.0, D / 2 - 0.05))).is_equal("brick")
+	# Brickwork: bricks with mortar joints between, both across the back wall.
+	var brick := _shed(2)
+	var seen := {}
+	for i in 60:
+		seen[_name_at(brick, Vector3(-1.5 + i * 0.05, 0.4 + i * 0.03, D / 2 - 0.05))] = true
+	assert_bool(seen.has("brick") and seen.has("mortar")).override_failure_message(str(seen.keys())).is_true()
 	assert_str(_name_at(_shed(0, 1), Vector3(-W / 2 + 0.1, 1.5, 0))).is_equal("security_glass")
 
 
