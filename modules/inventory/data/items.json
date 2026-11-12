@@ -1,102 +1,556 @@
 {
   "bindings": {
-    "inventory": ["Tab"],
-    "use_medkit": ["H"]
+    "inventory": [
+      "Tab"
+    ],
+    "use_medkit": [
+      "H"
+    ]
   },
   "gear": {
-    "slots": { "primary": "primary_gun", "secondary": "sidearm", "rig": "rig", "backpack": "backpack" },
-    "pockets": [4, 1],
-    "fill_order": ["rig", "pockets", "backpack"]
+    "slots": {
+      "primary": "primary_gun",
+      "secondary": "sidearm",
+      "rig": "rig",
+      "backpack": "backpack"
+    },
+    "pockets": [
+      4,
+      1
+    ],
+    "fill_order": [
+      "rig",
+      "pockets",
+      "backpack"
+    ]
   },
-  "starting_gear": { "primary": "gun_rifle", "secondary": "gun_pistol", "rig": "rig_light", "backpack": "bag_small" },
+  "starting_gear": {
+    "primary": "gun_rifle",
+    "secondary": "gun_pistol",
+    "rig": "rig_light",
+    "backpack": "bag_small"
+  },
   "respawn_gear": {},
-  "npc_gear": { "primary": "gun_rifle", "rig": "rig_light" },
+  "npc_gear": {
+    "primary": "gun_rifle",
+    "rig": "rig_light"
+  },
   "npc_loot": {
-    "rolls": [1, 3],
+    "rolls": [
+      1,
+      3
+    ],
     "items": {
-      "medkit": 5, "mag_ar_30": 6, "mag_ar_45": 2, "muz_flash": 4, "muz_comp": 3, "muz_supp": 1,
-      "opt_reddot": 3, "opt_holo": 2, "opt_scope_4x": 1, "stk_ar_light": 2, "hg_ar_long": 1,
-      "bar_ar_10": 2, "mag_pistol_15": 4, "mag_pistol_21": 2, "muz_pistol_comp": 2,
-      "muz_pistol_supp": 1, "opt_pistol_dot": 2, "sld_pistol_long": 1, "bag_small": 2,
-      "bag_large": 1, "rig_heavy": 1
+      "medkit": 5,
+      "mag_ar_30": 6,
+      "mag_ar_45": 2,
+      "muz_flash": 4,
+      "muz_comp": 3,
+      "muz_supp": 1,
+      "opt_reddot": 3,
+      "opt_holo": 2,
+      "opt_scope_4x": 1,
+      "stk_ar_light": 2,
+      "hg_ar_long": 1,
+      "bar_ar_10": 2,
+      "mag_pistol_15": 4,
+      "mag_pistol_21": 2,
+      "muz_pistol_comp": 2,
+      "muz_pistol_supp": 1,
+      "opt_pistol_dot": 2,
+      "sld_pistol_long": 1,
+      "bag_small": 2,
+      "bag_large": 1,
+      "rig_heavy": 1
     }
   },
   "loot": [
-    { "at": [3.0, -4.0], "items": ["muz_flash", "grp_ar_std", "mag_ar_30"] },
-    { "at": [-4.0, -3.0], "items": ["opt_reddot", "stk_ar_std", "mag_pistol_15"] },
-    { "at": [-3.0, 3.0], "items": ["hg_ar_std", "bar_ar_14", "sld_pistol_std"] }
+    {
+      "at": [
+        3.0,
+        -4.0
+      ],
+      "items": [
+        "muz_flash",
+        "grp_ar_std",
+        "mag_ar_30"
+      ]
+    },
+    {
+      "at": [
+        -4.0,
+        -3.0
+      ],
+      "items": [
+        "opt_reddot",
+        "stk_ar_std",
+        "mag_pistol_15"
+      ]
+    },
+    {
+      "at": [
+        -3.0,
+        3.0
+      ],
+      "items": [
+        "hg_ar_std",
+        "bar_ar_14",
+        "sld_pistol_std"
+      ]
+    }
   ],
   "bodies": {
     "seconds": 300.0,
     "empty_seconds": 30.0,
-    "colour": [0.3, 0.33, 0.26]
+    "colour": [
+      0.3,
+      0.33,
+      0.26
+    ]
   },
   "crates": {
-    "grid": [6, 4],
+    "grid": [
+      6,
+      4
+    ],
     "count": 12,
-    "distance": [12.0, 110.0],
+    "distance": [
+      12.0,
+      110.0
+    ],
     "seed": 7,
     "refill_seconds": 150.0,
-    "rolls": [2, 4],
+    "rolls": [
+      2,
+      4
+    ],
     "items": {
-      "medkit": 8, "mag_ar_30": 5, "mag_ar_45": 2, "muz_flash": 3, "muz_comp": 3, "muz_supp": 2,
-      "opt_reddot": 3, "opt_holo": 2, "opt_scope_4x": 1, "stk_ar_std": 2, "stk_ar_light": 2,
-      "hg_ar_std": 2, "hg_ar_long": 1, "bar_ar_14": 1, "bar_ar_10": 2, "grp_ar_std": 2,
-      "mag_pistol_15": 3, "mag_pistol_21": 2, "muz_pistol_comp": 2, "muz_pistol_supp": 1,
-      "opt_pistol_dot": 2, "sld_pistol_std": 1, "sld_pistol_long": 1, "bag_small": 2,
-      "bag_large": 1, "rig_light": 1, "rig_heavy": 1, "breach_charge": 3
+      "medkit": 8,
+      "mag_ar_30": 5,
+      "mag_ar_45": 2,
+      "muz_flash": 3,
+      "muz_comp": 3,
+      "muz_supp": 2,
+      "opt_reddot": 3,
+      "opt_holo": 2,
+      "opt_scope_4x": 1,
+      "stk_ar_std": 2,
+      "stk_ar_light": 2,
+      "hg_ar_std": 2,
+      "hg_ar_long": 1,
+      "bar_ar_14": 1,
+      "bar_ar_10": 2,
+      "grp_ar_std": 2,
+      "mag_pistol_15": 3,
+      "mag_pistol_21": 2,
+      "muz_pistol_comp": 2,
+      "muz_pistol_supp": 1,
+      "opt_pistol_dot": 2,
+      "sld_pistol_std": 1,
+      "sld_pistol_long": 1,
+      "bag_small": 2,
+      "bag_large": 1,
+      "rig_light": 1,
+      "rig_heavy": 1,
+      "breach_charge": 3
     }
   },
   "starting_kit": [
-    "medkit", "breach_charge", "breach_charge", "opt_scope_4x", "opt_holo", "muz_comp", "muz_supp", "mag_ar_45", "stk_ar_light",
-    "bar_ar_10", "hg_ar_long", "mag_pistol_21", "opt_pistol_dot"
+    "medkit",
+    "breach_charge",
+    "breach_charge",
+    "opt_scope_4x",
+    "opt_holo",
+    "muz_comp",
+    "muz_supp",
+    "mag_ar_45",
+    "stk_ar_light",
+    "bar_ar_10",
+    "hg_ar_long",
+    "mag_pistol_21",
+    "opt_pistol_dot"
   ],
   "kinds": {
-    "optic": [0.32, 0.42, 0.55],
-    "muzzle": [0.45, 0.38, 0.3],
-    "magazine": [0.4, 0.45, 0.32],
-    "furniture": [0.5, 0.42, 0.3],
-    "barrel": [0.38, 0.38, 0.4],
-    "pistol": [0.42, 0.36, 0.46],
-    "med": [0.62, 0.22, 0.2],
-    "rig": [0.36, 0.4, 0.28],
-    "backpack": [0.42, 0.36, 0.26],
-    "objective": [0.75, 0.62, 0.2],
-    "primary_gun": [0.36, 0.38, 0.42],
-    "sidearm": [0.4, 0.36, 0.44],
-    "explosive": [0.55, 0.45, 0.2]
+    "optic": [
+      0.32,
+      0.42,
+      0.55
+    ],
+    "muzzle": [
+      0.45,
+      0.38,
+      0.3
+    ],
+    "magazine": [
+      0.4,
+      0.45,
+      0.32
+    ],
+    "furniture": [
+      0.5,
+      0.42,
+      0.3
+    ],
+    "barrel": [
+      0.38,
+      0.38,
+      0.4
+    ],
+    "pistol": [
+      0.42,
+      0.36,
+      0.46
+    ],
+    "med": [
+      0.62,
+      0.22,
+      0.2
+    ],
+    "rig": [
+      0.36,
+      0.4,
+      0.28
+    ],
+    "backpack": [
+      0.42,
+      0.36,
+      0.26
+    ],
+    "objective": [
+      0.75,
+      0.62,
+      0.2
+    ],
+    "primary_gun": [
+      0.36,
+      0.38,
+      0.42
+    ],
+    "sidearm": [
+      0.4,
+      0.36,
+      0.44
+    ],
+    "explosive": [
+      0.55,
+      0.45,
+      0.2
+    ]
   },
   "items": {
-    "opt_reddot": { "name": "Tube red dot", "short": "Red dot", "size": [1, 1], "kind": "optic" },
-    "opt_holo": { "name": "Window holo sight", "short": "Holo", "size": [2, 1], "kind": "optic" },
-    "opt_scope_4x": { "name": "4x scope", "short": "4x scope", "size": [3, 1], "kind": "optic" },
-    "muz_flash": { "name": "Flash hider", "short": "Flash", "size": [1, 1], "kind": "muzzle" },
-    "muz_comp": { "name": "Compensator", "short": "Comp", "size": [1, 1], "kind": "muzzle" },
-    "muz_supp": { "name": "Suppressor", "short": "Supp", "size": [2, 1], "kind": "muzzle" },
-    "mag_ar_30": { "name": "30 round magazine", "short": "30 rd", "size": [1, 2], "kind": "magazine" },
-    "mag_ar_45": { "name": "45 round magazine", "short": "45 rd", "size": [1, 3], "kind": "magazine" },
-    "stk_ar_std": { "name": "Fixed stock", "short": "Stock", "size": [2, 1], "kind": "furniture" },
-    "stk_ar_light": { "name": "Skeleton stock", "short": "Skel stock", "size": [2, 1], "kind": "furniture" },
-    "grp_ar_std": { "name": "Pistol grip", "short": "Grip", "size": [1, 1], "kind": "furniture" },
-    "hg_ar_std": { "name": "Vented handguard", "short": "Handguard", "size": [3, 1], "kind": "furniture" },
-    "hg_ar_long": { "name": "Long rail handguard", "short": "Long rail", "size": [4, 1], "kind": "furniture" },
-    "bar_ar_14": { "name": "14 inch barrel", "short": "14in barrel", "size": [4, 1], "kind": "barrel" },
-    "bar_ar_10": { "name": "10 inch barrel", "short": "10in barrel", "size": [3, 1], "kind": "barrel" },
-    "sld_pistol_std": { "name": "Standard slide", "short": "Slide", "size": [2, 1], "kind": "pistol" },
-    "sld_pistol_long": { "name": "Long threaded slide", "short": "Long slide", "size": [2, 1], "kind": "pistol" },
-    "mag_pistol_15": { "name": "15 round pistol magazine", "short": "15 rd", "size": [1, 1], "kind": "pistol" },
-    "mag_pistol_21": { "name": "21 round extended magazine", "short": "21 rd", "size": [1, 2], "kind": "pistol" },
-    "muz_pistol_comp": { "name": "Pistol compensator", "short": "P comp", "size": [1, 1], "kind": "pistol" },
-    "muz_pistol_supp": { "name": "Pistol suppressor", "short": "P supp", "size": [2, 1], "kind": "pistol" },
-    "opt_pistol_dot": { "name": "Mini red dot", "short": "Mini dot", "size": [1, 1], "kind": "pistol" },
-    "gun_rifle": { "name": "Rifle (with its parts)", "short": "Rifle", "size": [5, 2], "kind": "primary_gun" },
-    "gun_pistol": { "name": "Pistol (with its parts)", "short": "Pistol", "size": [2, 2], "kind": "sidearm" },
-    "rig_light": { "name": "Chest rig", "short": "Chest rig", "size": [2, 2], "kind": "rig", "grid": [4, 2], "model": "rig_light" },
-    "rig_heavy": { "name": "Assault rig", "short": "Assault rig", "size": [3, 2], "kind": "rig", "grid": [5, 3], "model": "rig_heavy" },
-    "bag_small": { "name": "Day pack", "short": "Day pack", "size": [3, 3], "kind": "backpack", "grid": [5, 5], "model": "bag_small" },
-    "bag_large": { "name": "Raid pack", "short": "Raid pack", "size": [4, 4], "kind": "backpack", "grid": [6, 7], "model": "bag_large" },
-    "usb_drive": { "name": "Encrypted drive (mission)", "short": "Drive", "size": [1, 1], "kind": "objective", "model": "drive" },
-    "breach_charge": { "name": "Breaching charge (G to place, T to set off)", "short": "C4", "size": [1, 1], "kind": "explosive" },
-    "medkit": { "name": "Field medkit", "short": "Medkit", "size": [1, 1], "kind": "med", "model": "medkit", "use": { "heal": 60.0, "seconds": 3.0 } }
+    "opt_reddot": {
+      "name": "Tube red dot",
+      "short": "Red dot",
+      "size": [
+        1,
+        1
+      ],
+      "kind": "optic"
+    },
+    "opt_holo": {
+      "name": "Window holo sight",
+      "short": "Holo",
+      "size": [
+        2,
+        1
+      ],
+      "kind": "optic"
+    },
+    "opt_scope_4x": {
+      "name": "4x scope",
+      "short": "4x scope",
+      "size": [
+        3,
+        1
+      ],
+      "kind": "optic"
+    },
+    "muz_flash": {
+      "name": "Flash hider",
+      "short": "Flash",
+      "size": [
+        1,
+        1
+      ],
+      "kind": "muzzle"
+    },
+    "muz_comp": {
+      "name": "Compensator",
+      "short": "Comp",
+      "size": [
+        1,
+        1
+      ],
+      "kind": "muzzle"
+    },
+    "muz_supp": {
+      "name": "Suppressor",
+      "short": "Supp",
+      "size": [
+        2,
+        1
+      ],
+      "kind": "muzzle"
+    },
+    "mag_ar_30": {
+      "name": "30 round magazine",
+      "short": "30 rd",
+      "size": [
+        1,
+        2
+      ],
+      "kind": "magazine"
+    },
+    "mag_ar_45": {
+      "name": "45 round magazine",
+      "short": "45 rd",
+      "size": [
+        1,
+        3
+      ],
+      "kind": "magazine"
+    },
+    "stk_ar_std": {
+      "name": "Fixed stock",
+      "short": "Stock",
+      "size": [
+        2,
+        1
+      ],
+      "kind": "furniture"
+    },
+    "stk_ar_light": {
+      "name": "Skeleton stock",
+      "short": "Skel stock",
+      "size": [
+        2,
+        1
+      ],
+      "kind": "furniture"
+    },
+    "grp_ar_std": {
+      "name": "Pistol grip",
+      "short": "Grip",
+      "size": [
+        1,
+        1
+      ],
+      "kind": "furniture"
+    },
+    "hg_ar_std": {
+      "name": "Vented handguard",
+      "short": "Handguard",
+      "size": [
+        3,
+        1
+      ],
+      "kind": "furniture"
+    },
+    "hg_ar_long": {
+      "name": "Long rail handguard",
+      "short": "Long rail",
+      "size": [
+        4,
+        1
+      ],
+      "kind": "furniture"
+    },
+    "bar_ar_14": {
+      "name": "14 inch barrel",
+      "short": "14in barrel",
+      "size": [
+        4,
+        1
+      ],
+      "kind": "barrel"
+    },
+    "bar_ar_10": {
+      "name": "10 inch barrel",
+      "short": "10in barrel",
+      "size": [
+        3,
+        1
+      ],
+      "kind": "barrel"
+    },
+    "sld_pistol_std": {
+      "name": "Standard slide",
+      "short": "Slide",
+      "size": [
+        2,
+        1
+      ],
+      "kind": "pistol"
+    },
+    "sld_pistol_long": {
+      "name": "Long threaded slide",
+      "short": "Long slide",
+      "size": [
+        2,
+        1
+      ],
+      "kind": "pistol"
+    },
+    "mag_pistol_15": {
+      "name": "15 round pistol magazine",
+      "short": "15 rd",
+      "size": [
+        1,
+        1
+      ],
+      "kind": "pistol"
+    },
+    "mag_pistol_21": {
+      "name": "21 round extended magazine",
+      "short": "21 rd",
+      "size": [
+        1,
+        2
+      ],
+      "kind": "pistol"
+    },
+    "muz_pistol_comp": {
+      "name": "Pistol compensator",
+      "short": "P comp",
+      "size": [
+        1,
+        1
+      ],
+      "kind": "pistol"
+    },
+    "muz_pistol_supp": {
+      "name": "Pistol suppressor",
+      "short": "P supp",
+      "size": [
+        2,
+        1
+      ],
+      "kind": "pistol"
+    },
+    "opt_pistol_dot": {
+      "name": "Mini red dot",
+      "short": "Mini dot",
+      "size": [
+        1,
+        1
+      ],
+      "kind": "pistol"
+    },
+    "gun_rifle": {
+      "name": "Rifle (with its parts)",
+      "short": "Rifle",
+      "size": [
+        5,
+        2
+      ],
+      "kind": "primary_gun"
+    },
+    "gun_pistol": {
+      "name": "Pistol (with its parts)",
+      "short": "Pistol",
+      "size": [
+        2,
+        2
+      ],
+      "kind": "sidearm"
+    },
+    "rig_light": {
+      "name": "Chest rig",
+      "short": "Chest rig",
+      "size": [
+        2,
+        2
+      ],
+      "kind": "rig",
+      "grid": [
+        4,
+        2
+      ],
+      "model": "rig_light"
+    },
+    "rig_heavy": {
+      "name": "Assault rig",
+      "short": "Assault rig",
+      "size": [
+        3,
+        2
+      ],
+      "kind": "rig",
+      "grid": [
+        5,
+        3
+      ],
+      "model": "rig_heavy"
+    },
+    "bag_small": {
+      "name": "Day pack",
+      "short": "Day pack",
+      "size": [
+        3,
+        3
+      ],
+      "kind": "backpack",
+      "grid": [
+        5,
+        5
+      ],
+      "model": "bag_small"
+    },
+    "bag_large": {
+      "name": "Raid pack",
+      "short": "Raid pack",
+      "size": [
+        4,
+        4
+      ],
+      "kind": "backpack",
+      "grid": [
+        6,
+        7
+      ],
+      "model": "bag_large"
+    },
+    "usb_drive": {
+      "name": "Encrypted drive (mission)",
+      "short": "Drive",
+      "size": [
+        1,
+        1
+      ],
+      "kind": "objective",
+      "model": "drive"
+    },
+    "breach_charge": {
+      "name": "Breaching charge (G to place, T to set off)",
+      "short": "C4",
+      "size": [
+        1,
+        1
+      ],
+      "kind": "explosive"
+    },
+    "medkit": {
+      "name": "Field medkit",
+      "short": "Medkit",
+      "size": [
+        1,
+        1
+      ],
+      "kind": "med",
+      "model": "medkit",
+      "use": {
+        "heal": 60.0,
+        "seconds": 3.0
+      }
+    },
+    "gun_rocket": {
+      "name": "Rocket launcher (one rocket a load)",
+      "short": "Launcher",
+      "size": [
+        6,
+        2
+      ],
+      "kind": "primary_gun"
+    }
   }
 }

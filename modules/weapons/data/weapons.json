@@ -1,9 +1,16 @@
 {
   "bindings": {
-    "modding": ["B"]
+    "modding": [
+      "B"
+    ]
   },
   "friendly_fire": false,
-  "headshot": { "kills": ["enemies"], "multiplier": 2.0 },
+  "headshot": {
+    "kills": [
+      "enemies"
+    ],
+    "multiplier": 2.0
+  },
   "rifle": {
     "damage": 25.0,
     "rounds_per_minute": 600.0,
@@ -27,6 +34,20 @@
     "radius": 3.0,
     "damage": 150.0,
     "range": 40.0,
-    "cooldown_seconds": 1.0, "item": "breach_charge"
+    "cooldown_seconds": 1.0,
+    "item": "breach_charge"
+  },
+  "rocket": {
+    "speed": 55.0,
+    "drop": 0.15,
+    "arm_distance": 4.0,
+    "radius": 2.8,
+    "damage": 160.0,
+    "lifetime": 6.0,
+    "backblast": {
+      "range": 4.0,
+      "cone_dot": 0.6,
+      "damage": 30.0
+    }
   }
 }

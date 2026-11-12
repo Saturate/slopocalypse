@@ -56,6 +56,7 @@ static func mesh(id: String) -> ArrayMesh:
 		"pistol_comp": built = _pistol_comp()
 		"pistol_supp": built = _pistol_supp()
 		"optic_pistol_dot": built = _optic_pistol_dot()
+		"launcher": built = _launcher()
 	if built != null:
 		_cache[id] = built
 	return built
@@ -472,6 +473,40 @@ static func _pistol_mag(extended: bool) -> ArrayMesh:
 		LowPoly.chamfer_box(poly, Vector3(0.026, drop + 0.004, 0.034), 0.002, _at(Vector3(0, -drop / 2.0, 0.003), Vector3(-0.3, 0, 0)), POLYMER)
 	LowPoly.chamfer_box(poly, Vector3(0.03, 0.008, 0.038), 0.002, _at(Vector3(0, -drop - 0.003, 0.004 + drop * 0.3), Vector3(-0.3, 0, 0)), DARK)
 	return _finish(null, poly)
+
+
+## A rocket launcher: a long olive tube with a flared back end, a grip and a front grip, and a
+## sight block on the left of the tube.
+static func _launcher() -> ArrayMesh:
+	var olive := Color(0.3, 0.33, 0.22)
+	var band := Color(0.62, 0.52, 0.18)
+	var metal := LowPoly.begin()
+	var poly := LowPoly.begin()
+	# The tube, with reinforcing rings along it and a band near the front.
+	LowPoly.tube(metal, 0.06, 0.05, 1.0, 24, _along_z(Vector3(0, 0, -0.15)), olive)
+	for z: float in [-0.5, -0.32, 0.02, 0.22]:
+		LowPoly.tube(metal, 0.066, 0.058, 0.025, 24, _along_z(Vector3(0, 0, z)), GUNMETAL)
+	LowPoly.tube(metal, 0.0615, 0.058, 0.04, 24, _along_z(Vector3(0, 0, -0.42)), band)
+	# Muzzle rim and the flared back end.
+	LowPoly.tube(metal, 0.07, 0.05, 0.05, 24, _along_z(Vector3(0, 0, -0.64)), GUNMETAL)
+	LowPoly.cylinder(metal, 0.062, 0.14, 24, _along_z(Vector3(0, 0, 0.42)), GUNMETAL, 0.09)
+	LowPoly.tube(metal, 0.092, 0.084, 0.02, 24, _along_z(Vector3(0, 0, 0.49)), DARK)
+	# Grip, trigger and guard, front grip.
+	LowPoly.chamfer_box(poly, Vector3(0.032, 0.11, 0.045), 0.006, _at(Vector3(0, -0.115, 0.12), Vector3(deg_to_rad(-12.0), 0, 0)), POLYMER)
+	LowPoly.box(metal, Vector3(0.008, 0.03, 0.012), _at(Vector3(0, -0.075, 0.075)), DARK)
+	LowPoly.box(metal, Vector3(0.012, 0.006, 0.07), _at(Vector3(0, -0.1, 0.07)), GUNMETAL)
+	LowPoly.box(metal, Vector3(0.012, 0.04, 0.006), _at(Vector3(0, -0.08, 0.035)), GUNMETAL)
+	LowPoly.chamfer_box(poly, Vector3(0.03, 0.085, 0.04), 0.006, _at(Vector3(0, -0.1, -0.2)), POLYMER)
+	# Shoulder rest under the back.
+	LowPoly.chamfer_box(poly, Vector3(0.05, 0.035, 0.16), 0.008, _at(Vector3(0, -0.075, 0.3)), RUBBER)
+	# Sight block on the left with a rear aperture and a front post.
+	LowPoly.chamfer_box(metal, Vector3(0.03, 0.045, 0.09), 0.005, _at(Vector3(-0.075, 0.03, -0.02)), DARK)
+	LowPoly.tube(metal, 0.012, 0.007, 0.01, 12, _along_z(Vector3(-0.075, 0.065, 0.02)), DARK)
+	LowPoly.box(metal, Vector3(0.004, 0.03, 0.004), _at(Vector3(-0.075, 0.07, -0.06)), DARK)
+	# Sling mounts.
+	for z: float in [-0.5, 0.3]:
+		LowPoly.tube(metal, 0.012, 0.008, 0.006, 10, _at(Vector3(0.068, 0, z), Vector3(0, 0, PI / 2.0)), GUNMETAL)
+	return _finish(metal, poly)
 
 
 static func _pistol_comp() -> ArrayMesh:

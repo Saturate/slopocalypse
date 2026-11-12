@@ -52,6 +52,9 @@
       "pistol_magazine": "mag_pistol_21",
       "pistol_muzzle": "muz_pistol_supp",
       "pistol_optic": "opt_pistol_dot"
+    },
+    "launcher": {
+      "receiver": "rcv_launcher"
     }
   },
   "parts": {
@@ -59,17 +62,52 @@
       "name": "AR receiver",
       "slot": "receiver",
       "mesh": "receiver_ar",
-      "provides": ["barrel", "handguard", "stock", "grip", "magazine", "optic"],
+      "provides": [
+        "barrel",
+        "handguard",
+        "stock",
+        "grip",
+        "magazine",
+        "optic"
+      ],
       "mounts": {
-        "barrel": [0.0, 0.04, -0.15],
-        "handguard": [0.0, 0.035, -0.135],
-        "stock": [0.0, 0.02, 0.13],
-        "grip": [0.0, -0.04, 0.1],
-        "magazine": [0.0, -0.035, -0.04],
-        "optic": [0.0, 0.082, -0.02]
+        "barrel": [
+          0.0,
+          0.04,
+          -0.15
+        ],
+        "handguard": [
+          0.0,
+          0.035,
+          -0.135
+        ],
+        "stock": [
+          0.0,
+          0.02,
+          0.13
+        ],
+        "grip": [
+          0.0,
+          -0.04,
+          0.1
+        ],
+        "magazine": [
+          0.0,
+          -0.035,
+          -0.04
+        ],
+        "optic": [
+          0.0,
+          0.082,
+          -0.02
+        ]
       },
       "markers": {
-        "GripL": [-0.035, -0.04, -0.1]
+        "GripL": [
+          -0.035,
+          -0.04,
+          -0.1
+        ]
       },
       "stats": {
         "rounds_per_minute": 600.0,
@@ -88,12 +126,22 @@
       "name": "14 inch barrel",
       "slot": "barrel",
       "mesh": "barrel_14",
-      "provides": ["muzzle"],
+      "provides": [
+        "muzzle"
+      ],
       "mounts": {
-        "muzzle": [0.0, 0.0, -0.44]
+        "muzzle": [
+          0.0,
+          0.0,
+          -0.44
+        ]
       },
       "markers": {
-        "Muzzle": [0.0, 0.0, -0.44]
+        "Muzzle": [
+          0.0,
+          0.0,
+          -0.44
+        ]
       },
       "stats": {
         "range": 300.0,
@@ -104,12 +152,22 @@
       "name": "10 inch barrel",
       "slot": "barrel",
       "mesh": "barrel_10",
-      "provides": ["muzzle"],
+      "provides": [
+        "muzzle"
+      ],
       "mounts": {
-        "muzzle": [0.0, 0.0, -0.32]
+        "muzzle": [
+          0.0,
+          0.0,
+          -0.32
+        ]
       },
       "markers": {
-        "Muzzle": [0.0, 0.0, -0.32]
+        "Muzzle": [
+          0.0,
+          0.0,
+          -0.32
+        ]
       },
       "stats": {
         "range": 180.0,
@@ -125,7 +183,11 @@
       "mesh": "handguard_std",
       "provides": [],
       "markers": {
-        "GripL": [-0.035, -0.04, -0.075]
+        "GripL": [
+          -0.035,
+          -0.04,
+          -0.075
+        ]
       },
       "stats": {
         "ergonomics": 6.0,
@@ -138,7 +200,11 @@
       "mesh": "handguard_long",
       "provides": [],
       "markers": {
-        "GripL": [-0.035, -0.04, -0.095]
+        "GripL": [
+          -0.035,
+          -0.04,
+          -0.095
+        ]
       },
       "stats": {
         "ergonomics": 3.0,
@@ -174,7 +240,11 @@
       "mesh": "grip_std",
       "provides": [],
       "markers": {
-        "GripR": [0.0, -0.045, 0.02]
+        "GripR": [
+          0.0,
+          -0.045,
+          0.02
+        ]
       },
       "stats": {
         "ergonomics": 8.0,
@@ -209,7 +279,11 @@
       "mesh": "muzzle_flash",
       "provides": [],
       "markers": {
-        "Muzzle": [0.0, 0.0, -0.06]
+        "Muzzle": [
+          0.0,
+          0.0,
+          -0.06
+        ]
       },
       "stats": {
         "recoil_pct": -3.0,
@@ -222,7 +296,11 @@
       "mesh": "muzzle_comp",
       "provides": [],
       "markers": {
-        "Muzzle": [0.0, 0.0, -0.065]
+        "Muzzle": [
+          0.0,
+          0.0,
+          -0.065
+        ]
       },
       "stats": {
         "recoil_pct": -14.0,
@@ -236,7 +314,11 @@
       "mesh": "muzzle_supp",
       "provides": [],
       "markers": {
-        "Muzzle": [0.0, 0.0, -0.17]
+        "Muzzle": [
+          0.0,
+          0.0,
+          -0.17
+        ]
       },
       "stats": {
         "recoil_pct": -8.0,
@@ -250,7 +332,11 @@
       "mesh": "optic_reddot",
       "provides": [],
       "markers": {
-        "Sight": [0.0, 0.036, 0.035]
+        "Sight": [
+          0.0,
+          0.036,
+          0.035
+        ]
       },
       "stats": {
         "zoom": 1.25,
@@ -264,7 +350,11 @@
       "mesh": "optic_scope",
       "provides": [],
       "markers": {
-        "Sight": [0.0, 0.045, 0.135]
+        "Sight": [
+          0.0,
+          0.045,
+          0.135
+        ]
       },
       "marker_meta": {
         "Sight": {
@@ -284,7 +374,11 @@
       "mesh": "optic_holo",
       "provides": [],
       "markers": {
-        "Sight": [0.0, 0.034, 0.03]
+        "Sight": [
+          0.0,
+          0.034,
+          0.03
+        ]
       },
       "stats": {
         "zoom": 1.1,
@@ -298,18 +392,48 @@
       "mesh": "pistol_frame",
       "weapon_slot": "secondary",
       "fire_mode": "semi",
-      "hold": [0.0, 0.0, -0.2],
+      "hold": [
+        0.0,
+        0.0,
+        -0.2
+      ],
       "eye_relief": 0.42,
-      "hip_sight": [0.03, -0.1, -0.45],
-      "provides": ["slide", "pistol_magazine"],
-      "requires": ["slide", "pistol_magazine"],
+      "hip_sight": [
+        0.03,
+        -0.1,
+        -0.45
+      ],
+      "provides": [
+        "slide",
+        "pistol_magazine"
+      ],
+      "requires": [
+        "slide",
+        "pistol_magazine"
+      ],
       "mounts": {
-        "slide": [0.0, 0.0, 0.0],
-        "pistol_magazine": [0.0, -0.118, 0.052]
+        "slide": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "pistol_magazine": [
+          0.0,
+          -0.118,
+          0.052
+        ]
       },
       "markers": {
-        "GripR": [0.0, -0.07, 0.075],
-        "GripL": [-0.03, -0.085, 0.045]
+        "GripR": [
+          0.0,
+          -0.07,
+          0.075
+        ],
+        "GripL": [
+          -0.03,
+          -0.085,
+          0.045
+        ]
       },
       "stats": {
         "rounds_per_minute": 420.0,
@@ -327,13 +451,27 @@
       "name": "Standard slide",
       "slot": "slide",
       "mesh": "slide_std",
-      "provides": ["pistol_optic"],
+      "provides": [
+        "pistol_optic"
+      ],
       "mounts": {
-        "pistol_optic": [0.0, 0.032, 0.028]
+        "pistol_optic": [
+          0.0,
+          0.032,
+          0.028
+        ]
       },
       "markers": {
-        "Sight": [0.0, 0.0355, 0.064],
-        "Muzzle": [0.0, 0.016, -0.103]
+        "Sight": [
+          0.0,
+          0.0355,
+          0.064
+        ],
+        "Muzzle": [
+          0.0,
+          0.016,
+          -0.103
+        ]
       },
       "stats": {
         "range": 50.0,
@@ -344,14 +482,33 @@
       "name": "Long threaded slide",
       "slot": "slide",
       "mesh": "slide_long",
-      "provides": ["pistol_optic", "pistol_muzzle"],
+      "provides": [
+        "pistol_optic",
+        "pistol_muzzle"
+      ],
       "mounts": {
-        "pistol_optic": [0.0, 0.032, 0.028],
-        "pistol_muzzle": [0.0, 0.016, -0.145]
+        "pistol_optic": [
+          0.0,
+          0.032,
+          0.028
+        ],
+        "pistol_muzzle": [
+          0.0,
+          0.016,
+          -0.145
+        ]
       },
       "markers": {
-        "Sight": [0.0, 0.0355, 0.064],
-        "Muzzle": [0.0, 0.016, -0.145]
+        "Sight": [
+          0.0,
+          0.0355,
+          0.064
+        ],
+        "Muzzle": [
+          0.0,
+          0.016,
+          -0.145
+        ]
       },
       "stats": {
         "range": 70.0,
@@ -388,7 +545,11 @@
       "mesh": "pistol_comp",
       "provides": [],
       "markers": {
-        "Muzzle": [0.0, 0.0, -0.035]
+        "Muzzle": [
+          0.0,
+          0.0,
+          -0.035
+        ]
       },
       "stats": {
         "recoil_pct": -18.0,
@@ -402,7 +563,11 @@
       "mesh": "pistol_supp",
       "provides": [],
       "markers": {
-        "Muzzle": [0.0, 0.0, -0.137]
+        "Muzzle": [
+          0.0,
+          0.0,
+          -0.137
+        ]
       },
       "stats": {
         "recoil_pct": -8.0,
@@ -416,12 +581,64 @@
       "mesh": "optic_pistol_dot",
       "provides": [],
       "markers": {
-        "Sight": [0.0, 0.018, 0.016]
+        "Sight": [
+          0.0,
+          0.018,
+          0.016
+        ]
       },
       "stats": {
         "zoom": 1.15,
         "ergonomics": -2.0,
         "weight": 0.05
+      }
+    },
+    "rcv_launcher": {
+      "name": "Rocket launcher tube",
+      "slot": "receiver",
+      "mesh": "launcher",
+      "weapon_slot": "primary",
+      "fire_mode": "semi",
+      "projectile": true,
+      "hold": [
+        0.0,
+        -0.02,
+        0.0
+      ],
+      "provides": [],
+      "requires": [
+        "receiver"
+      ],
+      "mounts": {},
+      "markers": {
+        "GripR": [
+          0.0,
+          -0.11,
+          0.12
+        ],
+        "GripL": [
+          -0.03,
+          -0.11,
+          -0.2
+        ],
+        "Muzzle": [
+          0.0,
+          0.0,
+          -0.66
+        ]
+      },
+      "stats": {
+        "rounds_per_minute": 30.0,
+        "damage": 0.0,
+        "spread_degrees": 0.3,
+        "recoil_pitch_degrees": 7.0,
+        "recoil_yaw_degrees": 1.2,
+        "reload_seconds": 3.2,
+        "ads_seconds": 0.35,
+        "ergonomics": 20.0,
+        "weight": 6.5,
+        "magazine": 1,
+        "range": 300.0
       }
     }
   },

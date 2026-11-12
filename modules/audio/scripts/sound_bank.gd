@@ -43,6 +43,7 @@ static func get_sound(sound: String) -> AudioStreamWAV:
 		"break_brick": samples = _crumble(900.0, 0.8, 31)
 		"break_concrete": samples = _crumble(520.0, 1.0, 32)
 		"collapse": samples = _collapse()
+		"launch": samples = _launch()
 		"dive": samples = _dive()
 		"wind":
 			samples = _wind()
@@ -208,6 +209,21 @@ static func _crumble(bright_hz: float, seconds: float, seed: int) -> PackedFloat
 		_noise_burst(out, rng.randf_range(0.0, seconds * 0.7), rng.randf_range(0.02, 0.07), bright_hz * rng.randf_range(1.0, 3.0), rng.randf_range(0.3, 0.8), seed + k)
 	for i in out.size():
 		out[i] = clampf(out[i], -1.0, 1.0)
+	return out
+
+
+## A rocket leaving its tube: a deep thump, then a hiss that rises and fades as it goes.
+static func _launch() -> PackedFloat32Array:
+	var rng := _rng(41)
+	var out := PackedFloat32Array()
+	var lp := 0.0
+	for i in int(1.4 * RATE):
+		var t := float(i) / RATE
+		var a := _one_pole(lerpf(900.0, 3200.0, clampf(t / 0.4, 0.0, 1.0)))
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * a
+		var hiss := lp * exp(-t * 2.2) * minf(1.0, t * 12.0) * 1.4
+		var thump := sin(TAU * 60.0 * t) * exp(-t * 18.0)
+		out.append(clampf(hiss + thump, -1.0, 1.0))
 	return out
 
 

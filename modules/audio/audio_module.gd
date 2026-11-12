@@ -43,6 +43,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"inventory.changed", _on_inventory_changed)
 	EventBus.subscribe(&"daytime.hour", _on_hour)
 	EventBus.subscribe(&"missions.surface_hit", _on_surface_hit)
+	EventBus.subscribe(&"weapons.rocket_launched", _on_rocket_launched)
 	EventBus.subscribe(&"missions.surface_broke", _on_surface_broke)
 	EventBus.subscribe(&"missions.surface_landed", _on_surface_landed)
 	var wind := AudioStreamPlayer.new()
@@ -72,6 +73,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"inventory.changed", _on_inventory_changed)
 	EventBus.unsubscribe(&"daytime.hour", _on_hour)
 	EventBus.unsubscribe(&"missions.surface_hit", _on_surface_hit)
+	EventBus.unsubscribe(&"weapons.rocket_launched", _on_rocket_launched)
 	EventBus.unsubscribe(&"missions.surface_broke", _on_surface_broke)
 	EventBus.unsubscribe(&"missions.surface_landed", _on_surface_landed)
 
@@ -130,6 +132,11 @@ func _on_surface_broke(p: Dictionary) -> void:
 
 func _on_surface_landed(p: Dictionary) -> void:
 	play_at("collapse", p.get("position", Vector3.ZERO), float(config.get("surface_break_range", 160.0)) * 1.5, randf_range(0.9, 1.05))
+
+
+## A rocket leaving its tube: a deep thump and a long whoosh.
+func _on_rocket_launched(p: Dictionary) -> void:
+	play_at("launch", p.get("from", Vector3.ZERO), float(config.get("shot_range", 300.0)))
 
 
 func _on_explosion(p: Dictionary) -> void:
