@@ -409,91 +409,119 @@ impl Grid {
         let max_run = max_run.max(1);
         let mut out = Mesh::default();
         let n = [0, 1, 2].map(|a| hi[a].saturating_sub(lo[a]));
-        // A face's key: its colour in the low bits and its four corner levels above, so only
-        // faces that match in both merge.
-        const NONE: u64 = u64::MAX;
         let o = self.origin();
         let o = [0, 1, 2].map(|a| o[a] + lo[a] as f32 * self.voxel);
         for axis in 0..3 {
-            let u = (axis + 1) % 3;
-            let v = (axis + 2) % 3;
+            let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+            // Along z (axis 2) runs are capped; u or v may be z.
+            let cap = |a: usize| if a == 2 { max_run } else { usize::MAX };
             for back in [false, true] {
-                let mut mask = vec![NONE; n[u] * n[v]];
                 for slice in 0..n[axis] {
-                    // Which faces of this slice look out into air.
-                    for j in 0..n[v] {
-                        for i in 0..n[u] {
-                            let mut p = [0i64; 3];
-                            p[axis] = (lo[axis] + slice) as i64;
-                            p[u] = (lo[u] + i) as i64;
-                            p[v] = (lo[v] + j) as i64;
-                            let here = self.get(p[0], p[1], p[2]);
-                            let mut q = p;
-                            q[axis] += if back { -1 } else { 1 };
-                            let next = self.get(q[0], q[1], q[2]);
-                            mask[j * n[u] + i] = if here != EMPTY && next == EMPTY {
-                                let levels = if self.corners {
-                                    self.corner_levels(q, u, v)
-                                } else {
-                                    [OPEN; 4]
-                                };
-                                pack(here, levels)
-                            } else {
-                                NONE
-                            };
-                        }
-                    }
-                    // Merge runs into rectangles.
-                    for j in 0..n[v] {
-                        let mut i = 0;
-                        while i < n[u] {
-                            let c = mask[j * n[u] + i];
-                            if c == NONE {
-                                i += 1;
-                                continue;
-                            }
-                            // Along z (axis 2) runs are capped; u or v may be z.
-                            let cap_u = if u == 2 { max_run } else { usize::MAX };
-                            let cap_v = if v == 2 { max_run } else { usize::MAX };
-                            let mut w = 1;
-                            while i + w < n[u] && w < cap_u && mask[j * n[u] + i + w] == c {
-                                w += 1;
-                            }
-                            let mut h = 1;
-                            'grow: while j + h < n[v] && h < cap_v {
-                                for k in 0..w {
-                                    if mask[(j + h) * n[u] + i + k] != c {
-                                        break 'grow;
-                                    }
-                                }
-                                h += 1;
-                            }
-                            for jj in 0..h {
-                                for k in 0..w {
-                                    mask[(j + jj) * n[u] + i + k] = NONE;
-                                }
-                            }
-                            let plane = if back { slice } else { slice + 1 } as f32;
-                            let mut corner = [0f32; 3];
-                            corner[axis] = o[axis] + plane * self.voxel;
-                            corner[u] = o[u] + i as f32 * self.voxel;
-                            corner[v] = o[v] + j as f32 * self.voxel;
-                            let mut du = [0f32; 3];
-                            du[u] = w as f32 * self.voxel;
-                            let mut dv = [0f32; 3];
-                            dv[v] = h as f32 * self.voxel;
-                            let mut normal = [0f32; 3];
-                            normal[axis] = if back { -1.0 } else { 1.0 };
-                            let (colour, levels) = unpack(c);
-                            out.push_quad(corner, du, dv, normal, colour, levels, back);
-                            i += w;
-                        }
+                    let s = Slice {
+                        axis,
+                        u,
+                        v,
+                        back,
+                        at: lo[axis] + slice,
+                    };
+                    let mask = self.face_mask(&s, lo, n);
+                    for (i, j, w, h, key) in merge_rects(mask, n[u], n[v], cap(u), cap(v)) {
+                        let plane = if back { slice } else { slice + 1 } as f32;
+                        let mut corner = [0f32; 3];
+                        corner[axis] = o[axis] + plane * self.voxel;
+                        corner[u] = o[u] + i as f32 * self.voxel;
+                        corner[v] = o[v] + j as f32 * self.voxel;
+                        let mut du = [0f32; 3];
+                        du[u] = w as f32 * self.voxel;
+                        let mut dv = [0f32; 3];
+                        dv[v] = h as f32 * self.voxel;
+                        let mut normal = [0f32; 3];
+                        normal[axis] = if back { -1.0 } else { 1.0 };
+                        let (colour, levels) = unpack(key);
+                        out.push_quad(corner, du, dv, normal, colour, levels, back);
                     }
                 }
             }
         }
         out
     }
+
+    /// Which faces of slice `s` look out into air, as merge keys (`NONE` where there is no
+    /// face), over the `n[u]` x `n[v]` cells of the region starting at `lo`.
+    fn face_mask(&self, s: &Slice, lo: [usize; 3], n: [usize; 3]) -> Vec<u64> {
+        let mut mask = vec![NONE; n[s.u] * n[s.v]];
+        for j in 0..n[s.v] {
+            for i in 0..n[s.u] {
+                let mut p = [0i64; 3];
+                p[s.axis] = s.at as i64;
+                p[s.u] = (lo[s.u] + i) as i64;
+                p[s.v] = (lo[s.v] + j) as i64;
+                let here = self.get(p[0], p[1], p[2]);
+                let mut q = p;
+                q[s.axis] += if s.back { -1 } else { 1 };
+                if here == EMPTY || self.solid(q) {
+                    continue;
+                }
+                let levels = if self.corners {
+                    self.corner_levels(q, s.u, s.v)
+                } else {
+                    [OPEN; 4]
+                };
+                mask[j * n[s.u] + i] = pack(here, levels);
+            }
+        }
+        mask
+    }
+}
+
+/// One slice of faces: cells at depth `at` along `axis`, faces spanning `u` and `v`, looking
+/// towards negative `axis` when `back`.
+struct Slice {
+    axis: usize,
+    u: usize,
+    v: usize,
+    back: bool,
+    at: usize,
+}
+
+/// A face's merge key: its colour in the low bits and its four corner levels above, so only
+/// faces that match in both merge. `NONE` is no face.
+const NONE: u64 = u64::MAX;
+
+/// Greedy rectangles of equal keys in a `nu` x `nv` mask, at most `cap_u` by `cap_v` cells:
+/// `(i, j, width, height, key)` each.
+fn merge_rects(
+    mut mask: Vec<u64>,
+    nu: usize,
+    nv: usize,
+    cap_u: usize,
+    cap_v: usize,
+) -> Vec<(usize, usize, usize, usize, u64)> {
+    let mut out = Vec::new();
+    for j in 0..nv {
+        let mut i = 0;
+        while i < nu {
+            let c = mask[j * nu + i];
+            if c == NONE {
+                i += 1;
+                continue;
+            }
+            let mut w = 1;
+            while i + w < nu && w < cap_u && mask[j * nu + i + w] == c {
+                w += 1;
+            }
+            let mut h = 1;
+            while j + h < nv && h < cap_v && (0..w).all(|k| mask[(j + h) * nu + i + k] == c) {
+                h += 1;
+            }
+            for cell in (0..h).flat_map(|jj| (0..w).map(move |k| (j + jj) * nu + i + k)) {
+                mask[cell] = NONE;
+            }
+            out.push((i, j, w, h, c));
+            i += w;
+        }
+    }
+    out
 }
 
 impl Mesh {
