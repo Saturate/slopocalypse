@@ -253,6 +253,52 @@ func test_from_any_side_it_ends_up_hidden_behind_the_wall() -> void:
 		assert_bool(ok).override_failure_message("from %s it settled at %s, in sight" % [start, enemy.global_position]).is_true()
 
 
+## Issue #247: on the player's side of the wall, it walked straight at a spot behind it and
+## stayed pressed against the front face in plain view.
+func test_in_front_of_a_wall_it_goes_round_to_cover() -> void:
+	_player.global_position = Vector3(0, 0.1, -20)
+	_box(Vector3(3, 0.6, -1.5), Vector3(2.4, 1.2, 0.3))
+	await get_tree().physics_frame
+	var enemy := await _enemy_at(Vector3(0, 0, 0))
+	var brain := _brain(enemy)
+	(brain.get(&"_rng") as RandomNumberGenerator).seed = 7
+	var settle := float((brain.config["cover"] as Dictionary)["settle_seconds"])
+	for start: Vector3 in [Vector3(2, 0, -3), Vector3(5, 0, -3)]:
+		enemy.global_position = start + Vector3.UP * 0.1
+		enemy.velocity = Vector3.ZERO
+		brain.set(&"_has_cover", false)
+		brain.set(&"_cover_search_in", 0.0)
+		var pressed := 0.0
+		var worst := 0.0
+		for i in 60 * 5:
+			await get_tree().physics_frame
+			var at := enemy.global_position
+			var at_face := at.x > 1.3 and at.x < 4.7 and at.z > -2.4 and at.z < -1.5
+			if at_face and not brain.hidden_at(at, _player.global_position):
+				pressed += 1.0 / 60.0
+				worst = maxf(worst, pressed)
+			else:
+				pressed = 0.0
+		assert_bool(brain.has_cover()).override_failure_message("no cover from %s" % start).is_true()
+		assert_bool(brain.hidden_at(enemy.global_position, _player.global_position)).override_failure_message("from %s it ended at %s, in sight" % [start, enemy.global_position]).is_true()
+		assert_float(worst).override_failure_message("from %s it stood at the wall's face in sight for %.1f s" % [start, worst]).is_less_equal(settle + 0.5)
+
+
+func test_a_cover_route_never_goes_through_the_wall() -> void:
+	_player.global_position = Vector3(0, 0.1, -20)
+	_box(Vector3(3, 0.6, -1.5), Vector3(2.4, 1.2, 0.3))
+	await get_tree().physics_frame
+	var enemy := await _enemy_at(Vector3(3, 0, -3))
+	await get_tree().physics_frame
+	var brain := _brain(enemy)
+	var route := brain.find_cover_route(_player.global_position)
+	assert_bool(route.is_empty()).is_false()
+	var from := enemy.global_position
+	for leg in route:
+		assert_bool(brain.can_walk(from, leg)).override_failure_message("blocked from %s to %s" % [from, leg]).is_true()
+		from = leg
+
+
 func test_a_spot_it_cannot_reach_does_not_stop_it_fighting() -> void:
 	_player.global_position = Vector3(0, 0.1, -20)
 	_box(Vector3(3, 0.6, -1.5), Vector3(2.4, 1.2, 0.3))
