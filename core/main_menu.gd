@@ -8,6 +8,7 @@ signal solo_requested
 signal host_requested(port: int)
 signal join_requested(host: String, port: int)
 signal library_requested
+signal range_requested
 
 const BG := Color(0.07, 0.08, 0.08)
 const PANEL := Color(0.12, 0.13, 0.12, 0.96)
@@ -29,6 +30,8 @@ var save_path := ServerList.SAVE_PATH
 var profile_path := PlayerProfile.FILE
 ## Set by boot when the asset library module is there; shows its button.
 var has_library := false
+## Set by boot when the test range module is there and on; shows its button.
+var has_range := false
 
 var _name: LineEdit
 var _address: LineEdit
@@ -172,6 +175,11 @@ func _ready() -> void:
 		library.custom_minimum_size = Vector2(150, 34)
 		library.add_theme_font_size_override("font_size", 15)
 		bottom.add_child(library)
+	if has_range:
+		var range_button := _button(&"Range", "Test range", func() -> void: range_requested.emit())
+		range_button.custom_minimum_size = Vector2(150, 34)
+		range_button.add_theme_font_size_override("font_size", 15)
+		bottom.add_child(range_button)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bottom.add_child(spacer)

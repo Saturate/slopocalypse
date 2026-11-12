@@ -1,0 +1,33 @@
+{
+  "type": {
+    "name": "Test range",
+    "script": "res://modules/range/types/test_range.gd",
+    "defaults": {}
+  },
+  "mission": {
+    "type": "test_range",
+    "place": "Test range",
+    "objective": "A row of buildings, one per material. Nothing here shoots back: break things and see how each one takes it.",
+    "distance": [160.0, 160.0],
+    "payout": [0.0, 0.0],
+    "buildings": {
+      "gap": 4.0,
+      "row_off_road": 10.0,
+      "row_clear": 14.0,
+      "row": [
+        { "material": "wood", "glass": "window_glass", "width": 5.0, "depth": 4.0, "paint": 0 },
+        { "material": "brick", "glass": "window_glass", "width": 5.0, "depth": 4.0 },
+        { "material": "concrete", "glass": "window_glass", "width": 5.0, "depth": 4.0 },
+        { "material": "wood", "glass": "security_glass", "width": 5.0, "depth": 4.0, "paint": 2 },
+        { "material": "concrete", "glass": "security_glass", "width": 6.5, "depth": 5.0 }
+      ]
+    }
+  },
+  "gifts": { "breach_charge": 6 },
+  "bot": {
+    "fire_seconds": 3.0,
+    "aim_heights": [0.8, 1.6, 2.3],
+    "charge_wait_seconds": 1.0,
+    "settle_seconds": 2.0
+  }
+}

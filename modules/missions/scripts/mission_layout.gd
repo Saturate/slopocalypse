@@ -9,6 +9,8 @@ extends RefCounted
 ## `{position, yaw, width, depth, wall_height, windows, paint, seed}`; `position` is on the
 ## road's level, the caller puts it on the ground.
 static func buildings(cfg: Dictionary, seed_value: int, road_at: Callable, along: float) -> Array:
+	if cfg.get("row") is Array:
+		return row(cfg, road_at, along)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	var count_range: Array = cfg.get("count", [3, 6])
@@ -49,5 +51,40 @@ static func buildings(cfg: Dictionary, seed_value: int, road_at: Callable, along
 			"seed": rng.randi(),
 			"radius": radius,
 			"material": str(cfg["material"]) if cfg.has("material") else ("concrete" if rng.randf() < float(cfg.get("concrete_share", 0.0)) else "wood"),
+		})
+	return out
+
+
+## A fixed row instead of a rolled layout (the test range): `cfg.row` lists the buildings in
+## order, each `{material, glass?, width?, depth?, wall_height?, windows?, paint?}`, standing
+## `row_off_road` metres off the road on the +x side, `gap` apart, doors facing the road, with
+## `row_clear` metres of open ground round each (no trees between them and the road).
+static func row(cfg: Dictionary, road_at: Callable, along: float) -> Array:
+	var gap := float(cfg.get("gap", 3.0))
+	var off := float(cfg.get("row_off_road", 12.0))
+	var out := []
+	var entries: Array = cfg["row"]
+	var total := 0.0
+	for e: Dictionary in entries:
+		total += float(e.get("width", 5.0)) + gap
+	var cursor := along - total / 2.0
+	for i in entries.size():
+		var e: Dictionary = entries[i]
+		var w := float(e.get("width", 5.0))
+		var d := float(e.get("depth", 4.0))
+		var on_road: Vector3 = road_at.call(cursor + w / 2.0)
+		cursor += w + gap
+		out.append({
+			"position": on_road + Vector3(off + d / 2.0, 0.0, 0.0),
+			"yaw": PI / 2.0,
+			"width": w, "depth": d,
+			"wall_height": float(e.get("wall_height", 2.8)),
+			"windows": int(e.get("windows", 2)),
+			"paint": int(e.get("paint", 1)),
+			"seed": 1000 + i,
+			"radius": Vector2(w, d).length() / 2.0,
+			"material": str(e.get("material", "wood")),
+			"glass": str(e.get("glass", "window_glass")),
+			"clear": float(cfg.get("row_clear", 3.0)),
 		})
 	return out

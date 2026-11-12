@@ -1,0 +1,6 @@
+{
+  "id": "range",
+  "depends_on": ["world", "player", "weapons", "inventory", "missions"],
+  "flag": "range",
+  "entry": "range_module.gd"
+}

@@ -18,6 +18,7 @@
     "perf": true,
     "missions": true,
     "trader": true,
+    "range": true,
     "web": true
   }
 }
