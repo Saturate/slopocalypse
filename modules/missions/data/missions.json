@@ -23,11 +23,7 @@
     "fall_damage": 60.0,
     "blast_damage": 140.0,
     "blast_reach": 1.6,
-    "concrete_share": 0.3,
-    "materials": {
-      "wood": { "bullet": 1.0, "blast": 1.0, "min_bullet_damage": 0.0, "hole": 0.13 },
-      "concrete": { "bullet": 0.15, "blast": 0.8, "min_bullet_damage": 60.0, "hole": 0.0 }
-    }
+    "concrete_share": 0.3
   },
   "hazards": {
     "trigger_radius": 0.9,

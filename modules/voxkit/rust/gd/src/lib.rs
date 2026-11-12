@@ -179,6 +179,28 @@ impl VoxelModel {
         });
     }
 
+    /// The material index every fill after this call writes into its cells (see
+    /// `VoxMaterials` for the names); 0 is "default".
+    #[func]
+    fn set_material(&mut self, index: i64) {
+        self.with(|g, _| g.brush = index.clamp(0, 255) as u8);
+    }
+
+    /// Sets the material of the filled cells inside the box, leaving their colour.
+    #[func]
+    fn mark_box(&mut self, min: Vector3, max: Vector3, index: i64) {
+        self.with(|g, _| g.fill_box(v3(min), v3(max), Op::Mark(index.clamp(0, 255) as u8)));
+    }
+
+    /// Material index of the cell holding `point` (model space); 0 for air and outside. A
+    /// hit point lies on a face, so callers step half a voxel into the surface first.
+    #[func]
+    fn material_at(&self, point: Vector3) -> i64 {
+        self.grid
+            .as_ref()
+            .map_or(0, |g| g.material_at(v3(point)) as i64)
+    }
+
     /// Scales the colour jitter of every fill after this call (0 = flat colours).
     #[func]
     fn set_jitter_scale(&mut self, scale: f32) {

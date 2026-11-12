@@ -37,8 +37,8 @@ var segment_hp := 100.0
 ## a falling piece takes to land (from the missions config's `buildings`).
 var max_span := 2
 var fall_seconds := 0.6
-## What its material takes: `{bullet, blast, min_bullet_damage, hole}` (from the missions
-## config's `materials`).
+## What its material takes: its walls' entry in the voxkit materials file (`VoxMaterials`),
+## set from `spec.material` when nothing sets it first.
 var material_cfg: Dictionary = {}
 
 var _visual := DisplayServer.get_name() != "headless"
@@ -59,6 +59,8 @@ var _remesh := false
 
 func _ready() -> void:
 	add_to_group(&"mission_buildings")
+	if material_cfg.is_empty():
+		material_cfg = VoxMaterials.named(material())
 	collision_layer = PhysicsLayers.SOLID
 	var w := float(spec.get("width", 5.0))
 	var d := float(spec.get("depth", 4.0))
@@ -73,7 +75,7 @@ func _ready() -> void:
 			"seed": int(spec.get("seed", 1)), "paint": int(spec.get("paint", 1)), "width": w,
 			"depth": d, "wall_height": wh, "pitch": float(spec.get("pitch", 0.45)), "door": 1,
 			"windows": float(spec.get("windows", 2)), "voxel": VOXEL,
-			"material": 1 if material() == "concrete" else 0,
+			"material": maxi(0, VoxShed.WALL_MATERIALS.find(material())),
 		})
 		_mesh = VoxelChunkedMesh.new()
 		_mesh.name = "Mesh"
