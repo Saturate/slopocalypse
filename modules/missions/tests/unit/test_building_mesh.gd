@@ -60,3 +60,25 @@ func test_a_hole_rebuilds_only_the_chunks_it_touched() -> void:
 	assert_int(rebuilt).is_greater(0)
 	assert_int(rebuilt).is_less(model.chunk_count() / 2)
 	assert_int(shown.refresh()).is_equal(0)
+
+
+func test_fallen_pieces_drop_as_one_piece_then_go() -> void:
+	var b := _building()
+	b.fall_seconds = 0.1
+	var model: VoxelModel = b.get(&"_model")
+	var before := model.voxel_count()
+	var wh := float(b.spec["wall_height"])
+	var roof: Array = []
+	for id in b.segment_count():
+		if MissionBuilding.segments(6.0, 5.0, wh, b.segment_size)[id].position.y >= wh - 0.01:
+			roof.append(id)
+	b.break_segments([], roof)
+	var falling := b.get_children().filter(func(n: Node) -> bool: return n.name.begins_with("Falling"))
+	# The whole roof is connected: one piece, holding the roof's voxels, which left the model.
+	assert_int(falling.size()).is_equal(1)
+	assert_int((falling[0] as Node3D).get_child_count()).is_equal(roof.size())
+	assert_int(model.voxel_count()).is_less(before)
+	for id: int in roof:
+		assert_bool(b.is_broken(id)).is_true()
+	await get_tree().create_timer(0.3).timeout
+	assert_bool(is_instance_valid(falling[0])).is_false()

@@ -1,0 +1,16 @@
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.7
+reloadable = true
+
+[libraries]
+windows.debug.x86_64 = "res://modules/missions/bin/windows/debug/missions_gd.dll"
+windows.release.x86_64 = "res://modules/missions/bin/windows/release/missions_gd.dll"
+windows.debug.arm64 = "res://modules/missions/bin/windows/debug/missions_gd.dll"
+windows.release.arm64 = "res://modules/missions/bin/windows/release/missions_gd.dll"
+linux.debug.x86_64 = "res://modules/missions/bin/linux/debug/libmissions_gd.so"
+linux.release.x86_64 = "res://modules/missions/bin/linux/release/libmissions_gd.so"
+linux.debug.arm64 = "res://modules/missions/bin/linux/debug/libmissions_gd.so"
+linux.release.arm64 = "res://modules/missions/bin/linux/release/libmissions_gd.so"
+macos.debug = "res://modules/missions/bin/macos/debug/libmissions_gd.dylib"
+macos.release = "res://modules/missions/bin/macos/release/libmissions_gd.dylib"
