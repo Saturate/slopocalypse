@@ -6,7 +6,8 @@ export interface Shot {
 	setup?: string;
 	title?: string;
 	subtitle?: string;
-	// Seconds rendered before the part that is kept (worlds load first), and seconds kept.
+	// Seconds rendered after the shot starts rolling (tools/gd/movie.gd: a setup may hold that
+	// back while its world loads) before the part that is kept, and seconds kept.
 	skip?: number;
 	seconds: number;
 	// "off" hides the HUD layers for a clean shot.
@@ -18,6 +19,13 @@ export interface GifOutput {
 	fps: number;
 }
 
+// A single frame saved as a PNG: `at` seconds into the kept part of shot `shot`.
+export interface Still {
+	name: string;
+	shot: number;
+	at: number;
+}
+
 export interface ShotList {
 	fps: number;
 	size: [number, number];
@@ -25,6 +33,7 @@ export interface ShotList {
 	fade: number;
 	shots: Shot[];
 	gif?: GifOutput;
+	stills?: Still[];
 }
 
 export function parseShotList(text: string): ShotList {
@@ -62,6 +71,23 @@ export function validateShotList(raw: unknown): string[] {
 		if (s["skip"] !== undefined && (typeof s["skip"] !== "number" || s["skip"] < 0)) errors.push(`shot ${i}: skip must be >= 0`);
 		if (typeof raw["fade"] === "number" && typeof s["seconds"] === "number" && s["seconds"] < raw["fade"] * 2) errors.push(`shot ${i}: shorter than its fades`);
 	});
+	const stills = raw["stills"];
+	if (stills !== undefined) {
+		if (!Array.isArray(stills)) errors.push("stills must be a list");
+		else
+			stills.forEach((st: unknown, i: number) => {
+				if (!isRecord(st) || typeof st["name"] !== "string" || !/^[a-z0-9_-]+$/.test(st["name"])) {
+					errors.push(`still ${i}: name must be lowercase letters, digits, - or _`);
+					return;
+				}
+				const shot = shots[typeof st["shot"] === "number" ? st["shot"] : -1];
+				if (!isRecord(shot) || typeof shot["seconds"] !== "number") {
+					errors.push(`still ${i}: shot must be the index of a shot`);
+					return;
+				}
+				if (typeof st["at"] !== "number" || st["at"] < 0 || st["at"] >= shot["seconds"]) errors.push(`still ${i}: at must be within the shot's seconds`);
+			});
+	}
 	return errors;
 }
 
@@ -74,8 +100,8 @@ export function shotFrames(shot: Shot, fps: number): number {
 	return Math.round(((shot.skip ?? 0) + shot.seconds) * fps);
 }
 
-export function godotArgs(root: string, list: ShotList, shot: Shot, movie: string): string[] {
-	const args = ["--path", root, "--resolution", `${list.size[0]}x${list.size[1]}`, "--fixed-fps", String(list.fps), "--write-movie", movie, "-s", "res://tools/gd/movie.gd", "--", "--frames", String(shotFrames(shot, list.fps)), "--hud", shot.hud ?? "on"];
+export function godotArgs(root: string, list: ShotList, shot: Shot, movie: string, startFile: string): string[] {
+	const args = ["--path", root, "--resolution", `${list.size[0]}x${list.size[1]}`, "--fixed-fps", String(list.fps), "--write-movie", movie, "-s", "res://tools/gd/movie.gd", "--", "--frames", String(shotFrames(shot, list.fps)), "--hud", shot.hud ?? "on", "--start-file", startFile];
 	if (shot.title !== undefined) {
 		args.push("--title", shot.title);
 		if (shot.subtitle !== undefined) args.push("--subtitle", shot.subtitle);
@@ -85,12 +111,18 @@ export function godotArgs(root: string, list: ShotList, shot: Shot, movie: strin
 	return args;
 }
 
+// Seconds of loading before a shot started rolling, from the frame number movie.gd wrote.
+export function leadInSeconds(startFileText: string | undefined, fps: number): number {
+	const frames = Number((startFileText ?? "").trim());
+	return Number.isInteger(frames) && frames > 0 ? frames / fps : 0;
+}
+
 // One shot trimmed to its kept part, scaled, faded in and out, encoded the same as the rest
-// so they join without re-encoding.
-export function segmentArgs(list: ShotList, shot: Shot, movie: string, segment: string): string[] {
+// so they join without re-encoding. `leadIn` is the loading time before the shot rolled.
+export function segmentArgs(list: ShotList, shot: Shot, movie: string, segment: string, leadIn = 0): string[] {
 	const [w, h] = list.size;
 	const fades = list.fade > 0 ? `,fade=t=in:st=0:d=${list.fade},fade=t=out:st=${(shot.seconds - list.fade).toFixed(3)}:d=${list.fade}` : "";
-	return ["-y", "-ss", String(shot.skip ?? 0), "-t", String(shot.seconds), "-i", movie, "-vf", `scale=${w}:${h},fps=${list.fps}${fades},format=yuv420p`, "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-an", segment];
+	return ["-y", "-ss", String(Number((leadIn + (shot.skip ?? 0)).toFixed(3))), "-t", String(shot.seconds), "-i", movie, "-vf", `scale=${w}:${h},fps=${list.fps}${fades},format=yuv420p`, "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-an", segment];
 }
 
 export function concatList(segments: string[]): string {
@@ -103,4 +135,9 @@ export function joinArgs(listFile: string, out: string): string[] {
 
 export function gifArgs(video: string, gif: GifOutput, out: string): string[] {
 	return ["-y", "-i", video, "-vf", `fps=${gif.fps},scale=${gif.width}:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4`, "-loop", "0", out];
+}
+
+// One full-size frame of a rendered segment as a PNG.
+export function stillArgs(segment: string, at: number, out: string): string[] {
+	return ["-y", "-ss", String(at), "-i", segment, "-frames:v", "1", "-update", "1", out];
 }
