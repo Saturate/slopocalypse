@@ -85,6 +85,11 @@ var _trees: Dictionary[int, Array] = {}
 var _tree_meshes: Dictionary[int, Dictionary] = {}
 ## Bullets, cuts and falls.
 var _damage: TreeDamage
+## Chunk plans being worked out on worker threads: chunk -> {task, result (an Array the
+## task appends its plan to), clearings (generation they were made with)}.
+var _pending: Dictionary[int, Dictionary] = {}
+## Bumped whenever the clearings change, so plans made with the old ones are thrown away.
+var _clearings_gen := 0
 
 
 func _ready() -> void:
@@ -122,7 +127,7 @@ func _process(_delta: float) -> void:
 func _process_tick(_delta: float) -> void:
 	if _heights == null:
 		return
-	update_around(_focus_points(), BUILDS_PER_FRAME)
+	update_around(_focus_points(), BUILDS_PER_FRAME, true)
 	for i: int in _roads_dirty:
 		if _roads.has(i):
 			_mesh_road(_roads[i])
@@ -130,8 +135,9 @@ func _process_tick(_delta: float) -> void:
 
 
 ## Builds chunks near any of `points` (at most `budget` this call) and frees the ones far
-## from all of them.
-func update_around(points: Array[Vector3], budget: float) -> void:
+## from all of them. With `threaded`, where trees and rocks go is worked out on worker
+## threads and a chunk is built from its plan on a later call; otherwise right away.
+func update_around(points: Array[Vector3], budget: float, threaded := false) -> void:
 	var reach: float = _cfg["load_distance"] if _visual else _cfg["collision_distance"]
 	var wanted: Dictionary[int, bool] = {}
 	for p in points:
@@ -146,13 +152,58 @@ func update_around(points: Array[Vector3], budget: float) -> void:
 	for i: int in order:
 		if _chunks.has(i):
 			continue
-		if built >= budget:
-			break
-		_chunks[i] = _build_chunk(i)
+		if not threaded:
+			if built >= budget:
+				break
+			_chunks[i] = _build_chunk(i, _take_plan(i))
+			built += 1
+			continue
+		if not _pending.has(i):
+			_start_plan(i)
+			continue
+		if built >= budget or not WorkerThreadPool.is_task_completed(int(_pending[i]["task"])):
+			continue
+		var plan := _take_plan(i, false)
+		if plan.is_empty():
+			_start_plan(i)
+			continue
+		_chunks[i] = _build_chunk(i, plan)
 		built += 1
 	for i: int in _chunks.keys():
 		if not wanted.has(i) and _nearest(i, points) > reach + CHUNK:
 			_free_chunk(i)
+	for i: int in _pending.keys():
+		if not wanted.has(i) and WorkerThreadPool.is_task_completed(int(_pending[i]["task"])):
+			_take_plan(i, false)
+
+
+## Starts working out chunk `i`'s plan on a worker thread.
+func _start_plan(i: int) -> void:
+	var result: Array = []
+	var clearings: Array[Vector3] = _clearings.duplicate()
+	var task := WorkerThreadPool.add_task(func() -> void: result.append(plan_chunk(i, clearings)), true, "scenery chunk")
+	_pending[i] = {"task": task, "result": result, "clearings": _clearings_gen}
+
+
+## Chunk `i`'s finished plan (waiting for it if it is still running). When there is none or
+## it was made with old clearings: a fresh one worked out here, or with `here` false an empty
+## one (the caller starts it again on a worker).
+func _take_plan(i: int, here := true) -> Dictionary:
+	if _pending.has(i):
+		var job: Dictionary = _pending[i]
+		_pending.erase(i)
+		WorkerThreadPool.wait_for_task_completion(int(job["task"]))
+		var result: Array = job["result"]
+		if int(job["clearings"]) == _clearings_gen and not result.is_empty():
+			return result[0]
+	return plan_chunk(i, _clearings) if here else {}
+
+
+func _exit_tree() -> void:
+	# Tasks read this node's terrain and config; none may outlive it.
+	for i: int in _pending.keys():
+		WorkerThreadPool.wait_for_task_completion(int(_pending[i]["task"]))
+	_pending.clear()
 
 
 ## Keeps trees, rocks and grass out of `circles` (`[{at: Vector3, radius: float}]`),
@@ -160,6 +211,7 @@ func update_around(points: Array[Vector3], budget: float) -> void:
 ## instance must set the same circles (they change what grows where).
 func set_clearings(circles: Array) -> void:
 	var before := _clearings.duplicate()
+	_clearings_gen += 1
 	_clearings.clear()
 	for c: Dictionary in circles:
 		var at: Vector3 = c["at"]
@@ -172,12 +224,12 @@ func set_clearings(circles: Array) -> void:
 		for c: Vector3 in touched:
 			if c.y + c.z > span.x and c.y - c.z < span.y:
 				_free_chunk(i)
-				_chunks[i] = _build_chunk(i)
+				_chunks[i] = _build_chunk(i, plan_chunk(i, _clearings))
 				break
 
 
-func _in_clearing(x: float, z: float) -> bool:
-	for c in _clearings:
+func _in_clearing(x: float, z: float, clearings: Array[Vector3]) -> bool:
+	for c in clearings:
 		if Vector2(x - c.x, z - c.y).length() < c.z:
 			return true
 	return false
@@ -275,22 +327,43 @@ func _tree(gen: VoxGenerator, p: Dictionary) -> Dictionary:
 	return out
 
 
-func _build_chunk(i: int) -> Node3D:
-	var node := Node3D.new()
-	node.name = "Chunk%d" % i
-	add_child(node)
+## Where chunk `i`'s trees and rocks go: pure (terrain, biomes, the chunk's seed and
+## `clearings`), so it runs on a worker thread and comes out the same on every machine.
+## {trees: [{at, xform, pine, v, scale}], rocks: [{xform, v}], rng_state (where the chunk's
+## random sequence is after them, for the grass)}.
+func plan_chunk(i: int, clearings: Array[Vector3]) -> Dictionary:
+	# No profile zone: Prof is not thread-safe, and the point is that this is off the frame.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([_seed, i])
+	var area := _chunk_area(i)
+	return {"trees": _plan_trees(rng, area, clearings), "rocks": _plan_rocks(rng, area, clearings), "rng_state": rng.state}
+
+
+func _chunk_area(i: int) -> Rect2:
 	var span := _chunk_z(i)
-	var area := Rect2(_heights.extent().position.x, span.x, _heights.width, CHUNK)
+	return Rect2(_heights.extent().position.x, span.x, _heights.width, CHUNK)
+
+
+func _build_chunk(i: int, plan: Dictionary) -> Node3D:
+	var t := Prof.start()
+	var node := Node3D.new()
+	node.name = "Chunk%d" % i
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([_seed, i])
+	rng.state = int(plan["rng_state"])
+	var span := _chunk_z(i)
+	var area := _chunk_area(i)
 	var collision := StaticBody3D.new()
 	collision.name = "Collision"
 	collision.set_meta(&"chunk", i)
 	node.add_child(collision)
 	# Per kind, variant and cell: the transforms for its MultiMesh.
 	var placed: Dictionary = {}
-	_place_trees(i, rng, area, collision, placed)
-	_place_rocks(rng, area, collision, placed)
+	_add_trees(i, plan["trees"], collision, placed)
+	_add_rocks(plan["rocks"], collision, placed)
+	# Into the tree only now: hundreds of shapes added to a body already in the physics space
+	# are each registered on their own, which costs far more than the body arriving whole.
+	add_child(node)
 	if _visual:
 		var meshes := {}
 		for key: Array in placed.keys():
@@ -298,16 +371,17 @@ func _build_chunk(i: int) -> Node3D:
 		_tree_meshes[i] = meshes
 		_add_grass(node, rng, area)
 		_add_road(node, i, span)
-	for t in (_trees[i] as Array).size():
-		var id := Vector2i(i, t)
+	for n in (_trees[i] as Array).size():
+		var id := Vector2i(i, n)
 		if _damage.is_felled(id):
 			_damage.apply(id, false)
+	Prof.stop(&"world/scenery_build", t)
 	return node
 
 
 ## A spot on gentle ground inside `area`, clear of the spawn and the road, kept with the
 ## probability `weight(x, z)` gives.
-func _spot(rng: RandomNumberGenerator, area: Rect2, weight: Callable) -> Variant:
+func _spot(rng: RandomNumberGenerator, area: Rect2, weight: Callable, clearings: Array[Vector3]) -> Variant:
 	for attempt in 6:
 		var x := rng.randf_range(area.position.x + 4.0, area.end.x - 4.0)
 		var z := rng.randf_range(area.position.y, area.end.y)
@@ -317,7 +391,7 @@ func _spot(rng: RandomNumberGenerator, area: Rect2, weight: Callable) -> Variant
 			continue
 		if _heights.road != null and _heights.road.distance(x, z) < _heights.road.half_width + float(_cfg["road_clearance"]):
 			continue
-		if _in_clearing(x, z):
+		if _in_clearing(x, z, clearings):
 			continue
 		if rng.randf() > float(weight.call(x, z)):
 			continue
@@ -330,27 +404,37 @@ func _spot(rng: RandomNumberGenerator, area: Rect2, weight: Callable) -> Variant
 	return null
 
 
-func _place_trees(chunk: int, rng: RandomNumberGenerator, area: Rect2, collision: StaticBody3D, placed: Dictionary) -> void:
-	var trees: Array[Dictionary] = []
-	_trees[chunk] = trees
+func _plan_trees(rng: RandomNumberGenerator, area: Rect2, clearings: Array[Vector3]) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
 	var tries := int(float(_cfg["trees_per_hectare"]) * area.get_area() / 10000.0)
 	var weight := func(x: float, z: float) -> float:
 		# Squared so only forest cores are dense; most woodland is open enough to see through.
 		return maxf(pow(_biomes.forest(x, z), 2.0), 0.02) * (1.0 - _biomes.rock(x, z) * 0.7)
 	for t in tries:
-		var spot: Variant = _spot(rng, area, weight)
+		var spot: Variant = _spot(rng, area, weight, clearings)
 		if not spot is Vector3:
 			continue
 		var at: Vector3 = spot
 		# Pines in the deep forest and up the rocky hills, leaf trees in the open.
 		var pine := rng.randf() < 0.35 + _biomes.forest(at.x, at.z) * 0.5 + _biomes.rock(at.x, at.z) * 0.3
-		var kinds := _pines if pine else _leafs
-		var v := rng.randi_range(0, kinds.size() - 1)
-		var tree: Dictionary = kinds[v]
+		var v := rng.randi_range(0, (_pines if pine else _leafs).size() - 1)
 		var scale := rng.randf_range(0.8, 1.2)
 		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * scale)
+		out.append({"at": at, "xform": Transform3D(basis, at + Vector3.DOWN * 0.2), "pine": pine, "v": v, "scale": scale})
+	return out
+
+
+func _add_trees(chunk: int, planned: Array, collision: StaticBody3D, placed: Dictionary) -> void:
+	var trees: Array[Dictionary] = []
+	_trees[chunk] = trees
+	for p: Dictionary in planned:
+		var at: Vector3 = p["at"]
+		var pine: bool = p["pine"]
+		var v: int = p["v"]
+		var scale: float = p["scale"]
+		var tree: Dictionary = (_pines if pine else _leafs)[v]
 		var key := ["pine" if pine else "leaf", v, _cell_of(at)]
-		var xform := Transform3D(basis, at + Vector3.DOWN * 0.2)
+		var xform: Transform3D = p["xform"]
 		var slot := (placed[key] as Array).size() if placed.has(key) else 0
 		_put(placed, key, xform)
 		var shape := CollisionShape3D.new()
@@ -372,22 +456,31 @@ func _place_trees(chunk: int, rng: RandomNumberGenerator, area: Rect2, collision
 		trees.append({"at": at, "xform": xform, "kind": key[0], "v": v, "key": key, "slot": slot, "trunk": shape, "leaves": leaves, "radius": capsule.radius, "trunk_height": float(tree["height"]) * 0.6})
 
 
-func _place_rocks(rng: RandomNumberGenerator, area: Rect2, collision: StaticBody3D, placed: Dictionary) -> void:
+func _plan_rocks(rng: RandomNumberGenerator, area: Rect2, clearings: Array[Vector3]) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
 	var tries := int(float(_cfg["rocks_per_hectare"]) * area.get_area() / 10000.0)
 	var weight := func(x: float, z: float) -> float:
 		return 0.05 + _biomes.rock(x, z) * 0.95
 	for t in tries:
-		var spot: Variant = _spot(rng, area, weight)
+		var spot: Variant = _spot(rng, area, weight, clearings)
 		if not spot is Vector3:
 			continue
 		var at: Vector3 = spot
 		var v := rng.randi_range(0, _rocks.size() - 1)
-		var rock: Dictionary = _rocks[v]
 		# Rocky ground gets the big boulders.
 		var scale := rng.randf_range(0.5, 1.1) + _biomes.rock(at.x, at.z) * rng.randf_range(0.0, 1.2)
 		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * scale)
-		var xform := Transform3D(basis, at + Vector3.DOWN * 0.1 * scale)
-		_put(placed, ["rock", v, _cell_of(at)], xform)
+		out.append({"xform": Transform3D(basis, at + Vector3.DOWN * 0.1 * scale), "v": v, "scale": scale})
+	return out
+
+
+func _add_rocks(planned: Array, collision: StaticBody3D, placed: Dictionary) -> void:
+	for p: Dictionary in planned:
+		var xform: Transform3D = p["xform"]
+		var v: int = p["v"]
+		var scale: float = p["scale"]
+		var rock: Dictionary = _rocks[v]
+		_put(placed, ["rock", v, _cell_of(xform.origin)], xform)
 		# Collision is the rock's own hull; stones lower than a step get none.
 		if float(rock["top"]) * scale - 0.1 * scale < STEP_OVER_HEIGHT:
 			continue
@@ -479,7 +572,7 @@ func _add_grass(node: Node3D, rng: RandomNumberGenerator, area: Rect2) -> void:
 			continue
 		if _heights.in_tunnel(x, z, TUNNEL_CLEARANCE):
 			continue
-		if _in_clearing(x, z):
+		if _in_clearing(x, z, _clearings):
 			continue
 		var at := Vector3(x, _heights.height_at(x, z), z)
 		if _in_old_dig(at):
