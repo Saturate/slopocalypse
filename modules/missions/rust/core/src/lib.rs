@@ -19,54 +19,68 @@ pub fn unsupported(
     max_span: usize,
 ) -> Vec<usize> {
     let n = roof.len();
-    let mut standing = vec![true; n];
-    for &b in broken {
-        if b < n {
-            standing[b] = false;
-        }
-    }
-    let mut next: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for &(a, b) in edges {
-        if a < n && b < n && a != b {
-            next[a].push(b);
-            next[b].push(a);
-        }
-    }
+    let standing = standing_mask(n, broken);
+    let next = neighbours(n, edges);
+    let wall = |i: usize| standing[i] && !roof[i];
     // Walls held up from the ground.
     let mut held = vec![false; n];
-    let mut queue: VecDeque<usize> = VecDeque::new();
-    for &a in anchors {
-        if a < n && standing[a] && !roof[a] && !held[a] {
-            held[a] = true;
-            queue.push_back(a);
-        }
+    let mut queue: VecDeque<usize> = anchors
+        .iter()
+        .copied()
+        .filter(|&a| a < n && wall(a))
+        .collect();
+    for &a in &queue {
+        held[a] = true;
     }
-    spread(&mut held, &mut queue, &next, |i| standing[i] && !roof[i]);
-    // Roof pieces by how many roof steps they are from a held wall.
-    let mut steps = vec![usize::MAX; n];
-    for i in 0..n {
-        if standing[i] && roof[i] && next[i].iter().any(|&j| held[j] && !roof[j]) {
-            steps[i] = 0;
-            queue.push_back(i);
-        }
+    spread(&mut held, &mut queue, &next, wall);
+    // Roof pieces within `max_span` roof steps of a held wall.
+    let steps = roof_steps(&next, &held, |i| standing[i] && roof[i]);
+    for i in (0..n).filter(|&i| steps[i] <= max_span) {
+        held[i] = true;
+        queue.push_back(i);
+    }
+    // Walls hanging from a held roof.
+    spread(&mut held, &mut queue, &next, wall);
+    (0..n).filter(|&i| standing[i] && !held[i]).collect()
+}
+
+fn standing_mask(n: usize, broken: &[usize]) -> Vec<bool> {
+    let mut standing = vec![true; n];
+    for &b in broken.iter().filter(|&&b| b < n) {
+        standing[b] = false;
+    }
+    standing
+}
+
+/// Each segment's connected segments, ignoring ids out of range and self-loops.
+fn neighbours(n: usize, edges: &[(usize, usize)]) -> Vec<Vec<usize>> {
+    let mut next: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for &(a, b) in edges.iter().filter(|&&(a, b)| a < n && b < n && a != b) {
+        next[a].push(b);
+        next[b].push(a);
+    }
+    next
+}
+
+/// Roof steps from the nearest held wall for every standing roof piece (`usize::MAX` where no
+/// path leads to one): 0 for a piece touching a held wall, one more per roof piece crossed.
+fn roof_steps(next: &[Vec<usize>], held: &[bool], is_roof: impl Fn(usize) -> bool) -> Vec<usize> {
+    let mut steps = vec![usize::MAX; next.len()];
+    let mut queue: VecDeque<usize> = (0..next.len())
+        .filter(|&i| is_roof(i) && next[i].iter().any(|&j| held[j] && !is_roof(j)))
+        .collect();
+    for &i in &queue {
+        steps[i] = 0;
     }
     while let Some(i) = queue.pop_front() {
         for &j in &next[i] {
-            if standing[j] && roof[j] && steps[j] == usize::MAX {
+            if is_roof(j) && steps[j] == usize::MAX {
                 steps[j] = steps[i] + 1;
                 queue.push_back(j);
             }
         }
     }
-    for i in 0..n {
-        if steps[i] <= max_span {
-            held[i] = true;
-            queue.push_back(i);
-        }
-    }
-    // Walls hanging from a held roof.
-    spread(&mut held, &mut queue, &next, |i| standing[i] && !roof[i]);
-    (0..n).filter(|&i| standing[i] && !held[i]).collect()
+    steps
 }
 
 /// Marks everything reachable from `queue` through nodes `can` accepts.

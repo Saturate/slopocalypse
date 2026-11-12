@@ -252,7 +252,8 @@ impl Grid {
         for a in 0..3 {
             let lo = ((min[a] - o[a]) / self.voxel - 0.5).ceil().max(0.0) as usize;
             let hi = (((max[a] - o[a]) / self.voxel - 0.5).floor() + 1.0).max(0.0) as usize;
-            out[a] = (lo.min(n[a]), hi.min(n[a]).max(lo.min(n[a])));
+            let lo = lo.min(n[a]);
+            out[a] = (lo, hi.clamp(lo, n[a]));
         }
         out
     }
