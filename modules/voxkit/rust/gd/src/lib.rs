@@ -234,6 +234,31 @@ impl VoxelModel {
         out
     }
 
+    /// The connected patch of material `index` holding the cell at `point` (model space), as
+    /// an `AABB`, or an empty `AABB` when that cell isn't that material or the patch is more
+    /// than `cap` cells (a brick, not a wall).
+    #[func]
+    fn component_at(&self, point: Vector3, index: i64, cap: i64) -> Aabb {
+        let found = self.grid.as_ref().and_then(|g| {
+            g.component_at(v3(point), index.clamp(0, 255) as u8, cap.max(1) as usize)
+        });
+        match found {
+            Some((min, max)) => {
+                let lo = Vector3::new(min[0], min[1], min[2]);
+                Aabb::new(lo, Vector3::new(max[0], max[1], max[2]) - lo)
+            }
+            None => Aabb::default(),
+        }
+    }
+
+    /// How many filled cells of material `index` have their centres inside the box.
+    #[func]
+    fn count_material(&self, min: Vector3, max: Vector3, index: i64) -> i64 {
+        self.grid.as_ref().map_or(0, |g| {
+            g.count_material(v3(min), v3(max), index.clamp(0, 255) as u8) as i64
+        })
+    }
+
     /// Empties the cells of material `index` inside the box, leaving every other material.
     #[func]
     fn carve_material_box(&mut self, min: Vector3, max: Vector3, index: i64) {

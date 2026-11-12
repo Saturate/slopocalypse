@@ -84,6 +84,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"explosion", _on_explosion)
 	EventBus.subscribe(&"missions.building_broken", _on_building_broken)
 	EventBus.subscribe(&"missions.panes_broken", _on_panes_broken)
+	EventBus.subscribe(&"missions.bricks_knocked", _on_bricks_knocked)
 	EventBus.subscribe(&"world.ready", _on_world_ready)
 	EventBus.subscribe(&"player.interact", _on_player_interact)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
@@ -103,6 +104,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"explosion", _on_explosion)
 	EventBus.unsubscribe(&"missions.building_broken", _on_building_broken)
 	EventBus.unsubscribe(&"missions.panes_broken", _on_panes_broken)
+	EventBus.unsubscribe(&"missions.bricks_knocked", _on_bricks_knocked)
 	if Net.peer_joined.is_connected(_on_peer_joined):
 		Net.peer_joined.disconnect(_on_peer_joined)
 	if Net.peer_left.is_connected(_on_peer_left):
@@ -675,6 +677,24 @@ func _on_panes_broken(p: Dictionary) -> void:
 	_building_nodes[i].break_panes(p.get("panes", []), true)
 
 
+## Everywhere: bricks came out of a building; the layout entry remembers them for late joiners.
+## On the server, a wall piece that has lost too many then gives way.
+func _on_bricks_knocked(p: Dictionary) -> void:
+	var i := int(p.get("index", -1))
+	if i < 0 or i >= _building_nodes.size() or i >= buildings.size():
+		return
+	var entry: Dictionary = buildings[i]
+	var knocked: Array = entry.get("knocked", [])
+	knocked.append_array(p.get("points", []))
+	entry["knocked"] = knocked
+	var b := _building_nodes[i]
+	b.knock_out(p.get("points", []), true)
+	if multiplayer.is_server():
+		var weak := b.server_weakened()
+		if not weak.is_empty():
+			_server_broke(i, weak)
+
+
 ## A bullet that hits a building: everyone sees the hole or chip; the server wears the
 ## piece down and may break it. A bullet that hits close to a mine sets it off.
 func _on_weapon_fired(p: Dictionary) -> void:
@@ -688,6 +708,9 @@ func _on_weapon_fired(p: Dictionary) -> void:
 			var weapon: Object = p.get("weapon")
 			var stats: Variant = weapon.get(&"stats") if weapon != null else null
 			var damage := float((stats as Dictionary).get("damage", 0.0)) if stats is Dictionary else float(p.get("damage", 0.0))
+			var brick := building.server_brick_hit(p["to"], direction, damage)
+			if brick != Vector3.INF:
+				Net.server_broadcast(&"missions.bricks_knocked", {"index": _building_nodes.find(building), "points": [brick]})
 			var pane := building.server_pane_hit(p["to"], direction)
 			if pane >= 0:
 				Net.server_broadcast(&"missions.panes_broken", {"index": _building_nodes.find(building), "panes": [pane]})
