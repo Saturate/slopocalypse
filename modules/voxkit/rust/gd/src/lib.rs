@@ -197,6 +197,45 @@ impl VoxelModel {
         })
     }
 
+    /// Which `brick`-cell cubes hold anything, as one byte each (255 or 0) in `rgba_slices`
+    /// order, for an R8 `ImageTexture3D` of `brick_counts(brick)` texels.
+    #[func]
+    fn brick_occupancy(&self, brick: i64) -> PackedByteArray {
+        self.grid.as_ref().map_or(PackedByteArray::new(), |g| {
+            PackedByteArray::from(g.brick_occupancy(brick.max(1) as usize).0)
+        })
+    }
+
+    /// How many bricks of `brick` cells cover the grid on each axis.
+    #[func]
+    fn brick_counts(&self, brick: i64) -> Vector3i {
+        self.grid.as_ref().map_or(Vector3i::ZERO, |g| {
+            let b = brick.max(1) as usize;
+            Vector3i::new(
+                g.nx.div_ceil(b) as i32,
+                g.ny.div_ceil(b) as i32,
+                g.nz.div_ceil(b) as i32,
+            )
+        })
+    }
+
+    /// Whether cell (x, y, z) is filled; outside the grid is air.
+    #[func]
+    fn is_filled(&self, x: i64, y: i64, z: i64) -> bool {
+        self.grid
+            .as_ref()
+            .is_some_and(|g| g.get(x, y, z) != voxkit_core::EMPTY)
+    }
+
+    /// The cells as RGBA8 bytes for an `ImageTexture3D`: `cells().z` slices of
+    /// `cells().x` by `cells().y` pixels, one after another; air is transparent black.
+    #[func]
+    fn rgba_slices(&self) -> PackedByteArray {
+        self.grid.as_ref().map_or(PackedByteArray::new(), |g| {
+            PackedByteArray::from(g.rgba_slices())
+        })
+    }
+
     #[func]
     fn voxel_size(&self) -> f32 {
         self.grid.as_ref().map_or(0.0, |g| g.voxel)

@@ -15,6 +15,8 @@ var pixel_filter := false
 var pixel_size := 3
 var outlines := true
 var levels := 14.0
+## Draw models on the GPU as voxel volumes (#306) instead of as meshes.
+var gpu_voxels := false
 
 var _generators: Array[VoxGenerator] = []
 var _index := 0
@@ -131,6 +133,9 @@ func _side_panel() -> Control:
 	col.add_child(_check("Outlines", outlines, func(on: bool) -> void:
 		outlines = on
 		_apply_view()))
+	col.add_child(_check("GPU voxels", gpu_voxels, func(on: bool) -> void:
+		gpu_voxels = on
+		_dirty = true))
 	col.add_child(_check("Turn on its own", true, func(on: bool) -> void: _camera.turntable = on))
 	col.add_child(_slider_row("Pixel size", 1.0, 8.0, 1.0, pixel_size, func(v: float) -> void:
 		pixel_size = int(v)
@@ -273,15 +278,23 @@ func _rebuild() -> void:
 	for entry: Array in entries:
 		var gen: VoxGenerator = entry[0]
 		model = gen.build(entry[1])
-		var mesh := VoxGenerator.to_mesh(model)
 		voxels += model.voxel_count()
-		if mesh.get_surface_count() > 0:
-			quads += mesh.surface_get_array_len(0) / 4
-		var inst := MeshInstance3D.new()
-		inst.mesh = mesh
+		var inst: MeshInstance3D
+		if gpu_voxels:
+			var volume := VoxelVolume.new()
+			volume.model = model
+			volume.refresh()
+			inst = volume
+		else:
+			inst = MeshInstance3D.new()
+			inst.mesh = VoxGenerator.to_mesh(model)
+			if inst.mesh.get_surface_count() > 0:
+				quads += (inst.mesh as ArrayMesh).surface_get_array_len(0) / 4
 		inst.transform = entry[2]
 		_models.add_child(inst)
-		var box: AABB = inst.transform * mesh.get_aabb()
+		if inst.mesh == null:
+			continue
+		var box: AABB = inst.transform * inst.mesh.get_aabb()
 		bounds = box if first else bounds.merge(box)
 		first = false
 	var ms := (Time.get_ticks_usec() - started) / 1000.0
@@ -289,7 +302,8 @@ func _rebuild() -> void:
 		_stats.text = "%d models, %s voxels, %s faces, built in %.0f ms" % [entries.size(), _thousands(voxels), _thousands(quads), ms]
 	else:
 		var cells := model.cells()
-		_stats.text = "%s voxels at %.3f m (%d x %d x %d cells), %s faces, built in %.0f ms" % [_thousands(voxels), model.voxel_size(), cells.x, cells.y, cells.z, _thousands(quads), ms]
+		var drawn := "drawn on the GPU" if gpu_voxels else "%s faces" % _thousands(quads)
+		_stats.text = "%s voxels at %.3f m (%d x %d x %d cells), %s, built in %.0f ms" % [_thousands(voxels), model.voxel_size(), cells.x, cells.y, cells.z, drawn, ms]
 	if is_scene():
 		# The whole scene is too wide to frame from its bounds; look down the road instead.
 		_camera.target = Vector3(0, 2.0, 0)

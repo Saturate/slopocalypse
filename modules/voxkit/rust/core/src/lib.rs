@@ -133,6 +133,44 @@ impl Grid {
         (c[1] * self.chunks[2] + c[2]) * self.chunks[0] + c[0]
     }
 
+    /// The cells as RGBA bytes for a 3D texture: one z slice after another, each row by row
+    /// along y, each row along x. Filled cells are opaque (alpha 255), air is all zero.
+    pub fn rgba_slices(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.nx * self.ny * self.nz * 4);
+        for z in 0..self.nz {
+            for y in 0..self.ny {
+                for x in 0..self.nx {
+                    let c = self.cells[self.index(x, y, z)];
+                    if c == EMPTY {
+                        out.extend_from_slice(&[0, 0, 0, 0]);
+                    } else {
+                        out.extend_from_slice(&[(c >> 16) as u8, (c >> 8) as u8, c as u8, 255]);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Which `brick`-cell cubes hold anything, one byte each (255 filled, 0 empty), in the
+    /// same order as `rgba_slices` over a grid of `ceil(n / brick)` bricks per axis. A ray
+    /// walking the cells can jump over a whole empty brick at once.
+    pub fn brick_occupancy(&self, brick: usize) -> (Vec<u8>, [usize; 3]) {
+        let b = brick.max(1);
+        let size = [self.nx, self.ny, self.nz].map(|v| v.div_ceil(b));
+        let mut out = vec![0u8; size[0] * size[1] * size[2]];
+        for y in 0..self.ny {
+            for z in 0..self.nz {
+                for x in 0..self.nx {
+                    if self.cells[self.index(x, y, z)] != EMPTY {
+                        out[((z / b) * size[1] + y / b) * size[0] + x / b] = 255;
+                    }
+                }
+            }
+        }
+        (out, size)
+    }
+
     /// How many chunks the grid is split into (ids run from 0).
     pub fn chunk_count(&self) -> usize {
         self.dirty.len()
@@ -832,6 +870,37 @@ mod tests {
             area_by_colour(&meshes, g.voxel),
             area_by_colour(&[g.mesh()], g.voxel)
         );
+    }
+
+    #[test]
+    fn rgba_slices_run_z_then_y_then_x_with_air_transparent() {
+        let mut g = Grid::new([0.3, 0.2, 0.4], 0.1);
+        assert_eq!([g.nx, g.ny, g.nz], [3, 2, 4]);
+        g.set(2, 1, 3, 0x123456);
+        g.set(0, 0, 0, 0xff0000);
+        let bytes = g.rgba_slices();
+        assert_eq!(bytes.len(), 3 * 2 * 4 * 4);
+        let at = |x: usize, y: usize, z: usize| ((z * 2 + y) * 3 + x) * 4;
+        assert_eq!(
+            &bytes[at(2, 1, 3)..at(2, 1, 3) + 4],
+            &[0x12, 0x34, 0x56, 255]
+        );
+        assert_eq!(&bytes[at(0, 0, 0)..at(0, 0, 0) + 4], &[0xff, 0, 0, 255]);
+        assert_eq!(&bytes[at(1, 0, 2)..at(1, 0, 2) + 4], &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn brick_occupancy_marks_only_bricks_with_something_in_them() {
+        let mut g = Grid::new([1.0, 0.5, 0.9], 0.1);
+        assert_eq!([g.nx, g.ny, g.nz], [10, 5, 9]);
+        g.set(9, 4, 8, 0xffffff);
+        g.set(0, 0, 0, 0xffffff);
+        let (bytes, size) = g.brick_occupancy(4);
+        assert_eq!(size, [3, 2, 3]);
+        let at = |x: usize, y: usize, z: usize| (z * 2 + y) * 3 + x;
+        assert_eq!(bytes[at(2, 1, 2)], 255);
+        assert_eq!(bytes[at(0, 0, 0)], 255);
+        assert_eq!(bytes.iter().filter(|&&b| b == 255).count(), 2);
     }
 
     #[test]
