@@ -15,9 +15,16 @@ extends StaticBody3D
 ## away with the pieces that broke and hurts whoever is under them when they land; clients
 ## drop their voxels as one piece per connected group, then break it into debris.
 ##
-## Its material decides what bullets do: wood takes a small hole where each one hits and
-## enough of them break a piece out; concrete only chips (no hole, next to no damage) and
-## needs a blast, a breaching charge or a heavy enough round. Blasts hurt concrete less too.
+## Materials decide what hits do (see `VoxMaterials`). The voxel a round strikes decides what
+## it leaves: a hole in wood or sheet metal, a chip off brick or concrete, debris in that
+## voxel's colour. How much a piece of wall suffers comes from that piece's main material,
+## so a wooden window frame in a concrete wall doesn't make the concrete easy to break: wood
+## breaks to rounds, brick and concrete only to blasts, charges or rounds heavy enough. Glass
+## panes take marks but no structural damage (panes breaking on their own come with #248's
+## glass part).
+##
+## Every instance builds the voxel model, the server too (without a mesh), so a hit looks up
+## the same voxels everywhere.
 
 const DOOR_WIDTH := 1.0
 const DOOR_HEIGHT := 2.0
@@ -26,6 +33,8 @@ const ROOF_THICKNESS := 0.25
 const WALL := 0.2
 ## Voxel size of the mesh: coarse enough to build quickly during a ride.
 const VOXEL := 0.15
+## How far into a wall a hit looks for the voxel it struck, metres.
+const STRIKE_DEPTH := 0.6
 
 ## The layout entry: `{position, yaw, width, depth, wall_height, windows, paint, seed,
 ## broken}`.
@@ -37,8 +46,8 @@ var segment_hp := 100.0
 ## a falling piece takes to land (from the missions config's `buildings`).
 var max_span := 2
 var fall_seconds := 0.6
-## What its material takes: its walls' entry in the voxkit materials file (`VoxMaterials`),
-## set from `spec.material` when nothing sets it first.
+## The walls' entry in the voxkit materials file (`VoxMaterials`), set from `spec.material`
+## when nothing sets it first: the rules for a piece with no voxels of its own.
 var material_cfg: Dictionary = {}
 
 var _visual := DisplayServer.get_name() != "headless"
@@ -48,6 +57,8 @@ var _shapes: Dictionary[int, CollisionShape3D] = {}
 ## Server: segment id -> health left.
 var _hp: Dictionary[int, float] = {}
 var _segments: Array[AABB] = []
+## Segment id -> its main material's index (0: none, use `material_cfg`).
+var _segment_material := PackedByteArray()
 ## The support graph (built on first use): connected segment pairs, roof flags and the
 ## segments standing on the slab.
 var _edges := PackedInt32Array()
@@ -55,6 +66,8 @@ var _roof := PackedByteArray()
 var _anchors := PackedInt32Array()
 ## Client: holes were carved this frame; the changed chunks are rebuilt once, next process.
 var _remesh := false
+## Colour of the group falling now, for its landing debris.
+var _fall_colour := Color(0.5, 0.42, 0.33)
 
 
 func _ready() -> void:
@@ -70,14 +83,18 @@ func _ready() -> void:
 	for i in _segments.size():
 		_add_shape(i, _segments[i])
 		_hp[i] = segment_hp
+	_model = VoxShed.new().build({
+		"seed": int(spec.get("seed", 1)), "paint": int(spec.get("paint", 1)), "width": w,
+		"depth": d, "wall_height": wh, "pitch": float(spec.get("pitch", 0.45)), "door": 1,
+		"windows": float(spec.get("windows", 2)), "voxel": VOXEL,
+		"material": maxi(0, VoxShed.WALL_MATERIALS.find(material())),
+		"glass": maxi(0, VoxShed.GLASS_TYPES.find(str(spec.get("glass", "window_glass")))),
+	})
+	_segment_material.resize(_segments.size())
+	for i in _segments.size():
+		var box := _carve_box(i)
+		_segment_material[i] = _model.dominant_material(box.position, box.end)
 	if _visual:
-		_model = VoxShed.new().build({
-			"seed": int(spec.get("seed", 1)), "paint": int(spec.get("paint", 1)), "width": w,
-			"depth": d, "wall_height": wh, "pitch": float(spec.get("pitch", 0.45)), "door": 1,
-			"windows": float(spec.get("windows", 2)), "voxel": VOXEL,
-			"material": maxi(0, VoxShed.WALL_MATERIALS.find(material())),
-			"glass": maxi(0, VoxShed.GLASS_TYPES.find(str(spec.get("glass", "window_glass")))),
-		})
 		_mesh = VoxelChunkedMesh.new()
 		_mesh.name = "Mesh"
 		_mesh.model = _model
@@ -169,7 +186,7 @@ func server_blast(centre: Vector3, radius: float, damage: float, reach: float) -
 		var dist := nearest.distance_to(local)
 		if dist >= far:
 			continue
-		_hp[id] = float(_hp.get(id, segment_hp)) - damage * float(material_cfg.get("blast", 1.0)) * (1.0 - dist / far)
+		_hp[id] = float(_hp.get(id, segment_hp)) - damage * float(segment_rules(id).get("blast", 1.0)) * (1.0 - dist / far)
 		if _hp[id] <= 0.0:
 			broke.append(id)
 	return broke
@@ -190,33 +207,85 @@ func segment_at(point: Vector3) -> int:
 	return best
 
 
-## Server: a bullet hit it at `point` with `damage`. Wood takes it (times its `bullet`
-## factor); concrete ignores rounds lighter than `min_bullet_damage`. Returns the segment it
-## broke, or -1.
-func server_shot(point: Vector3, damage: float) -> int:
-	if damage < float(material_cfg.get("min_bullet_damage", 0.0)):
-		return -1
+## The rules of segment `id`'s main material.
+func segment_rules(id: int) -> Dictionary:
+	var m := int(_segment_material[id]) if id >= 0 and id < _segment_material.size() else 0
+	return VoxMaterials.at(m) if m > 0 else material_cfg
+
+
+## The voxel a round travelling along `direction` struck at `point` (world): the first filled
+## one within `STRIKE_DEPTH` into the wall, as a local position, or `Vector3.INF` (it went
+## into a hole). With no direction it looks in towards the middle of the building.
+func struck_voxel(point: Vector3, direction: Vector3) -> Vector3:
+	var to_local := global_transform.affine_inverse()
+	var at := to_local * point
+	var dir := (to_local.basis * direction).normalized() if direction.length_squared() > 0.0 else -Vector3(at.x, 0.0, at.z).normalized()
+	var step := VOXEL * 0.5
+	var p := at - dir * step
+	var travelled := -step
+	while travelled <= STRIKE_DEPTH:
+		if _model.material_at(p) != 0:
+			return p
+		p += dir * step
+		travelled += step
+	return Vector3.INF
+
+
+## The rules of the voxel struck at `point` along `direction` (the walls' when nothing is
+## there to strike).
+func struck_rules(point: Vector3, direction: Vector3) -> Dictionary:
+	var v := struck_voxel(point, direction)
+	return VoxMaterials.at(_model.material_at(v)) if v != Vector3.INF else material_cfg
+
+
+## Server: a bullet travelling along `direction` hit it at `point` with `damage`. The piece
+## it hit takes it by the piece's main material: times its `bullet` factor, and not at all
+## from rounds lighter than its `min_bullet_damage`. A glass pane takes no structural damage.
+## Returns the segment it broke, or -1.
+func server_shot(point: Vector3, damage: float, direction := Vector3.ZERO) -> int:
+	var t := Prof.start()
+	var broke := _shot(point, damage, direction)
+	Prof.stop(&"missions/building:shot", t)
+	return broke
+
+
+func _shot(point: Vector3, damage: float, direction: Vector3) -> int:
 	var id := segment_at(point)
 	if id < 0:
 		return -1
-	_hp[id] = float(_hp.get(id, segment_hp)) - damage * float(material_cfg.get("bullet", 1.0))
+	if bool(struck_rules(point, direction).get("breaks_whole", false)):
+		return -1
+	var rules := segment_rules(id)
+	if damage < float(rules.get("min_bullet_damage", 0.0)):
+		return -1
+	_hp[id] = float(_hp.get(id, segment_hp)) - damage * float(rules.get("bullet", 1.0))
 	return id if _hp[id] <= 0.0 else -1
 
 
-## Client: where a bullet hit, a hole in wood (and a puff of splinters) or a chip of concrete
-## dust; the mesh catches up on the next frame.
-func bullet_mark(point: Vector3) -> void:
-	if not _visual or _model == null:
+## Everywhere: where a bullet travelling along `direction` hit, the voxel it struck takes it:
+## a hole if its material takes holes, and on clients a puff of debris in that voxel's
+## colour. Carved on the server too, so later hits find the same voxels. The mesh catches up
+## on the next frame.
+func bullet_mark(point: Vector3, direction := Vector3.ZERO) -> void:
+	var t := Prof.start()
+	_mark(point, direction)
+	Prof.stop(&"missions/building:mark", t)
+
+
+func _mark(point: Vector3, direction: Vector3) -> void:
+	var v := struck_voxel(point, direction)
+	if v == Vector3.INF:
 		return
-	var hole := float(material_cfg.get("hole", 0.0))
-	var colour := Color(0.55, 0.55, 0.52) if material() == "concrete" else Color(0.55, 0.42, 0.3)
-	if is_inside_tree():
-		VoxelDebris.burst(get_parent(), point, (point - global_position).normalized(), colour, &"building_chip")
+	var rules := VoxMaterials.at(_model.material_at(v))
+	if _visual and is_inside_tree():
+		var colour := _model.colour_at(v)
+		var out := -direction.normalized() if direction.length_squared() > 0.0 else (point - global_position).normalized()
+		VoxelDebris.burst(get_parent(), point, out, colour if colour.a > 0.0 else Color(0.55, 0.5, 0.45), &"building_chip")
+	var hole := float(rules.get("hole", 0.0))
 	if hole <= 0.0:
 		return
-	var local := global_transform.affine_inverse() * point
-	_model.carve_ellipsoid(local, Vector3.ONE * hole)
-	_remesh = true
+	_model.carve_ellipsoid(v, Vector3.ONE * hole)
+	_remesh = _visual
 
 
 func _process(_delta: float) -> void:
@@ -229,6 +298,12 @@ func _process(_delta: float) -> void:
 ## Everywhere: takes the segments away (collision, and on clients the voxels with debris).
 ## `fallen` ones lost their support: on clients they drop as whole pieces first.
 func break_segments(ids: Array, fallen: Array = []) -> void:
+	var t := Prof.start()
+	_break(ids, fallen)
+	Prof.stop(&"missions/building:break", t)
+
+
+func _break(ids: Array, fallen: Array) -> void:
 	_remove(ids, true)
 	if _visual and _model != null and is_inside_tree():
 		for group in _groups(fallen):
@@ -327,6 +402,8 @@ func _drop(group: Array) -> void:
 		var copy: Dictionary = _model.copy_box(box.position, box.end)
 		if copy.is_empty():
 			continue
+		if centres.is_empty():
+			_fall_colour = _colour_of(int(v))
 		var part := MeshInstance3D.new()
 		part.mesh = VoxGenerator.to_mesh(copy["model"])
 		part.position = copy["offset"]
@@ -337,13 +414,14 @@ func _drop(group: Array) -> void:
 		piece.queue_free()
 		return
 	var drop := maxf(lowest - SLAB, 0.0)
+	var colour := _fall_colour
 	var tween := piece.create_tween()
 	tween.tween_property(piece, "position:y", -drop, fall_seconds).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tween.tween_callback(func() -> void:
 		if is_inside_tree():
 			for c in centres:
 				var at := global_transform * (c + Vector3.DOWN * drop)
-				VoxelDebris.burst(get_parent(), at, Vector3.UP, Color(0.5, 0.42, 0.33), &"building")
+				VoxelDebris.burst(get_parent(), at, Vector3.UP, colour, &"building")
 		piece.queue_free())
 
 
@@ -359,12 +437,25 @@ func _remove(ids: Array, debris: bool) -> void:
 		if _model == null:
 			continue
 		var box := _carve_box(id)
+		var colour := _colour_of(id)
 		_model.carve_box(box.position, box.end)
-		if debris and is_inside_tree():
+		if debris and _visual and is_inside_tree():
 			var centre := _segments[id].get_center()
 			# Wall pieces fly out from the building, roof pieces up.
 			var out := Vector3.UP if centre.y >= wh - 0.1 else (Vector3(centre.x, 0.0, centre.z).normalized() + Vector3.UP * 0.5)
-			VoxelDebris.burst(get_parent(), global_transform * centre, global_transform.basis * out, Color(0.5, 0.42, 0.33), &"building")
+			VoxelDebris.burst(get_parent(), global_transform * centre, global_transform.basis * out, colour, &"building")
+
+
+## The colour of segment `id`'s voxels, for its debris: the first filled voxel found up the
+## middle of its box.
+func _colour_of(id: int) -> Color:
+	var box := _carve_box(id)
+	var c := box.get_center()
+	for share: float in [0.5, 0.3, 0.7, 0.15, 0.85]:
+		var colour := _model.colour_at(Vector3(c.x, box.position.y + box.size.y * share, c.z))
+		if colour.a > 0.0:
+			return colour
+	return Color(0.5, 0.42, 0.33)
 
 
 ## The voxels segment `id` takes with it (a roof tile takes the sloping roof above it too).

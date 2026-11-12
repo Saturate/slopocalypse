@@ -11,6 +11,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { compare, parsePerfLog, summarise, table, zoneCosts, type Summary } from "./lib/bench.ts";
 import { localGodot } from "./lib/godot.ts";
 import { run } from "./lib/proc.ts";
+import { rangeArgs } from "./lib/range.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const godot = localGodot(root);
@@ -45,7 +46,7 @@ const SCENARIOS: Record<string, Scenario> = {
 	"range-destroy": {
 		what: "windowed solo game on the test range, the range bot shoots and blasts each building in turn (destruction cost: remeshing, debris, collapse)",
 		run: async (perfLog) => {
-			const r = await run(godot, ["--path", root, "--", "--solo", "--range", "--bot=range", "--no-save", "--uncapped", "--perf-spike-ms=20", `--net-report-after=${RUN_FRAMES}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: 240_000 });
+			const r = await run(godot, ["--path", root, "--", "--solo", ...rangeArgs(root), "--bot=range", "--uncapped", "--perf-spike-ms=20", `--net-report-after=${RUN_FRAMES}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: 240_000 });
 			if (r.timedOut) throw new Error("range-destroy timed out");
 		},
 	},

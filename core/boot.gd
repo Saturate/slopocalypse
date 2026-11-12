@@ -46,7 +46,8 @@ func _show_menu() -> void:
 	menu.join_requested.connect(func(host: String, port: int) -> void: _begin(menu, Net.join.bind(host, port)))
 	menu.range_requested.connect(func() -> void: _begin(menu, func() -> void:
 		Net.awaiting_menu = false
-		Net.extra_args = PackedStringArray(["--range", "--no-save"])
+		Net.extra_args = (load(RANGE) as GDScript).call(&"session_args")
+		Features.reload(Net.session_args())
 		Net.start_solo()))
 	menu.library_requested.connect(func() -> void:
 		menu.queue_free()

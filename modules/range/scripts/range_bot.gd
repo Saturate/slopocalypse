@@ -30,6 +30,11 @@ func _physics_tick(_delta: float) -> void:
 		return
 	_ticks += 1
 	_phase_ticks += 1
+	# The keyboard and mouse reader sends its own intent every tick (trigger up, with nobody
+	# at the mouse) and would race this one.
+	var input := player.get_node_or_null("Input")
+	if input != null and input.is_physics_processing():
+		input.set_physics_process(false)
 	var b := buildings[_target % buildings.size()] as Node3D
 	var heights: Array = settings.get("aim_heights", [1.2])
 	var fire_ticks := int(float(settings.get("fire_seconds", 3.0)) * 60.0)
@@ -38,9 +43,18 @@ func _physics_tick(_delta: float) -> void:
 	var aim_height := float(heights[0])
 	match _phase:
 		"fire":
-			# Sweep the heights across the burst, firing in short bursts.
+			# Rifle back in hand (placing a charge took it away), then sweep the heights,
+			# pulling the trigger every few ticks (a held trigger fires once).
+			if _phase_ticks == 1:
+				action = &"weapon_1"
 			aim_height = float(heights[mini(heights.size() - 1, int(float(_phase_ticks) / float(maxi(1, fire_ticks)) * heights.size()))])
-			fire = (_phase_ticks % 20) < 8
+			var gun := _gun()
+			if gun != null and gun.ammo() == 0 and not gun.is_reloading():
+				# A gun drawn again starts empty, and a magazine runs out.
+				if _phase_ticks % 30 == 2:
+					action = &"reload"
+			else:
+				fire = _phase_ticks > 20 and (_phase_ticks % 6) < 3
 			if _phase_ticks >= fire_ticks:
 				_next("charge")
 		"charge":
@@ -55,8 +69,17 @@ func _physics_tick(_delta: float) -> void:
 				_target += 1
 				_next("fire")
 	var spec: Dictionary = b.get(&"spec")
-	var front := b.global_transform * Vector3(0.0, 0.0, -float(spec.get("depth", 4.0)) / 2.0)
+	# A quarter of the way along the front wall: the door is in the middle.
+	var front := b.global_transform * Vector3(float(spec.get("width", 5.0)) / 4.0, 0.0, -float(spec.get("depth", 4.0)) / 2.0)
 	_aim(front + Vector3.UP * aim_height, fire, action)
+
+
+## The gun in the player's hands, or null (charges drawn, or still switching).
+func _gun() -> HitscanWeapon:
+	for child in player.get_node("Head/Camera").get_children():
+		if child is HitscanWeapon and (child as HitscanWeapon).active and not child.is_queued_for_deletion():
+			return child
+	return null
 
 
 func _next(phase: String) -> void:

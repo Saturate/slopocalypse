@@ -201,6 +201,24 @@ impl VoxelModel {
             .map_or(0, |g| g.material_at(v3(point)) as i64)
     }
 
+    /// Colour of the cell holding `point` (model space); fully transparent for air.
+    #[func]
+    fn colour_at(&self, point: Vector3) -> Color {
+        match self.grid.as_ref().map(|g| g.colour_at(v3(point))) {
+            Some(c) if c != voxkit_core::EMPTY => to_color(c),
+            _ => Color::from_rgba(0.0, 0.0, 0.0, 0.0),
+        }
+    }
+
+    /// The material most filled cells inside the box have (model space), 0 when none has
+    /// one: a wall piece's main material.
+    #[func]
+    fn dominant_material(&self, min: Vector3, max: Vector3) -> i64 {
+        self.grid
+            .as_ref()
+            .map_or(0, |g| g.dominant_material(v3(min), v3(max)) as i64)
+    }
+
     /// Scales the colour jitter of every fill after this call (0 = flat colours).
     #[func]
     fn set_jitter_scale(&mut self, scale: f32) {

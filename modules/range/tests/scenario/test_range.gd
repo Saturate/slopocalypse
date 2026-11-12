@@ -55,6 +55,10 @@ func test_arriving_rides_out_to_one_building_per_material() -> void:
 	var materials: Array = (_missions.get(&"buildings") as Array).map(func(b: Dictionary) -> String: return "%s/%s" % [b["material"], b["glass"]])
 	assert_array(materials).contains_exactly(["wood/window_glass", "brick/window_glass", "concrete/window_glass", "wood/security_glass", "concrete/security_glass"])
 	assert_float(player.global_position.distance_to(SPAWN)).is_greater(50.0)
+	# Set down across the road from the row, within easy reach of every building.
+	await get_tree().physics_frame
+	for b: Dictionary in _missions.get(&"buildings"):
+		assert_float(player.global_position.distance_to(b["position"])).is_less(40.0)
 
 
 func test_the_range_hands_out_its_charges() -> void:

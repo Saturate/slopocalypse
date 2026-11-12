@@ -169,6 +169,8 @@ func test_a_faraway_blast_leaves_it_whole() -> void:
 func _building(material: String) -> MissionBuilding:
 	var entry: Dictionary = MissionLayout.buildings(_cfg(), 3, _road, 300.0)[0]
 	entry["material"] = material
+	# Windows on the side walls, at the middle (see VoxShed's window spots).
+	entry["windows"] = 2
 	entry["position"] = Vector3(0, 0, -40)
 	var b: MissionBuilding = auto_free(MissionBuilding.new())
 	b.spec = entry
@@ -199,6 +201,53 @@ func test_rifle_rounds_only_chip_concrete_but_a_blast_still_breaks_it() -> void:
 	for i in 40:
 		assert_int(b.server_shot(point, 25.0)).is_equal(-1)
 	assert_int(b.server_blast(point + b.global_transform.basis.x * 0.3, 3.0, 140.0, 1.6).size()).is_greater(0)
+
+
+func test_brick_shrugs_off_rifle_rounds_but_a_charge_breaks_it() -> void:
+	var b := _building("brick")
+	var w := float(b.spec["width"])
+	var point := b.global_transform * Vector3(w / 2.0, 0.6, 0.0)
+	var inward := -b.global_transform.basis.x
+	assert_str(str(b.struck_rules(point, inward)["name"])).is_equal("brick")
+	for i in 40:
+		assert_int(b.server_shot(point, 25.0, inward)).is_equal(-1)
+	assert_int(b.server_blast(point + b.global_transform.basis.x * 0.3, 3.0, 150.0, 1.6).size()).is_greater(0)
+
+
+func test_a_wooden_frame_in_a_concrete_wall_does_not_make_the_wall_easy_to_break() -> void:
+	var b := _building("concrete")
+	var w := float(b.spec["width"])
+	# The bottom bar of the right-hand window's wooden frame.
+	var point := b.global_transform * Vector3(w / 2.0, MissionBuilding.SLAB + VoxShed.WINDOW_SILL - 0.07, 0.0)
+	var inward := -b.global_transform.basis.x
+	assert_str(str(b.struck_rules(point, inward)["name"])).is_equal("wood")
+	for i in 40:
+		assert_int(b.server_shot(point, 25.0, inward)).is_equal(-1)
+
+
+func test_shooting_a_pane_does_no_structural_damage() -> void:
+	var b := _building("wood")
+	var w := float(b.spec["width"])
+	var point := b.global_transform * Vector3(w / 2.0, MissionBuilding.SLAB + VoxShed.WINDOW_SILL + VoxShed.WINDOW.y / 2.0, 0.0)
+	var inward := -b.global_transform.basis.x
+	assert_str(str(b.struck_rules(point, inward)["name"])).is_equal("window_glass")
+	for i in 20:
+		assert_int(b.server_shot(point, 25.0, inward)).is_equal(-1)
+
+
+func test_the_server_carves_bullet_holes_so_later_rounds_go_into_them() -> void:
+	var b := _building("wood")
+	var w := float(b.spec["width"])
+	var point := b.global_transform * Vector3(w / 2.0, 0.6, 0.0)
+	var inward := -b.global_transform.basis.x
+	assert_vector(b.struck_voxel(point, inward)).is_not_equal(Vector3.INF)
+	var through := false
+	for i in 8:
+		b.bullet_mark(point, inward)
+		if b.struck_voxel(point, inward) == Vector3.INF:
+			through = true
+			break
+	assert_bool(through).override_failure_message("a few rounds in the same spot should hole a plank wall through").is_true()
 
 
 func test_a_mission_can_ask_for_concrete() -> void:

@@ -16,6 +16,16 @@ var config: Dictionary = {}
 var active := false
 
 
+## What a session needs to be the range: the flag, nothing saved, and the modules that would
+## send something hostile switched off (`flags` in the range data). The menu adds these.
+static func session_args() -> PackedStringArray:
+	var out := PackedStringArray(["--range", "--no-save"])
+	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(CONFIG))
+	if data is Dictionary and (data as Dictionary).get("flags") is String:
+		out.append("--flags=%s" % data["flags"])
+	return out
+
+
 func _ready() -> void:
 	active = Net.session_args().has("--range")
 	if not active:
@@ -67,8 +77,9 @@ func _on_player_spawned(p: Dictionary) -> void:
 		_server_arrive.call_deferred(player)
 
 
-## Server: the first arrival starts the run and rides out; anyone later (or back from dying)
-## is put at the drop-off. Everyone gets the range's charges.
+## Server: the first arrival starts the run and rides out; everyone (later arrivals and
+## anyone back from dying too) is then set down across the road from the row, in easy reach,
+## with the range's charges.
 func _server_arrive(player: Node3D) -> void:
 	if not is_instance_valid(player):
 		return
@@ -78,9 +89,7 @@ func _server_arrive(player: Node3D) -> void:
 		missions.set(&"offers", [offer()])
 		missions.call(&"server_choose", peer, 0)
 		missions.call(&"server_ride_out")
-	else:
-		var at: Vector3 = missions.call(&"dropoff_of", missions.get(&"current"))
-		EventBus.publish(&"player.move_requested", {"player": player, "position": at + Vector3(-2.0, 0.5, 0.0)})
+	EventBus.publish(&"player.move_requested", {"player": player, "position": stand_spot()})
 	var inventory := get_tree().get_first_node_in_group(&"inventory_api")
 	if inventory != null:
 		var gifts: Dictionary = config["gifts"]
@@ -89,9 +98,19 @@ func _server_arrive(player: Node3D) -> void:
 				inventory.call(&"server_give", peer, item)
 
 
+## Across the road from the middle of the row (the row stands on the road's +x side).
+func stand_spot() -> Vector3:
+	var missions := _missions()
+	var zone: Vector3 = missions.get(&"zone")
+	var at := zone + Vector3(-float(config.get("stand_across", 6.0)), 0.0, 0.0)
+	at.y = float(missions.call(&"ground_y", at.x, at.z)) + 0.5
+	return at
+
+
 func _bot_wanted() -> bool:
 	return Net.session_args().has("--bot=range")
 
 
 func _missions() -> Node:
 	return get_tree().get_first_node_in_group(&"missions_api")
+

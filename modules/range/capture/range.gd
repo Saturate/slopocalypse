@@ -1,6 +1,8 @@
 extends Node3D
-## Capture setup: the test range. The row of buildings seen from the road, then a burst of
-## blasts on each one's front wall, so each material's breakage can be compared side by side.
+## Capture setup: the test range, one building at a time from close in front: a spread of
+## rifle rounds into its front wall (holes in wood, chips off brick and concrete, marks on
+## glass), held for a moment, then on to the next. `--frames 320 --sheet 6` gives about one
+## panel per building, after its rounds.
 
 const WORLD := "res://modules/world/scenes/world.tscn"
 const PLAYER := "res://modules/player/scenes/player.tscn"
@@ -10,11 +12,14 @@ const MODULES: Array[String] = [
 	"res://modules/missions/missions_module.gd",
 	"res://modules/range/range_module.gd",
 ]
-const BLAST_AT := 60
-const BLAST_EVERY := 25
+## Ticks spent on each building, and how many of them fire.
+const DWELL := 60
+const FIRING := 36
+const START := 10
 
 var _player: PlayerController
 var _missions: Node
+var _cam: Camera3D
 var _ticks := 0
 
 
@@ -33,6 +38,8 @@ func _ready() -> void:
 	_player.global_position = spawn
 	EventBus.publish(&"world.ready", {"spawn": spawn})
 	EventBus.publish(&"player.spawned", {"player": _player, "local": true})
+	_cam = Camera3D.new()
+	add_child(_cam)
 
 
 func _physics_process(_delta: float) -> void:
@@ -42,20 +49,35 @@ func _physics_process(_delta: float) -> void:
 	if buildings.is_empty():
 		return
 	_ticks += 1
-	if _ticks == 5:
-		_player.set_physics_process(false)
-		# From across the road, high enough to see every building's front.
-		var first := buildings[0] as Node3D
-		var last := buildings[buildings.size() - 1] as Node3D
-		var mid := first.global_position.lerp(last.global_position, 0.5)
-		var cam := Camera3D.new()
-		add_child(cam)
-		# The row stands on the +x side of the road; look from the far side of the road.
-		cam.global_position = mid + Vector3(-12.0, 6.0, 0.0)
-		cam.look_at(mid + Vector3.UP * 1.0, Vector3.UP)
-		cam.current = true
-	var i := (_ticks - BLAST_AT) / BLAST_EVERY
-	if _ticks >= BLAST_AT and (_ticks - BLAST_AT) % BLAST_EVERY == 0 and i < buildings.size():
-		var b := buildings[i] as Node3D
-		var front := b.global_transform * Vector3(0.0, 1.0, -float(b.get(&"spec")["depth"]) / 2.0 - 0.3)
-		Net.server_broadcast(&"explosion", {"position": front, "radius": 2.5})
+	if _ticks < START:
+		return
+	_player.set_physics_process(false)
+	var t := _ticks - START
+	var i := t / DWELL
+	if i >= buildings.size():
+		return
+	var b := buildings[i] as Node3D
+	var spec: Dictionary = b.get(&"spec")
+	var d := float(spec["depth"])
+	if t % DWELL == 0:
+		# Square on to its front, a few metres out, a little above head height.
+		_cam.global_position = b.global_transform * Vector3(0.6, 1.9, -d / 2.0 - 6.5)
+		_cam.look_at(b.global_transform * Vector3(0.0, 1.3, -d / 2.0), Vector3.UP)
+		_cam.current = true
+	if t % DWELL < FIRING:
+		_shoot(b, t % DWELL)
+
+
+## One rifle round into the building's front wall, spread across it and up it over the
+## ticks, sent the way a real shot arrives (the event every instance replays).
+func _shoot(b: Node3D, k: int) -> void:
+	var spec: Dictionary = b.get(&"spec")
+	var w := float(spec["width"])
+	var d := float(spec["depth"])
+	var local := Vector3(lerpf(-w / 2.0 + 0.3, w / 2.0 - 0.3, fmod(k * 0.37, 1.0)), 0.4 + fmod(k * 0.23, 1.0) * 2.0, -d / 2.0)
+	var to := b.global_transform * local
+	var from := to + b.global_transform.basis * Vector3(0.0, 0.3, -12.0)
+	var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(from, to + (to - from).normalized() * 0.5))
+	if hit.is_empty():
+		return
+	EventBus.publish(&"weapon.fired", {"holder": null, "from": from, "to": hit["position"], "collider": hit["collider"], "damage": 25.0})
