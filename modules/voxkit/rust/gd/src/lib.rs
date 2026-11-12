@@ -366,6 +366,34 @@ impl VoxelModel {
         self.grid.as_ref().map_or(0, |g| g.chunk_count() as i64)
     }
 
+    /// Draws these materials see-through (glass): they leave the normal chunk meshes and come
+    /// back in `remesh_dirty_layers` as each chunk's clear mesh. Every chunk is remeshed.
+    #[func]
+    fn set_clear_materials(&mut self, indices: PackedInt32Array) {
+        self.with(|g, _| {
+            for m in 1..=255u8 {
+                g.set_clear(m, indices.as_slice().contains(&(m as i32)));
+            }
+        });
+    }
+
+    /// Like `remesh_dirty`, with both layers: `{chunk id: [arrays, clear arrays]}` (empty arrays
+    /// where a layer has nothing to draw).
+    #[func]
+    fn remesh_dirty_layers(&mut self) -> VarDictionary {
+        let mut out = VarDictionary::new();
+        if let Some(grid) = self.grid.as_mut() {
+            grid.corners = shading().is_some();
+            for (id, mesh, clear) in grid.remesh_dirty_layers() {
+                let mut pair = VarArray::new();
+                pair.push(&arrays_of(&mesh).to_variant());
+                pair.push(&arrays_of(&clear).to_variant());
+                out.set(id as i64, &pair);
+            }
+        }
+        out
+    }
+
     /// Meshes every chunk changed since the last call (all of them the first time) and marks
     /// them clean: `{chunk id: arrays}`, empty arrays where a chunk has nothing to draw.
     #[func]

@@ -41,6 +41,6 @@ func _physics_process(_delta: float) -> void:
 		var to := _building.global_transform * Vector3(-2.4 + spot * 0.9, 0.7 + (spot % 3) * 0.6, 3.0)
 		var from := to + Vector3(0.0, 0.2, 10.0)
 		_building.bullet_mark(to, to - from)
-		var inside := _building.server_brick_hit(to, to - from, 25.0)
-		if inside != Vector3.INF:
-			_building.knock_out([inside], true)
+		var bricks := _building.server_brick_hit(to, to - from, 25.0)
+		if not bricks.is_empty():
+			_building.knock_out(bricks, true)

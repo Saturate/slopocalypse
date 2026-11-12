@@ -365,26 +365,83 @@ func test_four_rifle_rounds_knock_out_one_brick_and_leave_the_mortar() -> void:
 	var b := _building("brick")
 	var spot := _brick_spot(b)
 	assert_array(spot).is_not_empty()
+	_no_stick(true)
 	for i in 3:
-		assert_vector(b.server_brick_hit(spot[0], spot[1], 25.0)).is_equal(Vector3.INF)
-	var inside := b.server_brick_hit(spot[0], spot[1], 25.0)
-	assert_vector(inside).is_not_equal(Vector3.INF)
+		assert_array(b.server_brick_hit(spot[0], spot[1], 25.0)).is_empty()
+	var knocked: Array[Vector3] = b.server_brick_hit(spot[0], spot[1], 25.0)
+	assert_array(knocked).is_not_empty()
+	var inside := knocked[0]
 	var model: VoxelModel = b.get(&"_model")
 	var brick := VoxMaterials.index_of("brick")
 	var box := model.component_at(inside, brick, MissionBuilding.BRICK_CAP)
-	var mortar_before := model.count_material(box.grow(b.voxel).position, box.grow(b.voxel).end, VoxMaterials.index_of("mortar"))
-	b.knock_out([inside], false)
+	var around := box.grow(b.voxel)
+	var mortar_before := model.count_material(around.position, around.end, VoxMaterials.index_of("mortar"))
+	b.knock_out(knocked, false)
+	_no_stick(false)
+	assert_int(knocked.size()).is_equal(1)
 	assert_int(model.material_at(inside)).is_equal(0)
 	assert_int(model.count_material(box.position, box.end, brick)).is_equal(0)
-	assert_int(model.count_material(box.grow(b.voxel).position, box.grow(b.voxel).end, VoxMaterials.index_of("mortar"))).is_equal(mortar_before)
+	# The joints round it still hold the neighbouring bricks, so most of the mortar stays.
+	var mortar_after := model.count_material(around.position, around.end, VoxMaterials.index_of("mortar"))
+	assert_int(mortar_after).is_greater(mortar_before / 2)
+
+
+## Switches brick's stickiness off (or back to the data's) for tests that count single bricks.
+var _stick_saved := -1.0
+
+
+func _no_stick(off: bool) -> void:
+	var rules: Dictionary = VoxMaterials.named("brick")
+	if off:
+		_stick_saved = float(rules["stick_chance"])
+		rules["stick_chance"] = 0.0
+	elif _stick_saved >= 0.0:
+		rules["stick_chance"] = _stick_saved
+
+
+func test_sticky_bricks_drag_their_neighbours_along() -> void:
+	var b := _building("brick")
+	var spot := _brick_spot(b)
+	var rules: Dictionary = VoxMaterials.named("brick")
+	var saved := float(rules["stick_chance"])
+	rules["stick_chance"] = 1.0
+	var knocked: Array[Vector3] = []
+	for i in 4:
+		knocked = b.server_brick_hit(spot[0], spot[1], 25.0)
+	rules["stick_chance"] = saved
+	# Every neighbour, and half of theirs: more than the one brick.
+	assert_int(knocked.size()).is_greater(2)
+
+
+func test_rounds_into_a_joint_wear_the_bricks_beside_it() -> void:
+	var b := _building("brick")
+	_no_stick(true)
+	var w := float(b.spec["width"])
+	var inward := -b.global_transform.basis.x
+	var joint := Vector3.INF
+	for i in 60:
+		var point := b.global_transform * Vector3(w / 2.0, 0.4 + i * 0.013, -1.0 + i * 0.02)
+		if str(b.struck_rules(point, inward)["name"]) == "mortar":
+			joint = point
+			break
+	assert_vector(joint).is_not_equal(Vector3.INF)
+	var knocked: Array[Vector3] = []
+	for i in 12:
+		knocked = b.server_brick_hit(joint, inward, 25.0)
+		if not knocked.is_empty():
+			break
+	_no_stick(false)
+	assert_array(knocked).is_not_empty()
 
 
 func test_a_pistol_takes_a_round_more() -> void:
 	var b := _building("brick")
+	_no_stick(true)
 	var spot := _brick_spot(b)
 	for i in 4:
-		assert_vector(b.server_brick_hit(spot[0], spot[1], 20.0)).is_equal(Vector3.INF)
-	assert_vector(b.server_brick_hit(spot[0], spot[1], 20.0)).is_not_equal(Vector3.INF)
+		assert_array(b.server_brick_hit(spot[0], spot[1], 20.0)).is_empty()
+	assert_array(b.server_brick_hit(spot[0], spot[1], 20.0)).is_not_empty()
+	_no_stick(false)
 
 
 func test_a_wall_piece_that_loses_most_of_its_bricks_gives_way() -> void:

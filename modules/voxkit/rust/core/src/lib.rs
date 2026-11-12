@@ -24,6 +24,9 @@ pub struct Grid {
     materials: Vec<u8>,
     /// Material that fills write into the cells they fill.
     pub brush: u8,
+    /// Materials drawn see-through (glass): the normal mesh treats their cells as air, and a
+    /// second "clear" mesh holds only them.
+    clear: [bool; 256],
     /// Chunks per axis, and which chunks changed since they were last meshed.
     chunks: [usize; 3],
     dirty: Vec<bool>,
@@ -78,6 +81,7 @@ impl Grid {
             cells: vec![EMPTY; n[0] * n[1] * n[2]],
             materials: vec![0; n[0] * n[1] * n[2]],
             brush: 0,
+            clear: [false; 256],
             chunks,
             dirty: vec![true; chunks[0] * chunks[1] * chunks[2]],
             corners: false,
@@ -104,6 +108,32 @@ impl Grid {
             let m = if c == EMPTY { 0 } else { self.brush };
             self.write(x, y, z, c, m);
         }
+    }
+
+    /// Draws material `m` see-through (`on`) or not; every chunk is meshed again.
+    pub fn set_clear(&mut self, m: u8, on: bool) {
+        if self.clear[m as usize] != on {
+            self.clear[m as usize] = on;
+            self.dirty.iter_mut().for_each(|d| *d = true);
+        }
+    }
+
+    /// True when some material is drawn see-through.
+    pub fn has_clear(&self) -> bool {
+        self.clear.iter().any(|&c| c)
+    }
+
+    /// Filled and drawn see-through.
+    fn clear_at(&self, p: [i64; 3]) -> bool {
+        if p.iter().any(|&v| v < 0) {
+            return false;
+        }
+        let (x, y, z) = (p[0] as usize, p[1] as usize, p[2] as usize);
+        if x >= self.nx || y >= self.ny || z >= self.nz {
+            return false;
+        }
+        let i = self.index(x, y, z);
+        self.cells[i] != EMPTY && self.clear[self.materials[i] as usize]
     }
 
     /// Material index of cell (x, y, z); 0 for air and outside the grid.
@@ -342,7 +372,26 @@ impl Grid {
     /// chunk's cell is filled.
     pub fn mesh_chunk(&self, id: usize) -> Mesh {
         let (lo, hi) = self.chunk_cells(id);
-        self.mesh_region(lo, hi, usize::MAX)
+        self.mesh_region(lo, hi, usize::MAX, false)
+    }
+
+    /// The see-through cells of chunk `id` alone (glass): faces only where they meet air.
+    pub fn mesh_chunk_clear(&self, id: usize) -> Mesh {
+        let (lo, hi) = self.chunk_cells(id);
+        self.mesh_region(lo, hi, usize::MAX, true)
+    }
+
+    /// Like `remesh_dirty`, with each chunk's see-through mesh beside its normal one.
+    pub fn remesh_dirty_layers(&mut self) -> Vec<(usize, Mesh, Mesh)> {
+        let ids = self.dirty_chunks();
+        let out = ids
+            .iter()
+            .map(|&id| (id, self.mesh_chunk(id), self.mesh_chunk_clear(id)))
+            .collect();
+        for id in ids {
+            self.dirty[id] = false;
+        }
+        out
     }
 
     /// Meshes every changed chunk and marks it clean: `(chunk id, mesh)` per chunk, an empty
@@ -405,6 +454,7 @@ impl Grid {
         out.cells = vec![EMPTY; n[0] * n[1] * n[2]];
         out.materials = vec![0; n[0] * n[1] * n[2]];
         out.brush = self.brush;
+        out.clear = self.clear;
         out.chunks = n.map(|v| v.div_ceil(CHUNK));
         out.dirty = vec![true; out.chunks[0] * out.chunks[1] * out.chunks[2]];
         for y in y0..y1 {
@@ -597,13 +647,21 @@ impl Grid {
     /// Like `mesh`, but no merged face is longer than `max_run` cells along z, so the mesh
     /// can be bent afterwards (a road following its curve) without faces cutting corners.
     pub fn mesh_max_run(&self, max_run: usize) -> Mesh {
-        self.mesh_region([0, 0, 0], [self.nx, self.ny, self.nz], max_run)
+        self.mesh_region([0, 0, 0], [self.nx, self.ny, self.nz], max_run, false)
     }
 
     /// Greedy mesh of the cells in `lo..hi` (per axis). Neighbours outside the range still
     /// hide faces, but only cells inside it get faces, so meshes of adjacent ranges meet
     /// without gaps or doubles.
-    fn mesh_region(&self, lo: [usize; 3], hi: [usize; 3], max_run: usize) -> Mesh {
+    /// `clear_pass`: mesh only the see-through cells (faces where they meet air); otherwise
+    /// everything else, treating see-through cells as air.
+    fn mesh_region(
+        &self,
+        lo: [usize; 3],
+        hi: [usize; 3],
+        max_run: usize,
+        clear_pass: bool,
+    ) -> Mesh {
         let max_run = max_run.max(1);
         let mut out = Mesh::default();
         let n = [0, 1, 2].map(|a| hi[a].saturating_sub(lo[a]));
@@ -622,7 +680,7 @@ impl Grid {
                         back,
                         at: lo[axis] + slice,
                     };
-                    let mask = self.face_mask(&s, lo, n);
+                    let mask = self.face_mask(&s, lo, n, clear_pass);
                     for (i, j, w, h, key) in merge_rects(mask, n[u], n[v], cap(u), cap(v)) {
                         let plane = if back { slice } else { slice + 1 } as f32;
                         let mut corner = [0f32; 3];
@@ -646,7 +704,7 @@ impl Grid {
 
     /// Which faces of slice `s` look out into air, as merge keys (`NONE` where there is no
     /// face), over the `n[u]` x `n[v]` cells of the region starting at `lo`.
-    fn face_mask(&self, s: &Slice, lo: [usize; 3], n: [usize; 3]) -> Vec<u64> {
+    fn face_mask(&self, s: &Slice, lo: [usize; 3], n: [usize; 3], clear_pass: bool) -> Vec<u64> {
         let mut mask = vec![NONE; n[s.u] * n[s.v]];
         for j in 0..n[s.v] {
             for i in 0..n[s.u] {
@@ -657,7 +715,16 @@ impl Grid {
                 let here = self.get(p[0], p[1], p[2]);
                 let mut q = p;
                 q[s.axis] += if s.back { -1 } else { 1 };
-                if here == EMPTY || self.solid(q) {
+                if here == EMPTY {
+                    continue;
+                }
+                if clear_pass {
+                    // Glass shows only against air.
+                    if !self.clear_at(p) || self.solid(q) {
+                        continue;
+                    }
+                } else if self.clear_at(p) || (self.solid(q) && !self.clear_at(q)) {
+                    // Glass is air to the rest: the frame's faces behind it are drawn.
                     continue;
                 }
                 let levels = if self.corners {
@@ -1027,6 +1094,27 @@ mod tests {
             g.count_material([-1.0, 0.0, -0.5], [1.0, 1.0, 0.5], 7),
             2 * 4 * 2 * 4
         );
+    }
+
+    #[test]
+    fn see_through_cells_go_in_their_own_mesh() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        g.brush = 1;
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], fill(RED));
+        g.brush = 4;
+        g.fill_box([-0.2, 0.3, -0.5], [0.2, 0.7, 0.5], fill(BLUE));
+        let before = g.mesh_chunk(0).quad_count();
+        g.set_clear(4, true);
+        let solid = g.mesh_chunk(0);
+        let glass = g.mesh_chunk_clear(0);
+        // No glass in the normal mesh, and the frame round the glass now shows faces.
+        assert!(solid.colours.iter().all(|&c| c != BLUE));
+        assert!(solid.quad_count() > before);
+        // Only glass in the clear mesh, and only where it meets air (its two ends).
+        assert!(!glass.colours.is_empty() && glass.colours.iter().all(|&c| c == BLUE));
+        assert!(glass.normals.iter().all(|n| n[2].abs() == 1.0));
+        let layers = g.remesh_dirty_layers();
+        assert_eq!(layers.len(), g.chunk_count());
     }
 
     #[test]
