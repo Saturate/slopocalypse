@@ -10,11 +10,11 @@
   "zone": { "beyond_dropoff": 70.0, "radius": 45.0 },
   "buildings": {
     "count": [3, 6],
-    "width": [5.0, 8.5],
-    "depth": [4.0, 6.5],
+    "width": [6.5, 11.0],
+    "depth": [5.0, 8.0],
     "wall_height": [2.7, 3.2],
     "off_road": [9.0, 22.0],
-    "spread": 35.0,
+    "spread": 45.0,
     "gap": 3.0,
     "segment": 1.2,
     "segment_hp": 100.0,
@@ -24,10 +24,10 @@
     "blast_damage": 140.0,
     "blast_reach": 1.6,
     "concrete_share": 0.3,
-    "materials": {
-      "wood": { "bullet": 1.0, "blast": 1.0, "min_bullet_damage": 0.0, "hole": 0.13 },
-      "concrete": { "bullet": 0.15, "blast": 0.8, "min_bullet_damage": 60.0, "hole": 0.0 }
-    }
+    "chunks": { "size": 0.45, "max_per_piece": 10, "push": 3.5, "scatter": 1.5, "turns": 2, "jag": 1.5, "shard_size": 0.2, "max_shards": 24 },
+    "brick_blast_share": 0.7,
+    "pad_margin": 1.5,
+    "pad_blend": 6.0
   },
   "hazards": {
     "trigger_radius": 0.9,

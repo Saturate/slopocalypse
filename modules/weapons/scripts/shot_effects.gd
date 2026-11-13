@@ -58,9 +58,14 @@ func kicked_count() -> int:
 
 func _on_fired(p: Dictionary) -> void:
 	var holder := p.get("holder") as Node
-	var held := held_rifle(holder)
 	var to: Vector3 = p["to"]
 	var from: Vector3 = p["from"]
+	# A round carrying on through a wall: its tracer starts at the wall, no new flash or kick.
+	if bool(p.get("through", false)):
+		_spawn_tracer(from, to)
+		_spawn_impact(to)
+		return
+	var held := held_rifle(holder)
 	if held != null:
 		var muzzle := held.find_child("Muzzle", true, false) as Node3D
 		if muzzle != null:

@@ -1,6 +1,6 @@
 // Benchmarks: runs fixed scenarios, reads the perf log each writes, and compares with this
 // machine's baseline. Not part of the gate (timings are too noisy on shared machines).
-//   node tools/bench.ts [solo-walk] [solo-drive] [server-bots] [--save-baseline] [--tolerance 0.15]
+//   node tools/bench.ts [solo-walk] [solo-drive] [range-destroy] [server-bots] [--save-baseline] [--tolerance 0.15]
 //     [--server-flags car:off,enemies:off]  (server-bots: switch modules off to see what costs what)
 // Results and baselines live in bench/ (git-ignored): timings mean nothing across machines.
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -11,6 +11,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { compare, parsePerfLog, summarise, table, zoneCosts, type Summary } from "./lib/bench.ts";
 import { localGodot } from "./lib/godot.ts";
 import { run } from "./lib/proc.ts";
+import { rangeArgs } from "./lib/range.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const godot = localGodot(root);
@@ -40,6 +41,13 @@ const SCENARIOS: Record<string, Scenario> = {
 		run: async (perfLog) => {
 			const r = await run(godot, ["--path", root, "--", "--solo", "--bot=drive", "--no-save", "--uncapped", "--perf-spike-ms=20", `--net-report-after=${RUN_FRAMES}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: 240_000 });
 			if (r.timedOut) throw new Error("solo-drive timed out");
+		},
+	},
+	"range-destroy": {
+		what: "windowed solo game on the test range, the range bot shoots and blasts each building in turn (destruction cost: remeshing, debris, collapse)",
+		run: async (perfLog) => {
+			const r = await run(godot, ["--path", root, "--", "--solo", ...rangeArgs(root), "--bot=range", "--uncapped", "--perf-spike-ms=20", `--net-report-after=${RUN_FRAMES}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: 240_000 });
+			if (r.timedOut) throw new Error("range-destroy timed out");
 		},
 	},
 	"server-bots": {

@@ -1,38 +1,138 @@
 {
-  "stall": { "offset": [4.6, 0.0, 7.0] },
+  "stall": {
+    "offset": [
+      4.6,
+      0.0,
+      7.0
+    ]
+  },
   "reach": 3.0,
   "sell_share": 0.5,
   "unlisted_price": 10,
   "stock": [
-    { "item": "gun_rifle", "price": 40 },
-    { "item": "gun_pistol", "price": 15 },
-    { "item": "breach_charge", "price": 10 },
-    { "item": "medkit", "price": 10 },
-    { "item": "mag_ar_30", "price": 10 },
-    { "item": "mag_ar_45", "price": 20 },
-    { "item": "mag_pistol_15", "price": 5 },
-    { "item": "mag_pistol_21", "price": 10 },
-    { "item": "opt_reddot", "price": 15 },
-    { "item": "opt_holo", "price": 20 },
-    { "item": "opt_scope_4x", "price": 30 },
-    { "item": "opt_pistol_dot", "price": 10 },
-    { "item": "muz_flash", "price": 5 },
-    { "item": "muz_comp", "price": 10 },
-    { "item": "muz_supp", "price": 25 },
-    { "item": "muz_pistol_comp", "price": 5 },
-    { "item": "muz_pistol_supp", "price": 15 },
-    { "item": "stk_ar_std", "price": 10 },
-    { "item": "stk_ar_light", "price": 15 },
-    { "item": "grp_ar_std", "price": 5 },
-    { "item": "hg_ar_std", "price": 10 },
-    { "item": "hg_ar_long", "price": 20 },
-    { "item": "bar_ar_14", "price": 20 },
-    { "item": "bar_ar_10", "price": 20 },
-    { "item": "sld_pistol_std", "price": 10 },
-    { "item": "sld_pistol_long", "price": 15 },
-    { "item": "rig_light", "price": 20 },
-    { "item": "rig_heavy", "price": 45 },
-    { "item": "bag_small", "price": 25 },
-    { "item": "bag_large", "price": 60 }
+    {
+      "item": "gun_rifle",
+      "price": 40
+    },
+    {
+      "item": "gun_pistol",
+      "price": 15
+    },
+    {
+      "item": "breach_charge",
+      "price": 10
+    },
+    {
+      "item": "gun_rocket",
+      "price": 30
+    },
+    {
+      "item": "medkit",
+      "price": 10
+    },
+    {
+      "item": "mag_ar_30",
+      "price": 10
+    },
+    {
+      "item": "mag_ar_45",
+      "price": 20
+    },
+    {
+      "item": "mag_pistol_15",
+      "price": 5
+    },
+    {
+      "item": "mag_pistol_21",
+      "price": 10
+    },
+    {
+      "item": "opt_reddot",
+      "price": 15
+    },
+    {
+      "item": "opt_holo",
+      "price": 20
+    },
+    {
+      "item": "opt_scope_4x",
+      "price": 30
+    },
+    {
+      "item": "opt_pistol_dot",
+      "price": 10
+    },
+    {
+      "item": "muz_flash",
+      "price": 5
+    },
+    {
+      "item": "muz_comp",
+      "price": 10
+    },
+    {
+      "item": "muz_supp",
+      "price": 25
+    },
+    {
+      "item": "muz_pistol_comp",
+      "price": 5
+    },
+    {
+      "item": "muz_pistol_supp",
+      "price": 15
+    },
+    {
+      "item": "stk_ar_std",
+      "price": 10
+    },
+    {
+      "item": "stk_ar_light",
+      "price": 15
+    },
+    {
+      "item": "grp_ar_std",
+      "price": 5
+    },
+    {
+      "item": "hg_ar_std",
+      "price": 10
+    },
+    {
+      "item": "hg_ar_long",
+      "price": 20
+    },
+    {
+      "item": "bar_ar_14",
+      "price": 20
+    },
+    {
+      "item": "bar_ar_10",
+      "price": 20
+    },
+    {
+      "item": "sld_pistol_std",
+      "price": 10
+    },
+    {
+      "item": "sld_pistol_long",
+      "price": 15
+    },
+    {
+      "item": "rig_light",
+      "price": 20
+    },
+    {
+      "item": "rig_heavy",
+      "price": 45
+    },
+    {
+      "item": "bag_small",
+      "price": 25
+    },
+    {
+      "item": "bag_large",
+      "price": 60
+    }
   ]
 }

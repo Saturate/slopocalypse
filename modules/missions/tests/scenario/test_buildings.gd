@@ -132,7 +132,8 @@ func test_a_blast_beside_a_wall_knocks_a_hole_you_can_see_through() -> void:
 	Net.server_broadcast(&"explosion", {"position": b.global_transform * Vector3(w / 2.0 + 0.3, 1.0, 0), "radius": 3.0})
 	await get_tree().physics_frame
 	await get_tree().physics_frame
-	assert_dict(space.intersect_ray(PhysicsRayQueryParameters3D.create(outside, inside))).is_empty()
+	# As a bullet sees it: chunks still flying through the hole don't count.
+	assert_dict(space.intersect_ray(PhysicsRayQueryParameters3D.create(outside, inside, PhysicsLayers.BULLETS))).is_empty()
 	# The back wall far from it still stands somewhere.
 	var standing := 0
 	for i in before:
@@ -169,24 +170,36 @@ func test_a_faraway_blast_leaves_it_whole() -> void:
 func _building(material: String) -> MissionBuilding:
 	var entry: Dictionary = MissionLayout.buildings(_cfg(), 3, _road, 300.0)[0]
 	entry["material"] = material
+	# Windows on the side walls, at the middle (see VoxShed's window spots).
+	entry["windows"] = 2
 	entry["position"] = Vector3(0, 0, -40)
 	var b: MissionBuilding = auto_free(MissionBuilding.new())
 	b.spec = entry
-	b.material_cfg = (_cfg()["materials"] as Dictionary)[material]
+	b.material_cfg = VoxMaterials.named(material)
 	add_child(b)
 	b.global_position = entry["position"]
 	return b
 
 
-func test_rifle_rounds_break_a_wooden_wall_piece() -> void:
+func test_rounds_into_one_spot_make_a_hole_but_riddling_a_wooden_piece_brings_it_down() -> void:
 	var b := _building("wood")
 	var w := float(b.spec["width"])
+	var inward := -b.global_transform.basis.x
 	var point := b.global_transform * Vector3(w / 2.0, 0.6, 0.0)
 	var id := b.segment_at(point)
 	assert_int(id).is_greater_equal(0)
-	var broke := -1
+	# Ten rounds into the same spot: a hole through it, the piece still standing.
 	for i in 10:
-		broke = b.server_shot(point, 25.0)
+		b.bullet_mark(point, inward)
+		assert_int(b.server_shot(point, 25.0, inward)).is_equal(-1)
+	assert_vector(b.struck_voxel(point, inward)).is_equal(Vector3.INF)
+	# Rounds all over it: once most of it is shot away, it gives way.
+	var box := MissionBuilding.segments(w, float(b.spec["depth"]), float(b.spec["wall_height"]), b.segment_size)[id]
+	var broke := -1
+	for i in 400:
+		var at := b.global_transform * Vector3(w / 2.0, box.position.y + fmod(i * 0.137, 1.0) * box.size.y, box.position.z + fmod(i * 0.291, 1.0) * box.size.z)
+		b.bullet_mark(at, inward)
+		broke = b.server_shot(at, 25.0, inward)
 		if broke >= 0:
 			break
 	assert_int(broke).is_equal(id)
@@ -199,6 +212,348 @@ func test_rifle_rounds_only_chip_concrete_but_a_blast_still_breaks_it() -> void:
 	for i in 40:
 		assert_int(b.server_shot(point, 25.0)).is_equal(-1)
 	assert_int(b.server_blast(point + b.global_transform.basis.x * 0.3, 3.0, 140.0, 1.6).size()).is_greater(0)
+
+
+func test_brick_shrugs_off_rifle_rounds_but_a_charge_breaks_it() -> void:
+	var b := _building("brick")
+	var w := float(b.spec["width"])
+	var point := b.global_transform * Vector3(w / 2.0, 0.6, 0.0)
+	var inward := -b.global_transform.basis.x
+	assert_str(str(b.struck_rules(point, inward)["name"])).is_equal("brick")
+	for i in 40:
+		assert_int(b.server_shot(point, 25.0, inward)).is_equal(-1)
+	# A charge knocks its bricks out, and the piece that lost them gives way.
+	var bricks := b.server_blast_bricks(point + b.global_transform.basis.x * 0.3, 2.1)
+	assert_int(bricks.size()).is_greater(10)
+	b.knock_out(bricks, false)
+	assert_bool(b.server_weakened().has(b.segment_at(point))).is_true()
+
+
+func test_a_wooden_frame_in_a_concrete_wall_does_not_make_the_wall_easy_to_break() -> void:
+	var b := _building("concrete")
+	var w := float(b.spec["width"])
+	# The bottom bar of the right-hand window's wooden frame.
+	var point := b.global_transform * Vector3(w / 2.0, MissionBuilding.SLAB + VoxShed.WINDOW_SILL - 0.07, 0.0)
+	var inward := -b.global_transform.basis.x
+	assert_str(str(b.struck_rules(point, inward)["name"])).is_equal("wood")
+	for i in 40:
+		assert_int(b.server_shot(point, 25.0, inward)).is_equal(-1)
+
+
+func test_shooting_a_pane_does_no_structural_damage() -> void:
+	var b := _building("wood")
+	var w := float(b.spec["width"])
+	var point := b.global_transform * Vector3(w / 2.0, MissionBuilding.SLAB + VoxShed.WINDOW_SILL + VoxShed.WINDOW.y / 2.0, 0.0)
+	var inward := -b.global_transform.basis.x
+	assert_str(str(b.struck_rules(point, inward)["name"])).is_equal("window_glass")
+	for i in 20:
+		assert_int(b.server_shot(point, 25.0, inward)).is_equal(-1)
+
+
+func test_the_server_carves_bullet_holes_so_later_rounds_go_into_them() -> void:
+	var b := _building("wood")
+	var w := float(b.spec["width"])
+	var point := b.global_transform * Vector3(w / 2.0, 0.6, 0.0)
+	var inward := -b.global_transform.basis.x
+	assert_vector(b.struck_voxel(point, inward)).is_not_equal(Vector3.INF)
+	var through := false
+	for i in 8:
+		b.bullet_mark(point, inward)
+		if b.struck_voxel(point, inward) == Vector3.INF:
+			through = true
+			break
+	assert_bool(through).override_failure_message("a few rounds in the same spot should hole a plank wall through").is_true()
+
+
+func test_rounds_go_through_planks_and_glass_but_not_brick_or_concrete() -> void:
+	var low := Vector3(0.0, 0.6, 0.0)
+	var pane := Vector3(0.0, MissionBuilding.SLAB + VoxShed.WINDOW_SILL + VoxShed.WINDOW.y / 2.0, 0.0)
+	for case: Array in [["wood", low, 0.6], ["wood", pane, 0.9], ["brick", low, 0.0], ["concrete", low, 0.0]]:
+		var b := _building(str(case[0]))
+		var w := float(b.spec["width"])
+		var local: Vector3 = case[1]
+		var point := b.global_transform * Vector3(w / 2.0, local.y, 0.0)
+		var inward := -b.global_transform.basis.x
+		var exit := b.bullet_exit(point, inward, 25.0)
+		var label := "%s at %.2f m" % [case[0], local.y]
+		if float(case[2]) == 0.0:
+			assert_bool(exit.is_empty()).override_failure_message(label + " should stop it").is_true()
+			continue
+		assert_bool(exit.is_empty()).override_failure_message(label + " should let it through").is_false()
+		assert_float(float(exit["scale"])).override_failure_message(label).is_equal_approx(float(case[2]), 0.001)
+		# Out the far side of the wall, inside the building.
+		var out := b.global_transform.affine_inverse() * (exit["exit"] as Vector3)
+		assert_float(out.x).override_failure_message(label).is_less(w / 2.0 - 0.1)
+
+
+func test_a_round_into_a_hole_carries_on_whole() -> void:
+	var b := _building("concrete")
+	var w := float(b.spec["width"])
+	var point := b.global_transform * Vector3(w / 2.0, 0.6, 0.0)
+	var inward := -b.global_transform.basis.x
+	assert_bool(b.bullet_exit(point, inward, 25.0).is_empty()).is_true()
+	var model: VoxelModel = b.get(&"_model")
+	var local := b.global_transform.affine_inverse() * point
+	model.carve_box(local - Vector3(0.6, 0.3, 0.3), local + Vector3(0.1, 0.3, 0.3))
+	assert_float(float(b.bullet_exit(point, inward, 25.0).get("scale", 0.0))).is_equal(1.0)
+
+
+## A building whose right-hand window has `glass` panes, and that pane's centre with the way in.
+func _pane(glass: String) -> Array:
+	var entry: Dictionary = MissionLayout.buildings(_cfg(), 3, _road, 300.0)[0]
+	entry["material"] = "wood"
+	entry["windows"] = 2
+	entry["glass"] = glass
+	entry["position"] = Vector3(0, 0, -40)
+	var b: MissionBuilding = auto_free(MissionBuilding.new())
+	b.spec = entry
+	add_child(b)
+	b.global_position = entry["position"]
+	var w := float(entry["width"])
+	var point := b.global_transform * Vector3(w / 2.0, MissionBuilding.SLAB + VoxShed.WINDOW_SILL + VoxShed.WINDOW.y / 2.0, 0.0)
+	return [b, point, -b.global_transform.basis.x]
+
+
+func test_a_window_pane_goes_on_the_first_round_and_leaves_its_frame() -> void:
+	var c := _pane("window_glass")
+	var b: MissionBuilding = c[0]
+	assert_int(b.pane_count()).is_greater_equal(2)
+	var pane := b.server_pane_hit(c[1], c[2])
+	assert_int(pane).is_greater_equal(0)
+	b.break_panes([pane], false)
+	assert_bool(b.is_pane_broken(pane)).is_true()
+	# The glass is gone, so the next round flies on through the opening.
+	assert_float(float(b.bullet_exit(c[1], c[2], 25.0).get("scale", 0.0))).is_equal(1.0)
+	var frame := b.global_transform * Vector3(float(b.spec["width"]) / 2.0, MissionBuilding.SLAB + VoxShed.WINDOW_SILL - 0.07, 0.0)
+	assert_str(str(b.struck_rules(frame, c[2])["name"])).is_equal("wood")
+
+
+func test_a_broken_pane_leaves_shards_that_lie_on_the_ground_but_stop_nothing() -> void:
+	var c := _pane("window_glass")
+	var b: MissionBuilding = c[0]
+	var pane := b.pane_at(c[1], c[2])
+	b.break_panes([pane], true)
+	await get_tree().create_timer(2.0).timeout
+	var shards := b.rubble_count()
+	assert_int(shards).is_greater(1)
+	for f in get_children().filter(func(n: Node) -> bool: return n is StaticBody3D and n.has_meta(&"fragment")):
+		assert_int((f as StaticBody3D).collision_layer).is_equal(PhysicsLayers.DEBRIS)
+	# Late joiners get the same shards.
+	var entry: Dictionary = (b.spec as Dictionary).duplicate()
+	entry["panes_broken"] = [pane]
+	entry["position"] = Vector3(40, 0, -40)
+	var late: MissionBuilding = auto_free(MissionBuilding.new())
+	late.spec = entry
+	add_child(late)
+	assert_int(late.rubble_count()).is_equal(shards)
+
+
+func test_security_glass_stops_rounds_cracks_and_gives_out_after_twelve() -> void:
+	var c := _pane("security_glass")
+	var b: MissionBuilding = c[0]
+	assert_bool(b.bullet_exit(c[1], c[2], 25.0).is_empty()).is_true()
+	var model: VoxelModel = b.get(&"_model")
+	var v := b.struck_voxel(c[1], c[2])
+	var before := model.colour_at(v)
+	var hits := int(VoxMaterials.named("security_glass")["hits_to_break"])
+	for i in hits - 1:
+		assert_int(b.server_pane_hit(c[1], c[2])).is_equal(-1)
+	b.bullet_mark(c[1], c[2])
+	assert_float(model.colour_at(v).v).is_greater(before.v)
+	assert_int(b.server_pane_hit(c[1], c[2])).is_greater_equal(0)
+
+
+func test_a_blast_takes_security_glass_out_at_once() -> void:
+	var c := _pane("security_glass")
+	var b: MissionBuilding = c[0]
+	var pane := b.pane_at(c[1], c[2])
+	assert_bool(b.server_blast_panes((c[1] as Vector3) - (c[2] as Vector3) * 0.5, 2.5, 1.6).has(pane)).is_true()
+
+
+func test_a_late_joiner_sees_the_same_panes_gone() -> void:
+	var c := _pane("window_glass")
+	var first: MissionBuilding = c[0]
+	var pane := first.pane_at(c[1], c[2])
+	var entry: Dictionary = (first.spec as Dictionary).duplicate()
+	entry["panes_broken"] = [pane]
+	var late: MissionBuilding = auto_free(MissionBuilding.new())
+	late.spec = entry
+	add_child(late)
+	late.global_position = entry["position"]
+	assert_bool(late.is_pane_broken(pane)).is_true()
+	assert_int(late.pane_at(c[1], c[2])).is_equal(-1)
+
+
+## A spot on the right-hand wall, below the window, where a round strikes a brick (not a
+## joint), with the way in.
+func _brick_spot(b: MissionBuilding) -> Array:
+	var w := float(b.spec["width"])
+	var inward := -b.global_transform.basis.x
+	for i in 40:
+		var point := b.global_transform * Vector3(w / 2.0, 0.4 + i * 0.02, -1.0 + i * 0.03)
+		if str(b.struck_rules(point, inward)["name"]) == "brick":
+			return [point, inward]
+	return []
+
+
+func test_four_rifle_rounds_knock_out_one_brick_and_leave_the_mortar() -> void:
+	var b := _building("brick")
+	var spot := _brick_spot(b)
+	assert_array(spot).is_not_empty()
+	_no_stick(true)
+	for i in 3:
+		assert_array(b.server_brick_hit(spot[0], spot[1], 25.0)).is_empty()
+	var knocked: Array[Vector3] = b.server_brick_hit(spot[0], spot[1], 25.0)
+	assert_array(knocked).is_not_empty()
+	var inside := knocked[0]
+	var model: VoxelModel = b.get(&"_model")
+	var brick := VoxMaterials.index_of("brick")
+	var box := model.component_at(inside, brick, MissionBuilding.BRICK_CAP)
+	var around := box.grow(b.voxel)
+	var mortar_before := model.count_material(around.position, around.end, VoxMaterials.index_of("mortar"))
+	b.knock_out(knocked, false)
+	_no_stick(false)
+	assert_int(knocked.size()).is_equal(1)
+	assert_int(model.material_at(inside)).is_equal(0)
+	assert_int(model.count_material(box.position, box.end, brick)).is_equal(0)
+	# The joints round it still hold the neighbouring bricks, so most of the mortar stays.
+	var mortar_after := model.count_material(around.position, around.end, VoxMaterials.index_of("mortar"))
+	assert_int(mortar_after).is_greater(mortar_before / 2)
+
+
+## Switches brick's stickiness off (or back to the data's) for tests that count single bricks.
+var _stick_saved := -1.0
+
+
+func _no_stick(off: bool) -> void:
+	var rules: Dictionary = VoxMaterials.named("brick")
+	if off:
+		_stick_saved = float(rules["stick_chance"])
+		rules["stick_chance"] = 0.0
+	elif _stick_saved >= 0.0:
+		rules["stick_chance"] = _stick_saved
+
+
+func test_sticky_bricks_drag_their_neighbours_along() -> void:
+	var b := _building("brick")
+	var spot := _brick_spot(b)
+	var rules: Dictionary = VoxMaterials.named("brick")
+	var saved := float(rules["stick_chance"])
+	rules["stick_chance"] = 1.0
+	var knocked: Array[Vector3] = []
+	for i in 4:
+		knocked = b.server_brick_hit(spot[0], spot[1], 25.0)
+	rules["stick_chance"] = saved
+	# Every neighbour, and half of theirs: more than the one brick.
+	assert_int(knocked.size()).is_greater(2)
+
+
+func test_rounds_into_a_joint_wear_the_bricks_beside_it() -> void:
+	var b := _building("brick")
+	_no_stick(true)
+	var w := float(b.spec["width"])
+	var inward := -b.global_transform.basis.x
+	var joint := Vector3.INF
+	for i in 60:
+		var point := b.global_transform * Vector3(w / 2.0, 0.4 + i * 0.013, -1.0 + i * 0.02)
+		if str(b.struck_rules(point, inward)["name"]) == "mortar":
+			joint = point
+			break
+	assert_vector(joint).is_not_equal(Vector3.INF)
+	var knocked: Array[Vector3] = []
+	for i in 12:
+		knocked = b.server_brick_hit(joint, inward, 25.0)
+		if not knocked.is_empty():
+			break
+	_no_stick(false)
+	assert_array(knocked).is_not_empty()
+
+
+func test_a_pistol_takes_a_round_more() -> void:
+	var b := _building("brick")
+	_no_stick(true)
+	var spot := _brick_spot(b)
+	for i in 4:
+		assert_array(b.server_brick_hit(spot[0], spot[1], 20.0)).is_empty()
+	assert_array(b.server_brick_hit(spot[0], spot[1], 20.0)).is_not_empty()
+	_no_stick(false)
+
+
+func test_a_wall_piece_that_loses_most_of_its_bricks_gives_way() -> void:
+	var b := _building("brick")
+	var w := float(b.spec["width"])
+	var point := b.global_transform * Vector3(w / 2.0, 0.6, 0.0)
+	var id := b.segment_at(point)
+	assert_array(b.server_weakened()).is_empty()
+	var model: VoxelModel = b.get(&"_model")
+	var brick := VoxMaterials.index_of("brick")
+	var seg: AABB = b.call(&"_carve_box", id)
+	# Knock out every brick in that piece, one point per brick found.
+	var points: Array = []
+	var y := seg.position.y + b.voxel * 0.5
+	while y < seg.end.y:
+		var z := seg.position.z + b.voxel * 0.5
+		while z < seg.end.z:
+			var p := Vector3(w / 2.0 - b.voxel * 0.5, y, z)
+			if model.material_at(p) == brick:
+				points.append(p)
+				b.knock_out([p], false)
+			z += b.voxel
+		y += b.voxel
+	assert_int(points.size()).is_greater(3)
+	assert_bool(b.server_weakened().has(id)).is_true()
+
+
+func test_a_late_joiner_sees_the_same_bricks_gone() -> void:
+	var b := _building("brick")
+	var spot := _brick_spot(b)
+	var inside := b.struck_voxel(spot[0], spot[1])
+	var entry: Dictionary = (b.spec as Dictionary).duplicate()
+	entry["knocked"] = [inside]
+	var late: MissionBuilding = auto_free(MissionBuilding.new())
+	late.spec = entry
+	late.material_cfg = VoxMaterials.named("brick")
+	add_child(late)
+	late.global_position = entry["position"]
+	var model: VoxelModel = late.get(&"_model")
+	assert_int(model.material_at(inside)).is_equal(0)
+
+
+func test_every_whole_building_stands_under_its_own_weight() -> void:
+	for material in ["wood", "brick", "concrete"]:
+		var b := _building(material)
+		var none: Array[int] = []
+		var over := b.server_overloaded(none)
+		var why := ""
+		for id in over:
+			why += " %d %s %.0fkg %s;" % [id, MissionBuilding.segments(float(b.spec["width"]), float(b.spec["depth"]), float(b.spec["wall_height"]), b.segment_size)[id], b.segment_mass(id), b.segment_rules(id).get("name")]
+		assert_array(over).override_failure_message(material + why).is_empty()
+		assert_float(b.segment_mass(0)).override_failure_message(material).is_greater(1.0)
+
+
+func test_a_house_left_on_one_corner_column_loses_it() -> void:
+	for material in ["wood", "brick", "concrete"]:
+		var b := _building(material)
+		var w := float(b.spec["width"])
+		var d := float(b.spec["depth"])
+		var wh := float(b.spec["wall_height"])
+		var all := MissionBuilding.segments(w, d, wh, b.segment_size)
+		# Keep only the wall pieces at the back right corner; break every other wall piece.
+		var corner := Vector3(w / 2.0, 0.0, d / 2.0)
+		var broke: Array[int] = []
+		var kept: Array[int] = []
+		for id in all.size():
+			var box := all[id]
+			if box.position.y >= wh - 0.01:
+				continue
+			var near := Vector2(box.get_center().x - corner.x, box.get_center().z - corner.z).length() < b.segment_size
+			if near:
+				kept.append(id)
+			else:
+				broke.append(id)
+		assert_array(kept).override_failure_message(material).is_not_empty()
+		var over := b.server_overloaded(broke)
+		assert_bool(kept.any(func(id: int) -> bool: return over.has(id))).override_failure_message("%s: kept %s, overloaded %s" % [material, kept, over]).is_true()
 
 
 func test_a_mission_can_ask_for_concrete() -> void:

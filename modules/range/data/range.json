@@ -1,0 +1,156 @@
+{
+  "flags": "drones:off,enemies:off",
+  "type": {
+    "name": "Test range",
+    "script": "res://modules/range/types/test_range.gd",
+    "defaults": {}
+  },
+  "mission": {
+    "type": "test_range",
+    "place": "Test range",
+    "objective": "A row of wall samples, one per material and mix. Nothing here shoots back: break them and see how each one takes it.",
+    "distance": [
+      160.0,
+      160.0
+    ],
+    "payout": [
+      0.0,
+      0.0
+    ],
+    "buildings": {
+      "gap": 2.5,
+      "row_off_road": 9.0,
+      "row_clear": 10.0,
+      "row": [
+        {
+          "kind": "wall",
+          "label": "Planks",
+          "material": "wood",
+          "width": 4.0,
+          "depth": 0.3,
+          "wall_height": 3.0,
+          "pad_margin": 4.0
+        },
+        {
+          "kind": "wall",
+          "label": "Brick",
+          "material": "brick",
+          "width": 4.0,
+          "depth": 0.225,
+          "wall_height": 3.0,
+          "pad_margin": 4.0
+        },
+        {
+          "kind": "wall",
+          "label": "Concrete",
+          "material": "concrete",
+          "width": 4.0,
+          "depth": 0.3,
+          "wall_height": 3.0,
+          "pad_margin": 4.0
+        },
+        {
+          "kind": "wall",
+          "label": "Sheet metal",
+          "material": "sheet_metal",
+          "width": 4.0,
+          "depth": 0.15,
+          "wall_height": 3.0,
+          "pad_margin": 4.0
+        },
+        {
+          "kind": "wall",
+          "label": "Window glass",
+          "material": "window_glass",
+          "width": 4.0,
+          "depth": 0.15,
+          "wall_height": 3.0,
+          "pad_margin": 4.0
+        },
+        {
+          "kind": "wall",
+          "label": "Tempered glass",
+          "material": "tempered_glass",
+          "width": 4.0,
+          "depth": 0.15,
+          "wall_height": 3.0,
+          "pad_margin": 4.0
+        },
+        {
+          "kind": "wall",
+          "label": "Laminated glass",
+          "material": "laminated_glass",
+          "width": 4.0,
+          "depth": 0.15,
+          "wall_height": 3.0,
+          "pad_margin": 4.0
+        },
+        {
+          "kind": "wall",
+          "label": "Security glass",
+          "material": "security_glass",
+          "width": 4.0,
+          "depth": 0.15,
+          "wall_height": 3.0,
+          "pad_margin": 4.0
+        },
+        {
+          "kind": "wall",
+          "label": "Brick with a window",
+          "material": "brick",
+          "width": 4.0,
+          "depth": 0.225,
+          "wall_height": 3.0,
+          "pad_margin": 4.0,
+          "window": "window_glass"
+        },
+        {
+          "kind": "wall",
+          "label": "Planks with a door",
+          "material": "wood",
+          "width": 4.0,
+          "depth": 0.3,
+          "wall_height": 3.0,
+          "pad_margin": 4.0,
+          "door": true
+        },
+        {
+          "kind": "wall",
+          "label": "Concrete, security window",
+          "material": "concrete",
+          "width": 4.0,
+          "depth": 0.3,
+          "wall_height": 3.0,
+          "pad_margin": 4.0,
+          "window": "security_glass"
+        },
+        {
+          "kind": "wall",
+          "label": "Brick, door and window",
+          "material": "brick",
+          "width": 6.0,
+          "depth": 0.225,
+          "wall_height": 3.0,
+          "pad_margin": 4.0,
+          "door": true,
+          "window": "window_glass"
+        }
+      ]
+    }
+  },
+  "stand_across": 6.0,
+  "gifts": {
+    "breach_charge": 6,
+    "gun_rocket": 1
+  },
+  "bot": {
+    "fire_seconds": 6.0,
+    "aim_heights": [
+      0.8,
+      1.6,
+      2.3
+    ],
+    "charge_wait_seconds": 1.0,
+    "settle_seconds": 2.0
+  }
+}

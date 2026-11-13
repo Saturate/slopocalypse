@@ -1,5 +1,85 @@
 # Changelog
 
+## 0.5.0 - 2026-11-12
+
+#### Buildings break: drone dives, mines and blasts knock holes in walls and roofs you can walk and shoot through
+
+#### Servers have a status page: open http://<server>:7777 in a browser to see who is on, the mission that is running and the board (also as /status.json)
+
+#### Rounds go through plank walls, sheet metal and glass and hit whoever is behind, for less damage (at most two walls); brick and concrete stop them, and a round into a hole you made goes straight on
+
+#### On the test range you're set down across the road from the buildings, and no drones or soldiers turn up
+
+#### Shoot single bricks out of a brick wall: a few rounds into the same brick knock it out, leaving a hole you can see and shoot through, and a wall that loses most of its bricks gives way
+
+#### Glass breaks like glass: a window pane goes on the first round in big shards, security glass stops rifle rounds and cracks white until its twelfth hit, and a blast takes any pane out at once
+
+#### Fewer hitches while new ground, trees and rocks load in as you travel
+
+#### Windows are see-through, and a hit that knocks nothing loose only puffs a little dust instead of throwing chunks
+
+#### Broken walls come loose: pieces tumble out as chunks of themselves and lie on the ground for a while instead of vanishing, and blasts knock brick walls apart brick by brick
+
+#### Broken glass lies on the ground as shards of the pane, and rubble no longer doubles up or freezes in mid-air
+
+#### The car's wheels spin as it rolls, the front ones steer, and each rides its spring over bumps and dips
+
+#### Hits depend on what they strike: rounds leave holes in wood, chip brick and concrete, and throw debris in the colour of what they hit; brick and concrete walls need a charge, and a wooden frame no longer makes a concrete wall easy to break
+
+#### The mission transport is a proper voxel off-roader with a roof rack instead of a stack of boxes
+
+#### Brick houses are built of real bricks: each brick its own block in mortar joints, laid in a running bond, and the mortar chips more easily than the brick
+
+#### Hits and breaks sound like what they hit: a knock on wood, a ping off metal, glass tinkling and shattering, brick and concrete cracking and crumbling, and a rumble when part of a building comes down
+
+#### Buildings collapse: knock out the walls under a roof and it comes down, hurting anyone underneath
+
+#### Bricks stick together: a brick you knock out sometimes takes a neighbour or two with it, loose mortar crumbles away so holes open clean, and shooting the joints loosens the bricks beside them
+
+#### Shooting a wall makes holes where you hit it; a wall piece only gives way once most of it is shot away, instead of a whole slab flying out after a few rounds
+
+#### The test range has its own flat world: a level plain with nothing else on it, loading at once
+
+#### The test range is a row of labelled wall samples on flat ground: planks, brick, concrete, sheet metal, four kinds of glass, and mixed walls with windows and doors
+
+#### Debris from breaking walls, craters and trees flies out with random speed, angle and tumble instead of a neat even burst
+
+#### New players start with 150 tokens to spend at the trader
+
+#### Rocket launcher: a slow, heavy tube that fires one rocket a load, which flies with a smoke trail and blows walls apart; mind the backblast. On sale at the trader, and on the test range
+
+#### Soldiers go round walls to reach cover behind them instead of standing pressed against the wall in plain view
+
+#### Bullet holes in building walls show up the moment you shoot, without the short delay or a hitch
+
+#### Broken walls fall apart into ragged pieces (whole bricks stay whole) that tumble down and lie still where they land, the same for everyone, with no sliding into place at the end
+
+#### Softer wind that rises and falls in gusts with an occasional rustle of leaves, instead of a constant hiss; mission and test range houses are bigger
+
+#### Soldiers no longer crouch at the very end of a wall where you can still see them
+
+#### Buildings feel their weight: a piece carrying more than it can gives way, so a house won't stand on one corner and whatever it held comes down with it
+
+#### Wood and concrete: bullets punch holes in wooden walls and can break them, while concrete blockhouses only chip and need a blast or a breaching charge
+
+#### Test range: "Test range" in the main menu (or node tools/range.ts) takes you to a row of buildings, one per material, to shoot and blast; the HUD names the material you're aiming at
+
+#### Voxel models and the ground darken in their cracks, seams and inside corners, so shapes read better at any distance
+
+#### Rubble stays: the chunks a wall breaks into settle where they land and stay as solid rubble, the same for everyone, that you can hide behind or climb
+
+#### Mission buildings stand on level ground: the slope is dug in or built up under each one, easing back into the hillside, so none is half buried any more
+
+#### Breaching charges: G sticks one on whatever you aim at, T sets off all of yours. Blow holes in walls and roofs, or shoot a charge to set it off. Sold by the trader, found in crates, and you start with two
+
+### Internal
+
+#### Voxels carry a material (wood, glass, sheet metal, brick, concrete); building rules move to one materials file
+
+#### Trailer pipeline: scripted shots rendered with Godot's Movie Maker and joined with ffmpeg
+
+#### Decision records in docs/decisions and a rule to question existing patterns before copying them
+
 ## 0.4.0 - 2026-11-10
 
 #### Watch your step: some missions have buried mines and tripwires across doors. Crouch to spot the glint, press F next to one to disarm it, or shoot it. New mission: the cabin in the woods

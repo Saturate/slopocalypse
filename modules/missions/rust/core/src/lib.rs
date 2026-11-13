@@ -19,54 +19,129 @@ pub fn unsupported(
     max_span: usize,
 ) -> Vec<usize> {
     let n = roof.len();
-    let mut standing = vec![true; n];
-    for &b in broken {
-        if b < n {
-            standing[b] = false;
-        }
-    }
-    let mut next: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for &(a, b) in edges {
-        if a < n && b < n && a != b {
-            next[a].push(b);
-            next[b].push(a);
-        }
-    }
+    let standing = standing_mask(n, broken);
+    let next = neighbours(n, edges);
+    let wall = |i: usize| standing[i] && !roof[i];
     // Walls held up from the ground.
     let mut held = vec![false; n];
-    let mut queue: VecDeque<usize> = VecDeque::new();
-    for &a in anchors {
-        if a < n && standing[a] && !roof[a] && !held[a] {
-            held[a] = true;
-            queue.push_back(a);
-        }
+    let mut queue: VecDeque<usize> = anchors
+        .iter()
+        .copied()
+        .filter(|&a| a < n && wall(a))
+        .collect();
+    for &a in &queue {
+        held[a] = true;
     }
-    spread(&mut held, &mut queue, &next, |i| standing[i] && !roof[i]);
-    // Roof pieces by how many roof steps they are from a held wall.
+    spread(&mut held, &mut queue, &next, wall);
+    // Roof pieces within `max_span` roof steps of a held wall.
+    let steps = roof_steps(&next, &held, |i| standing[i] && roof[i]);
+    for i in (0..n).filter(|&i| steps[i] <= max_span) {
+        held[i] = true;
+        queue.push_back(i);
+    }
+    // Walls hanging from a held roof.
+    spread(&mut held, &mut queue, &next, wall);
+    (0..n).filter(|&i| standing[i] && !held[i]).collect()
+}
+
+/// Which standing segments are carrying more than they can, worked out by passing weight
+/// down to the ground.
+///
+/// Every standing segment rests on its standing neighbours that are one step nearer a standing
+/// anchor (counted over standing segments). Starting from the furthest, each hands its own
+/// `mass` plus everything resting on it to those neighbours, split evenly. A segment whose
+/// load (what rests on it, not counting itself) is more than its `strength` gives way.
+/// Segments with no path to an anchor carry nothing here (`unsupported` deals with those).
+/// Returned in id order.
+pub fn overloaded(
+    edges: &[(usize, usize)],
+    anchors: &[usize],
+    broken: &[usize],
+    mass: &[f32],
+    strength: &[f32],
+) -> Vec<usize> {
+    let n = mass.len().min(strength.len());
+    let standing = standing_mask(n, broken);
+    let next = neighbours(n, edges);
+    // Steps to the nearest standing anchor, over standing segments.
     let mut steps = vec![usize::MAX; n];
-    for i in 0..n {
-        if standing[i] && roof[i] && next[i].iter().any(|&j| held[j] && !roof[j]) {
-            steps[i] = 0;
-            queue.push_back(i);
-        }
+    let mut queue: VecDeque<usize> = anchors
+        .iter()
+        .copied()
+        .filter(|&a| a < n && standing[a])
+        .collect();
+    for &a in &queue {
+        steps[a] = 0;
     }
     while let Some(i) = queue.pop_front() {
         for &j in &next[i] {
-            if standing[j] && roof[j] && steps[j] == usize::MAX {
+            if standing[j] && steps[j] == usize::MAX {
                 steps[j] = steps[i] + 1;
                 queue.push_back(j);
             }
         }
     }
-    for i in 0..n {
-        if steps[i] <= max_span {
-            held[i] = true;
-            queue.push_back(i);
+    let mut order: Vec<usize> = (0..n).filter(|&i| steps[i] != usize::MAX).collect();
+    // Furthest first, so every segment has all its load before it hands it on; ties by id
+    // so it comes out the same everywhere.
+    order.sort_by(|&a, &b| steps[b].cmp(&steps[a]).then(a.cmp(&b)));
+    let mut load = vec![0.0f32; n];
+    for &i in &order {
+        if steps[i] == 0 {
+            continue;
+        }
+        let below: Vec<usize> = next[i]
+            .iter()
+            .copied()
+            .filter(|&j| steps[j] != usize::MAX && steps[j] + 1 == steps[i])
+            .collect();
+        let share = (mass[i] + load[i]) / below.len().max(1) as f32;
+        for j in below {
+            load[j] += share;
         }
     }
-    // Walls hanging from a held roof.
-    spread(&mut held, &mut queue, &next, |i| standing[i] && !roof[i]);
-    (0..n).filter(|&i| standing[i] && !held[i]).collect()
+    (0..n)
+        .filter(|&i| steps[i] != usize::MAX && load[i] > strength[i])
+        .collect()
+}
+
+fn standing_mask(n: usize, broken: &[usize]) -> Vec<bool> {
+    let mut standing = vec![true; n];
+    for &b in broken.iter().filter(|&&b| b < n) {
+        standing[b] = false;
+    }
+    standing
+}
+
+/// Each segment's connected segments, ignoring ids out of range and self-loops.
+fn neighbours(n: usize, edges: &[(usize, usize)]) -> Vec<Vec<usize>> {
+    let mut next: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for &(a, b) in edges.iter().filter(|&&(a, b)| a < n && b < n && a != b) {
+        next[a].push(b);
+        next[b].push(a);
+    }
+    next
+}
+
+/// Roof steps from the nearest held wall for every standing roof piece (`usize::MAX` where no
+/// path leads to one): 0 for a piece touching a held wall, one more per roof piece crossed.
+fn roof_steps(next: &[Vec<usize>], held: &[bool], is_roof: impl Fn(usize) -> bool) -> Vec<usize> {
+    let mut steps = vec![usize::MAX; next.len()];
+    let mut queue: VecDeque<usize> = (0..next.len())
+        .filter(|&i| is_roof(i) && next[i].iter().any(|&j| held[j] && !is_roof(j)))
+        .collect();
+    for &i in &queue {
+        steps[i] = 0;
+    }
+    while let Some(i) = queue.pop_front() {
+        for &j in &next[i] {
+            if is_roof(j) && steps[j] == usize::MAX {
+                steps[j] = steps[i] + 1;
+                queue.push_back(j);
+            }
+        }
+    }
+    steps
 }
 
 /// Marks everything reachable from `queue` through nodes `can` accepts.
@@ -146,6 +221,60 @@ mod tests {
         fn fall(&self, broken: &[usize], max_span: usize) -> Vec<usize> {
             unsupported(&self.roof, &self.edges, &self.anchors, broken, max_span)
         }
+    }
+
+    /// A tower: `legs` columns of `height` segments, all joined at the top by one deck segment
+    /// per leg in a ring. Ids: leg l level h is l * height + h; deck pieces after the legs.
+    fn tower(legs: usize, height: usize) -> (Vec<(usize, usize)>, Vec<usize>, usize) {
+        let mut edges = Vec::new();
+        for l in 0..legs {
+            for h in 0..height - 1 {
+                edges.push((l * height + h, l * height + h + 1));
+            }
+        }
+        let deck = legs * height;
+        for l in 0..legs {
+            edges.push((l * height + height - 1, deck + l));
+            edges.push((deck + l, deck + (l + 1) % legs));
+        }
+        let anchors = (0..legs).map(|l| l * height).collect();
+        (edges, anchors, deck + legs)
+    }
+
+    #[test]
+    fn a_whole_tower_stands_and_one_leg_alone_does_not() {
+        let (edges, anchors, n) = tower(4, 3);
+        let mass = vec![10.0; n];
+        // Each piece carries up to six times a piece's weight.
+        let strength = vec![60.0; n];
+        assert!(overloaded(&edges, &anchors, &[], &mass, &strength).is_empty());
+        // Three legs cut at the bottom: the last leg carries the whole deck and the others' tops.
+        let cut = [3, 6, 9];
+        let over = overloaded(&edges, &anchors, &cut, &mass, &strength);
+        assert!(over.contains(&0), "the last leg's foot gives way: {over:?}");
+    }
+
+    #[test]
+    fn stronger_stuff_holds_what_weaker_stuff_cannot() {
+        let (edges, anchors, n) = tower(4, 3);
+        let mass = vec![10.0; n];
+        let cut = [3, 6, 9];
+        assert!(!overloaded(&edges, &anchors, &cut, &mass, &vec![60.0; n]).is_empty());
+        assert!(overloaded(&edges, &anchors, &cut, &mass, &vec![1000.0; n]).is_empty());
+    }
+
+    #[test]
+    fn a_house_on_one_corner_piece_loses_it_but_a_whole_one_stands() {
+        let shed = Shed::new(6, 3);
+        let n = shed.roof.len();
+        let mass = vec![10.0; n];
+        let strength = vec![80.0; n];
+        assert!(overloaded(&shed.edges, &shed.anchors, &[], &mass, &strength).is_empty());
+        // Everything but the first column of wall gone: it carries the whole roof.
+        let mut broken: Vec<usize> = (1..6).map(|c| shed.lower(c)).collect();
+        broken.extend((1..6).map(|c| shed.upper(c)));
+        let over = overloaded(&shed.edges, &shed.anchors, &broken, &mass, &strength);
+        assert!(over.contains(&shed.lower(0)), "{over:?}");
     }
 
     #[test]

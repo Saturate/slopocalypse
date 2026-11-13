@@ -2,7 +2,10 @@ extends Node
 ## Client only: plays the game's sounds from events it hears on the bus, positioned in the
 ## world. Shots (rifle, pistol, suppressed) at the shooter, impacts where bullets land, a
 ## tick when your own shot hits, explosions, everyone's footsteps, and for your own player
-## reload clicks, a pickup blip, a thump when hurt, plus quiet wind, birds by day and crickets at night. Never changes game
+## reload clicks, a pickup blip, a thump when hurt, plus quiet wind, birds by day and crickets at night.
+## Things that break say what they are made of (`missions.surface_hit`, `surface_broke`,
+## `surface_landed`, `{position, material}`): a knock on wood, a ping off metal, glass
+## shattering, masonry crumbling, a rumble when a building part lands. Never changes game
 ## state. Sounds come from SoundBank; volumes are in data/audio.json.
 
 const CONFIG := "res://modules/audio/data/audio.json"
@@ -39,6 +42,10 @@ func _ready() -> void:
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	EventBus.subscribe(&"inventory.changed", _on_inventory_changed)
 	EventBus.subscribe(&"daytime.hour", _on_hour)
+	EventBus.subscribe(&"missions.surface_hit", _on_surface_hit)
+	EventBus.subscribe(&"weapons.rocket_launched", _on_rocket_launched)
+	EventBus.subscribe(&"missions.surface_broke", _on_surface_broke)
+	EventBus.subscribe(&"missions.surface_landed", _on_surface_landed)
 	var wind := AudioStreamPlayer.new()
 	wind.name = "Wind"
 	wind.stream = SoundBank.get_sound("wind")
@@ -65,6 +72,10 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
 	EventBus.unsubscribe(&"inventory.changed", _on_inventory_changed)
 	EventBus.unsubscribe(&"daytime.hour", _on_hour)
+	EventBus.unsubscribe(&"missions.surface_hit", _on_surface_hit)
+	EventBus.unsubscribe(&"weapons.rocket_launched", _on_rocket_launched)
+	EventBus.unsubscribe(&"missions.surface_broke", _on_surface_broke)
+	EventBus.unsubscribe(&"missions.surface_landed", _on_surface_landed)
 
 
 ## Which shot sound a weapon makes: a suppressor on its build quiets it, a semi-auto gun
@@ -85,12 +96,47 @@ static func shot_sound(weapon: Object) -> String:
 func _on_fired(p: Dictionary) -> void:
 	var from: Vector3 = p.get("from", Vector3.ZERO)
 	var to: Vector3 = p.get("to", from)
-	var sound := shot_sound(p.get("weapon"))
-	play_at(sound, from, float(config.get("shot_range", 300.0)))
+	# A round carrying on through a wall is the same shot: no second bang.
+	if not bool(p.get("through", false)):
+		play_at(shot_sound(p.get("weapon")), from, float(config.get("shot_range", 300.0)))
 	if float(p.get("damage", 0.0)) > 0.0 and p.get("holder") == _local:
 		play_flat("hit")
-	elif p.get("target") == null and from.distance_to(to) < float(config.get("shot_range", 300.0)) - 1.0:
+	elif p.get("target") == null and from.distance_to(to) < float(config.get("shot_range", 300.0)) - 1.0 and not _has_surface_sounds(p.get("collider")):
 		play_at("impact", to, 60.0)
+
+
+## Something that sends its own surface sounds (a building): the plain impact stays quiet.
+static func _has_surface_sounds(collider: Variant) -> bool:
+	return collider is Object and is_instance_valid(collider) and (collider as Object).has_meta(&"surface_sounds")
+
+
+## The sound family of a voxel material (`surface_families` in the data), or "" for none.
+func surface_family(material: String) -> String:
+	return str((config.get("surface_families", {}) as Dictionary).get(material, ""))
+
+
+func _on_surface_hit(p: Dictionary) -> void:
+	var family := surface_family(str(p.get("material", "")))
+	play_at("hit_" + family if not family.is_empty() else "impact", p.get("position", Vector3.ZERO), float(config.get("surface_hit_range", 60.0)), randf_range(0.92, 1.08))
+
+
+## A batch of pieces of one material breaking: louder for more of them.
+func _on_surface_broke(p: Dictionary) -> void:
+	var family := surface_family(str(p.get("material", "")))
+	if family.is_empty():
+		return
+	var voice := play_at("break_" + family, p.get("position", Vector3.ZERO), float(config.get("surface_break_range", 160.0)), randf_range(0.9, 1.1))
+	if voice != null:
+		voice.volume_db += minf(6.0, 2.0 * log(maxf(1.0, float(p.get("count", 1)))) / log(2.0))
+
+
+func _on_surface_landed(p: Dictionary) -> void:
+	play_at("collapse", p.get("position", Vector3.ZERO), float(config.get("surface_break_range", 160.0)) * 1.5, randf_range(0.9, 1.05))
+
+
+## A rocket leaving its tube: a deep thump and a long whoosh.
+func _on_rocket_launched(p: Dictionary) -> void:
+	play_at("launch", p.get("from", Vector3.ZERO), float(config.get("shot_range", 300.0)))
 
 
 func _on_explosion(p: Dictionary) -> void:

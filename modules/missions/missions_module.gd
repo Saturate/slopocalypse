@@ -83,6 +83,8 @@ func _ready() -> void:
 	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.subscribe(&"explosion", _on_explosion)
 	EventBus.subscribe(&"missions.building_broken", _on_building_broken)
+	EventBus.subscribe(&"missions.panes_broken", _on_panes_broken)
+	EventBus.subscribe(&"missions.bricks_knocked", _on_bricks_knocked)
 	EventBus.subscribe(&"world.ready", _on_world_ready)
 	EventBus.subscribe(&"player.interact", _on_player_interact)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
@@ -101,6 +103,8 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.unsubscribe(&"explosion", _on_explosion)
 	EventBus.unsubscribe(&"missions.building_broken", _on_building_broken)
+	EventBus.unsubscribe(&"missions.panes_broken", _on_panes_broken)
+	EventBus.unsubscribe(&"missions.bricks_knocked", _on_bricks_knocked)
 	if Net.peer_joined.is_connected(_on_peer_joined):
 		Net.peer_joined.disconnect(_on_peer_joined)
 	if Net.peer_left.is_connected(_on_peer_left):
@@ -537,8 +541,9 @@ func _open_zone() -> void:
 	buildings = MissionLayout.buildings(layout, int(config["seed"]) * 7919 + _runs, _road_at, along)
 	for entry: Dictionary in buildings:
 		var at: Vector3 = entry["position"]
-		# A little sunk, so the slab never floats.
-		at.y = ground_y(at.x, at.z) - 0.05
+		# On the average ground under its footprint (the pad levels to it: dug in uphill, built
+		# up downhill), a little sunk so the slab never floats.
+		at.y = footprint_ground(at, float(entry["width"]), float(entry["depth"]), float(entry["yaw"])) - 0.05
 		entry["position"] = at
 	_build_buildings()
 	_sync_type()
@@ -620,9 +625,16 @@ func _on_explosion(p: Dictionary) -> void:
 		var b := _building_nodes[i]
 		if b.global_position.distance_to(at) > radius * float(cfg.get("blast_reach", 1.6)) + 8.0:
 			continue
+		# Brick walls lose their bricks one by one within the blast's reach first.
+		var bricks := b.server_blast_bricks(at, radius * float(cfg.get("brick_blast_share", 0.7)))
+		if not bricks.is_empty():
+			Net.server_broadcast(&"missions.bricks_knocked", {"index": i, "points": bricks})
 		var broke := b.server_blast(at, radius, float(cfg.get("blast_damage", 140.0)), float(cfg.get("blast_reach", 1.6)))
 		if not broke.is_empty():
 			_server_broke(i, broke)
+		var panes := b.server_blast_panes(at, radius, float(cfg.get("blast_reach", 1.6)))
+		if not panes.is_empty():
+			Net.server_broadcast(&"missions.panes_broken", {"index": i, "panes": panes})
 
 
 ## Server: segments of building `i` broke. Whatever they held up comes down in the same
@@ -630,6 +642,16 @@ func _on_explosion(p: Dictionary) -> void:
 func _server_broke(i: int, broke: Array[int]) -> void:
 	var b := _building_nodes[i]
 	var fell := b.server_unsupported(broke)
+	# Weight: pieces now carrying more than they can give way too, and whatever they held
+	# comes down with them; a few rounds of it at most.
+	for _pass in OVERLOAD_ROUNDS:
+		var gone: Array[int] = broke.duplicate()
+		gone.append_array(fell)
+		var over := b.server_overloaded(gone)
+		if over.is_empty():
+			break
+		broke.append_array(over)
+		fell = b.server_unsupported(broke)
 	Net.server_broadcast(&"missions.building_broken", {"index": i, "segments": broke, "fallen": fell})
 	if fell.is_empty():
 		return
@@ -637,6 +659,10 @@ func _server_broke(i: int, broke: Array[int]) -> void:
 	get_tree().create_timer(b.fall_seconds).timeout.connect(func() -> void:
 		if is_instance_valid(b) and b.is_inside_tree():
 			b.server_crush(fell, damage))
+
+
+## How many rounds of overloaded pieces giving way one break may set off.
+const OVERLOAD_ROUNDS := 4
 
 
 ## Everywhere: segments of a building broke; the layout entry remembers it for late joiners.
@@ -652,7 +678,46 @@ func _on_building_broken(p: Dictionary) -> void:
 		if not broken.has(int(s)):
 			broken.append(int(s))
 	entry["broken"] = broken
+	# Which ones just dropped (no push), so a late joiner's rubble lies where everyone's does.
+	var dropped: Array = entry.get("fallen", [])
+	for s: Variant in fallen:
+		if not dropped.has(int(s)):
+			dropped.append(int(s))
+	entry["fallen"] = dropped
 	_building_nodes[i].break_segments(segs, fallen)
+
+
+## Everywhere: panes of a building broke; the layout entry remembers them for late joiners.
+func _on_panes_broken(p: Dictionary) -> void:
+	var i := int(p.get("index", -1))
+	if i < 0 or i >= _building_nodes.size() or i >= buildings.size():
+		return
+	var entry: Dictionary = buildings[i]
+	var gone: Array = entry.get("panes_broken", [])
+	for v: Variant in p.get("panes", []):
+		if not gone.has(int(v)):
+			gone.append(int(v))
+	entry["panes_broken"] = gone
+	var b := _building_nodes[i]
+	b.break_panes(p.get("panes", []), true)
+
+
+## Everywhere: bricks came out of a building; the layout entry remembers them for late joiners.
+## On the server, a wall piece that has lost too many then gives way.
+func _on_bricks_knocked(p: Dictionary) -> void:
+	var i := int(p.get("index", -1))
+	if i < 0 or i >= _building_nodes.size() or i >= buildings.size():
+		return
+	var entry: Dictionary = buildings[i]
+	var knocked: Array = entry.get("knocked", [])
+	knocked.append_array(p.get("points", []))
+	entry["knocked"] = knocked
+	var b := _building_nodes[i]
+	b.knock_out(p.get("points", []), true)
+	if multiplayer.is_server():
+		var weak := b.server_weakened()
+		if not weak.is_empty():
+			_server_broke(i, weak)
 
 
 ## A bullet that hits a building: everyone sees the hole or chip; the server wears the
@@ -662,12 +727,19 @@ func _on_weapon_fired(p: Dictionary) -> void:
 		return
 	var building := p.get("collider") as MissionBuilding
 	if building != null:
-		building.bullet_mark(p["to"])
+		var direction: Vector3 = (p["to"] as Vector3) - (p.get("from", p["to"]) as Vector3)
+		building.bullet_mark(p["to"], direction)
 		if multiplayer.is_server():
 			var weapon: Object = p.get("weapon")
 			var stats: Variant = weapon.get(&"stats") if weapon != null else null
 			var damage := float((stats as Dictionary).get("damage", 0.0)) if stats is Dictionary else float(p.get("damage", 0.0))
-			var broke := building.server_shot(p["to"], damage)
+			var bricks := building.server_brick_hit(p["to"], direction, damage)
+			if not bricks.is_empty():
+				Net.server_broadcast(&"missions.bricks_knocked", {"index": _building_nodes.find(building), "points": bricks})
+			var pane := building.server_pane_hit(p["to"], direction)
+			if pane >= 0:
+				Net.server_broadcast(&"missions.panes_broken", {"index": _building_nodes.find(building), "panes": [pane]})
+			var broke := building.server_shot(p["to"], damage, direction)
 			if broke >= 0:
 				_server_broke(_building_nodes.find(building), [broke])
 	if not multiplayer.is_server():
@@ -740,6 +812,12 @@ func _physics_tick(delta: float) -> void:
 
 # --- For mission types -------------------------------------------------------------------
 
+## Everywhere, before any run: adds a mission kind from another module (the test range),
+## as an entry like those under `types` in missions.json.
+func add_type(id: String, kind: Dictionary) -> void:
+	(config["types"] as Dictionary)[id] = kind
+
+
 func building_nodes() -> Array[MissionBuilding]:
 	return _building_nodes
 
@@ -786,9 +864,27 @@ func random_spot(share: float) -> Vector3:
 	return at
 
 
-## The untouched ground's height (0 without a world, as in tests).
+## The average untouched ground under a `width` by `depth` footprint at `at` turned by `yaw`
+## (a 3 by 3 grid of samples), so a pad there cuts as much as it fills.
+func footprint_ground(at: Vector3, width: float, depth: float, yaw: float) -> float:
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	if ground == null or not ground.has_method(&"ground_height"):
+		return ground_y(at.x, at.z)
+	var basis := Basis(Vector3.UP, yaw)
+	var total := 0.0
+	for i in 3:
+		for j in 3:
+			var p := at + basis * Vector3((i - 1) * width * 0.4, 0.0, (j - 1) * depth * 0.4)
+			total += float(ground.call(&"ground_height", p.x, p.z))
+	return total / 9.0
+
+
+## The ground's height as it is now (0 without a world, as in tests).
 func ground_y(x: float, z: float) -> float:
 	var ground := get_tree().get_first_node_in_group(&"ground")
+	# The ground as it is: levelled under buildings (pads), craters in it.
+	if ground != null and ground.has_method(&"surface_height"):
+		return float(ground.call(&"surface_height", x, z))
 	if ground != null and ground.has_method(&"ground_height"):
 		return float(ground.call(&"ground_height", x, z))
 	return 0.0
@@ -815,8 +911,20 @@ func _build_buildings() -> void:
 	if scenery != null:
 		var circles := []
 		for entry: Dictionary in buildings:
-			circles.append({"at": entry["position"], "radius": float(entry.get("radius", 4.0)) + CLEARING_MARGIN})
+			# An entry may ask for more open ground round it (the test range's row).
+			circles.append({"at": entry["position"], "radius": float(entry.get("radius", 4.0)) + float(entry.get("clear", CLEARING_MARGIN))})
 		scenery.call(&"set_clearings", circles)
+	# Level the ground under each building and a little round it, so none sits half in a slope.
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	if ground != null and ground.has_method(&"set_pads"):
+		var cfg: Dictionary = config["buildings"]
+		var margin := float(cfg.get("pad_margin", 1.5))
+		var pads := []
+		for entry: Dictionary in buildings:
+			# Entries sit 0.05 m sunk (see _open_zone); the pad is the ground they stand on.
+			pads.append({"at": (entry["position"] as Vector3) + Vector3.UP * 0.05, "yaw": float(entry["yaw"]), "blend": float(cfg.get("pad_blend", 4.0)),
+				"half": Vector2(float(entry["width"]) / 2.0 + float(entry.get("pad_margin", margin)), float(entry["depth"]) / 2.0 + float(entry.get("pad_margin", margin)))})
+		ground.call(&"set_pads", pads)
 	for i in buildings.size():
 		var entry: Dictionary = buildings[i]
 		var b := MissionBuilding.new()
@@ -826,7 +934,6 @@ func _build_buildings() -> void:
 		b.segment_hp = float((config["buildings"] as Dictionary).get("segment_hp", 100.0))
 		b.max_span = int((config["buildings"] as Dictionary).get("max_span", 2))
 		b.fall_seconds = float((config["buildings"] as Dictionary).get("fall_seconds", 0.6))
-		b.material_cfg = ((config["buildings"] as Dictionary).get("materials", {}) as Dictionary).get(str(entry.get("material", "wood")), {})
 		add_child(b)
 		b.global_position = entry["position"]
 		b.rotation.y = float(entry["yaw"])

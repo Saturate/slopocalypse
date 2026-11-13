@@ -16,7 +16,7 @@ use voxkit_core::{Colour, Grid, Mesh, OPEN, Op, Paint};
 static SHADING: RwLock<Option<[f32; 4]>> = RwLock::new(None);
 
 fn shading() -> Option<[f32; 4]> {
-    SHADING.read().map(|s| *s).unwrap_or(None)
+    SHADING.read().map_or(None, |s| *s)
 }
 
 struct VoxkitExtension;
@@ -179,6 +179,155 @@ impl VoxelModel {
         });
     }
 
+    /// The material index every fill after this call writes into its cells (see
+    /// `VoxMaterials` for the names); 0 is "default".
+    #[func]
+    fn set_material(&mut self, index: i64) {
+        self.with(|g, _| g.brush = index.clamp(0, 255) as u8);
+    }
+
+    /// Sets the material of the filled cells inside the box, leaving their colour.
+    #[func]
+    fn mark_box(&mut self, min: Vector3, max: Vector3, index: i64) {
+        self.with(|g, _| g.fill_box(v3(min), v3(max), Op::Mark(index.clamp(0, 255) as u8)));
+    }
+
+    /// Material index of the cell holding `point` (model space); 0 for air and outside. A
+    /// hit point lies on a face, so callers step half a voxel into the surface first.
+    #[func]
+    fn material_at(&self, point: Vector3) -> i64 {
+        self.grid
+            .as_ref()
+            .map_or(0, |g| g.material_at(v3(point)) as i64)
+    }
+
+    /// Colour of the cell holding `point` (model space); fully transparent for air.
+    #[func]
+    fn colour_at(&self, point: Vector3) -> Color {
+        match self.grid.as_ref().map(|g| g.colour_at(v3(point))) {
+            Some(c) if c != voxkit_core::EMPTY => to_color(c),
+            _ => Color::from_rgba(0.0, 0.0, 0.0, 0.0),
+        }
+    }
+
+    /// The material most filled cells inside the box have (model space), 0 when none has
+    /// one: a wall piece's main material.
+    #[func]
+    fn dominant_material(&self, min: Vector3, max: Vector3) -> i64 {
+        self.grid
+            .as_ref()
+            .map_or(0, |g| g.dominant_material(v3(min), v3(max)) as i64)
+    }
+
+    /// Each connected patch of material `index`, as an `AABB` in model space, in the same
+    /// order on every instance (panes of glass, numbered alike everywhere).
+    #[func]
+    fn components(&self, index: i64) -> Array<Aabb> {
+        let mut out = Array::new();
+        if let Some(g) = self.grid.as_ref() {
+            for (min, max) in g.components(index.clamp(0, 255) as u8) {
+                let lo = Vector3::new(min[0], min[1], min[2]);
+                let hi = Vector3::new(max[0], max[1], max[2]);
+                out.push(Aabb::new(lo, hi - lo));
+            }
+        }
+        out
+    }
+
+    /// The connected patch of material `index` holding the cell at `point` (model space), as
+    /// an `AABB`, or an empty `AABB` when that cell isn't that material or the patch is more
+    /// than `cap` cells (a brick, not a wall).
+    #[func]
+    fn component_at(&self, point: Vector3, index: i64, cap: i64) -> Aabb {
+        let found = self.grid.as_ref().and_then(|g| {
+            g.component_at(v3(point), index.clamp(0, 255) as u8, cap.max(1) as usize)
+        });
+        match found {
+            Some((min, max)) => {
+                let lo = Vector3::new(min[0], min[1], min[2]);
+                Aabb::new(lo, Vector3::new(max[0], max[1], max[2]) - lo)
+            }
+            None => Aabb::default(),
+        }
+    }
+
+    /// How many filled cells of material `index` have their centres inside the box.
+    #[func]
+    fn count_material(&self, min: Vector3, max: Vector3, index: i64) -> i64 {
+        self.grid.as_ref().map_or(0, |g| {
+            g.count_material(v3(min), v3(max), index.clamp(0, 255) as u8) as i64
+        })
+    }
+
+    /// Empties the cells of material `index` inside the box, leaving every other material.
+    #[func]
+    fn carve_material_box(&mut self, min: Vector3, max: Vector3, index: i64) {
+        self.with(|g, _| {
+            g.fill_box(
+                v3(min),
+                v3(max),
+                Op::CarveMaterial(index.clamp(0, 255) as u8),
+            )
+        });
+    }
+
+    /// Recolours only the cells of material `index` inside the ellipsoid (a crack mark).
+    #[func]
+    fn recolour_ellipsoid(&mut self, centre: Vector3, radii: Vector3, colour: Color, index: i64) {
+        self.with(|g, _| {
+            g.fill_ellipsoid(
+                v3(centre),
+                v3(radii),
+                Op::Recolour(paint(colour, 0.0, 0), index.clamp(0, 255) as u8),
+            )
+        });
+    }
+
+    /// Breaks the cells inside the box into fragments round `seeds` (model space), ragged by up
+    /// to `jag` voxels; touching cells of material `unit` (bricks) stay together. Returns
+    /// `[{model, offset, lo, hi}]` in seed order (seeds that got nothing are left out): each
+    /// fragment as its own model, where its origin sits in this one, and its filled bounds.
+    #[func]
+    fn fracture(
+        &self,
+        min: Vector3,
+        max: Vector3,
+        seeds: PackedVector3Array,
+        unit: i64,
+        jag: f32,
+        seed: i64,
+    ) -> VarArray {
+        let mut out = VarArray::new();
+        let Some(grid) = self.grid.as_ref() else {
+            return out;
+        };
+        let points: Vec<[f32; 3]> = seeds.as_slice().iter().map(|p| v3(*p)).collect();
+        for f in grid.fracture(
+            v3(min),
+            v3(max),
+            &points,
+            unit.clamp(0, 255) as u8,
+            jag,
+            seed as u32,
+        ) {
+            let model = Gd::from_init_fn(|base| VoxelModel {
+                base,
+                grid: Some(f.grid),
+                jitter_scale: self.jitter_scale,
+            });
+            let mut d = VarDictionary::new();
+            d.set("model", &model);
+            d.set(
+                "offset",
+                Vector3::new(f.offset[0], f.offset[1], f.offset[2]),
+            );
+            d.set("lo", Vector3::new(f.lo[0], f.lo[1], f.lo[2]));
+            d.set("hi", Vector3::new(f.hi[0], f.hi[1], f.hi[2]));
+            out.push(&d.to_variant());
+        }
+        out
+    }
+
     /// Scales the colour jitter of every fill after this call (0 = flat colours).
     #[func]
     fn set_jitter_scale(&mut self, scale: f32) {
@@ -319,6 +468,34 @@ impl VoxelModel {
     #[func]
     fn chunk_count(&self) -> i64 {
         self.grid.as_ref().map_or(0, |g| g.chunk_count() as i64)
+    }
+
+    /// Draws these materials see-through (glass): they leave the normal chunk meshes and come
+    /// back in `remesh_dirty_layers` as each chunk's clear mesh. Every chunk is remeshed.
+    #[func]
+    fn set_clear_materials(&mut self, indices: PackedInt32Array) {
+        self.with(|g, _| {
+            for m in 1..=255u8 {
+                g.set_clear(m, indices.as_slice().contains(&(m as i32)));
+            }
+        });
+    }
+
+    /// Like `remesh_dirty`, with both layers: `{chunk id: [arrays, clear arrays]}` (empty arrays
+    /// where a layer has nothing to draw).
+    #[func]
+    fn remesh_dirty_layers(&mut self) -> VarDictionary {
+        let mut out = VarDictionary::new();
+        if let Some(grid) = self.grid.as_mut() {
+            grid.corners = shading().is_some();
+            for (id, mesh, clear) in grid.remesh_dirty_layers() {
+                let mut pair = VarArray::new();
+                pair.push(&arrays_of(&mesh).to_variant());
+                pair.push(&arrays_of(&clear).to_variant());
+                out.set(id as i64, &pair);
+            }
+        }
+        out
     }
 
     /// Meshes every chunk changed since the last call (all of them the first time) and marks

@@ -50,6 +50,10 @@ var _tile_voxel: Dictionary[Vector2i, float] = {}
 ## Craters (x, y, z, radius), listed under every tile they reach, so a height sample only
 ## looks at the few near it however many have been dug.
 var _digs_in: Dictionary[Vector2i, Array] = {}
+## How far past the road's edge a levelled pad fades out, metres.
+const PAD_ROAD_GAP := 1.0
+## Levelled pads (`set_pads`), listed under every tile they reach like craters.
+var _pads_in: Dictionary[Vector2i, Array] = {}
 ## Untouched ground heights per collision tile, so a crater only re-applies craters.
 var _base_heights: Dictionary[Vector2i, PackedFloat32Array] = {}
 var _material: ShaderMaterial
@@ -148,9 +152,66 @@ func road_point(metres: float) -> Vector3:
 	return Vector3(x, heights.height_at(x, z), z)
 
 
-## The ground as it is now, craters included.
+## The ground as it is now: levelled pads and craters included.
 func surface_height(x: float, z: float) -> float:
-	return _dig_into(ground_height(x, z), x, z, _digs_in.get(_tile_of(Vector3(x, 0.0, z)), []))
+	var key := _tile_of(Vector3(x, 0.0, z))
+	return _dig_into(_pad_into(ground_height(x, z), x, z, _pads_in.get(key, [])), x, z, _digs_in.get(key, []))
+
+
+## Levels the ground under footprints (mission buildings), replacing any earlier set. Each
+## pad is `{at: Vector3, half: Vector2, yaw: float, blend: float}`: a rectangle `half` either
+## side of `at` (x across, y along, turned by `yaw` like a node's rotation.y) flat at `at.y`,
+## easing back into the natural ground over `blend` metres. Raises and lowers alike; craters
+## still dig into it. Every instance sets the same pads from the same layout, so nothing about
+## it is sent.
+func set_pads(pads: Array) -> void:
+	var touched: Dictionary[Vector2i, bool] = {}
+	for key: Vector2i in _pads_in:
+		touched[key] = true
+	_pads_in.clear()
+	for p: Dictionary in pads:
+		var at: Vector3 = p["at"]
+		var half: Vector2 = p["half"]
+		var yaw := float(p.get("yaw", 0.0))
+		var pad := {"x": at.x, "z": at.z, "h": at.y, "hx": half.x, "hz": half.y, "c": cos(yaw), "s": sin(yaw), "blend": maxf(0.01, float(p.get("blend", 3.0)))}
+		var reach := half.length() + float(pad["blend"])
+		var low := _tile_of(at - Vector3(reach, 0, reach))
+		var high := _tile_of(at + Vector3(reach, 0, reach))
+		for tx in range(low.x, high.x + 1):
+			for tz in range(low.y, high.y + 1):
+				var key := Vector2i(tx, tz)
+				if not _pads_in.has(key):
+					_pads_in[key] = []
+				_pads_in[key].append(pad)
+				touched[key] = true
+	for key: Vector2i in touched:
+		if _collision.has(key):
+			_collision[key].queue_free()
+			_collision[key] = _build_collision(key)
+		if _tiles.has(key):
+			_drop_tile_job(key)
+			_replace_tile(key, _tile_voxel[key])
+
+
+## `h` levelled towards any of `pads` over (x, z): their height inside, easing out to `h`.
+## The road keeps its own level: pads fade out over a metre past the road's edge.
+func _pad_into(h: float, x: float, z: float, pads: Array) -> float:
+	if pads.is_empty():
+		return h
+	var road_share := 1.0
+	if heights != null and heights.road != null:
+		var road: RoadPath = heights.road
+		road_share = smoothstep(road.half_width, road.half_width + PAD_ROAD_GAP, road.distance(x, z))
+	for p: Dictionary in pads:
+		var dx := x - float(p["x"])
+		var dz := z - float(p["z"])
+		# Into the pad's own frame (the inverse of turning by its yaw about up).
+		var lx := dx * float(p["c"]) - dz * float(p["s"])
+		var lz := dx * float(p["s"]) + dz * float(p["c"])
+		var out := Vector2(maxf(absf(lx) - float(p["hx"]), 0.0), maxf(absf(lz) - float(p["hz"]), 0.0)).length()
+		var weight := (1.0 - smoothstep(0.0, float(p["blend"]), out)) * road_share
+		h = lerpf(h, float(p["h"]), weight)
+	return h
 
 
 ## `h` lowered by any of `digs` over (x, z).
@@ -295,7 +356,7 @@ func _update_tiles(points: Array[Vector3], budget: float, threaded := false) -> 
 		var key: Vector2i = entry[1]
 		var voxel: float = entry[2]
 		# Tiles with craters read the craters, which change as people dig: built right here.
-		if threaded and not _digs_in.has(key):
+		if threaded and not _digs_in.has(key) and not _pads_in.has(key):
 			var job: Dictionary = _tile_jobs.get(key, {})
 			if job.is_empty() or not is_equal_approx(float(job["voxel"]), voxel):
 				if job.is_empty() or WorkerThreadPool.is_task_completed(int(job["task"])):
@@ -448,11 +509,14 @@ func _collision_heights(key: Vector2i) -> PackedFloat32Array:
 		_base_heights[key] = _base_samples(key)
 	var out := _base_heights[key].duplicate()
 	var digs: Array = _digs_in.get(key, [])
-	if digs.is_empty():
+	var pads: Array = _pads_in.get(key, [])
+	if digs.is_empty() and pads.is_empty():
 		return out
 	for j in n:
 		for i in n:
-			out[j * n + i] = _dig_into(out[j * n + i], key.x * TILE + i * COLLISION_SPACING, key.y * TILE + j * COLLISION_SPACING, digs)
+			var x := key.x * TILE + i * COLLISION_SPACING
+			var z := key.y * TILE + j * COLLISION_SPACING
+			out[j * n + i] = _dig_into(_pad_into(out[j * n + i], x, z, pads), x, z, digs)
 	return out
 
 

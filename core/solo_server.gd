@@ -9,7 +9,7 @@ const PORT_TRIES := 50
 const BIND_IP := "127.0.0.1"
 ## User arguments that shape the world and so must match on the server, plus --debug-api so
 ## the solo server can be inspected too.
-const SHARED_PREFIXES: Array[String] = ["--flags=", "--all-optional-off", "--build=", "--save=", "--no-save", "--debug-api"]
+const SHARED_PREFIXES: Array[String] = ["--flags=", "--all-optional-off", "--build=", "--save=", "--no-save", "--debug-api", "--range", "--world="]
 
 
 ## Starts the server process. Returns its pid, or -1 when it could not be started.

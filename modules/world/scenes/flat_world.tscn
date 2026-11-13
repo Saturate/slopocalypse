@@ -1,0 +1,59 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://modules/world/scripts/flat_ground.gd" id="1_xm6i6"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_9732bf"]
+size = Vector3(1200, 1, 1200)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_34c975"]
+albedo_color = Color(0.42, 0.47, 0.32, 1)
+roughness = 0.95
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_199cd7"]
+material = SubResource("StandardMaterial3D_34c975")
+size = Vector2(1200, 1200)
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_443883"]
+sky_top_color = Color(0.4, 0.54, 0.72, 1)
+sky_horizon_color = Color(0.76, 0.76, 0.72, 1)
+ground_bottom_color = Color(0.22, 0.22, 0.2, 1)
+ground_horizon_color = Color(0.76, 0.76, 0.72, 1)
+
+[sub_resource type="Sky" id="Sky_317d2f"]
+sky_material = SubResource("ProceduralSkyMaterial_443883")
+
+[sub_resource type="Environment" id="Environment_c83369"]
+background_mode = 2
+sky = SubResource("Sky_317d2f")
+ambient_light_source = 3
+ambient_light_energy = 0.8
+tonemap_mode = 3
+ssao_enabled = true
+
+[node name="World" type="Node3D" unique_id=241444173]
+
+[node name="Ground" type="StaticBody3D" parent="." unique_id=1063566929]
+script = ExtResource("1_xm6i6")
+
+[node name="Shape" type="CollisionShape3D" parent="Ground" unique_id=1453539956]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+shape = SubResource("BoxShape3D_9732bf")
+
+[node name="Mesh" type="MeshInstance3D" parent="Ground" unique_id=824731504]
+mesh = SubResource("PlaneMesh_199cd7")
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=190487992]
+transform = Transform3D(0.76604444, -0.41317588, 0.49240384, 0, 0.76604444, 0.6427876, -0.6427876, -0.49240384, 0.58682406, 0, 0, 0)
+light_color = Color(1, 0.92, 0.8, 1)
+light_energy = 1.3
+shadow_enabled = true
+directional_shadow_max_distance = 120.0
+
+[node name="Environment" type="WorldEnvironment" parent="." unique_id=1174438231]
+environment = SubResource("Environment_c83369")
+
+[node name="SpawnPoint" type="Marker3D" parent="." unique_id=973275349 groups=["spawn_point"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+
+[node name="CarSpawn" type="Marker3D" parent="." unique_id=1652657857]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 6, 1, -6)
