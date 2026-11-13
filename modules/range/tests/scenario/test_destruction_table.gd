@@ -204,6 +204,68 @@ func test_nothing_is_left_standing_on_nothing() -> void:
 			assert_array(m["overloaded"]).override_failure_message(at + ": overloaded").is_empty()
 
 
+## Every voxel above the footing belongs to some piece: with every piece and pane broken,
+## nothing is left standing (no window frame or door trim hanging in the air).
+func test_breaking_every_piece_leaves_nothing_standing() -> void:
+	var subjects := ImpactLadder.subjects()
+	var entries: Array = []
+	for s in subjects.size():
+		entries.append(ImpactLadder.entry(subjects[s], s, Vector3(s * SPACING, 0.0, -SPACING * 3.0)))
+	var missions: Node = auto_free((load(MISSIONS) as GDScript).new())
+	add_child(missions)
+	missions.set(&"buildings", entries)
+	missions.call(&"_build_buildings")
+	var nodes: Array[MissionBuilding] = missions.call(&"building_nodes")
+	for s in nodes.size():
+		var b := nodes[s]
+		b.break_panes(range(b.pane_count()), false, false)
+		b.break_segments(range(b.segment_count()), [])
+		var left := _standing(b)
+		assert_dict(left).override_failure_message("%s: left standing %s" % [_name_of(subjects[s]), left]).is_empty()
+	missions.set(&"buildings", [])
+	missions.call(&"_build_buildings")
+
+
+## The voxels above the footing, by material name: `{name: {count, min, max}}` (local).
+static func _standing(b: MissionBuilding) -> Dictionary:
+	var m := b.model()
+	var v := b.voxel
+	var w := float(b.spec["width"]) + 2.0
+	var d := float(b.spec["depth"]) + 2.0
+	var top := float(b.spec["wall_height"]) + d
+	var out := {}
+	var lo := Vector3(-w / 2.0, MissionBuilding.SLAB, -d / 2.0)
+	var hi := Vector3(w / 2.0, top, d / 2.0)
+	var any := 0
+	for i in VoxMaterials.all().size():
+		any += m.count_material(lo, hi, i)
+	if any == 0:
+		return out
+	# Something is left: walk the cells to say what and where.
+	var y := MissionBuilding.SLAB + v * 0.5
+	while y < top:
+		var z := -d / 2.0
+		while z < d / 2.0:
+			var x := -w / 2.0
+			while x < w / 2.0:
+				var p := Vector3(x, y, z)
+				if m.colour_at(p).a > 0.0:
+					var name := str(VoxMaterials.at(m.material_at(p))["name"])
+					var e: Dictionary = out.get(name, {"count": 0, "min": p, "max": p})
+					e["count"] = int(e["count"]) + 1
+					e["min"] = (e["min"] as Vector3).min(p)
+					e["max"] = (e["max"] as Vector3).max(p)
+					out[name] = e
+				x += v
+			z += v
+		y += v
+	return out
+
+
+static func _name_of(subject: Dictionary) -> String:
+	return str(subject.get("label", subject.get("material")))
+
+
 func test_every_hit_is_handled_within_budget() -> void:
 	await _table()
 	for s in _subjects.size():

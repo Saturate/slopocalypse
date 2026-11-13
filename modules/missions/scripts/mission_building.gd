@@ -65,6 +65,9 @@ const STRIKE_DEPTH := 0.6
 const CRACK_RADIUS := 0.12
 ## The most cells one brick can have; a bigger patch of brick is a wall, not a brick.
 const BRICK_CAP := 400
+## How far past the building's outer faces an outside piece takes what sticks out of it,
+## metres: more than any trim, frame or roof overhang the kit builds.
+const REACH_OUT := 1.0
 ## A round into a joint wears each brick beside it by this share of its damage.
 const JOINT_SHARE := 0.5
 ## A wall piece left with less than this share of its bricks gives way.
@@ -120,6 +123,9 @@ var _strength := PackedFloat32Array()
 var _edges := PackedInt32Array()
 var _roof := PackedByteArray()
 var _anchors := PackedInt32Array()
+## All the segments' boxes together (local), found on first use: a piece reaching its edge is
+## on the outside.
+var _outline := AABB()
 ## Client: holes were carved this frame; the changed chunks are rebuilt once, next process.
 var _remesh := false
 
@@ -161,7 +167,7 @@ func _ready() -> void:
 	_segment_material.resize(_segments.size())
 	var brick := VoxMaterials.index_of("brick")
 	for i in _segments.size():
-		var box := _carve_box(i)
+		var box := _piece_box(i)
 		_segment_material[i] = _model.dominant_material(box.position, box.end)
 		var bricks := _model.count_material(box.position, box.end, brick)
 		if bricks > 0:
@@ -690,7 +696,7 @@ func server_weakened() -> Array[int]:
 	for id: int in _bricks_at_start:
 		if not _shapes.has(id):
 			continue
-		var box := _carve_box(id)
+		var box := _piece_box(id)
 		if float(_model.count_material(box.position, box.end, brick)) < float(_bricks_at_start[id]) * BRICK_HOLD:
 			out.append(id)
 	return out
@@ -757,7 +763,7 @@ func _riddled(id: int) -> bool:
 	var start := int(_cells_at_start.get(id, 0))
 	if start <= 0:
 		return false
-	var box := _carve_box(id)
+	var box := _piece_box(id)
 	var left := 0
 	for m in range(1, VoxMaterials.all().size()):
 		left += _model.count_material(box.position, box.end, m)
@@ -879,7 +885,7 @@ func _weigh() -> void:
 	var cell := voxel * voxel * voxel
 	var all := VoxMaterials.all()
 	for i in _segments.size():
-		var box := _carve_box(i)
+		var box := _piece_box(i)
 		var kg := 0.0
 		var carries := 0.0
 		var main := 0
@@ -995,14 +1001,38 @@ func _sound(topic: StringName, at: Vector3, material_name: String, count: int) -
 	EventBus.publish(topic, {"position": at, "material": material_name, "count": count})
 
 
-## The voxels segment `id` takes with it (a roof tile takes the sloping roof above it too).
-func _carve_box(id: int) -> AABB:
+## The voxels that make up segment `id`, for weighing it and counting what it has lost (a
+## roof tile has the sloping roof above it too).
+func _piece_box(id: int) -> AABB:
 	var wh := float(spec.get("wall_height", 2.8))
 	var d := float(spec.get("depth", 4.0))
 	var box := _segments[id].grow(voxel * 0.5)
 	if box.position.y >= wh - 0.1:
 		box = AABB(box.position, Vector3(box.size.x, d * 0.6 + 0.6, box.size.z))
 	return box
+
+
+## The voxels segment `id` takes with it when it breaks: its own (`_piece_box`), and on the
+## outside what sticks out past its outer face (`REACH_OUT`): trim, window frames, the roof's
+## overhang, so none of it is left hanging once the wall behind it has gone. Never the floor
+## slab or footing under it. Weight stays with `_piece_box`, so this changes what is carved
+## and thrown, not what holds up what.
+func _carve_box(id: int) -> AABB:
+	var seg := _segments[id]
+	var box := _piece_box(id)
+	var lo := box.position
+	var hi := box.end
+	if _outline.size == Vector3.ZERO:
+		_outline = _segments[0]
+		for s in _segments:
+			_outline = _outline.merge(s)
+	for axis: int in [Vector3.AXIS_X, Vector3.AXIS_Z]:
+		if seg.position[axis] <= _outline.position[axis] + 0.01:
+			lo[axis] -= REACH_OUT
+		if seg.end[axis] >= _outline.end[axis] - 0.01:
+			hi[axis] += REACH_OUT
+	lo.y = maxf(lo.y, SLAB)
+	return AABB(lo, hi - lo)
 
 
 ## A spot on the floor inside, `along` (0..1 from the door to the back wall) and `side`
