@@ -346,6 +346,65 @@ impl VoxelModel {
         })
     }
 
+    /// The cells packed for a GPU volume (see `voxkit_core::Atlas`): `{bricks: Vector3i,
+    /// indirection: PackedByteArray (RGBA8 per brick), cells: Vector3i, atlas:
+    /// PackedByteArray (RG8 per cell, 5-6-5 colour), used: int}`. Only bricks holding
+    /// something are in the atlas, `per_row` bricks to a row and a column.
+    #[func]
+    fn brick_atlas(&self, brick: i64, per_row: i64) -> VarDictionary {
+        let mut out = VarDictionary::new();
+        let Some(grid) = self.grid.as_ref() else {
+            return out;
+        };
+        let a = grid.brick_atlas(brick.max(1) as usize, per_row.max(1) as usize);
+        let v3 = |n: [usize; 3]| Vector3i::new(n[0] as i32, n[1] as i32, n[2] as i32);
+        out.set("bricks", v3(a.bricks));
+        out.set("indirection", &PackedByteArray::from(a.indirection));
+        out.set("cells", v3(a.cells));
+        out.set("atlas", &PackedByteArray::from(a.atlas));
+        out.set("used", a.used as i64);
+        out
+    }
+
+    /// Which `brick`-cell cubes hold anything, as one byte each (255 or 0) in `rgba_slices`
+    /// order, for an R8 `ImageTexture3D` of `brick_counts(brick)` texels.
+    #[func]
+    fn brick_occupancy(&self, brick: i64) -> PackedByteArray {
+        self.grid.as_ref().map_or(PackedByteArray::new(), |g| {
+            PackedByteArray::from(g.brick_occupancy(brick.max(1) as usize).0)
+        })
+    }
+
+    /// How many bricks of `brick` cells cover the grid on each axis.
+    #[func]
+    fn brick_counts(&self, brick: i64) -> Vector3i {
+        self.grid.as_ref().map_or(Vector3i::ZERO, |g| {
+            let b = brick.max(1) as usize;
+            Vector3i::new(
+                g.nx.div_ceil(b) as i32,
+                g.ny.div_ceil(b) as i32,
+                g.nz.div_ceil(b) as i32,
+            )
+        })
+    }
+
+    /// Whether cell (x, y, z) is filled; outside the grid is air.
+    #[func]
+    fn is_filled(&self, x: i64, y: i64, z: i64) -> bool {
+        self.grid
+            .as_ref()
+            .is_some_and(|g| g.get(x, y, z) != voxkit_core::EMPTY)
+    }
+
+    /// The cells as RGBA8 bytes for an `ImageTexture3D`: `cells().z` slices of
+    /// `cells().x` by `cells().y` pixels, one after another; air is transparent black.
+    #[func]
+    fn rgba_slices(&self) -> PackedByteArray {
+        self.grid.as_ref().map_or(PackedByteArray::new(), |g| {
+            PackedByteArray::from(g.rgba_slices())
+        })
+    }
+
     #[func]
     fn voxel_size(&self) -> f32 {
         self.grid.as_ref().map_or(0.0, |g| g.voxel)
