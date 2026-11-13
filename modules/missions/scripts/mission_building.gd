@@ -308,6 +308,12 @@ func segment_count() -> int:
 	return _segments.size()
 
 
+## The voxels as they stand now, in local space (read only: edits go through the server
+## functions so every instance makes the same ones).
+func model() -> VoxelModel:
+	return _model
+
+
 func is_broken(id: int) -> bool:
 	return not _shapes.has(id)
 
