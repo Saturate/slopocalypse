@@ -21,6 +21,7 @@
     "max_span": 2,
     "fall_seconds": 0.6,
     "fall_damage": 60.0,
+    "max_edits": 2000,
     "blast_damage": 140.0,
     "blast_reach": 1.6,
     "concrete_share": 0.3,

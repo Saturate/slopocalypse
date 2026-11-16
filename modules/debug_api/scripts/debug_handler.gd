@@ -161,6 +161,12 @@ func _state(tree: SceneTree) -> Dictionary:
 		modules = holder.get_children().map(func(m: Node) -> String: return str(m.name))
 	var perf := tree.get_first_node_in_group(&"perf_api")
 	var mp := tree.root.multiplayer
+	# Voxel hashes of the mission buildings, by node name, so a test can check every copy
+	# has the same cells.
+	var hashes := {}
+	for b: Node in tree.get_nodes_in_group(&"mission_buildings"):
+		if b.has_method(&"grid_hash"):
+			hashes[str(b.name)] = str(b.call(&"grid_hash"))
 	return {
 		"pid": OS.get_process_id(),
 		"role": role,
@@ -172,6 +178,7 @@ func _state(tree: SceneTree) -> Dictionary:
 		"modules": modules,
 		"fps": Engine.get_frames_per_second(),
 		"perf": perf.call(&"latest") if perf != null else {},
+		"building_hashes": hashes,
 	}
 
 

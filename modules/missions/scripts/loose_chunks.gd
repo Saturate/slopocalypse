@@ -52,9 +52,12 @@ static func break_up(building: Node3D, model: VoxelModel, box: AABB, piece: int,
 		if animate:
 			node.global_transform = building.global_transform * pose(plan, 0.0)
 			var tween := node.create_tween()
+			# By id: the building can be freed while its rubble is still falling.
+			var owner_id := building.get_instance_id()
 			tween.tween_method(func(s: float) -> void:
-				if is_instance_valid(building):
-					node.global_transform = building.global_transform * pose(plan, s), 0.0, 1.0, float(plan["seconds"]))
+				var from := instance_from_id(owner_id) as Node3D
+				if from != null:
+					node.global_transform = from.global_transform * pose(plan, s), 0.0, 1.0, float(plan["seconds"]))
 			tween.tween_callback(_land.bind(node, glass))
 		else:
 			node.global_transform = building.global_transform * pose(plan, 1.0)
