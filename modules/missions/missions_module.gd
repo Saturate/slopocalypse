@@ -85,6 +85,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"missions.building_broken", _on_building_broken)
 	EventBus.subscribe(&"missions.panes_broken", _on_panes_broken)
 	EventBus.subscribe(&"missions.bricks_knocked", _on_bricks_knocked)
+	EventBus.subscribe(&"missions.voxel_edits", _on_voxel_edits)
 	EventBus.subscribe(&"world.ready", _on_world_ready)
 	EventBus.subscribe(&"player.interact", _on_player_interact)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
@@ -105,6 +106,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"missions.building_broken", _on_building_broken)
 	EventBus.unsubscribe(&"missions.panes_broken", _on_panes_broken)
 	EventBus.unsubscribe(&"missions.bricks_knocked", _on_bricks_knocked)
+	EventBus.unsubscribe(&"missions.voxel_edits", _on_voxel_edits)
 	if Net.peer_joined.is_connected(_on_peer_joined):
 		Net.peer_joined.disconnect(_on_peer_joined)
 	if Net.peer_left.is_connected(_on_peer_left):
@@ -628,13 +630,13 @@ func _on_explosion(p: Dictionary) -> void:
 		# Brick walls lose their bricks one by one within the blast's reach first.
 		var bricks := b.server_blast_bricks(at, radius * float(cfg.get("brick_blast_share", 0.7)))
 		if not bricks.is_empty():
-			Net.server_broadcast(&"missions.bricks_knocked", {"index": i, "points": bricks})
+			_send(&"missions.bricks_knocked", {"index": i, "points": bricks})
 		var broke := b.server_blast(at, radius, float(cfg.get("blast_damage", 140.0)), float(cfg.get("blast_reach", 1.6)))
 		if not broke.is_empty():
 			_server_broke(i, broke)
 		var panes := b.server_blast_panes(at, radius, float(cfg.get("blast_reach", 1.6)))
 		if not panes.is_empty():
-			Net.server_broadcast(&"missions.panes_broken", {"index": i, "panes": panes})
+			_send(&"missions.panes_broken", {"index": i, "panes": panes})
 
 
 ## Server: segments of building `i` broke. Whatever they held up comes down in the same
@@ -652,13 +654,63 @@ func _server_broke(i: int, broke: Array[int]) -> void:
 			break
 		broke.append_array(over)
 		fell = b.server_unsupported(broke)
-	Net.server_broadcast(&"missions.building_broken", {"index": i, "segments": broke, "fallen": fell})
+	_send(&"missions.building_broken", {"index": i, "segments": broke, "fallen": fell})
 	if fell.is_empty():
 		return
 	var damage := float((config["buildings"] as Dictionary).get("fall_damage", 60.0))
+	# By id: the building may be gone (the run ended) before the pieces land.
+	var id := b.get_instance_id()
 	get_tree().create_timer(b.fall_seconds).timeout.connect(func() -> void:
-		if is_instance_valid(b) and b.is_inside_tree():
-			b.server_crush(fell, damage))
+		var landed := instance_from_id(id) as MissionBuilding
+		if landed != null and landed.is_inside_tree():
+			landed.server_crush(fell, damage))
+
+
+## Server: broadcasts a building event, then the voxel edits it made, so clients see the
+## voxels as they were when the event's own effects (debris, rubble) play. An event sent
+## from inside another one's handlers waits for the outer one, so edits never overtake it.
+func _send(topic: StringName, payload: Dictionary) -> void:
+	_sending += 1
+	Net.server_broadcast(topic, payload)
+	_sending -= 1
+	if _sending == 0:
+		_flush_edits()
+
+
+var _sending := 0
+var _edits_queued := false
+
+
+## Server: a building made edits outside `_send` (a bullet hole); they go out at the end of
+## the frame.
+func _queue_edits() -> void:
+	if _edits_queued or _sending > 0:
+		return
+	_edits_queued = true
+	_flush_edits.call_deferred()
+
+
+## Server: sends every building's unsent voxel edits and keeps its edit history in its layout
+## entry for late joiners.
+func _flush_edits() -> void:
+	_edits_queued = false
+	for i in mini(_building_nodes.size(), buildings.size()):
+		var b := _building_nodes[i]
+		if not is_instance_valid(b):
+			continue
+		var edits := b.take_unsent_edits()
+		if edits.is_empty():
+			continue
+		(buildings[i] as Dictionary).merge(b.edit_history(), true)
+		Net.server_broadcast(&"missions.voxel_edits", {"index": i, "edits": edits})
+
+
+## Client: voxel edits the server made to building `index`.
+func _on_voxel_edits(p: Dictionary) -> void:
+	var i := int(p.get("index", -1))
+	if multiplayer.is_server() or i < 0 or i >= _building_nodes.size():
+		return
+	_building_nodes[i].apply_server_edits(p.get("edits", PackedByteArray()))
 
 
 ## How many rounds of overloaded pieces giving way one break may set off.
@@ -702,16 +754,12 @@ func _on_panes_broken(p: Dictionary) -> void:
 	b.break_panes(p.get("panes", []), true)
 
 
-## Everywhere: bricks came out of a building; the layout entry remembers them for late joiners.
-## On the server, a wall piece that has lost too many then gives way.
+## Everywhere: bricks came out of a building (the voxels go with the server's edits). On the
+## server, a wall piece that has lost too many then gives way.
 func _on_bricks_knocked(p: Dictionary) -> void:
 	var i := int(p.get("index", -1))
 	if i < 0 or i >= _building_nodes.size() or i >= buildings.size():
 		return
-	var entry: Dictionary = buildings[i]
-	var knocked: Array = entry.get("knocked", [])
-	knocked.append_array(p.get("points", []))
-	entry["knocked"] = knocked
 	var b := _building_nodes[i]
 	b.knock_out(p.get("points", []), true)
 	if multiplayer.is_server():
@@ -735,10 +783,10 @@ func _on_weapon_fired(p: Dictionary) -> void:
 			var damage := float((stats as Dictionary).get("damage", 0.0)) if stats is Dictionary else float(p.get("damage", 0.0))
 			var bricks := building.server_brick_hit(p["to"], direction, damage)
 			if not bricks.is_empty():
-				Net.server_broadcast(&"missions.bricks_knocked", {"index": _building_nodes.find(building), "points": bricks})
+				_send(&"missions.bricks_knocked", {"index": _building_nodes.find(building), "points": bricks})
 			var pane := building.server_pane_hit(p["to"], direction)
 			if pane >= 0:
-				Net.server_broadcast(&"missions.panes_broken", {"index": _building_nodes.find(building), "panes": [pane]})
+				_send(&"missions.panes_broken", {"index": _building_nodes.find(building), "panes": [pane]})
 			var broke := building.server_shot(p["to"], damage, direction)
 			if broke >= 0:
 				_server_broke(_building_nodes.find(building), [broke])
@@ -934,6 +982,8 @@ func _build_buildings() -> void:
 		b.segment_hp = float((config["buildings"] as Dictionary).get("segment_hp", 100.0))
 		b.max_span = int((config["buildings"] as Dictionary).get("max_span", 2))
 		b.fall_seconds = float((config["buildings"] as Dictionary).get("fall_seconds", 0.6))
+		b.max_edits = int((config["buildings"] as Dictionary).get("max_edits", 2000))
+		b.edits_made.connect(_queue_edits)
 		add_child(b)
 		b.global_position = entry["position"]
 		b.rotation.y = float(entry["yaw"])

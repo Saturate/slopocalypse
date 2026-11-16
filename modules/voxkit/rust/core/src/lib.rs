@@ -7,6 +7,7 @@
 //! ground at its origin. Each model picks its own voxel size (a gun wants centimetres, a
 //! wall a decimetre or more).
 
+pub mod edits;
 pub mod heightfield;
 
 /// A cell's colour as 0xRRGGBB; `EMPTY` is air.

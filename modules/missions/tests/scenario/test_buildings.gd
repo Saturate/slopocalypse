@@ -508,8 +508,9 @@ func test_a_late_joiner_sees_the_same_bricks_gone() -> void:
 	var b := _building("brick")
 	var spot := _brick_spot(b)
 	var inside := b.struck_voxel(spot[0], spot[1])
+	b.knock_out([inside], false)
 	var entry: Dictionary = (b.spec as Dictionary).duplicate()
-	entry["knocked"] = [inside]
+	entry.merge(b.edit_history(), true)
 	var late: MissionBuilding = auto_free(MissionBuilding.new())
 	late.spec = entry
 	late.material_cfg = VoxMaterials.named("brick")
