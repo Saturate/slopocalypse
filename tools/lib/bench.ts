@@ -91,6 +91,38 @@ export function zoneCosts(records: readonly Record<string, unknown>[], warmupSec
 	return [...totals].map(([name, ms]): [string, number] => [name, round(ms / Math.max(used.length, 1), 3)]).sort((a, b) => b[1] - a[1]);
 }
 
+export interface NetCost {
+	// Mean bytes a second the server sent each peer (ENet's exact total over the peers).
+	outPerPeer: number;
+	// Mean estimated bytes a second by source (see NetStats), most first; "other" is what the
+	// estimates leave unexplained.
+	sources: [string, number][];
+}
+
+// The server's network spend after the warm-up, from the perf module's `net` blocks; undefined
+// when the log has none (a client, or nobody connected).
+export function netCosts(records: readonly Record<string, unknown>[], warmupSeconds: number): NetCost | undefined {
+	const used = records.filter((r) => num(r, "t") >= warmupSeconds && typeof r["net"] === "object" && r["net"] !== null);
+	if (used.length === 0) return undefined;
+	let out = 0;
+	const totals = new Map<string, number>();
+	for (const r of used) {
+		const net = r["net"];
+		if (typeof net !== "object" || net === null) continue;
+		const per = Reflect.get(net, "out_per_peer");
+		if (typeof per === "number") out += per;
+		const sources = Reflect.get(net, "sources");
+		if (typeof sources !== "object" || sources === null) continue;
+		for (const [name, bytes] of Object.entries(sources)) {
+			if (typeof bytes === "number") totals.set(name, (totals.get(name) ?? 0) + bytes);
+		}
+	}
+	return {
+		outPerPeer: Math.round(out / used.length),
+		sources: [...totals].map(([name, b]): [string, number] => [name, Math.round(b / used.length)]).sort((a, b) => b[1] - a[1]),
+	};
+}
+
 export function compare(now: Summary, baseline: Summary, tolerance: number): Regression[] {
 	const out: Regression[] = [];
 	for (const m of METRICS) {

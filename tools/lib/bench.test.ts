@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { compare, parsePerfLog, summarise, zoneCosts, type Summary } from "./bench.ts";
+import { compare, netCosts, parsePerfLog, summarise, zoneCosts, type Summary } from "./bench.ts";
 
 const log = [
 	'{"t":1,"frames":60,"frame_ms_mean":30,"frame_ms_p95":50,"frame_ms_max":90,"physics_nodes_ms":2,"physics_peak_ms":9,"memory_mb":100,"nodes":500}',
@@ -39,4 +39,14 @@ test("zone costs are microseconds per frame after the warm-up, most expensive fi
 	const zones = zoneCosts(recs, 10);
 	// 60 ms over 60 frames is 1000 us a frame, 120 over 60 is 2000: 1500 on average.
 	assert.deepEqual(zones, [["a:physics", 1500], ["b:frame", 16.667]]);
+});
+
+test("network spend averages the server's net blocks after the warm-up, biggest source first", () => {
+	const recs = parsePerfLog([
+		'{"t":5,"frames":60,"net":{"out_per_peer":999,"sources":{"sync/player":999}}}',
+		'{"t":11,"frames":60,"net":{"out_per_peer":1000,"sources":{"sync/player":600,"event/a":100,"other":300}}}',
+		'{"t":12,"frames":60,"net":{"out_per_peer":2000,"sources":{"sync/player":1400,"other":100}}}',
+	].join("\n"));
+	assert.deepEqual(netCosts(recs, 10), { outPerPeer: 1500, sources: [["sync/player", 1000], ["other", 200], ["event/a", 50]] });
+	assert.equal(netCosts(parsePerfLog('{"t":11,"frames":60}'), 10), undefined);
 });

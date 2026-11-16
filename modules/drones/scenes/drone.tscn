@@ -112,4 +112,5 @@ script = ExtResource("2_dlvjd")
 max_health = 60.0
 
 [node name="NetSync" type="MultiplayerSynchronizer" parent="." unique_id=684271526]
+replication_interval = 0.016666
 replication_config = SubResource("SceneReplicationConfig_3d7912")

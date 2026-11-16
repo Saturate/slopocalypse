@@ -19,6 +19,10 @@ static func make(always: Array[String], on_change: Array[String] = []) -> Multip
 		config.property_set_replication_mode(NodePath(path), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "NetSync"
+	# Once a physics tick, when the values change. Left at 0 it sends every frame, and a
+	# headless server runs far more frames than ticks, so a moving soldier cost more than
+	# twice the bytes for no new information.
+	sync.replication_interval = 1.0 / float(ProjectSettings.get_setting("physics/common/physics_ticks_per_second", 60))
 	sync.root_path = NodePath("..")
 	sync.replication_config = config
 	return sync
