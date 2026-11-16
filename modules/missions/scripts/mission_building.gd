@@ -2,14 +2,17 @@ class_name MissionBuilding
 extends StaticBody3D
 ## A building in a mission zone: the voxel kit's shed (plank walls, a door, windows, a metal
 ## roof) with walk-in collision. Built the same on every instance from its layout entry (see
-## `MissionLayout`), so nothing about it is sent but that entry. The door is on the local -Z
-## side.
+## `MissionLayout`). The door is on the local -Z side.
+##
+## Only the server changes its voxels, as integer edits in the model's own cells (see
+## `voxkit_core::edits`): clients apply the edits it sends, and the entry keeps the log, so the
+## server, every client and anyone joining late have exactly the same cells.
 ##
 ## It breaks: the walls and roof are cut into segments (about a metre each, two rows up the
 ## walls), each with its own collision and health. Blasts nearby (drones, mines, charges)
 ## wear segments down on the server; a broken one loses its collision and is carved out of
 ## the model with a burst of debris, leaving a hole you can walk or shoot through. The entry's
-## `broken` list carries which are gone, so late joiners see the same holes.
+## `broken` list carries which are gone, so late joiners get the same collision.
 ##
 ## Weight counts: every piece weighs what its voxels do (each material's `density`) and can
 ## carry so many times its own weight (its main material's `strength`). After a break the
@@ -132,6 +135,22 @@ var _anchors := PackedInt32Array()
 var _outline := AABB()
 ## Client: holes were carved this frame; the changed chunks are rebuilt once, next process.
 var _remesh := false
+## Server: every voxel edit since `_edit_base` (a snapshot; the model as built when empty), in
+## order, for anyone joining late, and the ones not sent to clients yet.
+var _edit_base := PackedByteArray()
+var _edit_log := PackedByteArray()
+var _edit_count := 0
+var _edits_unsent := PackedByteArray()
+## Rebuilding from the layout entry: what broke is carved only to make its rubble the way it
+## was made live (pieces sharing edge voxels split in order), then the voxels are put back
+## and come from the entry's edit log instead.
+var _replaying := false
+## Past this many edits the server snapshots the voxels and starts a new log, so a late
+## joiner never replays more than this.
+var max_edits := 2000
+
+## Server: edits are waiting to go out (`take_unsent_edits`).
+signal edits_made
 
 
 func _ready() -> void:
@@ -200,15 +219,97 @@ func _ready() -> void:
 		_mesh.name = "Mesh"
 		_mesh.model = _model
 		add_child(_mesh)
-	# Someone joining late: the rubble of what already broke, lying where it came to rest.
+	# Someone joining late: the rubble of what already broke, lying where it came to rest, made
+	# from the voxels as built; then the voxels as they are now, from the entry's edit log.
+	var pristine := PackedByteArray()
+	if not (spec.get("broken", []) as Array).is_empty() or not (spec.get("panes_broken", []) as Array).is_empty():
+		pristine = _model.snapshot()
+	_replaying = true
 	var fallen: Array = spec.get("fallen", [])
 	var thrown: Array = (spec.get("broken", []) as Array).filter(func(v: Variant) -> bool: return not fallen.has(v))
 	_shatter(thrown, fallen, false)
 	_remove(spec.get("broken", []), false)
 	break_panes(spec.get("panes_broken", []), true, false)
-	knock_out(spec.get("knocked", []), false)
+	_replaying = false
+	if not pristine.is_empty():
+		_model.load_snapshot(pristine)
+	_load_edits(spec.get("edits_base", PackedByteArray()), spec.get("edits", PackedByteArray()))
 	if _visual:
 		_mesh.refresh()
+
+
+## The voxels as the entry's edit history left them: a snapshot (if the log was ever cut
+## short) and the edits since. The server carries on that history.
+func _load_edits(base: PackedByteArray, edits: PackedByteArray) -> void:
+	if not base.is_empty() and not _model.load_snapshot(base):
+		Log.warn(&"missions", "%s: voxel snapshot doesn't fit the model; using the edits alone" % name)
+	if not _model.apply_edits(edits):
+		Log.warn(&"missions", "%s: unreadable voxel edits in the entry" % name)
+	if multiplayer.is_server():
+		_edit_base = base
+		_edit_log = edits
+		_edit_count = maxi(0, VoxelModel.edit_count(edits))
+
+
+## Server: applies `bytes` (VoxelModel edits) and keeps them for clients and late joiners.
+## Clients change voxels only through the edits the server sends (`apply_server_edits`), so
+## every copy has the same cells whatever its floating point does.
+func _edit(bytes: PackedByteArray) -> void:
+	if bytes.is_empty():
+		return
+	if _replaying:
+		_model.apply_edits(bytes)
+		return
+	if not multiplayer.is_server():
+		return
+	_model.apply_edits(bytes)
+	_edit_log.append_array(bytes)
+	_edit_count += VoxelModel.edit_count(bytes)
+	_edits_unsent.append_array(bytes)
+	if _edit_count > max_edits:
+		_edit_base = _model.snapshot()
+		_edit_log = PackedByteArray()
+		_edit_count = 0
+	_remesh = _visual
+	edits_made.emit()
+
+
+## Server: the edits not sent to clients yet; they count as sent.
+func take_unsent_edits() -> PackedByteArray:
+	var out := _edits_unsent
+	_edits_unsent = PackedByteArray()
+	return out
+
+
+## Server: what someone joining late needs to rebuild the voxels, for the layout entry.
+func edit_history() -> Dictionary:
+	return {"edits_base": _edit_base, "edits": _edit_log}
+
+
+## Client: voxel edits the server made.
+func apply_server_edits(bytes: PackedByteArray) -> void:
+	if multiplayer.is_server():
+		return
+	if not _model.apply_edits(bytes):
+		Log.warn(&"missions", "%s: unreadable voxel edits from the server" % name)
+	_remesh = _visual
+
+
+## Hash of the voxels: equal on the server and every client once they have the same edits.
+func grid_hash() -> int:
+	return _model.grid_hash()
+
+
+## Edit for the cells of material `m` whose centres are in `min..max` (local).
+func _cut_material(min: Vector3, max: Vector3, m: int) -> PackedByteArray:
+	var cells := _model.cells_in_box(min, max)
+	return VoxelModel.edit_cut_material(cells[0], cells[1], m)
+
+
+## A radius in metres as a squared radius in cells, for the sphere edits.
+func _r2(radius: float) -> int:
+	var r := radius / voxel
+	return floori(r * r + 0.0001)
 
 
 ## The voxel model as built from the entry: a lone wall or a house.
@@ -543,7 +644,7 @@ func break_panes(indices: Array, debris: bool, animate := true) -> void:
 			_fragments.append_array(LooseChunks.break_up(self, _model, box, -1 - i, (out + Vector3.DOWN * 0.2) * 2.0, int(spec.get("seed", 1)), true, animate))
 			if _visual and animate:
 				_sound(&"missions.surface_broke", global_transform * centre, str(rules.get("name", "")), 1)
-		_model.carve_material_box(box.position - Vector3.ONE * voxel * 0.1, box.end + Vector3.ONE * voxel * 0.1, int(pane["material"]))
+		_edit(_cut_material(box.position - Vector3.ONE * voxel * 0.1, box.end + Vector3.ONE * voxel * 0.1, int(pane["material"])))
 	if _visual and not indices.is_empty():
 		_remesh = true
 
@@ -671,7 +772,7 @@ func knock_out(points: Array, debris: bool) -> void:
 		if box.size == Vector3.ZERO:
 			continue
 		var colour := _model.colour_at(at)
-		_model.carve_material_box(box.position - Vector3.ONE * voxel * 0.1, box.end + Vector3.ONE * voxel * 0.1, m)
+		_edit(_cut_material(box.position - Vector3.ONE * voxel * 0.1, box.end + Vector3.ONE * voxel * 0.1, m))
 		_crumble_loose(box.grow(voxel), m)
 		if debris and _visual and is_inside_tree():
 			var world := global_transform * box.get_center()
@@ -682,29 +783,14 @@ func knock_out(points: Array, debris: bool) -> void:
 		_remesh = true
 
 
-## Everywhere: in `box` (local), joint material left touching no brick of material `m` (no
-## brick on any face) crumbles away, so a hole opens clean instead of leaving a mortar grid.
+## In `box` (local), mortar left touching no brick of material `m` (none on any face)
+## crumbles away, so a hole opens clean instead of leaving a mortar grid.
 func _crumble_loose(box: AABB, m: int) -> void:
-	var half := voxel * 0.5
-	var x := box.position.x + half
-	while x < box.end.x:
-		var y := box.position.y + half
-		while y < box.end.y:
-			var z := box.position.z + half
-			while z < box.end.z:
-				var p := Vector3(x, y, z)
-				var here := _model.material_at(p)
-				if here != 0 and here != m and float(VoxMaterials.at(here).get("pop_damage", 0.0)) <= 0.0 and str(VoxMaterials.at(here).get("name", "")) == "mortar":
-					var held := false
-					for d: Vector3 in [Vector3.LEFT, Vector3.RIGHT, Vector3.UP, Vector3.DOWN, Vector3.FORWARD, Vector3.BACK]:
-						if _model.material_at(p + d * voxel) == m:
-							held = true
-							break
-					if not held:
-						_model.carve_material_box(p - Vector3.ONE * half * 0.9, p + Vector3.ONE * half * 0.9, here)
-				z += voxel
-			y += voxel
-		x += voxel
+	var mortar := VoxMaterials.index_of("mortar")
+	if mortar <= 0:
+		return
+	var cells := _model.cells_in_box(box.position, box.end)
+	_edit(VoxelModel.edit_cut_loose(cells[0], cells[1], mortar, m))
 
 
 ## Server: the bricks a blast at `centre` (world) knocks out of the walls within `radius`:
@@ -879,16 +965,15 @@ func _mark(point: Vector3, direction: Vector3) -> void:
 		var out := -direction.normalized() if direction.length_squared() > 0.0 else (point - global_position).normalized()
 		var source := &"building_chip" if float(rules.get("hole", 0.0)) > 0.0 else &"dust"
 		VoxelDebris.burst(get_parent(), point, out, (colour if colour.a > 0.0 else Color(0.55, 0.5, 0.45)).lightened(0.15 if source == &"dust" else 0.0), source)
+	var cell := _model.cell_of(v)
 	if bool(rules.get("crack", false)):
 		# A lighter star where it struck; only the glass, not its frame.
 		var glass := _model.colour_at(v)
-		_model.recolour_ellipsoid(v, Vector3.ONE * CRACK_RADIUS, glass.lerp(Color(0.92, 0.94, 0.95), 0.6), _model.material_at(v))
-		_remesh = _visual
+		_edit(VoxelModel.edit_recolour(cell, _r2(CRACK_RADIUS), glass.lerp(Color(0.92, 0.94, 0.95), 0.6), _model.material_at(v)))
 	var hole := float(rules.get("hole", 0.0))
 	if hole <= 0.0:
 		return
-	_model.carve_ellipsoid(v, Vector3.ONE * hole)
-	_remesh = _visual
+	_edit(VoxelModel.edit_cut_sphere(cell, _r2(hole)))
 
 
 func _process(_delta: float) -> void:
@@ -932,7 +1017,8 @@ func _shatter(ids: Array, fallen: Array, animate: bool) -> void:
 	for id in all:
 		var box := _carve_box(id)
 		_fragments.append_array(LooseChunks.break_up(self, _model, box, id, _push_for(id, fallen.has(id)), seed, false, animate))
-		_model.carve_box(box.position, box.end)
+		var cells := _model.cells_in_box(box.position, box.end)
+		_edit(VoxelModel.edit_cut_box(cells[0], cells[1]))
 
 
 ## Server: once `newly` break, the standing segments nothing holds up any more.
@@ -1059,7 +1145,8 @@ func _remove(ids: Array, debris: bool) -> void:
 			# The voxels already fell apart (`_shatter`); a little dust where they were.
 			var push := _push_for(id, false)
 			VoxelDebris.burst(get_parent(), global_transform * _segments[id].get_center(), global_transform.basis * push.normalized(), Color(0.6, 0.57, 0.52), &"dust")
-		_model.carve_box(box.position, box.end)
+		var cells := _model.cells_in_box(box.position, box.end)
+		_edit(VoxelModel.edit_cut_box(cells[0], cells[1]))
 
 
 ## Client: tells the audio what broke, one event per material at the middle of its pieces.

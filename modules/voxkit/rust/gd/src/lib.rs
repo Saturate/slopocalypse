@@ -8,6 +8,7 @@
 use godot::classes::mesh::ArrayType;
 use godot::prelude::*;
 use std::sync::RwLock;
+use voxkit_core::edits::Edit;
 use voxkit_core::heightfield::{self, Tile};
 use voxkit_core::{Colour, Grid, Mesh, OPEN, Op, Paint};
 
@@ -339,6 +340,121 @@ impl VoxelModel {
         self.grid.as_ref().map_or(0, |g| g.filled() as i64)
     }
 
+    /// Applies integer edits made by the `edit_*` functions (see voxkit_core::edits). Bytes
+    /// that don't read as edits change nothing and return false.
+    #[func]
+    fn apply_edits(&mut self, bytes: PackedByteArray) -> bool {
+        let Ok(edits) = Edit::decode_all(bytes.as_slice()) else {
+            return false;
+        };
+        if let Some(g) = self.grid.as_mut() {
+            g.apply_edits(&edits);
+        }
+        true
+    }
+
+    /// How many edits `bytes` holds, or -1 when they don't read as edits.
+    #[func]
+    fn edit_count(bytes: PackedByteArray) -> i64 {
+        Edit::decode_all(bytes.as_slice()).map_or(-1, |e| e.len() as i64)
+    }
+
+    /// Empty every cell within squared distance `r2` (in cells) of `cell`.
+    #[func]
+    fn edit_cut_sphere(cell: Vector3i, r2: i64) -> PackedByteArray {
+        encode(Edit::CutSphere {
+            centre: i16s(cell),
+            r2: r2.clamp(0, u16::MAX as i64) as u16,
+        })
+    }
+
+    /// Empty every cell in `lo..hi` (cells, `hi` exclusive).
+    #[func]
+    fn edit_cut_box(lo: Vector3i, hi: Vector3i) -> PackedByteArray {
+        encode(Edit::CutBox {
+            lo: i16s(lo),
+            hi: i16s(hi),
+        })
+    }
+
+    /// Empty the cells of material `index` in `lo..hi`.
+    #[func]
+    fn edit_cut_material(lo: Vector3i, hi: Vector3i, index: i64) -> PackedByteArray {
+        encode(Edit::CutMaterial {
+            lo: i16s(lo),
+            hi: i16s(hi),
+            m: index.clamp(0, 255) as u8,
+        })
+    }
+
+    /// Recolour the cells of material `index` within squared distance `r2` of `cell`.
+    #[func]
+    fn edit_recolour(cell: Vector3i, r2: i64, colour: Color, index: i64) -> PackedByteArray {
+        encode(Edit::Recolour {
+            centre: i16s(cell),
+            r2: r2.clamp(0, u16::MAX as i64) as u16,
+            colour: colour_of(colour),
+            m: index.clamp(0, 255) as u8,
+        })
+    }
+
+    /// In `lo..hi`, empty each cell of material `loose` with no face neighbour of material
+    /// `holder`.
+    #[func]
+    fn edit_cut_loose(lo: Vector3i, hi: Vector3i, loose: i64, holder: i64) -> PackedByteArray {
+        encode(Edit::CutLoose {
+            lo: i16s(lo),
+            hi: i16s(hi),
+            loose: loose.clamp(0, 255) as u8,
+            holder: holder.clamp(0, 255) as u8,
+        })
+    }
+
+    /// The cell holding `point` (model space), which may lie outside the grid.
+    #[func]
+    fn cell_of(&self, point: Vector3) -> Vector3i {
+        self.grid.as_ref().map_or(Vector3i::ZERO, |g| {
+            let c = g.cell_of(v3(point));
+            Vector3i::new(c[0] as i32, c[1] as i32, c[2] as i32)
+        })
+    }
+
+    /// The cells whose centres are inside `min..max` (model space) as `[lo, hi]`, `hi`
+    /// exclusive.
+    #[func]
+    fn cells_in_box(&self, min: Vector3, max: Vector3) -> Array<Vector3i> {
+        let mut out = Array::new();
+        if let Some(g) = self.grid.as_ref() {
+            let (lo, hi) = g.cells_in_box(v3(min), v3(max));
+            out.push(Vector3i::new(lo[0] as i32, lo[1] as i32, lo[2] as i32));
+            out.push(Vector3i::new(hi[0] as i32, hi[1] as i32, hi[2] as i32));
+        }
+        out
+    }
+
+    /// A hash of the size, colours and materials: equal on every machine with equal cells.
+    #[func]
+    fn grid_hash(&self) -> i64 {
+        self.grid.as_ref().map_or(0, |g| g.grid_hash() as i64)
+    }
+
+    /// The cells, run-length encoded; `load_snapshot` puts them back.
+    #[func]
+    fn snapshot(&self) -> PackedByteArray {
+        self.grid.as_ref().map_or_else(PackedByteArray::new, |g| {
+            PackedByteArray::from(g.snapshot().as_slice())
+        })
+    }
+
+    /// Replaces the cells with a `snapshot` of a model the same size; false (and nothing
+    /// changed) when it doesn't fit.
+    #[func]
+    fn load_snapshot(&mut self, bytes: PackedByteArray) -> bool {
+        self.grid
+            .as_mut()
+            .is_some_and(|g| g.load_snapshot(bytes.as_slice()).is_ok())
+    }
+
     #[func]
     fn cells(&self) -> Vector3i {
         self.grid.as_ref().map_or(Vector3i::ZERO, |g| {
@@ -576,6 +692,17 @@ fn arrays_of(mesh: &Mesh) -> VarArray {
     arrays.set(ArrayType::COLOR.ord() as usize, &colours.to_variant());
     arrays.set(ArrayType::INDEX.ord() as usize, &indices.to_variant());
     arrays
+}
+
+fn encode(e: Edit) -> PackedByteArray {
+    let mut out = Vec::new();
+    e.encode(&mut out);
+    PackedByteArray::from(out.as_slice())
+}
+
+/// Cell coordinates as the edits carry them; models never reach `i16::MAX` cells a side.
+fn i16s(v: Vector3i) -> [i16; 3] {
+    [v.x, v.y, v.z].map(|c| c.clamp(i16::MIN as i32, i16::MAX as i32) as i16)
 }
 
 fn colour_of(c: Color) -> Colour {
