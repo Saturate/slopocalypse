@@ -2,19 +2,18 @@ extends GdUnitTestSuite
 ## Every breakable sample (the range's walls, a house per wall material) takes every hit on the
 ## impact ladder, each on its own fresh copy, and the rules that must hold whatever the
 ## numbers are tuned to are checked: a bigger blast never does less, the same hit on the same
-## building does the same everywhere, nothing is left standing on nothing, and a hit is
-## handled within a frame's budget. The table of what each hit did is printed (and written to
+## building does the same everywhere, nothing is left standing on nothing, and no hit stalls
+## the server. The table of what each hit did is printed (and written to
 ## `$DESTRUCTION_REPORT` when that is set) to read alongside the `ladder` capture.
 
 const MISSIONS := "res://modules/missions/missions_module.gd"
 const INVENTORY := "res://modules/inventory/inventory_module.gd"
 ## Far enough apart that the biggest blast on one copy doesn't reach the next.
 const SPACING := 40.0
-## Server time one hit may take, milliseconds. A blast into brick takes 300-900 ms today, almost
-## all of it `MissionBuilding._crumble_loose` walking every voxel round each knocked-out brick
-## in GDScript; this only stops it getting worse until that moves into the voxel kit, then it
-## comes down to a frame or two.
-const BUDGET_MS := 1500.0
+## Server time one hit may take, milliseconds. The slowest (a 6 m blast into the brick house)
+## takes 15-20 ms with a debug Rust build on an Apple Silicon Mac; the headroom is for
+## slower CI runners. A hit over this stalls every player for several ticks.
+const BUDGET_MS := 100.0
 ## The hit the determinism copies take.
 const SAME_HIT := "charge"
 
