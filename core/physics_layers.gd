@@ -10,5 +10,8 @@ const SIGHT := 2
 ## Loose chunks of broken buildings, on each client alone: they land on the ground and
 ## buildings, and nothing else notices them (bodies walk through, bullets and eyes ignore them).
 const DEBRIS := 4
+## Window panes: they stop bodies and bullets but not eyes, so sight rays (`SOLID | SIGHT`)
+## pass them. Anything that moves collides with `SOLID | GLASS`.
+const GLASS := 8
 ## Every layer a bullet should stop at.
 const BULLETS := 0xFFFFFFFF & ~SIGHT & ~DEBRIS

@@ -311,10 +311,22 @@ func _clear_line(from: Vector3, to: Vector3, wanted: Node) -> bool:
 	var query := PhysicsRayQueryParameters3D.create(from, to, PhysicsLayers.SOLID | PhysicsLayers.SIGHT)
 	query.exclude = [body.get_rid()]
 	var hit := body.get_world_3d().direct_space_state.intersect_ray(query)
-	if hit.is_empty():
-		return true
-	var collider: Variant = hit["collider"]
-	return collider is Node and (collider == wanted or (wanted as Node).is_ancestor_of(collider as Node))
+	var seen := hit.is_empty()
+	if not seen:
+		var collider: Variant = hit["collider"]
+		seen = collider is Node and (collider == wanted or (wanted as Node).is_ancestor_of(collider as Node))
+	return seen and not _glass_hides(from, hit.get("position", to))
+
+
+## Window glass doesn't stop eyes, but a cracked pane can: each look through one is stopped
+## with the chance its cracks give (`sight_block_chance` on the pane's body).
+func _glass_hides(from: Vector3, to: Vector3) -> bool:
+	var query := PhysicsRayQueryParameters3D.create(from, to, PhysicsLayers.GLASS)
+	var hit := body.get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty() or not (hit["collider"] as Object).has_method(&"sight_block_chance"):
+		return false
+	var chance := float((hit["collider"] as Object).call(&"sight_block_chance"))
+	return chance > 0.0 and _rng.randf() < chance
 
 
 ## Gunfire nearby draws attention to the shooter, even out of sight; bullets passing close

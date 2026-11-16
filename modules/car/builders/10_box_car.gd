@@ -23,6 +23,8 @@ func _initialize() -> void:
 
 	var root := VehicleBody3D.new()
 	root.name = "BoxCar"
+	# Window panes stop bodies too; they sit on their own layer so eyes see through them.
+	root.collision_mask = PhysicsLayers.SOLID | PhysicsLayers.GLASS
 	root.mass = cfg["mass"]
 	# A low centre of mass keeps an arcade car from rolling in corners.
 	root.center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
