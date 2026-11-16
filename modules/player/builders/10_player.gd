@@ -7,6 +7,8 @@ const OUT := "res://modules/player/scenes/player.tscn"
 func _initialize() -> void:
 	var root := CharacterBody3D.new()
 	root.name = "Player"
+	# Window panes stop bodies too; they sit on their own layer so eyes see through them.
+	root.collision_mask = PhysicsLayers.SOLID | PhysicsLayers.GLASS
 
 	var shape := CollisionShape3D.new()
 	shape.name = "Shape"

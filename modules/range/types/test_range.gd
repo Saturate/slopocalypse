@@ -28,9 +28,9 @@ func _aimed_at(player: Node3D) -> String:
 	if player is CollisionObject3D:
 		query.exclude = [(player as CollisionObject3D).get_rid()]
 	var hit := cam.get_world_3d().direct_space_state.intersect_ray(query)
-	if hit.is_empty() or not hit["collider"] is MissionBuilding:
+	var building := MissionBuilding.of(hit.get("collider"))
+	if building == null:
 		return "nothing breakable"
-	var building := hit["collider"] as MissionBuilding
 	var mat := building.material_at(hit["position"], hit["normal"])
 	return "%s  (%s)" % [mat, describe(VoxMaterials.named(mat))]
 

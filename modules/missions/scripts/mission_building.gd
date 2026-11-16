@@ -61,6 +61,8 @@ const VOXEL := 0.15
 const BRICK_VOXEL := 0.075
 ## How far into a wall a hit looks for the voxel it struck, metres.
 const STRIKE_DEPTH := 0.6
+## Thinnest collision box worth keeping beside a window, metres.
+const MIN_PIECE := 0.02
 ## A crack mark's radius on glass, metres.
 const CRACK_RADIUS := 0.12
 ## The most cells one brick can have; a bigger patch of brick is a wall, not a brick.
@@ -94,7 +96,9 @@ var _visual := DisplayServer.get_name() != "headless"
 var voxel := VOXEL
 var _model: VoxelModel
 var _mesh: VoxelChunkedMesh
-var _shapes: Dictionary[int, CollisionShape3D] = {}
+var _shapes: Dictionary[int, Array] = {}
+## Intact panes' glass bodies, by pane index.
+var _pane_bodies: Dictionary[int, PaneBody] = {}
 ## Server: segment id -> health left.
 var _hp: Dictionary[int, float] = {}
 var _segments: Array[AABB] = []
@@ -147,9 +151,6 @@ func _ready() -> void:
 	else:
 		_add_shape(-1, AABB(Vector3(-w / 2.0, 0.0, -d / 2.0), Vector3(w, SLAB, d)))
 		_segments = segments(w, d, wh, segment_size)
-	for i in _segments.size():
-		_add_shape(i, _segments[i])
-		_hp[i] = segment_hp
 	_model = _build_model()
 	if is_wall() and _visual and spec.has("label"):
 		var label := Label3D.new()
@@ -164,6 +165,16 @@ func _ready() -> void:
 		if bool(VoxMaterials.at(i).get("breaks_whole", false)):
 			for box: AABB in _model.components(i):
 				_panes.append({"box": box, "material": i})
+	# Each piece's collision leaves its windows open; the panes get their own glass bodies.
+	var holes: Array[AABB] = []
+	for pane in _panes:
+		holes.append(pane["box"])
+	for i in _segments.size():
+		for box in cut_out(_segments[i], holes):
+			_add_shape(i, box)
+		_hp[i] = segment_hp
+	for i in _panes.size():
+		_add_pane_body(i)
 	_segment_material.resize(_segments.size())
 	var brick := VoxMaterials.index_of("brick")
 	for i in _segments.size():
@@ -229,7 +240,78 @@ func _add_shape(id: int, box: AABB) -> void:
 	shape.position = box.get_center()
 	add_child(shape)
 	if id >= 0:
-		_shapes[id] = shape
+		if not _shapes.has(id):
+			_shapes[id] = []
+		_shapes[id].append(shape)
+
+
+## `box` with every hole that reaches into it cut out right through its thinnest side (a wall
+## piece's thickness): the boxes left above, below and beside each hole. Slivers thinner
+## than `MIN_PIECE` are dropped.
+static func cut_out(box: AABB, holes: Array[AABB]) -> Array[AABB]:
+	var pieces: Array[AABB] = [box]
+	var thin := box.get_shortest_axis_index()
+	for hole in holes:
+		var next: Array[AABB] = []
+		for piece in pieces:
+			var h := hole.intersection(piece)
+			if h.size.x <= 0.0 or h.size.y <= 0.0 or h.size.z <= 0.0:
+				next.append(piece)
+				continue
+			h.position[thin] = piece.position[thin]
+			h.size[thin] = piece.size[thin]
+			var rest := piece
+			for a in 3:
+				if h.position[a] - rest.position[a] >= MIN_PIECE:
+					var low := rest
+					low.size[a] = h.position[a] - rest.position[a]
+					next.append(low)
+				if rest.end[a] - h.end[a] >= MIN_PIECE:
+					var high := rest
+					high.position[a] = h.end[a]
+					high.size[a] = rest.end[a] - h.end[a]
+					next.append(high)
+				rest.position[a] = h.position[a]
+				rest.size[a] = h.size[a]
+		pieces = next
+	return pieces
+
+
+## Pane `i`'s glass body: a box over the pane's own voxels.
+func _add_pane_body(i: int) -> void:
+	var body := PaneBody.new()
+	body.name = "Pane%d" % i
+	body.building = self
+	body.pane = i
+	var box: AABB = _panes[i]["box"]
+	var shape := CollisionShape3D.new()
+	var b := BoxShape3D.new()
+	b.size = box.size
+	shape.shape = b
+	shape.position = box.get_center()
+	body.add_child(shape)
+	add_child(body)
+	_pane_bodies[i] = body
+
+
+## The building a hit `collider` belongs to: itself, or the building of a pane; else null.
+static func of(collider: Variant) -> MissionBuilding:
+	if collider is MissionBuilding:
+		return collider
+	if collider is PaneBody and is_instance_valid((collider as PaneBody).building):
+		return (collider as PaneBody).building
+	return null
+
+
+## Server: the chance (0..1) pane `i` stops one look through it: each crack it has taken
+## adds its material's `crack_opacity`.
+func pane_sight_block(i: int) -> float:
+	if i < 0 or i >= _panes.size() or _panes_gone.has(i):
+		return 0.0
+	var rules := VoxMaterials.at(int(_panes[i]["material"]))
+	if not bool(rules.get("crack", false)):
+		return 0.0
+	return clampf(float(_pane_hits.get(i, 0)) * float(rules.get("crack_opacity", 0.0)), 0.0, 1.0)
 
 
 ## The breakable parts, local: each wall cut along its length into pieces of about `size`
@@ -446,6 +528,11 @@ func break_panes(indices: Array, debris: bool, animate := true) -> void:
 		if i < 0 or i >= _panes.size() or _panes_gone.has(i):
 			continue
 		_panes_gone[i] = true
+		if _pane_bodies.has(i):
+			# Off its layer at once, so a second round this frame goes through the opening.
+			_pane_bodies[i].collision_layer = 0
+			_pane_bodies[i].queue_free()
+			_pane_bodies.erase(i)
 		var pane: Dictionary = _panes[i]
 		var box: AABB = pane["box"]
 		var rules := VoxMaterials.at(int(pane["material"]))
@@ -962,9 +1049,9 @@ func _remove(ids: Array, debris: bool) -> void:
 		var id := int(v)
 		if not _shapes.has(id):
 			continue
-		var shape := _shapes[id]
+		for shape: CollisionShape3D in _shapes[id]:
+			shape.queue_free()
 		_shapes.erase(id)
-		shape.queue_free()
 		if _model == null:
 			continue
 		var box := _carve_box(id)

@@ -351,3 +351,45 @@ func test_a_soldier_who_spots_you_calls_it_out() -> void:
 	await _frames(30)
 	assert_object(_brain(spotter).target).is_same(_player)
 	assert_object(_brain(mate).target).is_same(_player)
+
+
+## A stand-in window pane on the glass layer whose cracks hide what is behind it with
+## `chance`, as a building's pane answers.
+class FakePane extends StaticBody3D:
+	var chance := 0.0
+
+	func sight_block_chance() -> float:
+		return chance
+
+
+func _pane(at: Vector3, chance: float) -> FakePane:
+	var pane: FakePane = auto_free(FakePane.new())
+	pane.chance = chance
+	pane.collision_layer = PhysicsLayers.GLASS
+	pane.collision_mask = 0
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(4.0, 4.0, 0.05)
+	shape.shape = box
+	pane.add_child(shape)
+	add_child(pane)
+	pane.global_position = at
+	return pane
+
+
+func test_it_sees_through_glass_unless_cracks_hide_the_player() -> void:
+	_player.global_position = Vector3(0, 0.1, -10)
+	var enemy := await _enemy_at(Vector3.ZERO)
+	var pane := _pane(Vector3(0, 1.4, -5), 0.0)
+	await _frames(2)
+	var brain := _brain(enemy)
+	assert_bool(brain.clear_shot(_player)).is_true()
+	pane.chance = 1.0
+	assert_bool(brain.clear_shot(_player)).is_false()
+	# Half cracked: some looks get through, some don't.
+	pane.chance = 0.5
+	var seen := 0
+	for i in 200:
+		if brain.clear_shot(_player):
+			seen += 1
+	assert_int(seen).is_between(60, 140)

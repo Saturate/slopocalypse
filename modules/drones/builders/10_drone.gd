@@ -19,6 +19,8 @@ func _initialize() -> void:
 
 	var root := CharacterBody3D.new()
 	root.name = "Drone"
+	# Window panes stop bodies too; they sit on their own layer so eyes see through them.
+	root.collision_mask = PhysicsLayers.SOLID | PhysicsLayers.GLASS
 	root.motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
 
 	var st := LowPoly.begin()

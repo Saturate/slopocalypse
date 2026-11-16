@@ -71,6 +71,7 @@ properties/3/spawn = true
 properties/3/replication_mode = 2
 
 [node name="Drone" type="CharacterBody3D" unique_id=219016285]
+collision_mask = 9
 motion_mode = 1
 script = ExtResource("1_82u6x")
 health_path = NodePath("Health")

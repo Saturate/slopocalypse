@@ -725,7 +725,7 @@ func _on_bricks_knocked(p: Dictionary) -> void:
 func _on_weapon_fired(p: Dictionary) -> void:
 	if not p.has("to"):
 		return
-	var building := p.get("collider") as MissionBuilding
+	var building := MissionBuilding.of(p.get("collider"))
 	if building != null:
 		var direction: Vector3 = (p["to"] as Vector3) - (p.get("from", p["to"]) as Vector3)
 		building.bullet_mark(p["to"], direction)
