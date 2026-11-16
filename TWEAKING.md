@@ -14,6 +14,7 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | To change | File | Fields |
 | --- | --- | --- |
 | Which features are on (enemies, drones, car, audio, ...) | `data/features.json` | `flags` |
+| How far away soldiers and drones are still sent to a player (server) | `data/net.json` | `relevance_distance` (metres), `relevance_margin` (they stay until this much further, so they don't pop in and out at the edge), `relevance_seconds` (how often it is checked) |
 | Player health and respawn | `modules/player/data/player.json` | `max_health`, `respawn_seconds`, `respawn_spread`, `back_to_spawn_cooldown_seconds` (Esc menu "Back to spawn": how long before you can use it again) |
 | Movement: speeds, jump, slide, vault, mantle | `modules/player/data/player.json` | `walk_speed`, `sprint_speed`, `crouch_speed`, `jump_velocity`, `slide_*`, `vault_*`, `mantle_*` |
 | Camera and mouse | `modules/player/data/player.json` | `fov`, `fov_sprint_bonus`, `bob_amplitude`, `mouse_sensitivity` |

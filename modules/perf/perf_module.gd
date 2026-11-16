@@ -211,7 +211,14 @@ func _net_breakdown(out_bytes: int, peers: int) -> Dictionary:
 		var key := "sync/" + (root.scene_file_path.get_file().get_basename() if not root.scene_file_path.is_empty() else String(root.name))
 		# Once a frame, or once per `replication_interval` when that is longer.
 		var sends := _frames if sync.replication_interval <= 0.0 else mini(_frames, roundi(seconds / sync.replication_interval))
-		sources[key] = int(sources.get(key, 0)) + size * sends * peers
+		# Only the peers it is shown to (see NetRelevance).
+		var shown := peers
+		if not sync.public_visibility:
+			shown = 0
+			for peer in multiplayer.get_peers():
+				if sync.get_visibility_for(peer):
+					shown += 1
+		sources[key] = int(sources.get(key, 0)) + size * sends * shown
 	var counted := 0
 	var per_second := {}
 	for key: String in sources:
