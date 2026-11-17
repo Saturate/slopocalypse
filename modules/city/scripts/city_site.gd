@@ -37,6 +37,8 @@ const TREE_TURN := 2.39996
 var config: Dictionary = {}
 var plan: Dictionary = {}
 var buildings: Array[CityBuilding] = []
+## The hand-made blocks standing in the city (#339).
+var blocks_placed: Array[CityBlockNode] = []
 
 var _queue: Array[Dictionary] = []
 var _body := RID()
@@ -46,7 +48,7 @@ var _visual := DisplayServer.get_name() != "headless"
 
 func _ready() -> void:
 	var t := Prof.start()
-	plan = CityLayout.make(config, int(config.get("seed", 1)))
+	plan = CityLayout.make(config, int(config.get("seed", 1)), CityBlock.catalogue())
 	_body = PhysicsServer3D.body_create()
 	PhysicsServer3D.body_set_mode(_body, PhysicsServer3D.BODY_MODE_STATIC)
 	PhysicsServer3D.body_set_collision_layer(_body, PhysicsLayers.SOLID)
@@ -66,12 +68,25 @@ func _ready() -> void:
 		_streets()
 		_trees()
 	_queue.assign(plan["buildings"])
+	for h: Dictionary in plan["handmade"]:
+		var node := CityBlockNode.new()
+		node.name = "Block_%s" % h["name"]
+		node.block = CityBlock.load_named(str(h["name"]))
+		node.variation_seed = int(h["variation"])
+		node.builds_per_frame = maxi(int(config.get("builds_per_frame", 2)), 1)
+		var centre: Vector2 = h["centre"]
+		node.transform = Transform3D(Basis(Vector3.UP, float(h["yaw"])), Vector3(centre.x, KERB, centre.y))
+		add_child(node)
+		blocks_placed.append(node)
 	Prof.stop(&"city/site_ready", t)
 
 
 ## Buildings still to put up.
 func pending() -> int:
-	return _queue.size()
+	var n := _queue.size()
+	for b in blocks_placed:
+		n += b.pending()
+	return n
 
 
 func _process(_delta: float) -> void:
@@ -89,6 +104,8 @@ func _process(_delta: float) -> void:
 func build_all() -> void:
 	while not _queue.is_empty():
 		_put_up(_queue.pop_front())
+	for b in blocks_placed:
+		b.build_all()
 
 
 ## Where the street lamps stand, in world space: on the pavement top, each turned so its arm

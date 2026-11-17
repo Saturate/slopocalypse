@@ -42,6 +42,12 @@ static func spots(plan: Dictionary, counts: Dictionary, seed: int) -> Dictionary
 			roofs.append({"at": place.call(Vector3(0.0, float(layout["eaves"]), -depth / 2.0 + 1.5)), "yaw": float(b["yaw"]), "building": b})
 	var corners: Array[Dictionary] = []
 	var routes: Array[Array] = []
+	# Hand-made blocks say where their guards stand: those join the ground posts.
+	for h: Dictionary in plan.get("handmade", []):
+		for m: Dictionary in h["markers"]:
+			if m["kind"] == "spawn":
+				var at: Vector3 = m["at"]
+				corners.append({"at": Vector3(at.x, CitySite.KERB + at.y, at.z), "yaw": float(m["yaw"])})
 	var squares: Array = plan["squares"]
 	for block: Rect2 in plan["blocks"]:
 		var c := block.get_center()

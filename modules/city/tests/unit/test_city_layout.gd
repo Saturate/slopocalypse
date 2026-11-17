@@ -291,3 +291,48 @@ func test_street_fronts_keep_their_balconies_flush_where_the_sides_butt_on() -> 
 		var params: Dictionary = b["params"]
 		if (b["facing"] as Vector2).x == 0.0:
 			assert_float(float(params["balconies"])).is_equal(3.0)
+
+
+const HANDMADE := [
+	{"name": "plaza", "size": Vector2(33, 33), "tags": ["square"], "markers": []},
+	{"name": "yard_a", "size": Vector2(32, 32), "tags": ["residential"], "markers": [{"kind": "door", "at": Vector3(0, 0, -16), "yaw": 0.0}, {"kind": "spawn", "at": Vector3(2, 0, 2), "yaw": 0.0}]},
+	{"name": "yard_b", "size": Vector2(32, 32), "tags": ["ruin"], "markers": []},
+]
+
+
+func _with_handmade(seed := 5, share := 1.0) -> Dictionary:
+	var cfg := CFG.duplicate()
+	cfg["handmade_share"] = share
+	cfg["handmade_slack"] = 6.0
+	return CityLayout.make(cfg, seed, HANDMADE)
+
+
+func test_the_square_takes_a_square_block() -> void:
+	var p := _with_handmade(5, 0.0)
+	var placed: Array = p["handmade"]
+	assert_int(placed.size()).is_equal(1)
+	assert_str(str(placed[0]["name"])).is_equal("plaza")
+	assert_bool((placed[0]["rect"] as Rect2).has_point(Vector2.ZERO)).is_true()
+
+
+func test_hand_made_blocks_replace_generated_ones_and_never_repeat_side_by_side() -> void:
+	var p := _with_handmade(5, 1.0)
+	var placed: Array = p["handmade"]
+	assert_int(placed.size()).is_equal(9)
+	for h: Dictionary in placed:
+		var r: Rect2 = h["rect"]
+		for b: Dictionary in p["buildings"]:
+			assert_bool((b["footprint"] as Rect2).grow(-0.01).intersects(r)).is_false()
+		for other: Dictionary in placed:
+			if other == h or str(other["name"]) != str(h["name"]):
+				continue
+			# Neighbours share an edge (a street between them): never the same block.
+			var gap := (r.get_center() - (other["rect"] as Rect2).get_center()).abs()
+			# In line (one offset near zero) and one block apart (under 60 m), not two.
+			var adjacent := minf(gap.x, gap.y) < 1.0 and maxf(gap.x, gap.y) < 60.0
+			assert_bool(adjacent).override_failure_message("%s next to itself" % h["name"]).is_false()
+
+
+func test_without_hand_made_blocks_nothing_changes() -> void:
+	var cfg := CFG.duplicate()
+	assert_str(var_to_str(CityLayout.make(cfg, 5))).is_equal(var_to_str(CityLayout.make(cfg, 5, [])))
