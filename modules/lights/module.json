@@ -1,0 +1,6 @@
+{
+  "id": "lights",
+  "depends_on": ["voxkit"],
+  "flag": "lights",
+  "entry": "lights_module.gd"
+}

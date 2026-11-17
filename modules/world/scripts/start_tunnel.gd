@@ -74,6 +74,8 @@ func _ready() -> void:
 		lamp.omni_range = LAMP_RANGE
 		lamp.shadow_enabled = false
 		lamp.position = at + Vector3(-signf(at.x) * 0.5, VoxTunnel.FLOOR - 0.2, 0.0)
+		# Counted against the light budget (lights module) when it is there.
+		lamp.add_to_group(&"light_points")
 		add_child(lamp)
 
 

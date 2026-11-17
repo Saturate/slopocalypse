@@ -1,0 +1,6 @@
+{
+  "_comment": "Lights. budget (each screen): the max_shadow_lights lights nearest the camera cast shadows, the next max_lights light without shadows, the rest are off (lamps still glow); lights fade over fade_seconds as they cross those lines. lamp: a street lamp's height and arm reach (metres), its light's colour, energy and range (metres), and how bright the bulb itself glows. road: street lamps along the road, the first `first` metres out from the start, then one every `spacing` metres, `count` of them, alternating sides, `side` metres from the road's middle.",
+  "budget": { "max_shadow_lights": 4, "max_lights": 16, "fade_seconds": 0.3 },
+  "lamp": { "height": 4.5, "reach": 2.6, "light_colour": [1.0, 0.8, 0.55], "light_energy": 6.0, "light_range": 20.0, "glow_energy": 10.0 },
+  "road": { "first": 15.0, "spacing": 20.0, "count": 12, "side": 5.2 }
+}
