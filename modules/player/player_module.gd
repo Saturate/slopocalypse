@@ -188,6 +188,8 @@ func _spawn_player(data: Variant) -> Node:
 	if not multiplayer.is_server():
 		player.set_physics_process(false)
 	var local := Net.has_local_player() and peer == Net.local_peer_id()
+	# Others are shown a moment in the past, blended between updates; our own camera can't lag.
+	player.set_meta(&"net_smooth", not local)
 	player.ready.connect(_on_player_ready.bind(player, local), CONNECT_ONE_SHOT)
 	return player
 

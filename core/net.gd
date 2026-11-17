@@ -480,4 +480,8 @@ func _start_client() -> void:
 		# Measured: a failed connect takes about twice the max given here.
 		peer.get_peer(1).set_timeout(0, JOIN_TIMEOUT_MS / 4, JOIN_TIMEOUT_MS / 2)
 	multiplayer.multiplayer_peer = peer
+	if get_node_or_null(^"Smoothing") == null:
+		var smoothing := NetSmoothing.new()
+		smoothing.name = "Smoothing"
+		add_child(smoothing)
 	Log.info(&"net", "connecting to %s:%d" % [host, port])
