@@ -14,7 +14,7 @@ extends Node
 const CONFIG := "res://data/net.json"
 const REQUIRED := {"relevance_distance": TYPE_FLOAT, "relevance_margin": TYPE_FLOAT, "relevance_seconds": TYPE_FLOAT}
 
-var reach := 400.0
+var reach := 300.0
 var margin := 40.0
 var every := 0.25
 var _tracked: Array[MultiplayerSynchronizer] = []

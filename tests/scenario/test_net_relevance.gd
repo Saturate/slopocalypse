@@ -35,7 +35,7 @@ func _make(data: Variant) -> Node:
 	thing.name = str(info["name"])
 	thing.position = info["position"]
 	thing.set_meta(&"net_relevance", true)
-	thing.add_child(NetSync.make([".:position"]))
+	thing.add_child(NetSync.make([".:position", ".:rotation:y"]))
 	return thing
 
 
@@ -105,10 +105,16 @@ func test_only_near_things_reach_the_client_with_their_state() -> void:
 	assert_object(_on_client(far)).is_null()
 	# Walks into range: spawned there, where it is now.
 	far.position = Vector3(0, 0, 30)
+	far.rotation.y = 1.25
 	await _settle()
 	var arrived := _on_client(far)
 	assert_object(arrived).is_not_null()
 	assert_vector(arrived.position).is_equal_approx(Vector3(0, 0, 30), Vector3.ONE * 0.01)
+	# A single axis of a property syncs on its own (players send only their yaw).
+	assert_float(arrived.rotation.y).is_equal_approx(1.25, 0.001)
+	near.rotation.y = -0.5
+	await _settle()
+	assert_float(_on_client(near).rotation.y).is_equal_approx(-0.5, 0.001)
 
 
 func test_the_margin_stops_it_flickering_at_the_edge() -> void:

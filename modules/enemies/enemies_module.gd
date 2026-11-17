@@ -13,7 +13,7 @@ const SCENE := "res://modules/player/scenes/player.tscn"
 const CONFIG := "res://modules/enemies/data/enemies.json"
 const REQUIRED := {
 	"first_spawn_seconds": TYPE_FLOAT, "max_alive": TYPE_FLOAT, "squad_size": TYPE_ARRAY,
-	"squad_respawn_seconds": TYPE_FLOAT, "spawn_distance": TYPE_ARRAY, "corpse_seconds": TYPE_FLOAT,
+	"squad_respawn_seconds": TYPE_FLOAT, "spawn_area": TYPE_ARRAY, "spawn_clear": TYPE_FLOAT, "corpse_seconds": TYPE_FLOAT,
 	"max_health": TYPE_FLOAT, "patrol_radius": TYPE_FLOAT, "patrol_pause_seconds": TYPE_ARRAY,
 	"walk_speed_share": TYPE_FLOAT, "sight_range": TYPE_FLOAT, "sight_cone_degrees": TYPE_FLOAT,
 	"hearing_range": TYPE_FLOAT, "reaction_seconds": TYPE_FLOAT, "aim_error_degrees": TYPE_ARRAY,
@@ -23,9 +23,8 @@ const REQUIRED := {
 }
 ## Enemy peer ids count down from here so they never collide with real peers.
 const FIRST_ID := -1000
-## `--crowd`: how far out from the start the soldiers are spread, metres, and per squad.
-const CROWD_RADIUS := Vector2(60.0, 1200.0)
-const CROWD_SQUAD := 3
+## Tries at a squad spot clear of every player before taking the last one.
+const SPOT_TRIES := 8
 
 var config: Dictionary = {}
 var _spawner := MultiplayerSpawner.new()
@@ -36,9 +35,9 @@ var _world_ready := false
 var _forward := Vector3.ZERO
 var _next_squad_in := -1.0
 var _rng := RandomNumberGenerator.new()
-## Server, `-- --crowd=N` (benchmarks): soldiers still to place, spread over the open side of
-## the map a squad a tick, and kept topped up to that many.
-var _crowd_left := 0
+## Server: filling up to `max_alive` a squad a tick, once `first_spawn_seconds` have passed.
+var _filling := false
+var _filled_once := false
 
 ## Kept loaded: Godot's resource cache lets go of a scene once nothing holds it, and loading
 ## a generated scene again from text costs tens of milliseconds per spawn.
@@ -80,7 +79,8 @@ func enemies() -> Array[Node]:
 
 
 func _on_world_ready(payload: Dictionary) -> void:
-	# Squads come from the open side: around the road outside the start tunnel, ahead of it.
+	# Squads live on the open side of the start: around and ahead of the road out of the
+	# start tunnel, spread over `spawn_area`.
 	_spawn = payload.get("front", payload.get("spawn", Vector3.ZERO))
 	_forward = payload.get("forward", Vector3.ZERO)
 	_world_ready = true
@@ -89,11 +89,10 @@ func _on_world_ready(payload: Dictionary) -> void:
 		var crowd := crowd_arg(OS.get_cmdline_user_args())
 		if crowd > 0:
 			config = config.duplicate()
-			config["max_alive"] = maxf(float(config["max_alive"]), crowd)
-			_crowd_left = crowd
+			config["max_alive"] = float(crowd)
 
 
-## `--crowd=N` from the command line, or 0.
+## `--crowd=N` from the command line (benchmarks: exactly N alive), or 0.
 static func crowd_arg(args: PackedStringArray) -> int:
 	for arg in args:
 		if arg.begins_with("--crowd="):
@@ -110,38 +109,50 @@ func _physics_process(delta: float) -> void:
 func _physics_tick(delta: float) -> void:
 	if not multiplayer.is_server() or not _world_ready or _next_squad_in < 0.0:
 		return
-	if _crowd_left > 0:
-		var size := mini(_crowd_left, CROWD_SQUAD)
-		_crowd_left -= size
-		server_spawn_squad(size, _crowd_spot())
+	if _filling:
+		# The first fill: a squad a tick until `max_alive`, so hundreds don't land in one frame.
+		var room := int(config["max_alive"]) - enemies().size()
+		if room <= 0:
+			_filling = false
+		else:
+			server_spawn_squad(mini(room, _roll(config["squad_size"])))
+		return
 	_next_squad_in -= delta
 	if _next_squad_in > 0.0:
 		return
 	_next_squad_in = float(config["squad_respawn_seconds"])
+	if not _filled_once:
+		_filled_once = true
+		_filling = true
+		return
 	var room := int(config["max_alive"]) - enemies().size()
 	if room > 0:
 		server_spawn_squad(mini(room, _roll(config["squad_size"])))
 
 
-## Somewhere on the open side of the start, out to `CROWD_RADIUS`.
-func _crowd_spot() -> Vector3:
-	var a := _rng.randf() * TAU
-	if _forward != Vector3.ZERO:
-		a = atan2(_forward.z, _forward.x) + _rng.randf_range(-PI / 2.0, PI / 2.0)
-	return _spawn + Vector3(cos(a), 0.0, sin(a)) * _rng.randf_range(CROWD_RADIUS.x, CROWD_RADIUS.y)
-
-
-## Server: a squad of `size` around a random point in the ring around the spawn.
-func server_spawn_squad(size: int, centre: Variant = null) -> Array[Node]:
-	var at: Vector3
-	if centre is Vector3:
-		at = centre
-	else:
-		var ring: Array = config["spawn_distance"]
+## A spot for a squad: somewhere in `spawn_area` (metres out from the start, on its open
+## side), and at least `spawn_clear` from every player so nobody sees them appear. After a
+## few tries it takes the last spot.
+func _spread_spot() -> Vector3:
+	var area: Array = config["spawn_area"]
+	var clear := float(config["spawn_clear"])
+	var players := get_tree().get_nodes_in_group(&"players").filter(func(n: Node) -> bool: return int(n.get_meta(&"peer_id", 0)) > 0 and n is Node3D)
+	var spot := _spawn
+	for attempt in SPOT_TRIES:
 		var a := _rng.randf() * TAU
 		if _forward != Vector3.ZERO:
 			a = atan2(_forward.z, _forward.x) + _rng.randf_range(-PI / 2.0, PI / 2.0)
-		at = _spawn + Vector3(cos(a), 0.0, sin(a)) * _rng.randf_range(float(ring[0]), float(ring[1]))
+		# Even over the area, not bunched near its inner edge.
+		var r := sqrt(_rng.randf_range(pow(float(area[0]), 2.0), pow(float(area[1]), 2.0)))
+		spot = _spawn + Vector3(cos(a), 0.0, sin(a)) * r
+		if players.all(func(p: Node) -> bool: return (p as Node3D).global_position.distance_to(spot) >= clear):
+			break
+	return spot
+
+
+## Server: a squad of `size` around `centre`, or around a spread spot (`_spread_spot`).
+func server_spawn_squad(size: int, centre: Variant = null) -> Array[Node]:
+	var at: Vector3 = centre if centre is Vector3 else _spread_spot()
 	var out: Array[Node] = []
 	for i in size:
 		var offset := Vector3(_rng.randf_range(-3.0, 3.0), 0.0, _rng.randf_range(-3.0, 3.0))

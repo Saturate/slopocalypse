@@ -1,6 +1,6 @@
 {
-  "_comment": "Network relevance: soldiers and drones are sent to a client only while within relevance_distance metres of its player, and dropped past relevance_distance + relevance_margin; checked every relevance_seconds.",
-  "relevance_distance": 400.0,
+  "_comment": "Network relevance: soldiers and drones are sent to a client only while within relevance_distance metres of its player (no further than clients load terrain, world.json load_distance), and dropped past relevance_distance + relevance_margin; checked every relevance_seconds.",
+  "relevance_distance": 300.0,
   "relevance_margin": 40.0,
   "relevance_seconds": 0.25
 }
