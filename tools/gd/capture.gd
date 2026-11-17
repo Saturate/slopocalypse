@@ -52,6 +52,11 @@ func _initialize() -> void:
 		push_error("capture: --setup must be a GDScript path, got '%s'" % args.get("setup", ""))
 		quit(1)
 		return
+	# Captures run while someone is working: the window never takes focus or the mouse, so a
+	# setup with a local player (which captures the pointer) doesn't grab it, and a stray
+	# mouse move can't turn the camera mid-capture.
+	root.unfocusable = true
+	root.mouse_passthrough = true
 	var setup: Node = (setup_script as GDScript).new()
 	root.add_child(setup)
 	var capturer := Capturer.new()

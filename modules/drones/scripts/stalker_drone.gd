@@ -69,6 +69,8 @@ func _ready() -> void:
 	_until_turn = config["direction_change_seconds"]
 	_until_dive = _next_dive()
 	_health.died.connect(_on_died)
+	# Its motors run hot: thermal sights show it.
+	add_to_group(&"warm")
 	_health.damaged.connect(_on_damaged)
 	# Local only: tells this machine's audio a drone exists, so it can give it a hum.
 	EventBus.publish(&"drone.spawned", {"drone": self})

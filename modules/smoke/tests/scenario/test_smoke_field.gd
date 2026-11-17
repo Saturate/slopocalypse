@@ -114,3 +114,17 @@ func test_a_soldier_loses_sight_of_a_player_behind_smoke_until_it_thins() -> voi
 	assert_bool(brain.call(&"clear_shot", player)).is_false()
 	_field.advance(v.lifetime)
 	assert_bool(brain.call(&"clear_shot", player)).is_true()
+
+
+func test_smoke_thins_while_a_thermal_sight_is_up() -> void:
+	var module: Node = _field.get_parent()
+	var view: SmokeView = auto_free(SmokeView.new())
+	view.config = module.get(&"config")
+	add_child(view)
+	_field.server_spawn("drone", Vector3(0, 1, -10))
+	assert_int(view.shown_count()).is_equal(1)
+	var full := view.cloud_alpha(_field.volumes[0].id)
+	EventBus.publish(&"weapons.thermal", {"on": true})
+	assert_float(view.cloud_alpha(_field.volumes[0].id)).is_less(full * 0.5)
+	EventBus.publish(&"weapons.thermal", {"on": false})
+	assert_float(view.cloud_alpha(_field.volumes[0].id)).is_equal_approx(full, 0.001)

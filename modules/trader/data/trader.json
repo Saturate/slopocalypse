@@ -59,6 +59,10 @@
       "price": 30
     },
     {
+      "item": "opt_thermal",
+      "price": 90
+    },
+    {
       "item": "opt_pistol_dot",
       "price": 10
     },

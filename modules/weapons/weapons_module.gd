@@ -470,6 +470,7 @@ func _hold(player: PlayerController, slot: String) -> void:
 		sight.set_meta(&"zoom", magnification if magnification > 1.0 else float(weapon.stats.get("ads_zoom", 1.0)))
 		sight.set_meta(&"ads_seconds", float(weapon.stats.get("ads_seconds", 0.2)))
 		sight.set_meta(&"magnification", magnification)
+		sight.set_meta(&"thermal", ThermalView.of_build(slots))
 		# A pistol is aimed at arm's length and held out at the hip; the receiver says how far.
 		var receiver := GunAssembly.receiver_of(slots)
 		if receiver.has("eye_relief") and not sight.has_meta(&"eye_relief"):
@@ -517,6 +518,7 @@ func _update_scope(player: PlayerController) -> void:
 		scope.name = "ScopeView"
 		scope.player = player
 		scope.gun = held
+		scope.thermal = sight.get_meta(&"thermal", {})
 		player.add_child(scope)
 
 

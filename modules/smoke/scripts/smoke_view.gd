@@ -10,11 +10,14 @@ var config: Dictionary = {}
 ## id -> {volume, fog, cloud, material}
 var _shown: Dictionary[int, Dictionary] = {}
 var _quad: QuadMesh
+## While the local player looks through a thermal sight, smoke barely shows.
+var _thinned := 1.0
 
 
 func _ready() -> void:
 	EventBus.subscribe(&"smoke.spawned", _on_spawned)
 	EventBus.subscribe(&"smoke.ended", _on_ended)
+	EventBus.subscribe(&"weapons.thermal", _on_thermal)
 	_quad = QuadMesh.new()
 	_quad.size = Vector2.ONE * 0.9
 
@@ -22,10 +25,15 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	EventBus.unsubscribe(&"smoke.spawned", _on_spawned)
 	EventBus.unsubscribe(&"smoke.ended", _on_ended)
+	EventBus.unsubscribe(&"weapons.thermal", _on_thermal)
 
 
 func shown_count() -> int:
 	return _shown.size()
+
+
+func cloud_alpha(id: int) -> float:
+	return (_shown[id]["material"] as StandardMaterial3D).albedo_color.a
 
 
 func _on_spawned(p: Dictionary) -> void:
@@ -60,6 +68,13 @@ func _on_ended(p: Dictionary) -> void:
 		_shown.erase(id)
 
 
+func _on_thermal(p: Dictionary) -> void:
+	_thinned = float(config["thermal_share"]) if bool(p.get("on", false)) else 1.0
+	var eye: Variant = _camera_spot()
+	for id: int in _shown:
+		_place(_shown[id], eye)
+
+
 func _process(delta: float) -> void:
 	if _shown.is_empty():
 		return
@@ -81,10 +96,14 @@ func _process(delta: float) -> void:
 
 
 func _place(entry: Dictionary, eye: Variant) -> void:
+	# A thermal sight turning off as the game shuts down can reach here with the plumes
+	# already leaving the tree.
+	if not (entry["cloud"] as Node3D).is_inside_tree():
+		return
 	var v: SmokeVolume = entry["volume"]
 	var centre := v.centre_at(v.age)
 	var radius := v.radius_at(v.age)
-	var share := v.density_at(v.age) / maxf(v.density, 0.001)
+	var share := v.density_at(v.age) / maxf(v.density, 0.001) * _thinned
 	var fog := entry.get("fog") as FogVolume
 	var use_fog := fog != null and eye is Vector3 and (eye as Vector3).distance_to(centre) + radius < _fog_length()
 	if fog != null:
