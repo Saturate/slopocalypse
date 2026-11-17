@@ -10,7 +10,7 @@ func _ready() -> void:
 
 
 func _hint() -> String:
-	return "Drag to move  ·  R turns  ·  drag out to drop  ·  right click uses  ·  B mods your gun"
+	return "Drag to move  ·  R turns  ·  drag out to drop  ·  right click uses  ·  %s mods your gun" % KeyHint.key_for(&"modding")
 
 
 func _unhandled_input(event: InputEvent) -> void:

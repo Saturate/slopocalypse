@@ -13,7 +13,7 @@ func server_done(_riders: Array) -> bool:
 
 func hud_lines(player: Node3D) -> Array[String]:
 	var lines: Array[String] = ["Aiming at: %s" % _aimed_at(player)]
-	lines.append("G sticks a charge, T sets them off")
+	lines.append("%s sticks a charge, %s sets them off" % [KeyHint.key_for(&"charge"), KeyHint.key_for(&"detonate")])
 	return lines
 
 
