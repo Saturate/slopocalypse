@@ -21,6 +21,7 @@
     "range": true,
     "web": true,
     "smoke": true,
-    "lights": true
+    "lights": true,
+    "towers": true
   }
 }

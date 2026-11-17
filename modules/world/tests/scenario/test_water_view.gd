@@ -37,3 +37,17 @@ func test_a_flooded_crater_gets_a_surface() -> void:
 	var before := view.get_child_count()
 	view.add_puddle(Vector4(25.0, 10.0, 1.5, 1.0))
 	assert_int(view.get_child_count()).is_equal(before + 1)
+
+
+func test_a_poured_puddle_lies_on_the_ground_facing_up() -> void:
+	var view := _view()
+	view.drape("t", Vector3(40, 0, 40), 2.0, func(_x: float, _z: float) -> float: return 3.0)
+	var part := view.get_node_or_null(^"Drape_t") as MeshInstance3D
+	assert_object(part).is_not_null()
+	var faces := part.mesh.get_faces()
+	assert_float(faces[0].y).is_equal_approx(3.04, 0.001)
+	assert_float(Plane(faces[0], faces[1], faces[2]).normal.y).is_greater(0.99)
+	# Poured again, bigger: replaced, not added.
+	var before := view.get_child_count()
+	view.drape("t", Vector3(40, 0, 40), 3.0, func(_x: float, _z: float) -> float: return 3.0)
+	assert_int(view.get_child_count()).is_equal(before)
