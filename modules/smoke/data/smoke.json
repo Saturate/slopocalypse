@@ -9,6 +9,7 @@
   "fog_albedo": [0.78, 0.76, 0.74],
   "colour": [0.45, 0.44, 0.43],
   "particles": 70,
+  "thermal_share": 0.15,
   "sources": {
     "blast": {"r0": 1.5, "r1": 5.0, "grow_seconds": 3.0, "lifetime": 14.0, "density": 0.5},
     "drone": {"r0": 1.0, "r1": 3.5, "grow_seconds": 4.0, "lifetime": 25.0, "density": 0.6}

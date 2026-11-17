@@ -5,7 +5,7 @@ extends Node
 const CONFIG := "res://modules/smoke/data/smoke.json"
 const REQUIRED := {
 	"wind": TYPE_ARRAY, "rise_speed": TYPE_FLOAT, "max_volumes": TYPE_FLOAT, "sight_block": TYPE_FLOAT,
-	"fog_radius": TYPE_FLOAT, "fog_density": TYPE_FLOAT, "fog_albedo": TYPE_ARRAY, "fog_ambient": TYPE_FLOAT, "colour": TYPE_ARRAY, "particles": TYPE_FLOAT,
+	"fog_radius": TYPE_FLOAT, "fog_density": TYPE_FLOAT, "fog_albedo": TYPE_ARRAY, "fog_ambient": TYPE_FLOAT, "colour": TYPE_ARRAY, "particles": TYPE_FLOAT, "thermal_share": TYPE_FLOAT,
 	"sources": TYPE_DICTIONARY,
 }
 

@@ -31,6 +31,16 @@
       "muzzle": "muz_comp",
       "optic": "opt_scope_4x"
     },
+    "ar_thermal": {
+      "receiver": "rcv_ar",
+      "barrel": "bar_ar_14",
+      "handguard": "hg_ar_long",
+      "stock": "stk_ar_std",
+      "grip": "grp_ar_std",
+      "magazine": "mag_ar_30",
+      "muzzle": "muz_comp",
+      "optic": "opt_thermal"
+    },
     "ar_heavy": {
       "receiver": "rcv_ar",
       "barrel": "bar_ar_14",
@@ -366,6 +376,35 @@
         "magnification": 4.0,
         "ergonomics": -9.0,
         "weight": 0.55
+      }
+    },
+    "opt_thermal": {
+      "name": "Thermal scope",
+      "slot": "optic",
+      "mesh": "optic_scope",
+      "provides": [],
+      "markers": {
+        "Sight": [
+          0.0,
+          0.045,
+          0.135
+        ]
+      },
+      "marker_meta": {
+        "Sight": {
+          "eye_relief": 0.06
+        }
+      },
+      "thermal": {
+        "range": 150.0,
+        "grain": 0.07,
+        "cold": 0.32
+      },
+      "stats": {
+        "zoom": 1.1,
+        "magnification": 2.5,
+        "ergonomics": -12.0,
+        "weight": 0.8
       }
     },
     "opt_holo": {

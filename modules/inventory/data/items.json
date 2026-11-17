@@ -50,6 +50,7 @@
       "opt_reddot": 3,
       "opt_holo": 2,
       "opt_scope_4x": 1,
+      "opt_thermal": 1,
       "stk_ar_light": 2,
       "hg_ar_long": 1,
       "bar_ar_10": 2,
@@ -134,6 +135,7 @@
       "opt_reddot": 3,
       "opt_holo": 2,
       "opt_scope_4x": 1,
+      "opt_thermal": 1,
       "stk_ar_std": 2,
       "stk_ar_light": 2,
       "hg_ar_std": 2,
@@ -252,6 +254,15 @@
       "short": "Holo",
       "size": [
         2,
+        1
+      ],
+      "kind": "optic"
+    },
+    "opt_thermal": {
+      "name": "Thermal scope",
+      "short": "Thermal",
+      "size": [
+        3,
         1
       ],
       "kind": "optic"

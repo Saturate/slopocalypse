@@ -19,10 +19,13 @@ const DOT_COLOUR := Color(1.0, 0.18, 0.12)
 
 var player: PlayerController
 var gun: Node3D
+## The optic's thermal settings; empty for a day scope.
+var thermal: Dictionary = {}
 
 var _canvas: Control
 var _animator: PlayerBodyAnimator
 var _shown := 0.0
+var _thermal: ThermalView
 
 
 func _ready() -> void:
@@ -32,6 +35,12 @@ func _ready() -> void:
 	_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_canvas.draw.connect(_draw_scope)
 	add_child(_canvas)
+	if not thermal.is_empty():
+		_thermal = ThermalView.new()
+		_thermal.name = "Thermal"
+		_thermal.settings = thermal
+		_thermal.viewer = player
+		add_child(_thermal)
 
 
 func _process(_delta: float) -> void:
@@ -46,6 +55,8 @@ func _process(_delta: float) -> void:
 	gun.visible = _shown < 0.5
 	_canvas.visible = _shown > 0.0
 	_canvas.queue_redraw()
+	if _thermal != null:
+		_thermal.set_active(is_up())
 
 
 func _exit_tree() -> void:
