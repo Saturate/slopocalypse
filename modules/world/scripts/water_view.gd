@@ -163,6 +163,8 @@ func _ready() -> void:
 		add_puddle(puddle)
 	EventBus.subscribe(&"weapon.fired", _on_fired)
 	EventBus.subscribe(&"explosion", _on_explosion)
+	# Other modules find it here to pour puddles (`drape`) and ripple them.
+	add_to_group(&"water_view")
 
 
 func _exit_tree() -> void:
@@ -171,7 +173,7 @@ func _exit_tree() -> void:
 
 
 func _add_surface(mesh: ArrayMesh, part_name: String) -> void:
-	if mesh == null:
+	if mesh == null or mesh.get_surface_count() == 0:
 		return
 	mesh.surface_set_material(0, _material)
 	var part := MeshInstance3D.new()
@@ -191,6 +193,39 @@ func add_puddle(puddle: Vector4) -> void:
 		Vector2(puddle.x + r, puddle.y + r), Vector2(puddle.x - r, puddle.y + r),
 	])
 	_add_surface(surface_mesh(outline, puddle.w), "Puddle%d" % get_child_count())
+
+
+## A thin sheet of water lying on the ground, `radius` around `centre`, one flat cell per
+## 0.5 m at the ground's height there (`height_at(x, z)`) plus `film`: a puddle poured out of something. Called again
+## with the same `key` it replaces that puddle (one that grew).
+func drape(key: String, centre: Vector3, radius: float, height_at: Callable, film := 0.04) -> void:
+	var old := get_node_or_null(NodePath("Drape_" + key))
+	if old != null:
+		old.free()
+	if radius <= 0.05:
+		return
+	var step := 0.5
+	var n := int(ceil(radius / step))
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_normal(Vector3.UP)
+	for i in range(-n, n):
+		for j in range(-n, n):
+			var x0 := centre.x + i * step
+			var z0 := centre.z + j * step
+			# Whole cells inside the circle, so its edge steps like the voxel ground.
+			if Vector2(x0 + step / 2.0 - centre.x, z0 + step / 2.0 - centre.z).length() > radius:
+				continue
+			# One height per cell, from its middle: on stepped ground the sheet steps too,
+			# instead of bridging over the drops.
+			var y := float(height_at.call(x0 + step / 2.0, z0 + step / 2.0)) + film
+			var corners: Array[Vector3] = [Vector3(x0, y, z0), Vector3(x0 + step, y, z0), Vector3(x0 + step, y, z0 + step), Vector3(x0, y, z0 + step)]
+			for k: int in [0, 1, 2, 0, 2, 3]:
+				st.add_vertex(corners[k])
+	var mesh := st.commit()
+	if mesh.get_surface_count() == 0:
+		return
+	_add_surface(mesh, "Drape_" + key)
 
 
 func _process(delta: float) -> void:

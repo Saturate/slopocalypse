@@ -87,13 +87,13 @@ func _ready() -> void:
 	if _visual:
 		_material = ShaderMaterial.new()
 		_material.shader = load(SHADER)
-		if not heights.water.bodies.is_empty():
-			var view := WaterView.new()
-			view.name = "Water"
-			view.water = heights.water
-			view.config = world.get("water", {})
-			add_child(view)
-			flooded.connect(view.add_puddle)
+		# Always there, even with no ponds: others pour puddles on the ground through it.
+		var view := WaterView.new()
+		view.name = "Water"
+		view.water = heights.water
+		view.config = world.get("water", {})
+		add_child(view)
+		flooded.connect(view.add_puddle)
 	# The spawn is solid before anyone arrives.
 	update_around([Vector3.ZERO], INF)
 
