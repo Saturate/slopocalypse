@@ -1,0 +1,231 @@
+{
+ "name": "ruin_block",
+ "size": [
+  33,
+  33
+ ],
+ "tags": [
+  "ruin"
+ ],
+ "pieces": [
+  {
+   "generator": "VoxApartment",
+   "params": {
+    "seed": 201,
+    "floors": 4.0,
+    "stairwells": 2.0,
+    "flat_width": 6.75,
+    "depth": 10.0,
+    "walls": 1.0,
+    "roof": 2.0,
+    "basement": 0.0,
+    "elevators": 0.0,
+    "interior": 1.0
+   },
+   "at": [
+    0,
+    0,
+    -11.5
+   ],
+   "yaw": 0
+  },
+  {
+   "generator": "VoxApartment",
+   "params": {
+    "seed": 202,
+    "floors": 3.0,
+    "stairwells": 1.0,
+    "flat_width": 4.5,
+    "depth": 10.0,
+    "walls": 0.0,
+    "roof": 2.0,
+    "basement": 0.0,
+    "elevators": 0.0,
+    "interior": 1.0
+   },
+   "at": [
+    -11.5,
+    0,
+    5
+   ],
+   "yaw": 90
+  },
+  {
+   "generator": "VoxWall",
+   "params": {
+    "seed": 210,
+    "kind": 2.0,
+    "width": 7.0,
+    "height": 2.4,
+    "thickness": 0.35
+   },
+   "at": [
+    6,
+    0,
+    12
+   ],
+   "yaw": 0
+  },
+  {
+   "generator": "VoxWall",
+   "params": {
+    "seed": 211,
+    "kind": 2.0,
+    "width": 6.0,
+    "height": 1.6,
+    "thickness": 0.35
+   },
+   "at": [
+    13,
+    0,
+    4
+   ],
+   "yaw": 90
+  },
+  {
+   "generator": "VoxWall",
+   "params": {
+    "seed": 212,
+    "kind": 2.0,
+    "width": 4.0,
+    "height": 3.0,
+    "thickness": 0.35
+   },
+   "at": [
+    13,
+    0,
+    13
+   ],
+   "yaw": 45
+  },
+  {
+   "generator": "VoxWall",
+   "params": {
+    "seed": 213,
+    "kind": 2.0,
+    "width": 5.0,
+    "height": 1.2,
+    "thickness": 0.35
+   },
+   "at": [
+    1,
+    0,
+    15
+   ],
+   "yaw": 0
+  },
+  {
+   "generator": "VoxRock",
+   "params": {
+    "seed": 220,
+    "width": 2.4,
+    "height": 1.2,
+    "moss": 0.1,
+    "tone": 0.6
+   },
+   "at": [
+    4,
+    0,
+    6
+   ],
+   "yaw": 0
+  },
+  {
+   "generator": "VoxRock",
+   "params": {
+    "seed": 221,
+    "width": 1.8,
+    "height": 0.9,
+    "moss": 0.1,
+    "tone": 0.6
+   },
+   "at": [
+    8,
+    0,
+    8
+   ],
+   "yaw": 37
+  },
+  {
+   "generator": "VoxRock",
+   "params": {
+    "seed": 222,
+    "width": 2.8,
+    "height": 1.4,
+    "moss": 0.1,
+    "tone": 0.6
+   },
+   "at": [
+    10,
+    0,
+    2
+   ],
+   "yaw": 74
+  },
+  {
+   "generator": "VoxRock",
+   "params": {
+    "seed": 223,
+    "width": 1.6,
+    "height": 0.8,
+    "moss": 0.1,
+    "tone": 0.6
+   },
+   "at": [
+    2,
+    0,
+    10
+   ],
+   "yaw": 111
+  },
+  {
+   "generator": "VoxRock",
+   "params": {
+    "seed": 224,
+    "width": 1.2,
+    "height": 0.6,
+    "moss": 0.1,
+    "tone": 0.6
+   },
+   "at": [
+    6,
+    0,
+    3
+   ],
+   "yaw": 148
+  },
+  {
+   "generator": "VoxCar",
+   "params": {
+    "seed": 230,
+    "wear": 1.0
+   },
+   "at": [
+    9,
+    0,
+    -1
+   ],
+   "yaw": 120
+  }
+ ],
+ "markers": [
+  {
+   "kind": "spawn",
+   "at": [
+    6,
+    0,
+    6
+   ],
+   "yaw": 0
+  },
+  {
+   "kind": "spawn",
+   "at": [
+    11,
+    0,
+    11
+   ],
+   "yaw": 200
+  }
+ ]
+}
