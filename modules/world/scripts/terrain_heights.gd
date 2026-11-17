@@ -59,6 +59,8 @@ var stages: RoadStages
 var start: Dictionary = {}
 ## Null when the config has no road.
 var road: RoadPath
+## Ponds and lakes (`water` in world.json); never null, maybe empty.
+var water: WaterBodies
 
 var _noise := FastNoiseLite.new()
 var _crags := FastNoiseLite.new()
@@ -89,6 +91,8 @@ func _init(config: Dictionary) -> void:
 		# the land's height, not over it.
 		var road_start := minf(z_max(), float(start["tunnel_end_z"])) if has_tunnel() else z_max()
 		road = RoadPath.new(road_cfg, road_start, z_min(), land_height, int(config["seed"]))
+	var water_cfg: Variant = config.get("water", {})
+	water = WaterBodies.new(water_cfg if water_cfg is Dictionary else {}, _dry_height)
 
 
 ## Near end of the world (behind the spawn).
@@ -161,6 +165,17 @@ func _in_trench(x: float, z: float) -> bool:
 
 ## Height in metres at world x/z.
 func height_at(x: float, z: float) -> float:
+	var dry := _dry_height(x, z)
+	return dry if water.bodies.is_empty() else water.carve(x, z, dry)
+
+
+## Inside a pond or lake's outline.
+func in_water(x: float, z: float) -> bool:
+	return water.body_at(x, z) >= 0
+
+
+## The ground with the road and tunnel cut in, before any water.
+func _dry_height(x: float, z: float) -> float:
 	var h := natural_height(x, z)
 	if road == null:
 		return h
