@@ -2,8 +2,9 @@ class_name WaterView
 extends Node3D
 ## Client: one flat surface per pond at its level, shaded by how much water is under each
 ## spot (shallow tint at the edge to deep tint `colour_depth` metres down), with what is
-## under the surface showing through, wobbled on a 0.25 m grid so it stays blocky like the
-## ground. Flooded craters get the same surface over their bowl.
+## under the surface showing through, on a 0.25 m grid so it stays blocky like the ground.
+## A light band where it thins out at the shore, slow blocky waves drifting with `wind`, and
+## the sky's tint as you look across it. Flooded craters get the same surface over their bowl.
 ##
 ## Ripples: the last `MAX_RIPPLES` disturbances (rounds and blasts hitting the water, people
 ## and cars moving through it) go to the shader as rings that grow at `ripple_speed` and fade
@@ -16,10 +17,16 @@ shader_type spatial;
 render_mode cull_disabled, depth_draw_always;
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
 uniform sampler2D screen : hint_screen_texture, filter_linear_mipmap;
-uniform vec3 shallow : source_color = vec3(0.32, 0.5, 0.45);
-uniform vec3 deep : source_color = vec3(0.05, 0.16, 0.2);
+uniform vec3 shallow : source_color = vec3(0.42, 0.68, 0.52);
+uniform vec3 deep : source_color = vec3(0.09, 0.36, 0.26);
+uniform vec3 shore : source_color = vec3(0.5, 0.75, 0.68);
+uniform vec3 sky : source_color = vec3(0.62, 0.71, 0.78);
 uniform float colour_depth = 3.0;
+// Water shallower than this (metres) at the edge shows as a light band.
+uniform float shore_depth = 0.2;
 uniform float cell = 0.25;
+// Metres a second the wave pattern drifts, x and z.
+uniform vec2 wind = vec2(0.6, 0.25);
 // x, z, when it started (`now`'s clock), strength (0: unused).
 uniform vec4 ripples[16];
 uniform float now;
@@ -35,11 +42,29 @@ float hash(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
 
+// Smooth value noise, sampled per cell so the waves stay blocky.
+float noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
+float waves(vec2 at) {
+	vec2 drift = wind * now;
+	return noise((at + drift) * 0.35) * 0.65 + noise((at - drift * 0.6) * 0.9) * 0.35;
+}
+
 void fragment() {
 	vec2 snapped = floor(world.xz / cell);
-	float t = floor(TIME * 3.0);
-	vec2 wobble = (vec2(hash(snapped + t), hash(snapped.yx - t)) - 0.5) * 0.006;
-	vec2 uv = SCREEN_UV + wobble;
+	vec2 centre = (snapped + 0.5) * cell;
+	float facing = clamp(dot(NORMAL, VIEW), 0.0, 1.0);
+	// Waves: drifting light and dark patches, a few steps of brightness per cell.
+	float w = waves(centre);
+	// Two hard-edged shades, crests and troughs, so the waves read as blocks, not smudges.
+	float band_w = step(0.52, w);
+	vec2 slope = vec2(waves(centre + vec2(cell, 0.0)) - w, waves(centre + vec2(0.0, cell)) - w);
+	vec2 uv = SCREEN_UV + slope * 0.02;
 	float d = texture(depth_tex, uv).r;
 	vec4 view = INV_PROJECTION_MATRIX * vec4(uv * 2.0 - 1.0, d, 1.0);
 	view.xyz /= view.w;
@@ -52,17 +77,16 @@ void fragment() {
 	}
 	float k = clamp(through / colour_depth, 0.0, 1.0);
 	vec3 behind = texture(screen, uv).rgb;
-	vec3 tint = mix(shallow, deep, k);
+	vec3 tint = mix(shallow, deep, sqrt(k));
 	// What is under the water was lit already: it shows through as emission, fading with depth,
 	// so it isn't lit twice; the water's own tint takes the light.
-	ALBEDO = tint * (0.35 + 0.65 * k);
-	EMISSION = behind * shallow * 1.4 * (1.0 - k);
-	// Each 0.25 m cell tilts a little and changes a few times a second: blocky glints that
-	// match the ground, not a smooth mirror.
-	// Looking across the water at a low angle the glints and the sky's reflection would wash it
-	// to white, so both fade as the view flattens.
-	float facing = clamp(dot(NORMAL, VIEW), 0.0, 1.0);
-	vec2 centre = (snapped + 0.5) * cell;
+	vec3 albedo = tint * (0.6 + 0.4 * k) * (0.85 + band_w * mix(0.45, 0.3, facing));
+	EMISSION = behind * shallow * 1.2 * (1.0 - k);
+	// A light band where the water thins out against the ground.
+	float edge = 1.0 - smoothstep(shore_depth * 0.4, shore_depth, through);
+	albedo = mix(albedo, shore, edge * 0.65);
+	// Looking across it, water shows the sky; kept a tint, not a white mirror.
+	albedo = mix(albedo, sky, pow(1.0 - facing, 2.5) * 0.3);
 	float ring = 0.0;
 	vec2 push = vec2(0.0);
 	for (int i = 0; i < 16; i++) {
@@ -79,12 +103,17 @@ void fragment() {
 		push += away / max(dist, 0.001) * strength;
 	}
 	ring = clamp(ring, 0.0, 1.0);
-	ALBEDO += vec3(0.22) * ring;
-	vec3 tilt = vec3(hash(snapped + t * 1.7) - 0.5, 0.0, hash(snapped.yx + t * 2.3) - 0.5) * 0.06 * mix(0.12, 1.0, facing * facing);
-	tilt += vec3(push.x, 0.0, push.y) * 0.25;
+	ALBEDO = albedo + vec3(0.3) * ring;
+	// Now and then a cell catches the sun: a few bright specks that move, most from low angles.
+	// Only further off: up close a lit cell is a white tile, not a sparkle.
+	float far = smoothstep(10.0, 25.0, length(VERTEX));
+	// Glints are the sun off wave faces seen at a low angle; from above there are none.
+	float glint = step(0.997, hash(snapped + floor(now * 4.0))) * smoothstep(0.6, 0.2, facing);
+	EMISSION += vec3(0.9, 0.95, 1.0) * glint * 0.45 * far;
+	vec3 tilt = vec3(slope.x, 0.0, slope.y) * 0.6 * mix(0.2, 1.0, facing) + vec3(push.x, 0.0, push.y) * 0.25;
 	NORMAL = normalize(NORMAL + (VIEW_MATRIX * vec4(tilt, 0.0)).xyz);
-	ROUGHNESS = mix(0.18, 0.08, facing);
-	SPECULAR = mix(0.32, 0.5, facing);
+	ROUGHNESS = mix(0.3, 0.12, facing);
+	SPECULAR = mix(0.12, 0.35, facing);
 	METALLIC = 0.0;
 	ALPHA = 1.0;
 }
@@ -116,9 +145,14 @@ func _ready() -> void:
 	shader.code = SHADER
 	_material = ShaderMaterial.new()
 	_material.shader = shader
-	_material.set_shader_parameter(&"shallow", _colour(config.get("shallow", [0.32, 0.5, 0.45])))
-	_material.set_shader_parameter(&"deep", _colour(config.get("deep", [0.05, 0.16, 0.2])))
+	_material.set_shader_parameter(&"shallow", _colour(config.get("shallow", [0.42, 0.68, 0.52])))
+	_material.set_shader_parameter(&"deep", _colour(config.get("deep", [0.09, 0.36, 0.26])))
 	_material.set_shader_parameter(&"colour_depth", float(config.get("colour_depth", 3.0)))
+	_material.set_shader_parameter(&"shore", _colour(config.get("shore_colour", [0.5, 0.75, 0.68])))
+	_material.set_shader_parameter(&"sky", _colour(config.get("sky", [0.62, 0.71, 0.78])))
+	_material.set_shader_parameter(&"shore_depth", float(config.get("shore_depth", 0.2)))
+	var wind: Array = config.get("wind", [0.6, 0.25])
+	_material.set_shader_parameter(&"wind", Vector2(float(wind[0]), float(wind[1])))
 	_material.set_shader_parameter(&"ripple_speed", float(config.get("ripple_speed", 1.5)))
 	_material.set_shader_parameter(&"ripple_seconds", float(config.get("ripple_seconds", 1.5)))
 	_ripples.resize(MAX_RIPPLES)
