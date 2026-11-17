@@ -23,9 +23,9 @@ const BUTTON_SHADOW := Vector2(4, 4)
 
 
 func _init() -> void:
-	var heading: Font = load(HEADING_FONT)
-	var body: Font = load(BODY_FONT)
-	var number: Font = load(NUMBER_FONT)
+	var heading := _font(HEADING_FONT)
+	var body := _font(BODY_FONT)
+	var number := _font(NUMBER_FONT)
 	default_font = body
 	default_font_size = Palette.BODY
 
@@ -66,6 +66,17 @@ func _init() -> void:
 	set_stylebox(&"normal", &"AccentButton", _plate(Palette.ACCENT, false, BUTTON_SHADOW, true))
 	set_stylebox(&"hover", &"AccentButton", _plate(Palette.ACCENT.lightened(0.15), false, BUTTON_SHADOW, true))
 	set_stylebox(&"pressed", &"AccentButton", _pressed(Palette.ACCENT.darkened(0.15), true))
+
+
+## In a checkout the raw .ttf is there and is read directly: as the project theme this runs
+## while the engine starts, which on a fresh checkout is before the fonts are imported. An
+## exported game ships only the imported font, so it loads that.
+static func _font(path: String) -> Font:
+	if FileAccess.file_exists(path):
+		var f := FontFile.new()
+		f.data = FileAccess.get_file_as_bytes(path)
+		return f
+	return load(path)
 
 
 func _variation(name: StringName, base: StringName, font: Font, size: int, colour: Color) -> void:
