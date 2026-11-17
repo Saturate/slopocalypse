@@ -1,10 +1,18 @@
 {
-  "_comment": "The city (first steps of #331 and #220): for now a row of apartment blocks beside the road. buildings: each stands `at` metres out from the start, `side` metres from the road's middle (negative: the other side), facing the road, with VoxApartment's parameters (`floors`, `stairwells`, `walls`, `roof`, `seed`). pad_margin: metres of levelled ground round each footprint, pad_blend: metres over which it eases back into the land.",
-  "pad_margin": 2.0,
-  "pad_blend": 4.0,
-  "buildings": [
-    { "at": 150.0, "side": 22.0, "floors": 4.0, "stairwells": 2.0, "walls": 0.0, "roof": 0.0, "seed": 11.0 },
-    { "at": 185.0, "side": 22.0, "floors": 5.0, "stairwells": 1.0, "walls": 1.0, "roof": 2.0, "seed": 12.0 },
-    { "at": 165.0, "side": -22.0, "floors": 3.0, "stairwells": 2.0, "walls": 2.0, "roof": 2.0, "seed": 13.0 }
-  ]
+  "_comment": "The city (#333, #220, part of #331): a European city of perimeter blocks beside the road. at: metres out from the start along the road; side: metres from the road's middle to the city's near edge (negative: the other side). size (metres, square), blocks (a side), street_width (kerb to kerb), street_jitter (how far, in metres, each street line may sit off a regular grid), pavement (width), passage_width (through each block into its courtyard), building_depth, floors_edge and floors_middle (storeys at the edge and toward the middle), style (danish for now; see #335). pad_blend: metres over which the levelled city eases back into the land. builds_per_frame: buildings put up each frame while the city loads.",
+  "seed": 2601.0,
+  "at": 260.0,
+  "side": 18.0,
+  "size": 150.0,
+  "blocks": 3.0,
+  "street_width": 8.0,
+  "street_jitter": 4.0,
+  "pavement": 3.0,
+  "passage_width": 3.0,
+  "building_depth": 10.0,
+  "floors_edge": 4.0,
+  "floors_middle": 6.0,
+  "style": "danish",
+  "pad_blend": 14.0,
+  "builds_per_frame": 2.0
 }

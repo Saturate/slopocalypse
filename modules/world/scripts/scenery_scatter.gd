@@ -206,10 +206,28 @@ func _exit_tree() -> void:
 	_pending.clear()
 
 
+## Clearing sets by who owns them (missions, the city): each owner replaces only its own.
+var _clearing_sets: Dictionary[StringName, Array] = {}
+
+
+## `owner`'s clearings (see `set_clearings`), keeping everyone else's.
+func set_clearings_for(owner: StringName, circles: Array) -> void:
+	_clearing_sets[owner] = circles
+	var all: Array = []
+	for key: StringName in _clearing_sets:
+		all.append_array(_clearing_sets[key])
+	_apply_clearings(all)
+
+
+## Clearings for callers that name no owner (the missions).
+func set_clearings(circles: Array) -> void:
+	set_clearings_for(&"", circles)
+
+
 ## Keeps trees, rocks and grass out of `circles` (`[{at: Vector3, radius: float}]`),
 ## replacing any earlier set; loaded chunks the old or new circles touch are rebuilt. Every
 ## instance must set the same circles (they change what grows where).
-func set_clearings(circles: Array) -> void:
+func _apply_clearings(circles: Array) -> void:
 	var before := _clearings.duplicate()
 	_clearings_gen += 1
 	_clearings.clear()
