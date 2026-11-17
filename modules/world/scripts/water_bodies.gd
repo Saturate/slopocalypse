@@ -13,6 +13,9 @@ extends RefCounted
 
 ## Each: {outline: PackedVector2Array, level, depth, box: Rect2}.
 var bodies: Array[Dictionary] = []
+## Craters that dipped below a body's level next to it, flooded to that level: each
+## Vector4(x, z, radius at the surface, level).
+var puddles: Array[Vector4] = []
 var shore := 4.0
 var bank := 8.0
 ## How far above the water the bank starts at the edge.
@@ -74,6 +77,44 @@ func depth(x: float, z: float, ground: float) -> float:
 
 func level_of(i: int) -> float:
 	return float(bodies[i]["level"])
+
+
+## The water level at x, z: a body's, a flooded crater's, or NAN where there is none.
+func level_at(x: float, z: float) -> float:
+	var i := body_at(x, z)
+	if i >= 0:
+		return level_of(i)
+	for p in puddles:
+		if Vector2(x - p.x, z - p.y).length_squared() < p.z * p.z:
+			return p.w
+	return NAN
+
+
+## A crater, a sphere at `centre` of `radius` dug into the ground, floods if it reaches
+## below the level of a body it is in or beside (within the body's bank): the water fills it
+## up to that level. Returns the puddle as Vector4(x, z, radius at the surface, level), or
+## Vector4.ZERO when it stays dry (or lies inside the body, whose surface already covers it).
+func flood(centre: Vector3, radius: float) -> Vector4:
+	var p := Vector2(centre.x, centre.z)
+	for b in bodies:
+		if not (b["box"] as Rect2).grow(bank + radius).has_point(p):
+			continue
+		var level := float(b["level"])
+		if centre.y - radius >= level:
+			continue
+		if Geometry2D.is_point_in_polygon(p, b["outline"]):
+			return Vector4.ZERO
+		if edge_distance(p, b["outline"]) > bank + radius:
+			continue
+		# Where the crater's bowl meets the water's surface.
+		var up := level - centre.y
+		var at_surface := sqrt(maxf(radius * radius - up * up, 0.0))
+		if at_surface <= 0.05:
+			continue
+		var puddle := Vector4(centre.x, centre.z, at_surface, level)
+		puddles.append(puddle)
+		return puddle
+	return Vector4.ZERO
 
 
 ## Distance from `p` to the nearest edge of `outline`.
