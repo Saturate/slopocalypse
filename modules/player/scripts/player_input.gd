@@ -35,8 +35,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		var motion: InputEventMouseMotion = event
 		# Zoomed in, the same mouse motion turns less, so aim speed feels the same on screen.
 		var camera := player.get_node("Head/Camera") as Camera3D
-		var zoom := camera.fov / float(player.config["fov"])
-		intent.look_delta += motion.relative * sensitivity * zoom
+		var zoom := camera.fov / (float(player.config["fov"]) + Settings.fov_offset())
+		intent.look_delta += motion.relative * sensitivity * Settings.mouse_scale() * zoom
 	# After alt-tab the window can come back with a free mouse; a click into the game takes
 	# it again, but never through an open screen.
 	elif event is InputEventMouseButton and event.is_pressed() and not UiStack.is_blocking():

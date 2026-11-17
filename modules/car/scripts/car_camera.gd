@@ -64,7 +64,7 @@ func place(delta: float) -> void:
 	if not global_position.is_equal_approx(look):
 		look_at(look)
 	var speed := (car as RigidBody3D).linear_velocity.length() if car is RigidBody3D else 0.0
-	var target_fov := lerpf(float(_cfg["fov"]), float(_cfg["fov_at_top_speed"]), clampf(speed / _top_speed, 0.0, 1.0))
+	var target_fov := lerpf(float(_cfg["fov"]), float(_cfg["fov_at_top_speed"]), clampf(speed / _top_speed, 0.0, 1.0)) + Settings.fov_offset()
 	fov = lerpf(fov, target_fov, 1.0 - exp(-2.0 * delta))
 
 
@@ -73,7 +73,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		return
-	_yaw -= (event as InputEventMouseMotion).relative.x * float(_cfg["orbit_sensitivity"])
+	_yaw -= (event as InputEventMouseMotion).relative.x * float(_cfg["orbit_sensitivity"]) * Settings.mouse_scale()
 	_yaw = wrapf(_yaw, -PI, PI)
 	_idle = 0.0
 

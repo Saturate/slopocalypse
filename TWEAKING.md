@@ -5,6 +5,7 @@ Every gameplay number lives in a JSON file. Change it, start the game again, pla
 - **From the project:** edit the file under `modules/<id>/data/` (or `data/`) directly.
 - **In the portable zip:** copy the file from `defaults/` into `tweaks/` at the same path and edit the copy. It replaces the built-in file; delete it to go back. The game logs `using the tweaked copy` when it picks one up.
 - **Multiplayer:** the server decides damage, health, enemies, drones, loot and crates, so tweak on the machine that hosts. Give friends the same `tweaks/` folder so gun parts and feel match.
+- **Your own settings are not tweaks:** mouse sensitivity, field of view, volume, fullscreen, interface size and keys are in Settings (title screen or Esc menu) and saved in `settings.cfg` in the game's user folder.
 - **Bad values fail loudly:** a missing field or a wrong type is logged with the file and field name, and that feature stays off instead of misbehaving.
 
 JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the game rolls within, and `seconds` are seconds.

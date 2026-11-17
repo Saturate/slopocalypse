@@ -21,7 +21,7 @@ const WARN := UiPalette.BAD
 const LABEL := UiPalette.DIM
 const SHOWN_SERVERS := 4
 const MARGIN := Vector2(96, 72)
-const BUTTON_SIZE := Vector2(360, 54)
+const BUTTON_SIZE := Vector2(360, 50)
 const LOGO_SIZE := 104
 const WHATS_NEW_LINES := 3
 const WHATS_NEW_WIDTH := 460.0
@@ -44,6 +44,7 @@ var _friend_message: Label
 var _friends: ScreenFrame
 var _changelog: ChangelogScreen
 var _credits: CreditsScreen
+var _settings: SettingsScreen
 var _buttons: Dictionary[StringName, Button] = {}
 
 
@@ -77,6 +78,9 @@ func _ready() -> void:
 	for frame: ScreenFrame in [_changelog, _credits]:
 		frame.visible = false
 		add_child(frame)
+	# Handles its own Esc (it may be waiting for a key).
+	_settings = SettingsScreen.new()
+	add_child(_settings)
 
 
 ## Esc closes whichever of this menu's screens is on top.
@@ -94,8 +98,12 @@ func _input(event: InputEvent) -> void:
 
 
 func _exit_tree() -> void:
-	for frame: ScreenFrame in [_friends, _changelog, _credits]:
+	for frame: ScreenFrame in [_friends, _changelog, _credits, _settings]:
 		UiStack.pop(frame)
+
+
+func open_settings() -> void:
+	_settings.open()
 
 
 func open_changelog() -> void:
@@ -109,7 +117,7 @@ func open_credits() -> void:
 
 ## Which of the menu's screens is open over the title, or "".
 func open_screen() -> String:
-	for frame: ScreenFrame in [_friends, _changelog, _credits]:
+	for frame: ScreenFrame in [_friends, _changelog, _credits, _settings]:
 		if frame.visible:
 			return frame.name
 	return ""
@@ -234,7 +242,7 @@ func _title_column() -> void:
 	push.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	col.add_child(push)
 	var buttons := VBoxContainer.new()
-	buttons.add_theme_constant_override(&"separation", 12)
+	buttons.add_theme_constant_override(&"separation", 10)
 	buttons.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	col.add_child(buttons)
 	buttons.add_child(_button(&"Solo", "Play solo", func() -> void:
@@ -245,6 +253,7 @@ func _title_column() -> void:
 		buttons.add_child(_button(&"Range", "Test range", func() -> void: range_requested.emit()))
 	if has_library:
 		buttons.add_child(_button(&"Library", "Asset library", func() -> void: library_requested.emit()))
+	buttons.add_child(_button(&"Settings", "Settings", open_settings))
 	buttons.add_child(_button(&"Changelog", "Changelog", open_changelog))
 	buttons.add_child(_button(&"Credits", "Credits", open_credits))
 	buttons.add_child(_button(&"Quit", "Quit", func() -> void: get_tree().quit(0)))

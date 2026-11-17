@@ -17,6 +17,11 @@ static var _library_from_args := OS.get_cmdline_user_args().has("--library")
 func _ready() -> void:
 	# Screens from the last session are gone; their entries must not hold the mouse.
 	UiStack.clear()
+	# Before modules load: a key the player chose must be in place before a module registers
+	# its default for the same action.
+	Settings.load_from()
+	Settings.apply(get_tree().root)
+	Settings.apply_keys()
 	# Before anything reads the profile or opens a save.
 	var moved := UserDataMove.run()
 	if moved > 0:
