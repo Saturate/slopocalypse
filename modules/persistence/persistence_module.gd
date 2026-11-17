@@ -1,7 +1,8 @@
 extends Node
 ## Server only: keeps progress between sessions in an SQLite file (`SaveStore`, in Rust).
 ## Per player, by name: backpack, changed gun builds, health and position. For the world:
-## loot lying on the ground and what each crate holds. A player is loaded when they spawn
+## loot lying on the ground, what each crate holds, and every module's damage record (the
+## `world_state` group: craters, felled trees, broken lights, holed towers). A player is loaded when they spawn
 ## and saved when they leave; the world is loaded once it is ready; everything is saved
 ## every `autosave_seconds`, when the last player leaves and when the server stops on its
 ## own. A killed server loses at most `autosave_seconds`.
@@ -120,6 +121,7 @@ func _on_world_ready(_p: Dictionary) -> void:
 
 
 func server_load_world() -> void:
+	server_load_parts()
 	var inventory := _inventory()
 	if inventory == null:
 		return
@@ -260,13 +262,38 @@ func server_save_player(peer: int) -> bool:
 
 
 func server_save_world() -> bool:
+	var ok := server_save_parts()
 	var inventory := _inventory()
 	if inventory == null:
-		return false
+		return ok
 	if not store.save_world(inventory.call(&"server_world_state")):
 		Log.error(&"persistence", "could not save the world: %s" % store.last_error())
 		return false
-	return true
+	return ok
+
+
+## What each module that keeps world damage (the `world_state` group: craters and felled
+## trees, broken lights, holed towers...) has to say, one versioned part each. Persistence
+## never looks inside a part; its owner reads it back.
+func server_save_parts() -> bool:
+	var ok := true
+	for node: Node in get_tree().get_nodes_in_group(&"world_state"):
+		var owner_name := str(node.call(&"world_state_owner"))
+		var data := var_to_bytes(node.call(&"server_world_state"))
+		if not store.save_part(owner_name, int(node.call(&"world_state_version")), data):
+			Log.error(&"persistence", "could not save %s's part of the world: %s" % [owner_name, store.last_error()])
+			ok = false
+	return ok
+
+
+func server_load_parts() -> void:
+	for node: Node in get_tree().get_nodes_in_group(&"world_state"):
+		var owner_name := str(node.call(&"world_state_owner"))
+		var part := store.load_part(owner_name)
+		if part.is_empty():
+			continue
+		node.call(&"server_restore_world_state", int(part["version"]), bytes_to_var(part["data"]))
+		Log.info(&"persistence", "%s's part of the world loaded" % owner_name)
 
 
 func server_save_all() -> void:

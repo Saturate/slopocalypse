@@ -57,6 +57,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"explosion", _on_explosion)
 	EventBus.subscribe(&"world.tree_felled", _on_tree_felled)
 	Net.peer_joined.connect(_on_peer_joined)
+	add_to_group(&"world_state")
 	# For the perf log (or anything else reading Performance): what the world is holding.
 	for monitor: StringName in MONITORS:
 		if not Performance.has_custom_monitor(monitor):
@@ -101,16 +102,64 @@ func _on_tree_felled(p: Dictionary) -> void:
 
 ## Someone joining late gets every tree already down, lying where it fell, as dry as it is.
 func _on_peer_joined(peer: int) -> void:
-	if not _is_server() or _scenery == null:
+	if not _is_server():
 		return
-	var felled := _scenery.felled()
-	if felled.is_empty():
+	# Craters first, so trees and loot settle on the ground as it is now.
+	if _voxels != null and not _voxels.dig_log().is_empty():
+		_receive_digs.rpc_id(peer, _digs_as_list())
+	if _scenery == null:
 		return
+	var list := _felled_as_list()
+	if not list.is_empty():
+		_receive_felled.rpc_id(peer, list)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _receive_digs(list: Array) -> void:
+	for d: Array in list:
+		_voxels.server_dig(Vector3(float(d[0]), float(d[1]), float(d[2])), float(d[3]))
+
+
+func _digs_as_list() -> Array:
+	var out: Array = []
+	for d in _voxels.dig_log():
+		out.append([d.x, d.y, d.z, d.w])
+	return out
+
+
+func _felled_as_list() -> Array:
 	var list: Array = []
+	if _scenery == null:
+		return list
+	var felled := _scenery.felled()
 	for id: Vector2i in felled:
 		var info: Dictionary = felled[id]
 		list.append([id.x, id.y, info["direction"], info["cut"], info["blast"], _scenery.felled_age(id)])
-	_receive_felled.rpc_id(peer, list)
+	return list
+
+
+## The `world_state` contract (persistence): craters and felled trees, kept across restarts.
+func world_state_owner() -> String:
+	return "world"
+
+
+func world_state_version() -> int:
+	return 1
+
+
+func server_world_state() -> Dictionary:
+	return {"digs": _digs_as_list() if _voxels != null else [], "felled": _felled_as_list()}
+
+
+func server_restore_world_state(version: int, data: Variant) -> void:
+	if version != 1 or not data is Dictionary:
+		Log.warn(&"world", "saved world damage is version %d; this game reads 1, so it starts undamaged" % version)
+		return
+	var d: Dictionary = data
+	if _voxels != null:
+		_receive_digs(d.get("digs", []))
+	if _scenery != null:
+		_receive_felled(d.get("felled", []))
 
 
 @rpc("authority", "call_remote", "reliable")
