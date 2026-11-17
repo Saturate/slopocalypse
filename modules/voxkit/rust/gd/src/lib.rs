@@ -220,6 +220,27 @@ impl VoxelModel {
             .map_or(0, |g| g.dominant_material(v3(min), v3(max)) as i64)
     }
 
+    /// The filled cells merged into few `AABB`s (model space) for collision, leaving out
+    /// cells of the materials in `skip` (glass, furniture).
+    #[func]
+    fn collision_boxes(&self, skip: PackedInt32Array) -> Array<Aabb> {
+        let mut out = Array::new();
+        if let Some(g) = self.grid.as_ref() {
+            let mut leave = [false; 256];
+            for &m in skip.as_slice() {
+                if (0..256).contains(&m) {
+                    leave[m as usize] = true;
+                }
+            }
+            for (min, max) in g.boxes(&leave) {
+                let lo = Vector3::new(min[0], min[1], min[2]);
+                let hi = Vector3::new(max[0], max[1], max[2]);
+                out.push(Aabb::new(lo, hi - lo));
+            }
+        }
+        out
+    }
+
     /// Each connected patch of material `index`, as an `AABB` in model space, in the same
     /// order on every instance (panes of glass, numbered alike everywhere).
     #[func]

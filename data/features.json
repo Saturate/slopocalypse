@@ -22,6 +22,7 @@
     "web": true,
     "smoke": true,
     "lights": true,
-    "towers": true
+    "towers": true,
+    "city": true
   }
 }

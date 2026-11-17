@@ -192,6 +192,77 @@ impl Grid {
             .map_or(0, |m| m as u8)
     }
 
+    /// The filled cells as few boxes as a greedy merge finds (along x, then z, then y), in
+    /// metres `(min, max)`, leaving out cells whose material is in `skip` (glass a round
+    /// should pass, furniture nobody needs to bump). For collision: the boxes cover exactly
+    /// the cells kept, so doors, windows and stairs come out as they are drawn.
+    pub fn boxes(&self, skip: &[bool; 256]) -> Vec<([f32; 3], [f32; 3])> {
+        let keep = |i: usize| self.cells[i] != EMPTY && !skip[self.materials[i] as usize];
+        let mut taken = vec![false; self.cells.len()];
+        let mut out = Vec::new();
+        let o = self.origin();
+        for y in 0..self.ny {
+            for z in 0..self.nz {
+                for x in 0..self.nx {
+                    let start = self.index(x, y, z);
+                    if taken[start] || !keep(start) {
+                        continue;
+                    }
+                    let free = |x: usize, y: usize, z: usize, taken: &Vec<bool>| {
+                        let i = self.index(x, y, z);
+                        !taken[i] && keep(i)
+                    };
+                    let mut x1 = x + 1;
+                    while x1 < self.nx && free(x1, y, z, &taken) {
+                        x1 += 1;
+                    }
+                    let mut z1 = z + 1;
+                    'grow_z: while z1 < self.nz {
+                        for xx in x..x1 {
+                            if !free(xx, y, z1, &taken) {
+                                break 'grow_z;
+                            }
+                        }
+                        z1 += 1;
+                    }
+                    let mut y1 = y + 1;
+                    'grow_y: while y1 < self.ny {
+                        for zz in z..z1 {
+                            for xx in x..x1 {
+                                if !free(xx, y1, zz, &taken) {
+                                    break 'grow_y;
+                                }
+                            }
+                        }
+                        y1 += 1;
+                    }
+                    for yy in y..y1 {
+                        for zz in z..z1 {
+                            for xx in x..x1 {
+                                let i = self.index(xx, yy, zz);
+                                taken[i] = true;
+                            }
+                        }
+                    }
+                    let v = self.voxel;
+                    out.push((
+                        [
+                            o[0] + x as f32 * v,
+                            o[1] + y as f32 * v,
+                            o[2] + z as f32 * v,
+                        ],
+                        [
+                            o[0] + x1 as f32 * v,
+                            o[1] + y1 as f32 * v,
+                            o[2] + z1 as f32 * v,
+                        ],
+                    ));
+                }
+            }
+        }
+        out
+    }
+
     /// Each connected patch (cells sharing a face) of material `m`, as its bounding box in
     /// metres `(min, max)`, in a fixed order (by first cell in storage order), so every
     /// instance numbers them alike.
@@ -1319,6 +1390,49 @@ mod tests {
         assert_eq!(g.colour_at([-0.25, 0.5, 0.0]), RED);
         assert_eq!(g.colour_at([0.25, 0.5, 0.0]), EMPTY);
         assert_eq!(g.colour_at([0.0, -3.0, 0.0]), EMPTY);
+    }
+
+    #[test]
+    fn boxes_cover_exactly_the_kept_cells_in_few_boxes() {
+        let mut g = Grid::new([2.0, 2.0, 2.0], 0.1);
+        g.brush = 1;
+        g.fill_box(
+            [-1.0, 0.0, -1.0],
+            [1.0, 0.2, 1.0],
+            Op::Fill(Paint::solid(1)),
+        );
+        // A wall with a doorway, and a pane of glass to leave out.
+        g.fill_box(
+            [-1.0, 0.2, -0.1],
+            [1.0, 2.0, 0.1],
+            Op::Fill(Paint::solid(2)),
+        );
+        g.fill_box([-0.3, 0.2, -0.1], [0.3, 1.4, 0.1], Op::Carve);
+        g.fill_box([0.5, 1.5, -0.1], [0.8, 1.8, 0.1], Op::Carve);
+        g.brush = 4;
+        g.fill_box([0.5, 1.5, -0.1], [0.8, 1.8, 0.1], Op::Fill(Paint::solid(3)));
+        let mut skip = [false; 256];
+        skip[4] = true;
+        let boxes = g.boxes(&skip);
+        let cells: f32 = boxes
+            .iter()
+            .map(|(a, b)| ((b[0] - a[0]) * (b[1] - a[1]) * (b[2] - a[2]) / 0.001).round())
+            .sum();
+        let kept = (0..g.cells.len())
+            .filter(|&i| g.cells[i] != EMPTY && g.materials[i] != 4)
+            .count();
+        assert_eq!(cells as usize, kept);
+        // A floor slab, a wall either side of the doorway and over it: a handful, not thousands.
+        assert!(boxes.len() < 12, "{} boxes", boxes.len());
+        // Nothing in the doorway.
+        let hit = |p: [f32; 3]| {
+            boxes
+                .iter()
+                .any(|(a, b)| (0..3).all(|k| p[k] > a[k] && p[k] < b[k]))
+        };
+        assert!(!hit([0.0, 1.0, 0.0]));
+        assert!(hit([-0.6, 1.0, 0.0]));
+        assert!(!hit([0.65, 1.65, 0.0]));
     }
 
     #[test]

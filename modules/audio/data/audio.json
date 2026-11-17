@@ -32,6 +32,7 @@
   },
   "surface_families": {
     "wood": "wood",
+    "furniture": "wood",
     "sheet_metal": "metal",
     "window_glass": "glass",
     "laminated_glass": "glass",
