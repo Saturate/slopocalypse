@@ -76,3 +76,14 @@ func test_someone_joining_later_sees_it_out() -> void:
 	var lamps: Array = module.get(&"lamps")
 	assert_bool((lamps[0] as StreetLamp).broken).is_false()
 	assert_bool((lamps[1] as StreetLamp).broken).is_true()
+
+
+func test_lamps_go_up_wherever_another_module_says() -> void:
+	var module: Node = auto_free((load(MODULE) as GDScript).new())
+	add_child(module)
+	var spots: Array[Transform3D] = [Transform3D(Basis.IDENTITY, Vector3(40, 0.15, 3)), Transform3D(Basis(Vector3.UP, PI), Vector3(52, 0.15, 3))]
+	EventBus.publish(&"city.lamp_spots", {"spots": spots})
+	var lamps: Array = module.get(&"lamps")
+	assert_int(lamps.size()).is_equal(2)
+	assert_vector((lamps[1] as StreetLamp).global_position).is_equal_approx(Vector3(52, 0.15, 3), Vector3.ONE * 0.001)
+	assert_int((lamps[1] as StreetLamp).lamp_id).is_equal(1)

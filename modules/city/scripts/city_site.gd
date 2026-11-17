@@ -1,15 +1,37 @@
 class_name CitySite
 extends Node3D
 ## A city on the ground (CityLayout): levelled, cleared of trees and grass, its streets laid
-## in asphalt, pavements a kerb high round every block and over the square, and its apartment
-## blocks (CityBuilding) put up a few a frame so loading it doesn't stall. Built the same on
-## the server and every client from the layout's seed.
+## in pale city asphalt with zebra crossings by the junctions, pavements a kerb high round
+## every block and over the square (paving slabs edged in kerb stones, setts in the
+## courtyards, a grate round each street tree), street trees, and its apartment blocks
+## (CityBuilding) put up a few a frame so loading it doesn't stall. Built the same on the
+## server and every client from the layout's seed; the server gets the collision only.
+##
+## Street lamps belong to the lights module: `lamp_spots()` says where they go.
 ##
 ## Origin at the city's middle, on its level ground; -z toward the road it joins.
 
 const KERB := 0.15
-const PAVEMENT_COLOUR := Color(0.6, 0.59, 0.56)
-const SQUARE_COLOUR := Color(0.55, 0.52, 0.48)
+const PAVING := Color(0.62, 0.61, 0.58)
+const SQUARE_PAVING := Color(0.64, 0.59, 0.51)
+const KERB_STONE := Color(0.74, 0.73, 0.7)
+const SETTS := Color(0.5, 0.47, 0.43)
+const GRATE := Color(0.17, 0.17, 0.18)
+const SOIL := Color(0.3, 0.23, 0.16)
+## Paving voxels a kerb high, so a block's paving is one layer.
+const PAVING_VOXEL := KERB
+## Kerb stones are laid in lengths of a metre.
+const KERB_STONE_LENGTH := 1.0
+## A tree grate's side and the soil square in its middle.
+const GRATE_SIZE := Vector2(1.2, 0.5)
+## The share of paving slabs a shade off the rest.
+const RELAID := 0.18
+const TREE_VOXEL := 0.1
+const TREE_VARIANTS := 3
+## Where VoxLeafTree's trunk forks, as a share of its height: the trunk's collision stops there.
+const TREE_FORK := 0.42
+## Each tree turned by the golden angle from the last, so neighbours never look alike.
+const TREE_TURN := 2.39996
 
 ## city.json.
 var config: Dictionary = {}
@@ -23,6 +45,7 @@ var _visual := DisplayServer.get_name() != "headless"
 
 
 func _ready() -> void:
+	var t := Prof.start()
 	plan = CityLayout.make(config, int(config.get("seed", 1)))
 	_body = PhysicsServer3D.body_create()
 	PhysicsServer3D.body_set_mode(_body, PhysicsServer3D.BODY_MODE_STATIC)
@@ -32,11 +55,18 @@ func _ready() -> void:
 	PhysicsServer3D.body_set_space(_body, get_world_3d().space)
 	PhysicsServer3D.body_set_state(_body, PhysicsServer3D.BODY_STATE_TRANSFORM, global_transform)
 	for block: Rect2 in plan["blocks"]:
-		_slab(block, PAVEMENT_COLOUR if not (plan["squares"] as Array).has(block) else SQUARE_COLOUR)
+		_box(Vector3(block.get_center().x, KERB / 2.0, block.get_center().y), Vector3(block.size.x, KERB, block.size.y))
+	var trunk := float(config.get("tree_trunk", 0.3))
+	var fork := float(config.get("tree_height", 6.5)) * TREE_FORK
+	for at: Vector2 in plan["trees"]:
+		_box(Vector3(at.x, KERB + fork / 2.0, at.y), Vector3(trunk, fork, trunk))
 	if _visual:
-		for street: Rect2 in plan["streets"]:
-			_street(street)
+		for block: Rect2 in plan["blocks"]:
+			_paving(block)
+		_streets()
+		_trees()
 	_queue.assign(plan["buildings"])
+	Prof.stop(&"city/site_ready", t)
 
 
 ## Buildings still to put up.
@@ -61,6 +91,17 @@ func build_all() -> void:
 		_put_up(_queue.pop_front())
 
 
+## Where the street lamps stand, in world space: on the pavement top, each turned so its arm
+## (+x) reaches out over its street.
+func lamp_spots() -> Array[Transform3D]:
+	var out: Array[Transform3D] = []
+	for lamp: Dictionary in plan.get("lamps", []):
+		var at: Vector2 = lamp["at"]
+		var toward: Vector2 = lamp["out"]
+		out.append(global_transform * Transform3D(Basis(Vector3.UP, atan2(-toward.y, toward.x)), Vector3(at.x, KERB, at.y)))
+	return out
+
+
 func _put_up(b: Dictionary) -> void:
 	var foot: Rect2 = b["footprint"]
 	var building := CityBuilding.new()
@@ -72,44 +113,180 @@ func _put_up(b: Dictionary) -> void:
 	buildings.append(building)
 
 
-## A raised slab (a block's pavement, the square), `KERB` high: collision, and a plain mesh.
-func _slab(rect: Rect2, colour: Color) -> void:
-	var size := Vector3(rect.size.x, KERB, rect.size.y)
-	var centre := Vector3(rect.get_center().x, KERB / 2.0, rect.get_center().y)
+func _box(centre: Vector3, size: Vector3) -> void:
 	var shape := PhysicsServer3D.box_shape_create()
 	PhysicsServer3D.shape_set_data(shape, size / 2.0)
 	PhysicsServer3D.body_add_shape(_body, shape, Transform3D(Basis.IDENTITY, centre))
 	_shapes.append(shape)
-	if not _visual:
-		return
+
+
+## A block's paving in voxels, one layer a kerb high: kerb stones round the edge, slabs on
+## the pavement (some a shade off, as relaid slabs are), setts in the courtyard, larger
+## slabs over the square, and a grate round each tree.
+func _paving(block: Rect2) -> void:
+	var square := (plan["squares"] as Array).has(block)
+	var v := PAVING_VOXEL
+	var tile := float(config.get("tile_size", 0.6)) * (2.0 if square else 1.0)
+	var kerb := float(config.get("kerb_width", 0.3))
+	var pave := float(config.get("pavement", 3.0))
+	var seed := int(config.get("seed", 1)) + int(block.position.x * 13.0 + block.position.y * 7.0)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	var base := SQUARE_PAVING if square else PAVING
+	var joint := base.darkened(0.08)
+	var m := VoxGenerator.new_model()
+	m.setup(Vector3(block.size.x, KERB, block.size.y), v)
+	var c := block.get_center()
+	var local := func(r: Rect2) -> Rect2: return Rect2(r.position - c, r.size)
+	var all := Rect2(-block.size / 2.0, block.size)
+	m.fill_box(Vector3(all.position.x, 0.0, all.position.y), Vector3(all.end.x, KERB, all.end.y), base, 0.0, 0)
+	# Relaid slabs only where paving shows: under the buildings it never does.
+	var built := all.grow(-pave)
+	var x := all.position.x + kerb
+	while x < all.end.x - kerb:
+		var y := all.position.y + kerb
+		while y < all.end.y - kerb:
+			var slab := Rect2(x, y, tile, tile)
+			if (square or not built.grow(-tile).encloses(slab)) and rng.randf() < RELAID:
+				m.paint_box(Vector3(x, 0.0, y), Vector3(minf(x + tile, all.end.x - kerb), KERB, minf(y + tile, all.end.y - kerb)), base * rng.randf_range(0.93, 1.05), 0.0, 0)
+			y += tile
+		x += tile
+	# Joints between the slabs: a thin darker line every slab, both ways.
+	x = all.position.x + kerb
+	while x < all.end.x - kerb:
+		m.paint_box(Vector3(x - v / 2.0, 0.0, all.position.y), Vector3(x + v / 2.0, KERB, all.end.y), joint, 0.0, 0)
+		x += tile
+	var z := all.position.y + kerb
+	while z < all.end.y - kerb:
+		m.paint_box(Vector3(all.position.x, 0.0, z - v / 2.0), Vector3(all.end.x, KERB, z + v / 2.0), joint, 0.0, 0)
+		z += tile
+	if not square:
+		for yard: Rect2 in plan["yards"]:
+			if block.encloses(yard):
+				var r: Rect2 = local.call(yard)
+				m.paint_box(Vector3(r.position.x, 0.0, r.position.y), Vector3(r.end.x, KERB, r.end.y), SETTS, 0.16, seed)
+		# The gateways' floors in setts too, out to the pavement.
+		for passage: Rect2 in plan["passages"]:
+			if block.encloses(passage):
+				var r: Rect2 = local.call(passage)
+				m.paint_box(Vector3(r.position.x, 0.0, r.position.y), Vector3(r.end.x, KERB, r.end.y), SETTS, 0.16, seed + 1)
+	# Kerb stones: a ring round the edge, each stone a metre long, every other a shade off.
+	for side in 4:
+		var along_x := side < 2
+		var length := all.size.x if along_x else all.size.y
+		var k := 0
+		var at := 0.0
+		while at < length - 0.001:
+			var shade := KERB_STONE * (1.0 if k % 2 == 0 else 0.95)
+			var to := minf(at + KERB_STONE_LENGTH, length)
+			var lo: Vector3
+			var hi: Vector3
+			if along_x:
+				var z0 := all.position.y if side == 0 else all.end.y - kerb
+				lo = Vector3(all.position.x + at, 0.0, z0)
+				hi = Vector3(all.position.x + to, KERB, z0 + kerb)
+			else:
+				var x0 := all.position.x if side == 2 else all.end.x - kerb
+				lo = Vector3(x0, 0.0, all.position.y + at)
+				hi = Vector3(x0 + kerb, KERB, all.position.y + to)
+			m.paint_box(lo, hi, shade, 0.03, seed + k)
+			at = to
+			k += 1
+	for tree: Vector2 in plan["trees"]:
+		if block.has_point(tree):
+			var p := tree - c
+			m.paint_box(Vector3(p.x - GRATE_SIZE.x / 2.0, 0.0, p.y - GRATE_SIZE.x / 2.0), Vector3(p.x + GRATE_SIZE.x / 2.0, KERB, p.y + GRATE_SIZE.x / 2.0), GRATE, 0.05, seed)
+			m.paint_box(Vector3(p.x - GRATE_SIZE.y / 2.0, 0.0, p.y - GRATE_SIZE.y / 2.0), Vector3(p.x + GRATE_SIZE.y / 2.0, KERB, p.y + GRATE_SIZE.y / 2.0), SOIL, 0.15, seed)
 	var mesh := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = size
-	var material := StandardMaterial3D.new()
-	material.albedo_color = colour
-	material.roughness = 0.95
-	box.material = material
-	mesh.mesh = box
-	mesh.position = centre
+	mesh.name = "Paving"
+	mesh.mesh = VoxGenerator.to_mesh(m)
+	mesh.position = Vector3(c.x, 0.0, c.y)
 	add_child(mesh)
 
 
-## Asphalt with lane markings along the street, in voxel road pieces (VoxRoad), sunk so its
-## surface sits on the level ground. Two lanes fill the street kerb to kerb.
-func _street(rect: Rect2) -> void:
-	var along_x := rect.size.x > rect.size.y
-	var length := maxf(rect.size.x, rect.size.y)
-	var width := minf(rect.size.x, rect.size.y)
-	var pieces := ceili(length / 50.0)
-	var each := length / pieces
-	for i in pieces:
-		var model := VoxRoad.new().build({"seed": i + 7, "length": each, "lanes": 2.0, "lane_width": width / 2.0, "shoulder": 0.0, "wear": 0.25, "potholes": 2.0})
-		var part := MeshInstance3D.new()
-		part.mesh = VoxRoad.new().to_mesh(model)
-		var start := (rect.position.x if along_x else rect.position.y) + each * (i + 0.5)
-		var at := Vector3(start, -VoxRoad.BED, rect.get_center().y) if along_x else Vector3(rect.get_center().x, -VoxRoad.BED, start)
-		part.transform = Transform3D(Basis(Vector3.UP, PI / 2.0) if along_x else Basis.IDENTITY, at)
-		add_child(part)
+## Every street as stretches between junctions (a dashed line down the middle, zebra
+## crossings near the ends) and plain squares of asphalt where they meet, sunk so the
+## surface sits on the level ground.
+func _streets() -> void:
+	var lines: Array = plan["lines"]
+	var widths: Array = plan["widths"]
+	var n := widths.size() - 1
+	var piece := 0
+	for axis in 2:
+		for i in n + 1:
+			var at := float(lines[axis][i])
+			var w := float(widths[i])
+			for k in n:
+				var s0 := float(lines[1 - axis][k]) + float(widths[k])
+				var s1 := float(lines[1 - axis][k + 1])
+				var rect := Rect2(at, s0, w, s1 - s0) if axis == 0 else Rect2(s0, at, s1 - s0, w)
+				_road(rect, axis == 1, true, piece)
+				piece += 1
+	for i in n + 1:
+		for k in n + 1:
+			_road(Rect2(float(lines[0][i]), float(lines[1][k]), float(widths[i]), float(widths[k])), false, false, piece)
+			piece += 1
+
+
+func _road(rect: Rect2, along_x: bool, marked: bool, piece: int) -> void:
+	var length := rect.size.x if along_x else rect.size.y
+	var width := rect.size.y if along_x else rect.size.x
+	var rgb: Array = config.get("asphalt", [0.43, 0.43, 0.42])
+	var asphalt := Color(float(rgb[0]), float(rgb[1]), float(rgb[2]))
+	var values := {
+		"seed": piece + 7, "length": length, "lanes": 2.0, "lane_width": width / 2.0, "shoulder": 0.0,
+		"wear": 0.2, "potholes": 0.0, "edges": 0.0, "asphalt": asphalt,
+	}
+	if not marked:
+		values["centre"] = 0.0
+	var model := VoxRoad.new().build(values)
+	var where := Transform3D(Basis(Vector3.UP, PI / 2.0) if along_x else Basis.IDENTITY, Vector3(rect.get_center().x, -VoxRoad.BED, rect.get_center().y))
+	for crossing: Rect2 in plan["crossings"]:
+		if rect.grow(0.01).encloses(crossing):
+			_zebra(model, where, crossing, asphalt)
+	var part := MeshInstance3D.new()
+	part.name = "Street%d" % piece
+	part.mesh = VoxGenerator.to_mesh(model)
+	part.transform = where
+	add_child(part)
+
+
+## White bars along the traffic, across the street kerb to kerb, painted over the asphalt
+## (after clearing the centre line under them).
+func _zebra(model: VoxelModel, where: Transform3D, crossing: Rect2, asphalt: Color) -> void:
+	var inverse := where.affine_inverse()
+	var a := inverse * Vector3(crossing.position.x, 0.0, crossing.position.y)
+	var b := inverse * Vector3(crossing.end.x, 0.0, crossing.end.y)
+	var lo := Vector2(minf(a.x, b.x), minf(a.z, b.z))
+	var hi := Vector2(maxf(a.x, b.x), maxf(a.z, b.z))
+	var v := model.voxel_size()
+	var top := VoxRoad.BED + VoxRoad.SURFACE
+	model.paint_box(Vector3(lo.x, top - v * 0.9, lo.y), Vector3(hi.x, top + v, hi.y), asphalt, 0.07, 0)
+	var stripe := float(config.get("zebra_stripe", 0.5))
+	var x := lo.x + stripe
+	while x + stripe <= hi.x - stripe * 0.5:
+		model.paint_box(Vector3(x, top - v * 0.9, lo.y), Vector3(x + stripe, top + v, hi.y), VoxRoad.WHITE, 0.04, 0)
+		x += stripe * 2.0
+
+
+## Street trees: a few variants built once, one drawn at each spot, each turned its own way.
+func _trees() -> void:
+	var spots: Array = plan["trees"]
+	if spots.is_empty():
+		return
+	var meshes: Array[ArrayMesh] = []
+	for i in TREE_VARIANTS:
+		meshes.append(VoxGenerator.to_mesh(VoxLeafTree.new().build({
+			"seed": int(config.get("seed", 1)) + 40 + i, "height": float(config.get("tree_height", 6.5)) + i * 0.4,
+			"crown": float(config.get("tree_crown", 1.3)), "trunk": float(config.get("tree_trunk", 0.3)), "branches": 5.0, "voxel": TREE_VOXEL,
+		})))
+	for i in spots.size():
+		var at: Vector2 = spots[i]
+		var tree := MeshInstance3D.new()
+		tree.name = "Tree%d" % i
+		tree.mesh = meshes[i % meshes.size()]
+		tree.transform = Transform3D(Basis(Vector3.UP, float(i) * TREE_TURN), Vector3(at.x, KERB, at.y))
+		add_child(tree)
 
 
 func _exit_tree() -> void:
