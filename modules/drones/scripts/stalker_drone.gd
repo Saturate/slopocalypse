@@ -336,7 +336,7 @@ func server_detonate(radius: float, damage: float) -> void:
 		var holder := health.get_parent() as Node3D
 		var distance := holder.global_position.distance_to(global_position) if holder != null else 0.0
 		health.server_apply_damage(damage * lerpf(1.0, 0.25, clampf(distance / radius, 0.0, 1.0)), self)
-	Net.server_broadcast(&"explosion", {"position": global_position, "radius": radius, "source": null})
+	Net.server_broadcast(&"explosion", {"position": global_position, "radius": radius, "source": null, "kind": "drone"})
 	destroyed.emit()
 	if is_instance_valid(_strike_point):
 		_strike_point.queue_free()

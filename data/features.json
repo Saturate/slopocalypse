@@ -19,6 +19,7 @@
     "missions": true,
     "trader": true,
     "range": true,
-    "web": true
+    "web": true,
+    "smoke": true
   }
 }

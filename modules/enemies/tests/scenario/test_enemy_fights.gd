@@ -393,3 +393,25 @@ func test_it_sees_through_glass_unless_cracks_hide_the_player() -> void:
 		if brain.clear_shot(_player):
 			seen += 1
 	assert_int(seen).is_between(60, 140)
+
+
+class FakeSmoke extends Node:
+	var thick := false
+
+	func sight_blocked(_from: Vector3, _to: Vector3) -> bool:
+		return thick
+
+
+func test_it_cannot_see_through_whatever_the_sight_blockers_say_hides() -> void:
+	_player.global_position = Vector3(0, 0.1, -10)
+	var enemy := await _enemy_at(Vector3.ZERO)
+	var smoke: FakeSmoke = auto_free(FakeSmoke.new())
+	smoke.add_to_group(&"sight_blockers")
+	add_child(smoke)
+	await _frames(2)
+	var brain := _brain(enemy)
+	assert_bool(brain.clear_shot(_player)).is_true()
+	smoke.thick = true
+	assert_bool(brain.clear_shot(_player)).is_false()
+	smoke.thick = false
+	assert_bool(brain.clear_shot(_player)).is_true()

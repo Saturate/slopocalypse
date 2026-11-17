@@ -1,0 +1,6 @@
+{
+  "id": "smoke",
+  "depends_on": [],
+  "flag": "smoke",
+  "entry": "smoke_module.gd"
+}

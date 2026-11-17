@@ -315,7 +315,16 @@ func _clear_line(from: Vector3, to: Vector3, wanted: Node) -> bool:
 	if not seen:
 		var collider: Variant = hit["collider"]
 		seen = collider is Node and (collider == wanted or (wanted as Node).is_ancestor_of(collider as Node))
-	return seen and not _glass_hides(from, hit.get("position", to))
+	return seen and not _glass_hides(from, hit.get("position", to)) and not _blocker_hides(from, to)
+
+
+## Things that hide without being solid (smoke) join the `sight_blockers` group and answer
+## `sight_blocked(from, to)`, so this module needn't know which modules are loaded.
+func _blocker_hides(from: Vector3, to: Vector3) -> bool:
+	for blocker in get_tree().get_nodes_in_group(&"sight_blockers"):
+		if blocker.has_method(&"sight_blocked") and bool(blocker.call(&"sight_blocked", from, to)):
+			return true
+	return false
 
 
 ## Window glass doesn't stop eyes, but a cracked pane can: each look through one is stopped
