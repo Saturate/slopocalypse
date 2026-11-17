@@ -184,6 +184,7 @@ func _make_enemy(data: Variant) -> Node:
 	enemy.set_meta(&"team", "enemies")
 	# Many, spread over the map: each client is sent only those near it (NetRelevance).
 	enemy.set_meta(&"net_relevance", true)
+	enemy.set_meta(&"net_smooth", true)
 	enemy.add_to_group(&"enemies")
 	if not multiplayer.is_server():
 		enemy.set_physics_process(false)

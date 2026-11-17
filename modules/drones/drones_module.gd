@@ -106,6 +106,7 @@ func _spawn_drone(data: Variant) -> Node:
 	drone.position = info["position"]
 	# Each client is sent only the drones near it (NetRelevance).
 	drone.set_meta(&"net_relevance", true)
+	drone.set_meta(&"net_smooth", true)
 	return drone
 
 
