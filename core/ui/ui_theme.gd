@@ -130,7 +130,9 @@ func _buttons() -> void:
 func _fields() -> void:
 	var well := StyleBoxFlat.new()
 	well.bg_color = Color(0, 0, 0, 0.35)
-	well.border_color = Color(0, 0, 0, 0.5)
+	# A light rim on every side so a field reads as something to type in, not a label.
+	well.border_color = Color(1, 1, 1, 0.14)
+	well.set_border_width_all(1)
 	well.border_width_top = 2
 	well.content_margin_left = 10
 	well.content_margin_right = 10
@@ -141,9 +143,7 @@ func _fields() -> void:
 		set_stylebox(&"panel", type, well)
 	var focus := well.duplicate() as StyleBoxFlat
 	focus.border_color = UiPalette.ACCENT
-	focus.border_width_bottom = 2
-	focus.border_width_left = 2
-	focus.border_width_right = 2
+	focus.set_border_width_all(2)
 	set_stylebox(&"focus", &"LineEdit", focus)
 	set_color(&"caret_color", &"LineEdit", UiPalette.ACCENT)
 	set_color(&"selection_color", &"LineEdit", Color(UiPalette.ACCENT, 0.35))
