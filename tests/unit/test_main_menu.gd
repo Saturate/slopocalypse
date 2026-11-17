@@ -97,3 +97,27 @@ func test_a_blank_name_starts_nothing() -> void:
 	_menu.button(&"Join").pressed.emit()
 	assert_array(got).is_empty()
 	assert_bool(_menu.message_label().visible).is_true()
+
+
+func test_friends_opens_over_the_title_and_esc_goes_back() -> void:
+	assert_bool(_menu.friends_open()).is_false()
+	_menu.button(&"Friends").pressed.emit()
+	assert_bool(_menu.friends_open()).is_true()
+	var ev := InputEventAction.new()
+	ev.action = &"ui_cancel"
+	ev.pressed = true
+	get_viewport().push_input(ev)
+	assert_bool(_menu.friends_open()).is_false()
+	UiStack.clear()
+
+
+func test_a_tall_screen_frame_scrolls_inside_the_view() -> void:
+	var frame: ScreenFrame = auto_free(ScreenFrame.new("TALL"))
+	add_child(frame)
+	for i in 80:
+		var l := Label.new()
+		l.text = "row %d" % i
+		frame.content.add_child(l)
+	await get_tree().process_frame
+	frame._fit()
+	assert_float(frame.panel_height()).is_less_equal(frame.get_viewport_rect().size.y * ScreenFrame.MAX_SHARE + 1.0)
