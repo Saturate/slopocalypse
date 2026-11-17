@@ -22,7 +22,7 @@ var _stock: GridContainer
 
 
 func _ready() -> void:
-	layer = 43
+	layer = UiLayers.TRADER
 	_build_ui()
 	_root.visible = false
 	EventBus.subscribe(&"trader.opened", _on_opened)
@@ -40,13 +40,13 @@ func is_open() -> bool:
 
 func open() -> void:
 	_root.visible = true
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	UiStack.push(self)
 	_gear.refresh()
 
 
 func close() -> void:
 	_root.visible = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	UiStack.pop(self)
 
 
 func _inventory() -> Node:
@@ -89,12 +89,12 @@ func _process(_delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if not is_open():
+	if not UiStack.is_top(self):
 		return
 	if event.is_action_pressed(&"interact") or event.is_action_pressed(&"inventory"):
 		close()
 		get_viewport().set_input_as_handled()
-	elif event is InputEventKey and event.is_pressed() and (event as InputEventKey).keycode == KEY_ESCAPE:
+	elif UiStack.is_cancel(event):
 		close()
 		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.is_pressed():

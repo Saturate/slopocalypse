@@ -29,7 +29,7 @@ var _thermal: ThermalView
 
 
 func _ready() -> void:
-	layer = 5
+	layer = UiLayers.SCOPE
 	_canvas = Control.new()
 	_canvas.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE

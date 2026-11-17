@@ -19,11 +19,15 @@ var _remote := false
 
 
 func _ready() -> void:
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	UiStack.set_captures_when_empty(true)
 	_remote = not multiplayer.is_server()
 	_yaw = player.rotation.y
 	# Runs after the synchronizer has written the server's copy of our rotation.
 	process_priority = 100
+
+
+func _exit_tree() -> void:
+	UiStack.set_captures_when_empty(false)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -33,10 +37,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		var camera := player.get_node("Head/Camera") as Camera3D
 		var zoom := camera.fov / float(player.config["fov"])
 		intent.look_delta += motion.relative * sensitivity * zoom
-	elif event is InputEventKey and event.is_pressed() and (event as InputEventKey).keycode == KEY_ESCAPE:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	elif event is InputEventMouseButton and event.is_pressed():
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	# After alt-tab the window can come back with a free mouse; a click into the game takes
+	# it again, but never through an open screen.
+	elif event is InputEventMouseButton and event.is_pressed() and not UiStack.is_blocking():
+		Input.mouse_mode = UiStack.mouse_mode()
 
 
 func _process(_delta: float) -> void:
@@ -65,7 +69,7 @@ func _physics_process(_delta: float) -> void:
 func _physics_tick(_delta: float) -> void:
 	# A free mouse means a menu or panel is up (pause, modding): the player stands still
 	# instead of walking off while the keys are used for it.
-	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+	if UiStack.is_blocking() or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		intent.move = Vector2.ZERO
 		intent.sprint = false
 		intent.crouch = false

@@ -12,7 +12,7 @@ var _key: int = KEY_F2
 
 
 func _ready() -> void:
-	layer = 40
+	layer = UiLayers.SCREENS
 	_key = OS.find_keycode_from_string(str(admin.get(&"config").get("toggle_key", "F2")))
 	_build()
 	_root.visible = false
@@ -29,28 +29,29 @@ func is_open() -> bool:
 
 func open() -> void:
 	_root.visible = true
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	UiStack.push(self)
 
 
 func close() -> void:
 	if not _root.visible:
 		return
 	_root.visible = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	UiStack.pop(self)
 
 
 func _input(event: InputEvent) -> void:
+	if UiStack.is_top(self) and UiStack.is_cancel(event):
+		close()
+		get_viewport().set_input_as_handled()
+		return
 	var key := event as InputEventKey
 	if key == null or not key.pressed or key.echo:
 		return
 	if key.keycode == _key and bool(admin.get(&"is_admin_here")):
-		if is_open():
-			close()
-		else:
+		if not is_open():
 			open()
-		get_viewport().set_input_as_handled()
-	elif key.keycode == KEY_ESCAPE and is_open():
-		close()
+		elif UiStack.is_top(self):
+			close()
 		get_viewport().set_input_as_handled()
 
 

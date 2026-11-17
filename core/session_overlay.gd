@@ -16,7 +16,7 @@ var _host_info: Label
 
 
 func _ready() -> void:
-	layer = 50
+	layer = UiLayers.SESSION
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_connecting = _card()
 	var waiting: VBoxContainer = _connecting.get_meta(&"col")
@@ -24,7 +24,15 @@ func _ready() -> void:
 	_add_button(waiting, &"Cancel", "Cancel", func() -> void: Net.leave())
 	_pause = _card()
 	var col: VBoxContainer = _pause.get_meta(&"col")
-	_text(col, "PAUSED", 24, MainMenu.ACCENT)
+	# Solo runs its own server, so nothing stops while this is open.
+	var title := _text(col, "MENU", 0, MainMenu.ACCENT)
+	title.theme_type_variation = &"TitleLabel"
+	title.remove_theme_font_size_override("font_size")
+	title.remove_theme_color_override("font_color")
+	_text(col, "The world keeps running", 16, MainMenu.DIM)
+	var gap := Control.new()
+	gap.custom_minimum_size.y = 8
+	col.add_child(gap)
 	_host_info = _text(col, "", 14, MainMenu.DIM)
 	_add_button(col, &"Resume", "Resume", _resume)
 	# Unstuck: the player module asks the server to put us back at the spawn.
@@ -37,13 +45,18 @@ func _ready() -> void:
 	_pause.visible = false
 
 
+## Esc opens this only when no other screen is open; another screen on top takes Esc
+## itself, so it closes first.
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.is_pressed() and not event.is_echo() and (event as InputEventKey).keycode == KEY_ESCAPE:
-		if _paused:
-			_resume()
-			get_viewport().set_input_as_handled()
-		else:
-			_paused = true
+	if not UiStack.is_cancel(event):
+		return
+	if _paused and UiStack.is_top(self):
+		_resume()
+		get_viewport().set_input_as_handled()
+	elif not UiStack.is_blocking():
+		_paused = true
+		UiStack.push(self)
+		get_viewport().set_input_as_handled()
 
 
 func _process(delta: float) -> void:
@@ -51,9 +64,6 @@ func _process(delta: float) -> void:
 	_waited = 0.0 if up else _waited + delta
 	_connecting.visible = not up and _waited > CONNECTING_DELAY
 	_connecting_label.text = "Connecting to %s:%d..." % [Net.host, Net.port]
-	# Clicking back into the game recaptures the mouse; the panel follows.
-	if _paused and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		_paused = false
 	_pause.visible = _paused and up
 	if Net.hosting_port > 0:
 		var mine := MainMenu.rank_addresses(IP.get_local_addresses())
@@ -67,7 +77,7 @@ func is_paused() -> bool:
 
 func _resume() -> void:
 	_paused = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	UiStack.pop(self)
 
 
 ## A centred card over a dim shade; returns its root, whose "col" meta is the column to fill.
@@ -76,7 +86,7 @@ func _card() -> Control:
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var shade := ColorRect.new()
-	shade.color = Color(0, 0, 0, 0.45)
+	shade.color = UiPalette.BACKDROP
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(shade)

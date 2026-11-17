@@ -19,7 +19,7 @@ var _sheets: HBoxContainer
 
 
 func _ready() -> void:
-	layer = 42
+	layer = UiLayers.MISSION_BOARD
 	_build_ui()
 	_root.visible = false
 	EventBus.subscribe(&"missions.board_opened", _on_opened)
@@ -38,12 +38,12 @@ func is_open() -> bool:
 func open() -> void:
 	_refresh()
 	_root.visible = true
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	UiStack.push(self)
 
 
 func close() -> void:
 	_root.visible = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	UiStack.pop(self)
 
 
 ## Picks offer `index` (as its button does).
@@ -61,9 +61,9 @@ func _on_changed(_p: Dictionary) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if not is_open():
+	if not UiStack.is_top(self):
 		return
-	if event.is_action_pressed(&"interact") or (event is InputEventKey and event.is_pressed() and (event as InputEventKey).keycode == KEY_ESCAPE):
+	if event.is_action_pressed(&"interact") or UiStack.is_cancel(event):
 		close()
 		get_viewport().set_input_as_handled()
 

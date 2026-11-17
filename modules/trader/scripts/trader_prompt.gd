@@ -9,7 +9,7 @@ var _label: Label
 
 
 func _ready() -> void:
-	layer = 4
+	layer = UiLayers.PROMPTS
 	_label = Label.new()
 	_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	_label.position += Vector2(-160, 88)
