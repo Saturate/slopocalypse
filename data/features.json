@@ -23,6 +23,7 @@
     "smoke": true,
     "lights": true,
     "towers": true,
-    "city": true
+    "city": true,
+    "factions": true
   }
 }

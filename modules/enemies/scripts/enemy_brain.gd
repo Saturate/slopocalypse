@@ -50,6 +50,12 @@ var suppression := 0.0
 var surrendered := false
 
 var state := State.PATROL
+## Rival soldiers near enough to be worth looking at (`_refresh_rivals`), and the factions
+## module answering who is hostile to whom (none: soldiers fight only players).
+const RIVAL_SCAN_SECONDS := 0.5
+var _near_rivals: Array[Node] = []
+var _rival_scan_in := randf() * RIVAL_SCAN_SECONDS
+var _factions: Node
 var target: Node3D
 var last_seen := Vector3.ZERO
 
@@ -149,6 +155,7 @@ func _physics_tick(delta: float) -> void:
 		intent.aim = false
 		intent.crouch = true
 		return
+	_refresh_rivals(delta)
 	var seen := _find_target()
 	if seen != null:
 		if target != seen:
@@ -283,15 +290,67 @@ func _turn_to(yaw: float, pitch: float, delta: float) -> void:
 	_pitch = move_toward(_pitch, clampf(pitch, -1.2, 1.2), step)
 
 
-## The nearest living player this soldier can see, or null.
+## Everyone this soldier might fight: players, and other soldiers (only those of a faction
+## hostile to its own count; see `is_hostile`).
+func _foes() -> Array[Node]:
+	var out := get_tree().get_nodes_in_group(&"players")
+	# A rival can be freed (despawned) between scans.
+	for rival: Variant in _near_rivals:
+		if is_instance_valid(rival):
+			out.append(rival)
+	return out
+
+
+## Hostile soldiers within sight range, refreshed every `RIVAL_SCAN_SECONDS` (staggered per
+## soldier): looking through every soldier every tick costs the server too much with 200 of
+## them, and a rival walking into range is noticed within that time.
+func _refresh_rivals(delta: float) -> void:
+	_rival_scan_in -= delta
+	if _rival_scan_in > 0.0:
+		return
+	_rival_scan_in = RIVAL_SCAN_SECONDS
+	_near_rivals.clear()
+	if _factions == null or not is_instance_valid(_factions):
+		_factions = get_tree().get_first_node_in_group(&"factions_api")
+		if _factions == null:
+			return
+	var reach := float(config["sight_range"])
+	var here := body.global_position
+	for node: Node in get_tree().get_nodes_in_group(&"enemies"):
+		var other := node as Node3D
+		if other == null or other == body or other.get_meta(&"dead", false):
+			continue
+		if other.global_position.distance_squared_to(here) > reach * reach:
+			continue
+		if is_hostile(other):
+			_near_rivals.append(other)
+
+
+## Whether `who` is on a side this soldier fights: players always; another soldier when the
+## factions module says their factions are hostile.
+func is_hostile(who: Node) -> bool:
+	var mine := HitscanWeapon.team_of(body)
+	var theirs := HitscanWeapon.team_of(who)
+	if theirs == "players":
+		return true
+	if theirs.is_empty() or theirs == mine:
+		return false
+	if _factions == null or not is_instance_valid(_factions):
+		_factions = get_tree().get_first_node_in_group(&"factions_api")
+	return _factions != null and bool(_factions.call(&"hostile", mine, theirs))
+
+
+## The nearest living foe this soldier can see, or null.
 func _find_target() -> Node3D:
 	var eye := _eye()
 	var best: Node3D = null
 	var best_d := float(config["sight_range"])
 	var cone := float(config["sight_cone_degrees"])
-	for node: Node in get_tree().get_nodes_in_group(&"players"):
+	for node: Node in _foes():
 		var player := node as Node3D
-		if player == null or player.get_meta(&"dead", false) or not player.is_visible_in_tree():
+		if player == null or player == body or player.get_meta(&"dead", false) or not player.is_visible_in_tree():
+			continue
+		if not is_hostile(player):
 			continue
 		var chest := player.global_position + Vector3.UP * CHEST
 		var d := eye.distance_to(chest)
@@ -342,7 +401,7 @@ func _glass_hides(from: Vector3, to: Vector3) -> bool:
 ## (or hitting it) build suppression.
 func _on_shot_heard(p: Dictionary) -> void:
 	var shooter := p.get("holder") as Node3D
-	if shooter == null or not shooter.is_in_group(&"players") or body.get_meta(&"dead", false):
+	if shooter == null or shooter == body or not is_hostile(shooter) or body.get_meta(&"dead", false):
 		return
 	var sup := _suppression_cfg()
 	var chest := body.global_position + Vector3.UP * CHEST

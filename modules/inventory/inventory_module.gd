@@ -292,7 +292,8 @@ func _on_player_spawned(p: Dictionary) -> void:
 		# Players start with a rig, a pack and a kit; enemies wear their gear and carry a few
 		# random things worth killing them for.
 		var npc: bool = p.get("npc", false)
-		_wear(grid, _data.get("npc_gear" if npc else "starting_gear", {}))
+		# A soldier's faction may say what it wears (#343).
+		_wear(grid, p.get("gear", _data.get("npc_gear", {})) if npc else _data.get("starting_gear", {}))
 		_fill(grid, _roll_loot() if npc else Array(_data.get("starting_kit", [])))
 		if not npc:
 			_send(peer)

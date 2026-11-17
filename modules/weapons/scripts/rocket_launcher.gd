@@ -23,7 +23,9 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 	if rockets_parent != null and rockets_parent.has_method(&"spawn_rocket"):
 		rockets_parent.call(&"spawn_rocket", start, dir * float(cfg.get("speed", 55.0)), holder)
 	_server_backblast(origin, dir, cfg.get("backblast", {}))
-	_replay_launch.rpc(origin, dir)
+	_replay_launch(origin, dir)
+	for peer in HitscanWeapon.replay_peers(holder):
+		_replay_launch.rpc_id(peer, origin, dir)
 
 
 ## Everyone in the cone behind the tube takes the backblast, less the further away.

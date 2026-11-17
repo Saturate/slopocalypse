@@ -7,7 +7,10 @@
   "friendly_fire": false,
   "headshot": {
     "kills": [
-      "enemies"
+      "enemies",
+      "militia",
+      "regulars",
+      "scavengers"
     ],
     "multiplier": 2.0
   },
