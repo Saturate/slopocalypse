@@ -116,4 +116,5 @@ script = ExtResource("3_7kjid")
 script = ExtResource("4_w1eue")
 
 [node name="NetSync" type="MultiplayerSynchronizer" parent="." unique_id=684271526]
+replication_interval = 0.016666
 replication_config = SubResource("SceneReplicationConfig_3d7912")

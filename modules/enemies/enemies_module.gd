@@ -23,6 +23,9 @@ const REQUIRED := {
 }
 ## Enemy peer ids count down from here so they never collide with real peers.
 const FIRST_ID := -1000
+## `--crowd`: how far out from the start the soldiers are spread, metres, and per squad.
+const CROWD_RADIUS := Vector2(60.0, 1200.0)
+const CROWD_SQUAD := 3
 
 var config: Dictionary = {}
 var _spawner := MultiplayerSpawner.new()
@@ -33,6 +36,9 @@ var _world_ready := false
 var _forward := Vector3.ZERO
 var _next_squad_in := -1.0
 var _rng := RandomNumberGenerator.new()
+## Server, `-- --crowd=N` (benchmarks): soldiers still to place, spread over the open side of
+## the map a squad a tick, and kept topped up to that many.
+var _crowd_left := 0
 
 ## Kept loaded: Godot's resource cache lets go of a scene once nothing holds it, and loading
 ## a generated scene again from text costs tens of milliseconds per spawn.
@@ -80,6 +86,19 @@ func _on_world_ready(payload: Dictionary) -> void:
 	_world_ready = true
 	if multiplayer.is_server():
 		_next_squad_in = float(config["first_spawn_seconds"])
+		var crowd := crowd_arg(OS.get_cmdline_user_args())
+		if crowd > 0:
+			config = config.duplicate()
+			config["max_alive"] = maxf(float(config["max_alive"]), crowd)
+			_crowd_left = crowd
+
+
+## `--crowd=N` from the command line, or 0.
+static func crowd_arg(args: PackedStringArray) -> int:
+	for arg in args:
+		if arg.begins_with("--crowd="):
+			return maxi(0, int(arg.trim_prefix("--crowd=")))
+	return 0
 
 
 func _physics_process(delta: float) -> void:
@@ -91,6 +110,10 @@ func _physics_process(delta: float) -> void:
 func _physics_tick(delta: float) -> void:
 	if not multiplayer.is_server() or not _world_ready or _next_squad_in < 0.0:
 		return
+	if _crowd_left > 0:
+		var size := mini(_crowd_left, CROWD_SQUAD)
+		_crowd_left -= size
+		server_spawn_squad(size, _crowd_spot())
 	_next_squad_in -= delta
 	if _next_squad_in > 0.0:
 		return
@@ -98,6 +121,14 @@ func _physics_tick(delta: float) -> void:
 	var room := int(config["max_alive"]) - enemies().size()
 	if room > 0:
 		server_spawn_squad(mini(room, _roll(config["squad_size"])))
+
+
+## Somewhere on the open side of the start, out to `CROWD_RADIUS`.
+func _crowd_spot() -> Vector3:
+	var a := _rng.randf() * TAU
+	if _forward != Vector3.ZERO:
+		a = atan2(_forward.z, _forward.x) + _rng.randf_range(-PI / 2.0, PI / 2.0)
+	return _spawn + Vector3(cos(a), 0.0, sin(a)) * _rng.randf_range(CROWD_RADIUS.x, CROWD_RADIUS.y)
 
 
 ## Server: a squad of `size` around a random point in the ring around the spawn.

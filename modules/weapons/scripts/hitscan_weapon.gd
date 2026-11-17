@@ -199,6 +199,7 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 		var collider_path := String((collider as Node).get_path()) if collider is Node else ""
 		# Decided here; replayed everywhere (this instance included) for effects and craters.
 		_replay_shot.rpc(from, hit_point, damage, target_path, collider_path, passes > 0)
+		NetStats.add(&"rpc/shot", NetStats.size_of([from, hit_point, damage, target_path, collider_path, passes > 0]) * multiplayer.get_peers().size())
 		if target != null or collider == null or passes >= max_passes or not collider.has_method(&"bullet_exit"):
 			return
 		var exit: Variant = collider.call(&"bullet_exit", hit_point, dir, float(stats["damage"]) * damage_scale)

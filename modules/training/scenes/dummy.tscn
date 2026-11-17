@@ -70,4 +70,5 @@ font_size = 96
 outline_size = 16
 
 [node name="NetSync" type="MultiplayerSynchronizer" parent="." unique_id=684271526]
+replication_interval = 0.016666
 replication_config = SubResource("SceneReplicationConfig_3d7912")

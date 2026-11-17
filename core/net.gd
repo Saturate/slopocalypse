@@ -256,7 +256,9 @@ func server_broadcast(topic: StringName, payload: Dictionary) -> void:
 	EventBus.publish(topic, payload)
 	if multiplayer.multiplayer_peer is OfflineMultiplayerPeer or multiplayer.get_peers().is_empty():
 		return
-	_replay.rpc(topic, _encode(payload))
+	var encoded := _encode(payload)
+	NetStats.add(StringName("event/" + topic), NetStats.size_of([topic, encoded]) * multiplayer.get_peers().size())
+	_replay.rpc(topic, encoded)
 
 
 @rpc("authority", "call_remote", "reliable")

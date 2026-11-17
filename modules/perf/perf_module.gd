@@ -37,6 +37,8 @@ var _last_usec := 0
 var _tick_began := 0
 var _nodes_usec := 0
 var _ticks := 0
+## Frames since the last sample: synchronizers send their every-frame properties once each.
+var _frames := 0
 
 
 func _ready() -> void:
@@ -102,6 +104,7 @@ func _process(delta: float) -> void:
 	_last_usec = now
 	_uptime += delta
 	_sampler.add_frame(ms)
+	_frames += 1
 	# The zones that ran since this point last frame: what the frame just measured was doing.
 	var frame_zones := Prof.take_frame(SPIKE_ZONES)
 	if ms > float(config["spike_ms"]) and _uptime > float(config["warmup_seconds"]) and _uptime - _last_spike >= SPIKE_GAP_SECONDS:
@@ -164,6 +167,12 @@ func _sample() -> Dictionary:
 		rec["net_out_bytes"] = int(peer.host.pop_statistic(ENetConnection.HOST_TOTAL_SENT_DATA))
 		rec["net_in_bytes"] = int(peer.host.pop_statistic(ENetConnection.HOST_TOTAL_RECEIVED_DATA))
 		rec["peers"] = multiplayer.get_peers().size()
+		if multiplayer.is_server() and rec["peers"] > 0:
+			rec["net"] = _net_breakdown(int(rec["net_out_bytes"]), int(rec["peers"]))
+	_frames = 0
+	if not rec.has("net"):
+		# Nothing to report them against (a client, or no one connected): start again.
+		NetStats.take()
 	# Our own code, by zone (see core/prof.gd): milliseconds spent in this sample window.
 	var zones := Prof.take()
 	if not zones.is_empty():
@@ -174,6 +183,42 @@ func _sample() -> Dictionary:
 	if not custom.is_empty():
 		rec["custom"] = custom
 	return rec
+
+
+## Server: what it sent this sample, per second. `out_per_peer` is ENet's exact total over the
+## peers; `sources` are estimates (see NetStats): every synchronizer's every-frame properties
+## by scene, broadcast events by topic, shot replays; `other` is what they leave unexplained
+## (packet headers, acks, on-change properties, RPCs nobody counts yet).
+func _net_breakdown(out_bytes: int, peers: int) -> Dictionary:
+	var seconds := maxf(float(config["sample_seconds"]), 0.001)
+	var sources := NetStats.take()
+	# Once a sample, on the server only: a walk of the tree costs about a millisecond.
+	for node: Node in get_tree().root.find_children("*", "MultiplayerSynchronizer", true, false):
+		var sync := node as MultiplayerSynchronizer
+		if sync == null or sync.replication_config == null:
+			continue
+		var root := sync.get_node_or_null(sync.root_path)
+		if root == null:
+			continue
+		var cfg := sync.replication_config
+		var size := 0
+		for prop: NodePath in cfg.get_properties():
+			if cfg.property_get_replication_mode(prop) != SceneReplicationConfig.REPLICATION_MODE_ALWAYS:
+				continue
+			var holder := root.get_node_or_null(NodePath(String(prop.get_concatenated_names())))
+			if holder != null:
+				size += NetStats.size_of(holder.get_indexed(NodePath(String(prop.get_concatenated_subnames()))))
+		var key := "sync/" + (root.scene_file_path.get_file().get_basename() if not root.scene_file_path.is_empty() else String(root.name))
+		# Once a frame, or once per `replication_interval` when that is longer.
+		var sends := _frames if sync.replication_interval <= 0.0 else mini(_frames, roundi(seconds / sync.replication_interval))
+		sources[key] = int(sources.get(key, 0)) + size * sends * peers
+	var counted := 0
+	var per_second := {}
+	for key: String in sources:
+		counted += int(sources[key])
+		per_second[key] = roundi(int(sources[key]) / seconds)
+	per_second["other"] = roundi(maxi(out_bytes - counted, 0) / seconds)
+	return {"out_per_peer": roundi(out_bytes / seconds / peers), "sources": per_second}
 
 
 func _open_log() -> void:
