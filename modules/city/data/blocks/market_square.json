@@ -1,0 +1,348 @@
+{
+ "name": "market_square",
+ "size": [
+  33,
+  33
+ ],
+ "tags": [
+  "square",
+  "market"
+ ],
+ "pieces": [
+  {
+   "generator": "VoxShed",
+   "params": {
+    "seed": 30,
+    "width": 4.0,
+    "depth": 3.0,
+    "wall_height": 2.2,
+    "paint": 0.0,
+    "windows": 0.0
+   },
+   "at": [
+    -9.0,
+    0,
+    -6.0
+   ],
+   "yaw": 0,
+   "vary": [
+    "paint"
+   ]
+  },
+  {
+   "generator": "VoxShed",
+   "params": {
+    "seed": 31,
+    "width": 4.0,
+    "depth": 3.0,
+    "wall_height": 2.2,
+    "paint": 1.0,
+    "windows": 0.0
+   },
+   "at": [
+    -3.0,
+    0,
+    -6.0
+   ],
+   "yaw": 0,
+   "vary": [
+    "paint"
+   ]
+  },
+  {
+   "generator": "VoxShed",
+   "params": {
+    "seed": 32,
+    "width": 4.0,
+    "depth": 3.0,
+    "wall_height": 2.2,
+    "paint": 2.0,
+    "windows": 0.0
+   },
+   "at": [
+    3.0,
+    0,
+    -6.0
+   ],
+   "yaw": 0,
+   "vary": [
+    "paint"
+   ]
+  },
+  {
+   "generator": "VoxShed",
+   "params": {
+    "seed": 33,
+    "width": 4.0,
+    "depth": 3.0,
+    "wall_height": 2.2,
+    "paint": 3.0,
+    "windows": 0.0
+   },
+   "at": [
+    9.0,
+    0,
+    -6.0
+   ],
+   "yaw": 0,
+   "vary": [
+    "paint"
+   ]
+  },
+  {
+   "generator": "VoxShed",
+   "params": {
+    "seed": 34,
+    "width": 4.0,
+    "depth": 3.0,
+    "wall_height": 2.2,
+    "paint": 0.0,
+    "windows": 0.0
+   },
+   "at": [
+    -9.0,
+    0,
+    6.0
+   ],
+   "yaw": 180,
+   "vary": [
+    "paint"
+   ]
+  },
+  {
+   "generator": "VoxShed",
+   "params": {
+    "seed": 35,
+    "width": 4.0,
+    "depth": 3.0,
+    "wall_height": 2.2,
+    "paint": 1.0,
+    "windows": 0.0
+   },
+   "at": [
+    -3.0,
+    0,
+    6.0
+   ],
+   "yaw": 180,
+   "vary": [
+    "paint"
+   ]
+  },
+  {
+   "generator": "VoxShed",
+   "params": {
+    "seed": 36,
+    "width": 4.0,
+    "depth": 3.0,
+    "wall_height": 2.2,
+    "paint": 2.0,
+    "windows": 0.0
+   },
+   "at": [
+    3.0,
+    0,
+    6.0
+   ],
+   "yaw": 180,
+   "vary": [
+    "paint"
+   ]
+  },
+  {
+   "generator": "VoxShed",
+   "params": {
+    "seed": 37,
+    "width": 4.0,
+    "depth": 3.0,
+    "wall_height": 2.2,
+    "paint": 3.0,
+    "windows": 0.0
+   },
+   "at": [
+    9.0,
+    0,
+    6.0
+   ],
+   "yaw": 180,
+   "vary": [
+    "paint"
+   ]
+  },
+  {
+   "generator": "VoxSupplyCrate",
+   "params": {
+    "seed": 50
+   },
+   "at": [
+    -6,
+    0,
+    0
+   ],
+   "yaw": 0
+  },
+  {
+   "generator": "VoxSupplyCrate",
+   "params": {
+    "seed": 51
+   },
+   "at": [
+    0,
+    0,
+    0.8
+   ],
+   "yaw": 23
+  },
+  {
+   "generator": "VoxSupplyCrate",
+   "params": {
+    "seed": 52
+   },
+   "at": [
+    6,
+    0,
+    -0.5
+   ],
+   "yaw": 46
+  },
+  {
+   "generator": "VoxSupplyCrate",
+   "params": {
+    "seed": 53
+   },
+   "at": [
+    -1.5,
+    0,
+    -1.2
+   ],
+   "yaw": 69
+  },
+  {
+   "generator": "VoxBarrel",
+   "params": {
+    "seed": 60,
+    "paint": 0.0
+   },
+   "at": [
+    -11,
+    0,
+    0
+   ],
+   "yaw": 0
+  },
+  {
+   "generator": "VoxBarrel",
+   "params": {
+    "seed": 61,
+    "paint": 1.0
+   },
+   "at": [
+    11,
+    0,
+    1
+   ],
+   "yaw": 0
+  },
+  {
+   "generator": "VoxBarrel",
+   "params": {
+    "seed": 62,
+    "paint": 2.0
+   },
+   "at": [
+    4,
+    0,
+    1.6
+   ],
+   "yaw": 0
+  },
+  {
+   "generator": "VoxLeafTree",
+   "params": {
+    "seed": 70,
+    "height": 7.0
+   },
+   "at": [
+    -14,
+    0,
+    -14
+   ],
+   "yaw": 0
+  },
+  {
+   "generator": "VoxLeafTree",
+   "params": {
+    "seed": 71,
+    "height": 7.0
+   },
+   "at": [
+    14,
+    0,
+    -14
+   ],
+   "yaw": 90
+  },
+  {
+   "generator": "VoxLeafTree",
+   "params": {
+    "seed": 72,
+    "height": 7.0
+   },
+   "at": [
+    -14,
+    0,
+    14
+   ],
+   "yaw": 180
+  },
+  {
+   "generator": "VoxLeafTree",
+   "params": {
+    "seed": 73,
+    "height": 7.0
+   },
+   "at": [
+    14,
+    0,
+    14
+   ],
+   "yaw": 270
+  },
+  {
+   "generator": "VoxCar",
+   "params": {
+    "seed": 80,
+    "wear": 0.8
+   },
+   "at": [
+    12.5,
+    0,
+    -1
+   ],
+   "yaw": 90,
+   "vary": [
+    "paint"
+   ]
+  }
+ ],
+ "markers": [
+  {
+   "kind": "spawn",
+   "at": [
+    0,
+    0,
+    0
+   ],
+   "yaw": 0
+  },
+  {
+   "kind": "spawn",
+   "at": [
+    -12,
+    0,
+    10
+   ],
+   "yaw": 45
+  }
+ ]
+}
