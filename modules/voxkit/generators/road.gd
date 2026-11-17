@@ -57,6 +57,9 @@ func build(values: Dictionary) -> VoxelModel:
 	var y_of: Callable = p.get("y_of", func(_z: float) -> float: return 0.0)
 	var spread: float = p.get("spread", absf(bend))
 	var rise: float = p.get("rise", 0.0)
+	# A caller's own asphalt (the city's lighter streets); its patches a shade lighter still.
+	var asphalt: Color = p.get("asphalt", ASPHALT)
+	var patch: Color = PATCH if not p.has("asphalt") else asphalt.lightened(0.08)
 	var m := new_model()
 	m.setup(Vector3(half_all * 2.0 + spread * 2.0 + v * 4.0, BED + SURFACE + rise + v * 2.0, length), v)
 	var top := BED + SURFACE
@@ -71,18 +74,18 @@ func build(values: Dictionary) -> VoxelModel:
 		# Shoulders level with the asphalt: lower, and the ground beside the road shows through.
 		m.fill_box(Vector3(c - half_all, y + BED, z), Vector3(c - half_road, y + top, z1), GRAVEL, 0.22, seed + 1)
 		m.fill_box(Vector3(c + half_road, y + BED, z), Vector3(c + half_all, y + top, z1), GRAVEL, 0.22, seed + 1)
-		m.fill_box(Vector3(c - half_road, y + BED, z), Vector3(c + half_road, y + top, z1), ASPHALT, 0.07, seed + 2)
+		m.fill_box(Vector3(c - half_road, y + BED, z), Vector3(c + half_road, y + top, z1), asphalt, 0.07, seed + 2)
 		z = z1
 	# Wear first, then the lines over it: paint only lands on asphalt that is still there, so
 	# a tear or crack breaks a line, and the lines get their own chips after.
-	_wear(m, p, rng, length, x_of, y_of, half_road, top, v, seed)
+	_wear(m, p, rng, length, x_of, y_of, half_road, top, v, seed, asphalt, patch)
 	z = -length / 2
 	while z < length / 2 - 0.0001:
 		var z1 := minf(z + v, length / 2)
 		var mid := (z + z1) / 2
 		_markings(m, p, float(x_of.call(mid)), z, z1, lanes, lane, half_road, float(y_of.call(mid)) + top, v)
 		z = z1
-	_chip_lines(m, p, rng, length, x_of, y_of, half_road, top, v)
+	_chip_lines(m, p, rng, length, x_of, y_of, half_road, top, v, asphalt)
 	return m
 
 
@@ -129,7 +132,7 @@ func _markings(m: VoxelModel, p: Dictionary, c: float, z0: float, z1: float, lan
 
 
 ## Patches, cracks and tears, all kept on the asphalt (never out over the shoulders).
-func _wear(m: VoxelModel, p: Dictionary, rng: RandomNumberGenerator, length: float, x_of: Callable, y_of: Callable, half_road: float, top: float, v: float, seed: int) -> void:
+func _wear(m: VoxelModel, p: Dictionary, rng: RandomNumberGenerator, length: float, x_of: Callable, y_of: Callable, half_road: float, top: float, v: float, seed: int, asphalt: Color, patch: Color) -> void:
 	var wear: float = p["wear"]
 	var surface := func(x_off: float, z: float) -> Vector3:
 		return Vector3(float(x_of.call(z)) + x_off, top + float(y_of.call(z)), z)
@@ -137,7 +140,7 @@ func _wear(m: VoxelModel, p: Dictionary, rng: RandomNumberGenerator, length: flo
 		var z := rng.randf_range(-length / 2, length / 2)
 		var size := minf(rng.randf_range(0.4, 1.6), half_road * 0.8)
 		var x_off := rng.randf_range(-half_road + size, half_road - size)
-		m.paint_ellipsoid(surface.call(x_off, z), Vector3(size, v * 1.5, size * rng.randf_range(0.6, 1.8)), PATCH if rng.randf() < 0.6 else ASPHALT.darkened(0.25), 0.08, seed + i)
+		m.paint_ellipsoid(surface.call(x_off, z), Vector3(size, v * 1.5, size * rng.randf_range(0.6, 1.8)), patch if rng.randf() < 0.6 else asphalt.darkened(0.25), 0.08, seed + i)
 	for i in int(wear * length * 0.4):
 		var z := rng.randf_range(-length / 2, length / 2)
 		_crack(m, rng, surface, rng.randf_range(-half_road, half_road) * 0.9, z, half_road, v, rng.randi_range(3, 8))
@@ -184,10 +187,10 @@ func _tear(m: VoxelModel, p: Dictionary, rng: RandomNumberGenerator, surface: Ca
 
 ## Worn paint: small spots of bare asphalt across the road, which only show where they land
 ## on a line.
-func _chip_lines(m: VoxelModel, p: Dictionary, rng: RandomNumberGenerator, length: float, x_of: Callable, y_of: Callable, half_road: float, top: float, v: float) -> void:
+func _chip_lines(m: VoxelModel, p: Dictionary, rng: RandomNumberGenerator, length: float, x_of: Callable, y_of: Callable, half_road: float, top: float, v: float, asphalt: Color) -> void:
 	var wear: float = p["wear"]
 	for i in int(wear * length * half_road * 3.0):
 		var z := rng.randf_range(-length / 2, length / 2)
 		var x := float(x_of.call(z)) + rng.randf_range(-half_road, half_road)
 		var r := rng.randf_range(0.04, 0.14)
-		m.paint_ellipsoid(Vector3(x, top + float(y_of.call(z)), z), Vector3(r, v * 1.5, r * rng.randf_range(1.0, 3.0)), ASPHALT, 0.07, int(p["seed"]) + 900 + i)
+		m.paint_ellipsoid(Vector3(x, top + float(y_of.call(z)), z), Vector3(r, v * 1.5, r * rng.randf_range(1.0, 3.0)), asphalt, 0.07, int(p["seed"]) + 900 + i)

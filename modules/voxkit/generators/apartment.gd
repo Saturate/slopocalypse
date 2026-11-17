@@ -16,8 +16,10 @@ extends VoxGenerator
 ## off a hall with plastered walls, wooden floors and furniture (see `ApartmentRooms`): how
 ## many rooms depends on the flat. `layout()` gives the plan in metres for tests and collision.
 
-const WALLS: Array[String] = ["Yellow brick", "Red brick", "Concrete panels"]
-const WALL_COLOURS := [Color(0.84, 0.71, 0.45), Color(0.6, 0.25, 0.17), Color(0.68, 0.67, 0.63)]
+const WALLS: Array[String] = ["Yellow brick", "Red brick", "Concrete panels", "White render", "Pale grey render", "Ochre render"]
+const WALL_COLOURS := [Color(0.84, 0.71, 0.45), Color(0.6, 0.25, 0.17), Color(0.68, 0.67, 0.63), Color(0.9, 0.89, 0.85), Color(0.73, 0.73, 0.71), Color(0.8, 0.6, 0.3)]
+## Walls from this index on are rendered: smooth plaster over the brick, no courses.
+const FIRST_RENDER := 3
 const ROOFS: Array[String] = ["Red tile gable", "Black tile gable", "Flat"]
 const ROOF_COLOURS := [Color(0.62, 0.27, 0.18), Color(0.17, 0.17, 0.19), Color(0.2, 0.2, 0.21)]
 const BALCONIES: Array[String] = ["None", "Cantilevered", "Recessed", "French"]
@@ -72,6 +74,8 @@ const PARAPET := 0.6
 const CHIMNEY := 0.6
 const STREET_STEP := 0.18
 const STREET_TREAD := 0.3
+## A gateway's head rises this share of its half width from the springing to the crown.
+const ARCH_RISE := 0.75
 ## The voxel grid's cell limit (see the voxkit crate): a big block at fine voxels gets coarser
 ## voxels instead of being clipped.
 const MAX_CELLS := 15 * 1024 * 1024
@@ -94,6 +98,10 @@ func params() -> Array[Dictionary]:
 		choice("roof", "Roof", ROOFS, 0),
 		param("roof_windows", "Skylights per flat", 0.0, 3.0, 1.0, 1.0),
 		choice("basement", "Basement", ["No", "Yes"], 1),
+		choice("gateway", "Gateway", ["No", "Yes"], 0),
+		param("gateway_at", "Gateway after stairwell", 1.0, 3.0, 1.0, 1.0),
+		param("gateway_width", "Gateway width (m)", 2.5, 4.0, 0.1, 3.0),
+		param("gateway_height", "Gateway height (m)", 2.4, 3.4, 0.1, 3.2),
 		param("flat_width", "Flat width (m)", 4.5, 7.5, 0.25, 6.0),
 		param("depth", "Depth (m)", 8.0, 13.0, 0.25, 10.0),
 		param("windows", "Windows per flat", 1.0, 3.0, 1.0, 2.0),
@@ -107,7 +115,8 @@ func params() -> Array[Dictionary]:
 ## (outer wall thickness), `bays` (stairwell bays as Vector2 x0, x1, outside), `flats`
 ## (Vector2 x0, x1, outside), `doors` (front door centres), `elevators` (tower boxes),
 ## `steps` (every stair step as a box, its top the tread) and `flat_plans` (per flat, its
-## rooms, partitions and doors, the same on every storey; see `ApartmentRooms.plan_flat`).
+## rooms, partitions and doors, the same on every storey; see `ApartmentRooms.plan_flat`),
+## `gateway` (the arched way through the ground floor as a box, or an empty AABB).
 func layout(values: Dictionary) -> Dictionary:
 	var p := with_defaults(values)
 	var v := _voxel(p)
@@ -162,16 +171,32 @@ func layout(values: Dictionary) -> Dictionary:
 				var top := level + STOREY / 2.0 + k * rise
 				var z0 := zh - k * TREAD
 				steps.append(AABB(Vector3(mid, top - STEP_THICKNESS, z0), Vector3(inner.y - mid, STEP_THICKNESS, TREAD)))
+	var gateway := AABB()
+	if int(p["gateway"]) == 1 and sections >= 2:
+		var gw: float = p["gateway_width"]
+		# Under the first floor's slab, so the flat above keeps its floor.
+		var top := minf(float(p["gateway_height"]), ground + STOREY - SLAB)
+		gateway = AABB(Vector3(gateway_x(p) - gw / 2.0, 0.0, -d / 2.0), Vector3(gw, top, d))
 	var plan := {
 		"length": length, "depth": d, "floors": floors, "levels": levels, "eaves": eaves,
 		"wall": wall, "bays": bays, "flats": flats, "doors": doors, "elevators": elevators,
-		"steps": steps, "voxel": v, "ground": ground, "half_landing_z": zh,
+		"steps": steps, "voxel": v, "ground": ground, "half_landing_z": zh, "gateway": gateway,
 	}
 	var plans: Array[Dictionary] = []
 	for f in flats.size():
 		plans.append(_flat_plan(p, plan, f))
 	plan["flat_plans"] = plans
 	return plan
+
+
+## Where the middle of the gateway falls along the block: on the party wall between two
+## sections, after stairwell `gateway_at`, so it takes the far end of two flats and never
+## a stairwell or a front door.
+static func gateway_x(p: Dictionary) -> float:
+	var sections := int(p["stairwells"])
+	var section := float(p["flat_width"]) * 2.0 + STAIR_BAY
+	var at := clampi(int(p["gateway_at"]), 1, maxi(sections - 1, 1))
+	return -section * sections / 2.0 + at * section
 
 
 ## A pane of glass (windows, glazed doors, glass railings): window glass, so it draws
@@ -252,6 +277,7 @@ func build(values: Dictionary) -> VoxelModel:
 		_furnish(m, plan, seed)
 		m.set_material(VoxMaterials.index_of("concrete"))
 	_elevators(m, plan, v, seed)
+	_gateway(m, plan, wall_colour, v, seed)
 	if roof_kind == 2:
 		_flat_roof(m, plan, wall_colour, v, seed)
 	else:
@@ -293,7 +319,9 @@ func _walls(m: VoxelModel, p: Dictionary, plan: Dictionary, colour: Color, rng: 
 	var z := float(plan["depth"]) / 2.0
 	var eaves: float = plan["eaves"]
 	var panels := int(p["walls"]) == 2
-	if panels:
+	if int(p["walls"]) >= FIRST_RENDER:
+		m.fill_box(Vector3(-x, 0.0, -z), Vector3(x, eaves, z), colour, 0.03, seed)
+	elif panels:
 		m.fill_box(Vector3(-x, 0.0, -z), Vector3(x, eaves, z), colour, 0.04, seed)
 		var joint := colour.darkened(0.35)
 		for level: float in plan["levels"]:
@@ -570,6 +598,51 @@ func _elevators(m: VoxelModel, plan: Dictionary, v: float, seed: int) -> void:
 			m.fill_box(Vector3(cx - 0.8, 0.0, box.end.z), Vector3(cx + 0.8, minf(k * STREET_STEP, ground), box.end.z + out), GRANITE, 0.05, seed + k)
 
 
+## The gateway: whatever stood proud of the walls there goes, the ground floor across it is
+## walled up solid (shutting the flats either side off from it), then an opening with
+## straight sides and an elliptical head is cut right through, framed in stone on both faces.
+func _gateway(m: VoxelModel, plan: Dictionary, colour: Color, v: float, seed: int) -> void:
+	var gate: AABB = plan["gateway"]
+	if gate.size == Vector3.ZERO:
+		return
+	var wall: float = plan["wall"]
+	var z := float(plan["depth"]) / 2.0
+	var ceiling := float(plan["ground"]) + STOREY - SLAB
+	var x0 := gate.position.x - wall
+	var x1 := gate.end.x + wall
+	var reach := ceilf(float(plan["ground"]) / STREET_STEP) * STREET_TREAD + BALCONY.y + 1.0
+	m.carve_box(Vector3(x0, 0.0, -z - reach), Vector3(x1, ceiling, -z))
+	m.carve_box(Vector3(x0, 0.0, z), Vector3(x1, ceiling, z + reach))
+	var y := 0.0
+	var row := 0
+	while y < ceiling - 0.001:
+		m.fill_box(Vector3(x0, y, -z), Vector3(x1, minf(y + v, ceiling), z), colour * (1.0 if row % 2 == 0 else 0.97), 0.08, seed + row)
+		y += v
+		row += 1
+	var band := 0.3
+	var top := gate.end.y
+	var half := gate.size.x / 2.0
+	var cx := gate.get_center().x
+	# A stone surround following the arch, then the opening inside it.
+	for face: float in [-z, z]:
+		_arch(cx, half + band, top + band, Vector2(face - v, face + v), v, func(lo: Vector3, hi: Vector3) -> void: m.paint_box(lo, hi, GRANITE, 0.05, seed))
+	_arch(cx, half, top, Vector2(-z - v, z + v), v, func(lo: Vector3, hi: Vector3) -> void: m.carve_box(lo, hi))
+
+
+## An arch `half` wide either side of `cx`, `top` high at the crown, between z `zs.x` and
+## `zs.y`, as boxes handed to `apply` row by row: straight sides, then an elliptical head
+## rising `ARCH_RISE` of the half width to the crown.
+static func _arch(cx: float, half: float, top: float, zs: Vector2, v: float, apply: Callable) -> void:
+	var spring := top - half * ARCH_RISE
+	apply.call(Vector3(cx - half, 0.0, zs.x), Vector3(cx + half, spring, zs.y))
+	var y := spring
+	while y < top - 0.001:
+		var t := (y + v / 2.0 - spring) / (top - spring)
+		var w := half * sqrt(maxf(1.0 - t * t, 0.0))
+		apply.call(Vector3(cx - w, y, zs.x), Vector3(cx + w, minf(y + v, top), zs.y))
+		y += v
+
+
 ## A steep tiled saddle roof: gable ends in the wall material, tiles in rows with a darker
 ## ridge, skylights over the top-floor flats and a chimney per stairwell.
 func _gable_roof(m: VoxelModel, p: Dictionary, plan: Dictionary, wall: Color, tile: Color, rise: float, v: float, seed: int) -> void:
@@ -614,7 +687,8 @@ func _gable_roof(m: VoxelModel, p: Dictionary, plan: Dictionary, wall: Color, ti
 	var ridge := eaves + slope * d
 	for bay: Vector2 in plan["bays"]:
 		var cx := (bay.x + bay.y) / 2.0
-		var c := wall.darkened(0.1) if int(p["walls"]) != 2 else WALL_COLOURS[1]
+		# Brick chimneys on brick walls; panel and rendered blocks get red brick ones.
+		var c := wall.darkened(0.1) if int(p["walls"]) < 2 else WALL_COLOURS[1]
 		m.fill_box(Vector3(cx - CHIMNEY / 2.0, ridge - 1.5, 0.8), Vector3(cx + CHIMNEY / 2.0, ridge + 1.1, 0.8 + CHIMNEY), c, 0.1, seed)
 		m.fill_box(Vector3(cx - CHIMNEY / 2.0 - v, ridge + 1.1, 0.8 - v), Vector3(cx + CHIMNEY / 2.0 + v, ridge + 1.1 + v, 0.8 + CHIMNEY + v), CONCRETE, 0.0, 0)
 

@@ -1,6 +1,8 @@
 extends Node
-## Lights: street lamps along the road whose bulbs glow, light the street and shatter when
-## shot, and a budget that keeps only the nearest lights real on each screen (LightBudget).
+## Lights: street lamps along the road and wherever another module asks for them
+## (`city.lamp_spots`: {spots: Array[Transform3D]}), whose bulbs glow, light the street and
+## shatter when shot, and a budget that keeps only the nearest lights real on each screen
+## (LightBudget).
 ##
 ## The server decides which bulbs are broken: a round on a bulb broadcasts
 ## `lights.lamp_broken`, and someone joining later is told which are already out.
@@ -28,6 +30,7 @@ func _ready() -> void:
 		budget.fade = float(b.get("fade_seconds", 0.3))
 		add_child(budget)
 	EventBus.subscribe(&"world.ready", _on_world_ready)
+	EventBus.subscribe(&"city.lamp_spots", _on_lamp_spots)
 	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.subscribe(&"lights.lamp_broken", _on_lamp_broken)
 	Net.peer_joined.connect(_on_peer_joined)
@@ -35,6 +38,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	EventBus.unsubscribe(&"world.ready", _on_world_ready)
+	EventBus.unsubscribe(&"city.lamp_spots", _on_lamp_spots)
 	EventBus.unsubscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.unsubscribe(&"lights.lamp_broken", _on_lamp_broken)
 	if Net.peer_joined.is_connected(_on_peer_joined):
@@ -50,6 +54,16 @@ func _on_world_ready(_p: Dictionary) -> void:
 	var height := func(x: float, z: float) -> float:
 		return float(ground.call(&"surface_height" if ground.has_method(&"surface_height") else &"ground_height", x, z))
 	place(road_spots(func(m: float) -> Vector3: return ground.call(&"road_point", m), height, config["road"]))
+
+
+## Lamps somewhere else in the world (the city's streets). Every machine hears this in the
+## same order as the road's, so lamp ids match.
+func _on_lamp_spots(p: Dictionary) -> void:
+	var spots: Array[Transform3D] = []
+	for spot: Variant in p.get("spots", []):
+		if spot is Transform3D:
+			spots.append(spot)
+	place(spots)
 
 
 ## Where street lamps stand along a road given as `road_at(metres) -> point`: alternating

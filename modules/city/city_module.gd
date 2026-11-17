@@ -2,14 +2,20 @@ extends Node
 ## The city (#333, #220, part of #331): a European city of perimeter blocks beside the road
 ## (CitySite), on levelled ground cleared of trees, that you can walk into and fight through.
 ## Placed the same on the server and every client from data and the road, so nothing about
-## it is sent.
+## it is sent. Its street lamps are the lights module's: once the city stands, it publishes
+## where they go on `city.lamp_spots` ({spots: Array[Transform3D]}), so either works with
+## the other switched off.
 
 const CONFIG := "res://modules/city/data/city.json"
 const REQUIRED := {
 	"seed": TYPE_FLOAT, "at": TYPE_FLOAT, "side": TYPE_FLOAT, "size": TYPE_FLOAT, "blocks": TYPE_FLOAT,
-	"street_width": TYPE_FLOAT, "street_jitter": TYPE_FLOAT, "pavement": TYPE_FLOAT, "passage_width": TYPE_FLOAT,
-	"building_depth": TYPE_FLOAT, "floors_edge": TYPE_FLOAT, "floors_middle": TYPE_FLOAT, "style": TYPE_STRING,
-	"pad_blend": TYPE_FLOAT, "builds_per_frame": TYPE_FLOAT,
+	"street_width": TYPE_FLOAT, "avenue_width": TYPE_FLOAT, "street_jitter": TYPE_FLOAT, "pavement": TYPE_FLOAT,
+	"passage_width": TYPE_FLOAT, "gateway_height": TYPE_FLOAT, "building_depth": TYPE_FLOAT, "floors_edge": TYPE_FLOAT,
+	"floors_middle": TYPE_FLOAT, "style": TYPE_STRING, "asphalt": TYPE_ARRAY, "kerb_width": TYPE_FLOAT, "tile_size": TYPE_FLOAT,
+	"crossing_width": TYPE_FLOAT, "crossing_setback": TYPE_FLOAT, "zebra_stripe": TYPE_FLOAT, "lamp_spacing": TYPE_FLOAT,
+	"lamp_inset": TYPE_FLOAT, "tree_spacing": TYPE_FLOAT, "tree_inset": TYPE_FLOAT, "tree_street_width": TYPE_FLOAT,
+	"tree_height": TYPE_FLOAT, "tree_crown": TYPE_FLOAT, "tree_trunk": TYPE_FLOAT, "door_clear": TYPE_FLOAT,
+	"spot_nudge": TYPE_FLOAT, "pad_blend": TYPE_FLOAT, "builds_per_frame": TYPE_FLOAT,
 }
 ## Clearing circles over the footprint are this far apart.
 const CLEARING_STEP := 20.0
@@ -43,6 +49,13 @@ func _on_world_ready(_p: Dictionary) -> void:
 	var scenery := get_tree().get_first_node_in_group(&"scenery")
 	if scenery != null and scenery.has_method(&"set_clearings_for"):
 		scenery.call(&"set_clearings_for", &"city", clearings(site.global_transform, size))
+	publish_lamps()
+
+
+## Everywhere: where the city's street lamps go, for whoever puts lamps up.
+func publish_lamps() -> void:
+	if site != null:
+		EventBus.publish(&"city.lamp_spots", {"spots": site.lamp_spots()})
 
 
 ## Where the city stands: beside the road `at` metres out, its near edge `side` metres from

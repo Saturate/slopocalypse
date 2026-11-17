@@ -11,6 +11,56 @@ func _solid(model: VoxelModel, box: AABB) -> int:
 	return (copy["model"] as VoxelModel).voxel_count()
 
 
+func test_a_gateway_cuts_an_arched_way_through_the_ground_floor_between_stairwells() -> void:
+	var values := {"stairwells": 2.0, "floors": 3.0, "basement": 1.0, "gateway": 1.0, "gateway_width": 3.0, "gateway_height": 3.2, "elevators": 0.0, "interior": 2.0}
+	var plan := _gen.layout(values)
+	var gate: AABB = plan["gateway"]
+	var d := float(plan["depth"])
+	assert_float(gate.size.x).is_equal_approx(3.0, 0.01)
+	assert_float(gate.end.y).is_equal_approx(3.2, 0.01)
+	assert_float(gate.position.y).is_equal(0.0)
+	assert_float(gate.size.z).is_equal_approx(d, 0.01)
+	# Clear of both stairwells, so every flat keeps its way in.
+	for bay: Vector2 in plan["bays"]:
+		assert_bool(gate.position.x >= bay.y + 0.5 or gate.end.x <= bay.x - 0.5).is_true()
+	assert_float(gate.get_center().x).is_equal_approx(VoxApartment.gateway_x(_gen.with_defaults(values)), 0.001)
+	var model := _gen.build(values)
+	var cx := gate.get_center().x
+	# Open from the street right through to the courtyard, head high across its middle.
+	assert_int(_solid(model, AABB(Vector3(cx - 1.2, 0.05, -d / 2.0 - 1.0), Vector3(2.4, 2.4, d + 2.0)))).is_equal(0)
+	# Walled off from the flats either side, and the first floor runs on over it.
+	for x: float in [gate.position.x - 0.2, gate.end.x + 0.05]:
+		assert_int(_solid(model, AABB(Vector3(x, 1.2, -1.0), Vector3(0.15, 1.5, 2.0)))).is_greater(0)
+	var first := float((plan["levels"] as Array)[1])
+	assert_int(_solid(model, AABB(Vector3(cx - 0.5, gate.end.y + 0.05, -1.0), Vector3(1.0, first - gate.end.y - 0.1, 2.0)))).is_greater(0)
+
+
+func test_a_gateway_needs_two_stairwells_and_stays_under_the_first_floor() -> void:
+	assert_bool((_gen.layout({"stairwells": 2.0})["gateway"] as AABB).size == Vector3.ZERO).is_true()
+	assert_bool((_gen.layout({"stairwells": 1.0, "gateway": 1.0})["gateway"] as AABB).size == Vector3.ZERO).is_true()
+	var low := _gen.layout({"stairwells": 3.0, "basement": 0.0, "gateway": 1.0, "gateway_height": 3.4})
+	var gate: AABB = low["gateway"]
+	assert_float(gate.end.y).is_less_equal(float((low["levels"] as Array)[1]) - VoxApartment.SLAB + 0.001)
+	# Picks a gap between stairwells even when asked for one past the end.
+	var far := _gen.layout({"stairwells": 3.0, "gateway": 1.0, "gateway_at": 3.0})
+	var bays: Array = far["bays"]
+	assert_float((far["gateway"] as AABB).get_center().x).is_equal_approx(((bays[1] as Vector2).y + (bays[2] as Vector2).x) / 2.0, 0.001)
+
+
+func test_walls_come_in_brick_and_in_white_pale_grey_and_ochre_render() -> void:
+	for name: String in ["Yellow brick", "Red brick", "White render", "Pale grey render", "Ochre render"]:
+		assert_bool(VoxApartment.WALLS.has(name)).override_failure_message(name).is_true()
+	assert_int(VoxApartment.WALL_COLOURS.size()).is_equal(VoxApartment.WALLS.size())
+	var ochre := VoxApartment.WALLS.find("Ochre render")
+	var plan := _gen.layout({"walls": float(ochre)})
+	var model := _gen.build({"walls": float(ochre), "seed": 3.0})
+	# The block's end wall, between the window rows.
+	var at := Vector3(-float(plan["length"]) / 2.0 + 0.08, float((plan["levels"] as Array)[0]) + 2.5, 0.0)
+	var colour := model.colour_at(at)
+	var want: Color = VoxApartment.WALL_COLOURS[ochre]
+	assert_float(Vector3(colour.r - want.r, colour.g - want.g, colour.b - want.b).length()).is_less(0.08)
+
+
 func test_more_floors_make_a_taller_block() -> void:
 	var low := _gen.build({"floors": 2.0})
 	var high := _gen.build({"floors": 6.0})
