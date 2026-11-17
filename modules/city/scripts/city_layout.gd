@@ -31,7 +31,10 @@ const SIDES: Array[Vector2] = [Vector2(0, -1), Vector2(0, 1), Vector2(-1, 0), Ve
 ## Array[Rect2], buildings: Array of {footprint: Rect2, facing: Vector2, yaw, doors:
 ## Array[Vector2] (a step out of each front door), door_out (the first of them), params},
 ## lamps: Array of {at: Vector2, out: Vector2 (toward the street)}, trees: Array[Vector2]}.
-static func make(cfg: Dictionary, seed: int) -> Dictionary:
+## `handmade`: the hand-made blocks to choose from (#339), each {name, size: Vector2, tags,
+## markers}; a placed one replaces the block's generated buildings and is listed under
+## `handmade` as {name, rect, centre, yaw, markers (in city metres)}.
+static func make(cfg: Dictionary, seed: int, handmade: Array = []) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
 	var size := float(cfg["size"])
@@ -66,14 +69,25 @@ static func make(cfg: Dictionary, seed: int) -> Dictionary:
 	var passages: Array[Rect2] = []
 	var yards: Array[Rect2] = []
 	var buildings: Array[Dictionary] = []
+	var placed: Array[Dictionary] = []
+	## Grid cell -> the hand-made block placed there, so neighbours never repeat.
+	var taken: Dictionary[Vector2i, String] = {}
 	for bx in n:
 		for bz in n:
 			var x0 := float(lines[0][bx]) + widths[bx]
 			var z0 := float(lines[1][bz]) + widths[bz]
 			var block := Rect2(x0, z0, float(lines[0][bx + 1]) - x0, float(lines[1][bz + 1]) - z0)
 			blocks.append(block)
-			if n % 2 == 1 and bx == n / 2 and bz == n / 2:
+			var is_square := n % 2 == 1 and bx == n / 2 and bz == n / 2
+			if is_square:
 				squares.append(block)
+			if not handmade.is_empty():
+				var chosen := _choose_handmade(block.grow(-pave), is_square, handmade, cfg, rng, taken, Vector2i(bx, bz))
+				if not chosen.is_empty():
+					placed.append(chosen)
+					taken[Vector2i(bx, bz)] = chosen["name"]
+					continue
+			if is_square:
 				continue
 			var inner := block.grow(-pave)
 			var front := clampf((inner.size.y - SHORTEST) / 2.0, DEPTH_MIN, depth)
@@ -102,6 +116,11 @@ static func make(cfg: Dictionary, seed: int) -> Dictionary:
 		keep.append(passage.grow(pave + 1.0))
 	for c in crossings:
 		keep.append(c.grow(pave + 1.0))
+	for h in placed:
+		for m: Dictionary in h["markers"]:
+			if m["kind"] == "door" or m["kind"] == "passage":
+				var at: Vector3 = m["at"]
+				keep.append(Rect2(Vector2(at.x, at.z) - Vector2.ONE * door_clear, Vector2.ONE * door_clear * 2.0))
 	var lamps: Array[Dictionary] = []
 	var trees: Array[Vector2] = []
 	var corner := float(cfg.get("crossing_setback", 0.6)) + float(cfg.get("crossing_width", 3.0)) + 1.0
@@ -122,7 +141,7 @@ static func make(cfg: Dictionary, seed: int) -> Dictionary:
 			if widths[line] >= tree_street - 0.001:
 				trees.append_array(_edge_spots(block, out, tree_spacing, float(cfg.get("tree_inset", 1.1)), corner, -half, keep, nudge, on_edge, 2.5))
 	return {
-		"streets": streets, "blocks": blocks, "squares": squares, "passages": passages, "yards": yards,
+		"streets": streets, "blocks": blocks, "squares": squares, "passages": passages, "yards": yards, "handmade": placed,
 		"buildings": buildings, "crossings": crossings, "lamps": lamps, "trees": trees, "lines": lines, "widths": widths,
 	}
 
@@ -260,3 +279,37 @@ static func _clear(p: Vector2, keep: Array[Rect2], avoid: Array[Vector2], avoid_
 		if a.distance_to(p) < avoid_r:
 			return false
 	return true
+
+
+## A hand-made block for the plot `inner` (inside its pavement), or empty: the square always
+## takes a square block that fits; other plots take one with chance `handmade_share`, never a
+## square block and never the same as a neighbour. Turned a quarter if that fits better.
+static func _choose_handmade(inner: Rect2, is_square: bool, handmade: Array, cfg: Dictionary, rng: RandomNumberGenerator, taken: Dictionary[Vector2i, String], cell: Vector2i) -> Dictionary:
+	if not is_square and rng.randf() >= float(cfg.get("handmade_share", 0.0)):
+		return {}
+	var slack := float(cfg.get("handmade_slack", 3.0))
+	var neighbours: Array[String] = []
+	for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		if taken.has(cell + d):
+			neighbours.append(taken[cell + d])
+	var fits: Array[Dictionary] = []
+	for h: Dictionary in handmade:
+		var tags: Array = h["tags"]
+		if tags.has("square") != is_square or neighbours.has(str(h["name"])):
+			continue
+		var size: Vector2 = h["size"]
+		if absf(size.x - inner.size.x) <= slack and absf(size.y - inner.size.y) <= slack:
+			fits.append({"block": h, "yaw": 0.0})
+		elif absf(size.y - inner.size.x) <= slack and absf(size.x - inner.size.y) <= slack:
+			fits.append({"block": h, "yaw": PI / 2.0})
+	if fits.is_empty():
+		return {}
+	var pick: Dictionary = fits[rng.randi() % fits.size()]
+	var h: Dictionary = pick["block"]
+	var yaw := float(pick["yaw"])
+	var centre := inner.get_center()
+	var markers: Array[Dictionary] = []
+	for m: Dictionary in h["markers"]:
+		var local: Vector3 = Basis(Vector3.UP, yaw) * (m["at"] as Vector3)
+		markers.append({"kind": m["kind"], "at": Vector3(centre.x + local.x, local.y, centre.y + local.z), "yaw": deg_to_rad(float(m["yaw"])) + yaw})
+	return {"name": h["name"], "rect": inner, "centre": centre, "yaw": yaw, "markers": markers, "variation": rng.randi()}

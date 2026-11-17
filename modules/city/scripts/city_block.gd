@@ -120,3 +120,13 @@ static func _error(message: String) -> void:
 		log_node.call(&"error", &"city", message)
 	else:
 		push_error(message)
+
+
+## Every block as the city layout wants it: {name, size, tags, markers}.
+static func catalogue() -> Array:
+	var out: Array = []
+	for n in names():
+		var b := load_named(n)
+		if b != null:
+			out.append({"name": b.name, "size": b.size, "tags": Array(b.tags), "markers": b.markers})
+	return out
