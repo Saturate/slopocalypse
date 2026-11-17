@@ -28,7 +28,7 @@ func _process_tick(delta: float) -> void:
 	if animator != null:
 		ads = animator.ads_amount()
 		zoom = animator.sight_zoom()
-	camera.fov = (float(cfg["fov"]) + _fov_bonus) / lerpf(1.0, zoom, ads)
+	camera.fov = (float(cfg["fov"]) + Settings.fov_offset() + _fov_bonus) / lerpf(1.0, zoom, ads)
 
 	var speed := player.horizontal_speed() if player.is_on_floor() and player.mode == PlayerController.Mode.NORMAL else 0.0
 	_distance += speed * delta

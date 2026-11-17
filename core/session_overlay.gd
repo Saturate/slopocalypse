@@ -13,6 +13,7 @@ var _connecting: Control
 var _connecting_label: Label
 var _pause: Control
 var _host_info: Label
+var _settings: SettingsScreen
 
 
 func _ready() -> void:
@@ -35,6 +36,7 @@ func _ready() -> void:
 	col.add_child(gap)
 	_host_info = _text(col, "", 14, MainMenu.DIM)
 	_add_button(col, &"Resume", "Resume", _resume)
+	_add_button(col, &"Settings", "Settings", func() -> void: _settings.open())
 	# Unstuck: the player module asks the server to put us back at the spawn.
 	_add_button(col, &"BackToSpawn", "Back to spawn", func() -> void:
 		EventBus.publish(&"session.back_to_spawn", {})
@@ -43,6 +45,8 @@ func _ready() -> void:
 	_add_button(col, &"Quit", "Quit game", func() -> void: get_tree().quit(0))
 	_connecting.visible = false
 	_pause.visible = false
+	_settings = SettingsScreen.new()
+	add_child(_settings)
 
 
 ## Esc opens this only when no other screen is open; another screen on top takes Esc

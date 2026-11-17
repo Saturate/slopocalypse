@@ -155,3 +155,15 @@ func _fields() -> void:
 	bar_fill.border_width_top = 2
 	set_stylebox(&"background", &"ProgressBar", bar_bg)
 	set_stylebox(&"fill", &"ProgressBar", bar_fill)
+	# Sliders: a sunk track with the filled part in the accent.
+	var track := StyleBoxFlat.new()
+	track.bg_color = Color(0, 0, 0, 0.45)
+	track.content_margin_top = 4
+	track.content_margin_bottom = 4
+	var filled := StyleBoxFlat.new()
+	filled.bg_color = UiPalette.ACCENT
+	filled.content_margin_top = 4
+	filled.content_margin_bottom = 4
+	set_stylebox(&"slider", &"HSlider", track)
+	set_stylebox(&"grabber_area", &"HSlider", filled)
+	set_stylebox(&"grabber_area_highlight", &"HSlider", filled)
