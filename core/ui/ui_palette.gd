@@ -28,5 +28,5 @@ const TITLE := 44
 const HEADING := 28
 const BODY := 20
 const HINT := 16
-const HUD := 18
+const HUD := 21
 const HUD_NUMBER := 40

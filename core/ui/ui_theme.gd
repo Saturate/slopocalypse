@@ -13,7 +13,7 @@ const HEADING_FONT := "res://core/ui/fonts/BlackOpsOne-Regular.ttf"
 const BODY_FONT := "res://core/ui/fonts/BarlowCondensed-SemiBold.ttf"
 const NUMBER_FONT := "res://core/ui/fonts/BarlowCondensed-Bold.ttf"
 ## Over the 3D world text needs an outline to read on both sky and asphalt.
-const HUD_OUTLINE := 5
+const HUD_OUTLINE := 6
 const BUTTON_SHADOW := Vector2(4, 4)
 
 
@@ -49,7 +49,7 @@ func _init() -> void:
 	for hud: Array in [[&"HudLabel", body, UiPalette.HUD], [&"HudNumber", number, UiPalette.HUD_NUMBER]]:
 		_variation(hud[0], &"Label", hud[1], hud[2], UiPalette.TEXT)
 		set_constant(&"outline_size", hud[0], HUD_OUTLINE)
-		set_color(&"font_outline_color", hud[0], Color(0, 0, 0, 0.5))
+		set_color(&"font_outline_color", hud[0], Color(0, 0, 0, 0.85))
 		set_color(&"font_shadow_color", hud[0], Color(0, 0, 0, 0.45))
 		set_constant(&"shadow_offset_y", hud[0], 2)
 		set_constant(&"shadow_offset_x", hud[0], 0)
