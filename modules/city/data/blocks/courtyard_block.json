@@ -1,0 +1,179 @@
+{
+ "name": "courtyard_block",
+ "size": [
+  33,
+  33
+ ],
+ "tags": [
+  "residential"
+ ],
+ "pieces": [
+  {
+   "generator": "VoxApartment",
+   "params": {
+    "seed": 101,
+    "floors": 5.0,
+    "stairwells": 2.0,
+    "flat_width": 6.75,
+    "depth": 10.0,
+    "walls": 0.0,
+    "roof": 0.0,
+    "basement": 0.0,
+    "elevators": 0.0,
+    "interior": 1.0
+   },
+   "at": [
+    0,
+    0,
+    -11.5
+   ],
+   "yaw": 0,
+   "vary": [
+    "walls"
+   ]
+  },
+  {
+   "generator": "VoxApartment",
+   "params": {
+    "seed": 281,
+    "floors": 5.0,
+    "stairwells": 2.0,
+    "flat_width": 6.75,
+    "depth": 10.0,
+    "walls": 1.0,
+    "roof": 0.0,
+    "basement": 0.0,
+    "elevators": 0.0,
+    "interior": 1.0
+   },
+   "at": [
+    0,
+    0,
+    11.5
+   ],
+   "yaw": 180,
+   "vary": [
+    "walls"
+   ]
+  },
+  {
+   "generator": "VoxApartment",
+   "params": {
+    "seed": 201,
+    "floors": 5.0,
+    "stairwells": 1.0,
+    "flat_width": 4.5,
+    "depth": 10.0,
+    "walls": 1.0,
+    "roof": 0.0,
+    "basement": 0.0,
+    "elevators": 0.0,
+    "interior": 1.0
+   },
+   "at": [
+    -11.5,
+    0,
+    0
+   ],
+   "yaw": 90,
+   "vary": [
+    "walls"
+   ]
+  },
+  {
+   "generator": "VoxApartment",
+   "params": {
+    "seed": 21,
+    "floors": 5.0,
+    "stairwells": 1.0,
+    "flat_width": 4.5,
+    "depth": 10.0,
+    "walls": 0.0,
+    "roof": 0.0,
+    "basement": 0.0,
+    "elevators": 0.0,
+    "interior": 1.0
+   },
+   "at": [
+    11.5,
+    0,
+    0
+   ],
+   "yaw": -90,
+   "vary": [
+    "walls"
+   ]
+  },
+  {
+   "generator": "VoxLeafTree",
+   "params": {
+    "seed": 120,
+    "height": 8.0
+   },
+   "at": [
+    -2,
+    0,
+    0
+   ],
+   "yaw": 0
+  },
+  {
+   "generator": "VoxLeafTree",
+   "params": {
+    "seed": 121,
+    "height": 6.5
+   },
+   "at": [
+    2.5,
+    0,
+    1.5
+   ],
+   "yaw": 40
+  },
+  {
+   "generator": "VoxShed",
+   "params": {
+    "seed": 122,
+    "width": 2.5,
+    "depth": 2.0,
+    "wall_height": 2.0,
+    "windows": 0.0
+   },
+   "at": [
+    3.5,
+    0,
+    -3.5
+   ],
+   "yaw": 0
+  }
+ ],
+ "markers": [
+  {
+   "kind": "door",
+   "at": [
+    0,
+    0,
+    -16.5
+   ],
+   "yaw": 0
+  },
+  {
+   "kind": "door",
+   "at": [
+    0,
+    0,
+    16.5
+   ],
+   "yaw": 180
+  },
+  {
+   "kind": "spawn",
+   "at": [
+    0,
+    0,
+    3
+   ],
+   "yaw": 0
+  }
+ ]
+}
