@@ -85,12 +85,6 @@ func _card() -> Control:
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(center)
 	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = MainMenu.PANEL
-	style.border_color = MainMenu.ACCENT.darkened(0.5)
-	style.border_width_top = 3
-	style.set_content_margin_all(24)
-	panel.add_theme_stylebox_override("panel", style)
 	center.add_child(panel)
 	var col := VBoxContainer.new()
 	col.custom_minimum_size.x = 300

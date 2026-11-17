@@ -14,6 +14,8 @@ config/features=PackedStringArray("4.7", "Forward Plus")
 
 window/size/viewport_width=1600
 window/size/viewport_height=900
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
 
 [physics]
 
@@ -31,3 +33,7 @@ Net="*res://core/net.gd"
 [rendering]
 
 textures/vram_compression/import_etc2_astc=true
+
+[gui]
+
+theme/custom="res://core/ui/ui_theme.tres"

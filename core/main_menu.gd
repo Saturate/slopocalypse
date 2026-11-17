@@ -10,12 +10,11 @@ signal join_requested(host: String, port: int)
 signal library_requested
 signal range_requested
 
-const BG := Color(0.07, 0.08, 0.08)
-const PANEL := Color(0.12, 0.13, 0.12, 0.96)
-const ACCENT := Color(0.82, 0.62, 0.3)
-const TEXT := Color(0.86, 0.86, 0.82)
-const DIM := Color(0.55, 0.56, 0.53)
-const WARN := Color(0.95, 0.45, 0.35)
+const BG := UiPalette.BACKGROUND
+const ACCENT := UiPalette.ACCENT
+const TEXT := UiPalette.TEXT
+const DIM := UiPalette.DIM
+const WARN := UiPalette.BAD
 const LABEL := Color(0.66, 0.67, 0.63)
 const BUTTON := Color(0.17, 0.18, 0.17)
 const BUTTON_HOVER := Color(0.22, 0.23, 0.21)
@@ -68,12 +67,6 @@ func _ready() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = PANEL
-	style.border_color = ACCENT.darkened(0.5)
-	style.border_width_top = 3
-	style.set_content_margin_all(24)
-	panel.add_theme_stylebox_override("panel", style)
 	center.add_child(panel)
 	var col := VBoxContainer.new()
 	col.custom_minimum_size.x = WIDTH

@@ -5,11 +5,10 @@ extends CanvasLayer
 ## top. Every trade is a request the server decides; the screen redraws from its answer.
 ## Esc, Tab or F closes it.
 
-const BG := Color(0.05, 0.06, 0.06, 0.82)
-const PANEL := Color(0.11, 0.12, 0.11, 0.97)
-const ACCENT := Color(0.82, 0.62, 0.3)
-const TEXT := Color(0.88, 0.88, 0.84)
-const DIM := Color(0.66, 0.67, 0.63)
+const BG := UiPalette.BACKDROP
+const ACCENT := UiPalette.ACCENT
+const TEXT := UiPalette.TEXT
+const DIM := UiPalette.DIM
 const STOCK_COLUMNS := 3
 
 var trader: Node
@@ -136,12 +135,6 @@ func _build_ui() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_root.add_child(center)
 	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = PANEL
-	style.border_color = ACCENT.darkened(0.5)
-	style.border_width_top = 3
-	style.set_content_margin_all(20)
-	panel.add_theme_stylebox_override("panel", style)
 	center.add_child(panel)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 10)
