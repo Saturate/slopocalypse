@@ -14,6 +14,7 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | To change | File | Fields |
 | --- | --- | --- |
 | Which features are on (enemies, drones, car, audio, ...) | `data/features.json` | `flags` |
+| Who is named in the credits (title screen) | `data/credits.json` | `people` (each `name`, `role`), `agents`, `note`; the "Made with" list comes from `assets/LICENSES.md` |
 | How far away soldiers and drones are still sent to a player (server) | `data/net.json` | `relevance_distance` (metres), `relevance_margin` (they stay until this much further, so they don't pop in and out at the edge), `relevance_seconds` (how often it is checked) |
 | How other players, soldiers and drones are smoothed between server updates (your screen) | `data/net.json` | `smooth_delay` (seconds they are shown in the past; more is smoother on a bad connection but further behind), `smooth_extrapolate` (seconds they keep moving when updates stop), `smooth_snap_distance` (a jump longer than this, in metres, shows at once instead of sliding) |
 | Player health and respawn | `modules/player/data/player.json` | `max_health`, `respawn_seconds`, `respawn_spread`, `back_to_spawn_cooldown_seconds` (Esc menu "Back to spawn": how long before you can use it again) |

@@ -23,6 +23,8 @@ const SHOWN_SERVERS := 4
 const MARGIN := Vector2(96, 72)
 const BUTTON_SIZE := Vector2(360, 54)
 const LOGO_SIZE := 104
+const WHATS_NEW_LINES := 3
+const WHATS_NEW_WIDTH := 460.0
 
 ## Why the last session ended; shown above the buttons.
 var message := ""
@@ -40,6 +42,8 @@ var _port: LineEdit
 var _message: Label
 var _friend_message: Label
 var _friends: ScreenFrame
+var _changelog: ChangelogScreen
+var _credits: CreditsScreen
 var _buttons: Dictionary[StringName, Button] = {}
 
 
@@ -66,17 +70,109 @@ func _ready() -> void:
 	_backdrop()
 	_title_column()
 	_name_corner()
+	_whats_new()
 	_friends_screen()
+	_changelog = ChangelogScreen.new()
+	_credits = CreditsScreen.new()
+	for frame: ScreenFrame in [_changelog, _credits]:
+		frame.visible = false
+		add_child(frame)
 
 
+## Esc closes whichever of this menu's screens is on top.
 func _input(event: InputEvent) -> void:
-	if _friends.visible and UiStack.is_top(_friends) and UiStack.is_cancel(event):
-		close_friends()
-		get_viewport().set_input_as_handled()
+	if not UiStack.is_cancel(event):
+		return
+	for frame: ScreenFrame in [_friends, _changelog, _credits]:
+		if frame.visible and UiStack.is_top(frame):
+			if frame == _friends:
+				close_friends()
+			else:
+				_close(frame)
+			get_viewport().set_input_as_handled()
+			return
 
 
 func _exit_tree() -> void:
-	UiStack.pop(_friends)
+	for frame: ScreenFrame in [_friends, _changelog, _credits]:
+		UiStack.pop(frame)
+
+
+func open_changelog() -> void:
+	_open(_changelog)
+
+
+func open_credits() -> void:
+	_credits.restart()
+	_open(_credits)
+
+
+## Which of the menu's screens is open over the title, or "".
+func open_screen() -> String:
+	for frame: ScreenFrame in [_friends, _changelog, _credits]:
+		if frame.visible:
+			return frame.name
+	return ""
+
+
+func _open(frame: ScreenFrame) -> void:
+	frame.visible = true
+	UiStack.push(frame)
+
+
+func _close(frame: ScreenFrame) -> void:
+	frame.visible = false
+	UiStack.pop(frame)
+
+
+## Bottom right: the newest release and its first few changes; a click opens the changelog.
+func _whats_new() -> void:
+	var releases := Changelog.load_releases()
+	if releases.is_empty():
+		return
+	var newest: Dictionary = releases[0]
+	var card := PanelContainer.new()
+	card.name = "WhatsNew"
+	card.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	card.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	card.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	card.offset_right = -MARGIN.x
+	card.offset_bottom = -MARGIN.y
+	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	card.tooltip_text = "Open the changelog"
+	card.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and (event as InputEventMouseButton).pressed and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+			open_changelog())
+	add_child(card)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override(&"separation", 6)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(col)
+	var head := Label.new()
+	head.theme_type_variation = &"HeadingLabel"
+	head.text = "WHAT'S NEW  v%s" % newest["version"]
+	col.add_child(head)
+	var changes: Array[String] = newest["changes"]
+	for i in mini(WHATS_NEW_LINES, changes.size()):
+		# Bullet in its own column so a wrapped line indents under the text.
+		var row := HBoxContainer.new()
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var dot := Label.new()
+		dot.text = "·"
+		dot.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		row.add_child(dot)
+		var l := Label.new()
+		l.text = changes[i]
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size.x = WHATS_NEW_WIDTH
+		l.max_lines_visible = 2
+		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_WORD_ELLIPSIS
+		row.add_child(l)
+		col.add_child(row)
+	var more := Label.new()
+	more.theme_type_variation = &"HintLabel"
+	more.text = "Click for the full changelog"
+	col.add_child(more)
 
 
 ## A dark field with the steel grain and a vignette, behind the title.
@@ -149,6 +245,8 @@ func _title_column() -> void:
 		buttons.add_child(_button(&"Range", "Test range", func() -> void: range_requested.emit()))
 	if has_library:
 		buttons.add_child(_button(&"Library", "Asset library", func() -> void: library_requested.emit()))
+	buttons.add_child(_button(&"Changelog", "Changelog", open_changelog))
+	buttons.add_child(_button(&"Credits", "Credits", open_credits))
 	buttons.add_child(_button(&"Quit", "Quit", func() -> void: get_tree().quit(0)))
 	(_buttons[&"Solo"] as Button).grab_focus.call_deferred()
 
