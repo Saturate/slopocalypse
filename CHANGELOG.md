@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.6.0 - 2026-11-17
+
+#### The asset library's GPU voxels switch draws models straight from their voxels on the graphics card
+
+#### The asset library has a generated Danish apartment block: choose floors, stairwells, elevators, balconies, brick and roof, with furnished flats of different sizes inside
+
+#### The city's street fronts are whole buildings with arched gateways into the courtyards, in brick and white, grey and ochre render, along pale streets with kerbs, zebra crossings, street lamps and trees
+
+#### Rounds and blasts splash and ripple ponds, craters beside a pond fill with water, and cars stall in deep water
+
+#### Street lamps light the road at night, and you can shoot their bulbs out
+
+#### Blasts and drone crashes leave smoke that drifts with the wind, and soldiers can't see you through it
+
+#### Ponds beside the road: wade through the shallows, swim in the deep part (no shooting while you swim)
+
+#### Apartment blocks beside the road that you can walk into: through the front door, up the stairs, into the flats; and you walk up stairs and kerbs without jumping
+
+#### Servers send about a third of the data they did, so games with more soldiers stay smooth on slower connections
+
+#### Window frames, door trim and roof edges come down with the wall behind them instead of hanging in the air
+
+#### Ponds look better: green-teal water with drifting waves, a light shore and glints
+
+#### A small European city off the road: perimeter blocks of brick apartments round courtyards, streets with pavements, and an open square in the middle
+
+#### Other players, soldiers and drones move smoothly instead of stepping from one network update to the next
+
+#### Bullet holes, knocked-out bricks and broken walls look exactly the same for every player, including friends who join after the shooting
+
+#### A water tower by the road: shoot its tank and water pours from every hole and puddles under it
+
+#### Soldiers and drones far from you are no longer sent to you, so busy servers use a fraction of the bandwidth
+
+#### Soldiers see and shoot through windows; cracked security glass hides you, and a broken pane leaves a real opening
+
+#### Up to 200 soldiers roam the map at once, spread out in squads instead of gathering near the start
+
+#### A thermal scope shows soldiers, players and drones bright white through smoke; buy it from the trader or find it on soldiers
+
+### Internal
+
+#### Decision record for maps as recipes of stitched sites
+
+#### A destruction table test and a per-subject capture: every breakable sample takes a ladder of hits, from one round to a 6 m blast
+
+#### Hand-made city blocks: a block format, an editor tool to build them, and three first blocks
+
+#### The destruction table test now fails if any hit takes the server more than 100 ms
+
 ## 0.5.0 - 2026-11-12
 
 #### Buildings break: drone dives, mines and blasts knock holes in walls and roofs you can walk and shoot through
