@@ -22,6 +22,8 @@ const CLEARING_STEP := 20.0
 
 var config: Dictionary = {}
 var site: CitySite
+## Server: the city's guards.
+var garrison: CityGarrison
 
 
 func _ready() -> void:
@@ -100,3 +102,9 @@ func place(where: Transform3D) -> void:
 	site.config = config
 	site.transform = where
 	add_child(site)
+	if multiplayer.is_server():
+		garrison = CityGarrison.new()
+		garrison.name = "Garrison"
+		garrison.config = config.get("guards", {})
+		garrison.site = site
+		add_child(garrison)
