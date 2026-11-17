@@ -5,11 +5,10 @@ extends CanvasLayer
 ## which asks the server to make it this player's gun. Parts are swapped on a draft; nothing
 ## changes until the server accepts. Every part is offered until inventory exists.
 
-const BG := Color(0.05, 0.06, 0.06, 0.82)
-const PANEL := Color(0.11, 0.12, 0.11, 0.97)
-const ACCENT := Color(0.82, 0.62, 0.3)
-const TEXT := Color(0.86, 0.86, 0.82)
-const DIM := Color(0.6, 0.61, 0.58)
+const BG := UiPalette.BACKDROP
+const ACCENT := UiPalette.ACCENT
+const TEXT := UiPalette.TEXT
+const DIM := UiPalette.DIM
 const BETTER := Color(0.45, 0.85, 0.45)
 const WORSE := Color(0.95, 0.42, 0.35)
 const PREVIEW_SIZE := Vector2i(560, 360)
@@ -270,12 +269,6 @@ func _build_ui() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_root.add_child(center)
 	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = PANEL
-	style.border_color = ACCENT.darkened(0.5)
-	style.border_width_top = 3
-	style.set_content_margin_all(20)
-	panel.add_theme_stylebox_override("panel", style)
 	center.add_child(panel)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 20)

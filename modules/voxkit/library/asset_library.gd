@@ -88,10 +88,6 @@ func rebuild_now() -> void:
 func _side_panel() -> Control:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size.x = PANEL_WIDTH
-	var style := StyleBoxFlat.new()
-	style.bg_color = MainMenu.PANEL
-	style.set_content_margin_all(14)
-	panel.add_theme_stylebox_override("panel", style)
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	panel.add_child(scroll)

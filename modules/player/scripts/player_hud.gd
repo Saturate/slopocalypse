@@ -77,7 +77,7 @@ func _draw() -> void:
 			_canvas.draw_rect(Rect2(0, size.y - w, size.x, w), c)
 			_canvas.draw_rect(Rect2(0, 0, w, size.y), c)
 			_canvas.draw_rect(Rect2(size.x - w, 0, w, size.y), c)
-	var font := ThemeDB.fallback_font
+	var font := _canvas.get_theme_default_font()
 	if _dead_for >= 0.0:
 		_canvas.draw_rect(Rect2(Vector2.ZERO, size), Color(0.05, 0.0, 0.0, minf(0.65, _dead_for * 1.5)))
 		var left := maxi(0, ceili(_respawn_seconds - _dead_for))

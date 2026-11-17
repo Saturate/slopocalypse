@@ -62,11 +62,6 @@ func _build() -> void:
 	_root.offset_left = -360.0
 	_root.offset_right = -16.0
 	_root.offset_top = 16.0
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.06, 0.07, 0.08, 0.92)
-	style.set_corner_radius_all(6)
-	style.set_content_margin_all(14)
-	_root.add_theme_stylebox_override(&"panel", style)
 	add_child(_root)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override(&"separation", 8)
