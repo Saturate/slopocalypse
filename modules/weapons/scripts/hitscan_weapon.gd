@@ -198,9 +198,13 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 				damage = health.server_apply_damage(_damage_for(target, hit_point, health) * damage_scale, holder)
 		var target_path := String(target.get_path()) if target != null else ""
 		var collider_path := String((collider as Node).get_path()) if collider is Node else ""
-		# Decided here; replayed everywhere (this instance included) for effects and craters.
-		_replay_shot.rpc(from, hit_point, damage, target_path, collider_path, passes > 0)
-		NetStats.add(&"rpc/shot", NetStats.size_of([from, hit_point, damage, target_path, collider_path, passes > 0]) * multiplayer.get_peers().size())
+		# Decided here; replayed here and on every client that has the shooter, for effects and
+		# craters. A client the shooter isn't sent to (too far away) hasn't got this node.
+		_replay_shot(from, hit_point, damage, target_path, collider_path, passes > 0)
+		var peers := replay_peers(holder)
+		for peer in peers:
+			_replay_shot.rpc_id(peer, from, hit_point, damage, target_path, collider_path, passes > 0)
+		NetStats.add(&"rpc/shot", NetStats.size_of([from, hit_point, damage, target_path, collider_path, passes > 0]) * peers.size())
 		if target != null or collider == null or passes >= max_passes or not collider.has_method(&"bullet_exit"):
 			return
 		var exit: Variant = collider.call(&"bullet_exit", hit_point, dir, float(stats["damage"]) * damage_scale)
@@ -262,6 +266,19 @@ func _is_teammate(target: Node) -> bool:
 		return false
 	var data: Variant = Data.load_json(CONFIG)
 	return not (data is Dictionary and bool((data as Dictionary).get("friendly_fire", false)))
+
+
+## The clients that have `holder` (and so its weapons): all of them unless its synchronizer
+## is shown only to some (NetRelevance: soldiers far from a client aren't spawned there).
+static func replay_peers(holder: Node) -> Array[int]:
+	var out: Array[int] = []
+	if holder == null or not holder.is_inside_tree():
+		return out
+	var sync := holder.get_node_or_null(^"NetSync") as MultiplayerSynchronizer
+	for peer in holder.multiplayer.get_peers():
+		if sync == null or sync.public_visibility or sync.get_visibility_for(peer):
+			out.append(peer)
+	return out
 
 
 ## A body's side: its `team` meta, or "players" for players; empty for anything else.

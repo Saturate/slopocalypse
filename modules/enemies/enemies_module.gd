@@ -153,23 +153,33 @@ func _spread_spot() -> Vector3:
 ## Server: a squad of `size` around `centre`, or around a spread spot (`_spread_spot`).
 func server_spawn_squad(size: int, centre: Variant = null) -> Array[Node]:
 	var at: Vector3 = centre if centre is Vector3 else _spread_spot()
+	# One faction to a squad (the factions module picks by weight; without it, one side).
+	var api := _factions()
+	var faction := str(api.call(&"pick", _rng)) if api != null else ""
 	var out: Array[Node] = []
 	for i in size:
 		var offset := Vector3(_rng.randf_range(-3.0, 3.0), 0.0, _rng.randf_range(-3.0, 3.0))
 		var pos := _on_ground(at + offset) + Vector3.UP * 0.5
 		_spawned += 1
-		out.append(_spawner.spawn({"index": _spawned, "position": pos, "home": at}))
+		out.append(_spawner.spawn({"index": _spawned, "position": pos, "home": at, "faction": faction}))
 	return out
+
+
+func _factions() -> Node:
+	return get_tree().get_first_node_in_group(&"factions_api") if is_inside_tree() else null
 
 
 ## Server: one guard standing at `at` watching `yaw`, or walking `route` (points) round and
 ## round if it has any. Like any soldier it fights when it spots or hears someone, then goes
 ## back to its post or route.
-func server_spawn_guard(at: Vector3, yaw: float, route: Array = []) -> Node:
+func server_spawn_guard(at: Vector3, yaw: float, route: Array = [], faction := "") -> Node:
 	_spawned += 1
+	if faction.is_empty():
+		var api := _factions()
+		faction = str(api.call(&"guard_faction")) if api != null else ""
 	# Exactly there: posts are on floors the caller knows, and a probe from above would put a
 	# guard meant to stand inside a building on its roof.
-	return _spawner.spawn({"index": _spawned, "position": at + Vector3.UP * 0.3, "home": at, "post_yaw": yaw, "route": route})
+	return _spawner.spawn({"index": _spawned, "position": at + Vector3.UP * 0.3, "home": at, "post_yaw": yaw, "route": route, "faction": faction})
 
 
 ## Runs on the server and, through the spawner, on every client.
@@ -181,7 +191,10 @@ func _make_enemy(data: Variant) -> Node:
 	enemy.name = "Enemy%d" % int(info["index"])
 	enemy.position = info["position"]
 	enemy.set_meta(&"peer_id", FIRST_ID - int(info["index"]))
-	enemy.set_meta(&"team", "enemies")
+	# A soldier's side is its faction; without factions, all soldiers are one side.
+	var faction := str(info.get("faction", ""))
+	enemy.set_meta(&"team", faction if not faction.is_empty() else "enemies")
+	enemy.set_meta(&"faction", faction)
 	# Many, spread over the map: each client is sent only those near it (NetRelevance).
 	enemy.set_meta(&"net_relevance", true)
 	enemy.set_meta(&"net_smooth", true)
@@ -202,13 +215,18 @@ func _on_enemy_ready(enemy: PlayerController, home: Vector3, info: Dictionary = 
 	# Their guns hit softer than a player's, so a squad is a fight rather than a wipe (the
 	# weapons module applies it to whatever gun they hold).
 	enemy.set_meta(&"damage_scale", float(config["damage_scale"]))
-	EventBus.publish(&"player.spawned", {"player": enemy, "local": false, "npc": true})
+	var api := _factions()
+	var faction: Dictionary = api.call(&"info", str(enemy.get_meta(&"faction", ""))) if api != null else {}
+	var spawned := {"player": enemy, "local": false, "npc": true}
+	if faction.has("gear"):
+		spawned["gear"] = faction["gear"]
+	EventBus.publish(&"player.spawned", spawned)
 	if multiplayer.is_server():
 		health.died.connect(_server_died.bind(enemy))
 		var brain := EnemyBrain.new()
 		brain.name = "Brain"
 		brain.body = enemy
-		brain.config = config
+		brain.config = _leaning(faction)
 		brain.home = home
 		if info.has("post_yaw"):
 			brain.post_yaw = float(info["post_yaw"])
@@ -217,16 +235,26 @@ func _on_enemy_ready(enemy: PlayerController, home: Vector3, info: Dictionary = 
 			brain.route.append(point as Vector3)
 		enemy.add_child(brain)
 	if DisplayServer.get_name() != "headless":
-		_tint(enemy)
+		_tint(enemy, faction.get("tint", config["uniform_tint"]))
 		var animator := PlayerBodyAnimator.new()
 		animator.name = "BodyAnimator"
 		animator.player = enemy
 		enemy.add_child(animator)
 
 
-## A different uniform so enemies read as enemies at a glance: the same body, tinted.
-func _tint(enemy: Node) -> void:
-	var c: Array = config["uniform_tint"]
+## The soldiers' config with a faction's leanings: how far it sees and hears.
+func _leaning(faction: Dictionary) -> Dictionary:
+	if faction.is_empty():
+		return config
+	var out := config.duplicate()
+	out["sight_range"] = float(config["sight_range"]) * float(faction.get("sight", 1.0))
+	out["hearing_range"] = float(config["hearing_range"]) * float(faction.get("hearing", 1.0))
+	return out
+
+
+## A different uniform so enemies read as enemies at a glance (each faction its own): the same
+## body, tinted.
+func _tint(enemy: Node, c: Array) -> void:
 	var tint := Color(float(c[0]), float(c[1]), float(c[2]))
 	for path in ["Body/Skeleton/Mesh", "Body/Skeleton/Arms"]:
 		var mesh := enemy.get_node_or_null(path) as MeshInstance3D

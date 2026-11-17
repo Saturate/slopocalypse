@@ -1,0 +1,6 @@
+{
+  "id": "factions",
+  "depends_on": [],
+  "flag": "factions",
+  "entry": "factions_module.gd"
+}
