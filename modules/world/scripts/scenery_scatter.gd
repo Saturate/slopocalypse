@@ -391,6 +391,8 @@ func _spot(rng: RandomNumberGenerator, area: Rect2, weight: Callable, clearings:
 			continue
 		if _heights.road != null and _heights.road.distance(x, z) < _heights.road.half_width + float(_cfg["road_clearance"]):
 			continue
+		if _heights.in_water(x, z):
+			continue
 		if _in_clearing(x, z, clearings):
 			continue
 		if rng.randf() > float(weight.call(x, z)):
@@ -571,6 +573,8 @@ func _add_grass(node: Node3D, rng: RandomNumberGenerator, area: Rect2) -> void:
 		if _heights.road != null and _heights.road.distance(x, z) < _heights.road.half_width + 0.5:
 			continue
 		if _heights.in_tunnel(x, z, TUNNEL_CLEARANCE):
+			continue
+		if _heights.in_water(x, z):
 			continue
 		if _in_clearing(x, z, _clearings):
 			continue

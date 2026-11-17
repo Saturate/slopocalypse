@@ -85,6 +85,12 @@ func _ready() -> void:
 	if _visual:
 		_material = ShaderMaterial.new()
 		_material.shader = load(SHADER)
+		if not heights.water.bodies.is_empty():
+			var view := WaterView.new()
+			view.name = "Water"
+			view.water = heights.water
+			view.config = world.get("water", {})
+			add_child(view)
 	# The spawn is solid before anyone arrives.
 	update_around([Vector3.ZERO], INF)
 
@@ -134,6 +140,22 @@ func is_ready_at(point: Vector3, radius: float = 8.0) -> bool:
 			if not _collision.has(Vector2i(tx, tz)):
 				return false
 	return true
+
+
+## How deep the water is at `position` (0 outside every pond): its level less the ground
+## under it. From the world data, so the server and every client agree without sending it.
+func water_depth_at(position: Vector3) -> float:
+	if heights == null:
+		return 0.0
+	return heights.water.depth(position.x, position.z, heights.height_at(position.x, position.z))
+
+
+## The surface of the water at `position`'s x and z, or NAN outside every pond.
+func water_level_at(position: Vector3) -> float:
+	if heights == null:
+		return NAN
+	var i := heights.water.body_at(position.x, position.z)
+	return heights.water.level_of(i) if i >= 0 else NAN
 
 
 ## Height of the untouched ground (ignores digging) for placing spawns and scenery.

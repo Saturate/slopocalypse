@@ -9,6 +9,10 @@ const REQUIRED := {
 	"walk_speed": TYPE_FLOAT,
 	"sprint_speed": TYPE_FLOAT,
 	"crouch_speed": TYPE_FLOAT,
+	"wade_depth": TYPE_FLOAT,
+	"wade_speed": TYPE_FLOAT,
+	"swim_depth": TYPE_FLOAT,
+	"swim_speed": TYPE_FLOAT,
 	"acceleration": TYPE_FLOAT,
 	"sprint_acceleration": TYPE_FLOAT,
 	"ads_speed_multiplier": TYPE_FLOAT,
@@ -42,6 +46,8 @@ const REQUIRED := {
 	"respawn_seconds": TYPE_FLOAT,
 }
 const PITCH_LIMIT := deg_to_rad(89.0)
+## How quickly a swimmer settles to floating height (per second, of the gap).
+const SWIM_SETTLE := 4.0
 
 enum Mode { NORMAL, MANTLE, VAULT, SLIDE }
 
@@ -62,6 +68,10 @@ var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var _was_crouching := false
 ## -1 (full left) to 1 (full right), eased toward the intent's lean.
 var _lean := 0.0
+## Water deeper than `swim_depth` under the feet: floating, slow, weapon down.
+var swimming := false
+## The node answering `water_depth_at` (the voxel world), found once.
+var _ground: Node
 
 # Traversal (mantle and vault) runs along a scripted path instead of physics.
 var _path_t := 0.0
@@ -193,7 +203,14 @@ func _step_normal(delta: float) -> void:
 		return
 	_apply_height(config["crouch_height"] if crouching else config["stand_height"])
 
-	if not is_on_floor():
+	var depth := water_depth()
+	_set_swimming(depth > float(config["swim_depth"]))
+	if swimming:
+		# Afloat: held with the head out, the feet `swim_depth` under the surface.
+		var surface := float(_ground.call(&"water_level_at", global_position))
+		velocity.y = (surface - float(config["swim_depth"]) - global_position.y) * SWIM_SETTLE
+		_intent.consume_jump()
+	elif not is_on_floor():
 		# Falling faster than rising makes jumps feel heavy instead of floaty.
 		var gravity_scale: float = config["fall_gravity_multiplier"] if velocity.y < 0.0 else 1.0
 		velocity.y -= _gravity * gravity_scale * delta
@@ -211,7 +228,11 @@ func _step_normal(delta: float) -> void:
 			accel = config["sprint_acceleration"]
 	if _intent.aim:
 		speed *= float(config["ads_speed_multiplier"])
-	if not is_on_floor():
+	if swimming:
+		speed = float(config["walk_speed"]) * float(config["swim_speed"])
+	elif depth > float(config["wade_depth"]):
+		speed *= float(config["wade_speed"])
+	if not is_on_floor() and not swimming:
 		accel *= float(config["air_control"])
 	var wish := transform.basis * Vector3(_intent.move.x, 0.0, -_intent.move.y)
 	var target := wish.limit_length(1.0) * speed
@@ -219,6 +240,24 @@ func _step_normal(delta: float) -> void:
 	velocity.x = horizontal.x
 	velocity.z = horizontal.y
 	move_and_slide()
+
+
+## How deep the water is where the player stands (0 on land, or with no world that knows).
+func water_depth() -> float:
+	if _ground == null or not is_instance_valid(_ground):
+		_ground = get_tree().get_first_node_in_group(&"ground") if is_inside_tree() else null
+		if _ground == null or not _ground.has_method(&"water_depth_at"):
+			_ground = null
+			return 0.0
+	return float(_ground.call(&"water_depth_at", global_position))
+
+
+## Weapons read the meta (they hold no reference to this script's type).
+func _set_swimming(on: bool) -> void:
+	if on == swimming:
+		return
+	swimming = on
+	set_meta(&"swimming", on)
 
 
 ## Space on the ground: vault low cover at speed, mantle ledges, otherwise a small hop.
