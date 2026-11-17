@@ -13,7 +13,8 @@ export interface Preset {
 const PLATFORMS: Record<TargetOs, string> = { windows: "Windows Desktop", linux: "Linux", macos: "macOS" };
 
 // Data the game reads with FileAccess is not a Godot resource, so it must be listed.
-const INCLUDE = ["*.json"];
+// The changelog and the licence list are read by the title screen (changelog, credits).
+const INCLUDE = ["*.json", "CHANGELOG.md", "assets/LICENSES.md"];
 // Dev-only: tests, builders, captures, tooling and Rust sources never ship.
 const EXCLUDE = [
 	"tests/*",

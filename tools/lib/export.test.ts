@@ -13,6 +13,9 @@ test("windows preset embeds the pack, keeps data files and drops dev-only folder
 	assert.match(text, /platform="Windows Desktop"/);
 	assert.match(text, /export_path="build\/windows\/Slopocalypse.exe"/);
 	assert.match(text, /include_filter="[^"]*\*\.json/);
+	// The title screen reads these two at runtime.
+	assert.match(text, /include_filter="[^"]*CHANGELOG\.md/);
+	assert.match(text, /include_filter="[^"]*assets\/LICENSES\.md/);
 	for (const dev of ["tests/*", "tools/*", "addons/gdUnit4/*", "modules/*/tests/*", "modules/*/builders/*", "modules/*/capture/*", "modules/*/rust/*"]) {
 		assert.ok(text.includes(dev), `exclude filter misses ${dev}`);
 	}

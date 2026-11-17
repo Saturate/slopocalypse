@@ -18,7 +18,7 @@ const INK := Color("1d1c18")
 const SHADOW := Color(0, 0, 0, 0.55)
 
 const TEXT := Color("ece6d6")
-const DIM := Color("a49f8e")
+const DIM := Color("bab4a2")
 const ACCENT := Color("f2a516")
 const GOOD := Color("8fc25a")
 const BAD := Color("e0452b")

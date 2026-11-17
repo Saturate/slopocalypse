@@ -11,8 +11,10 @@ const MAX_SHARE := 0.9
 var content: VBoxContainer
 var title: Label
 
+## The scroll area around `content`.
+var scroll: ScrollContainer
+
 var _panel: PanelContainer
-var _scroll: ScrollContainer
 var _footer: HBoxContainer
 
 
@@ -37,14 +39,14 @@ func _init(heading: String, width := 560.0) -> void:
 	title.theme_type_variation = &"HeadingLabel"
 	title.text = heading
 	column.add_child(title)
-	_scroll = ScrollContainer.new()
-	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_scroll.custom_minimum_size.x = width
-	column.add_child(_scroll)
+	scroll = ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.custom_minimum_size.x = width
+	column.add_child(scroll)
 	content = VBoxContainer.new()
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content.add_theme_constant_override(&"separation", 8)
-	_scroll.add_child(content)
+	scroll.add_child(content)
 	var rule := HSeparator.new()
 	column.add_child(rule)
 	_footer = HBoxContainer.new()
@@ -63,9 +65,9 @@ func add_hint(action: StringName, what: String) -> KeyHint:
 ## The scroll area takes the content's height up to what keeps the panel inside the view.
 func _fit() -> void:
 	var view := get_viewport_rect().size if is_inside_tree() else size
-	var chrome := _panel.get_combined_minimum_size().y - _scroll.custom_minimum_size.y
+	var chrome := _panel.get_combined_minimum_size().y - scroll.custom_minimum_size.y
 	var room := maxf(view.y * MAX_SHARE - chrome, 80.0)
-	_scroll.custom_minimum_size.y = minf(content.get_combined_minimum_size().y, room)
+	scroll.custom_minimum_size.y = minf(content.get_combined_minimum_size().y, room)
 
 
 ## Height the panel takes now, for tests.

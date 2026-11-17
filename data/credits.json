@@ -1,0 +1,10 @@
+{
+  "people": [
+    {"name": "Allan Kimmer Jensen (Saturate)", "role": "Maintainer: steers the agents, decides what goes in"},
+    {"name": "LOLIVER", "role": "Bug reports and logs"}
+  ],
+  "agents": [
+    "Claude Opus 5.5 in Claude Code"
+  ],
+  "note": "Built almost entirely by AI agents as an open experiment, steered by people."
+}
