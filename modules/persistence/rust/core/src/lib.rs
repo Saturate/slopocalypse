@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 /// Bumped with every change to the tables; `open` upgrades older files step by step.
 /// 2: items name the slot or grid they are in (`container`). 3: players have tokens.
 /// 4: items carry their own data (`data`, JSON: a gun's build).
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 pub const MAX_NAME_CHARS: usize = 16;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -213,6 +213,21 @@ impl Store {
                 COMMIT;",
             )?;
         }
+        if version < 5 {
+            // What the world has suffered (craters, felled trees, broken lights...), one
+            // blob per module that owns it, each with that module's own format version.
+            // Older files simply have none: the world starts undamaged.
+            db.execute_batch(
+                "BEGIN;
+                CREATE TABLE world_parts (
+                    owner TEXT PRIMARY KEY,
+                    version INTEGER NOT NULL,
+                    data BLOB NOT NULL
+                );
+                PRAGMA user_version = 5;
+                COMMIT;",
+            )?;
+        }
         Ok(Store { db })
     }
 
@@ -375,6 +390,28 @@ impl Store {
         )?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// Saves `owner`'s part of the world (a module's damage record), replacing any earlier.
+    pub fn save_part(&self, owner: &str, version: i64, data: &[u8]) -> Result<()> {
+        self.db.execute(
+            "INSERT INTO world_parts (owner, version, data) VALUES (?1, ?2, ?3)
+             ON CONFLICT(owner) DO UPDATE SET version = excluded.version, data = excluded.data",
+            params![owner, version, data],
+        )?;
+        Ok(())
+    }
+
+    /// `owner`'s saved part as (version, data), or None if it never saved one.
+    pub fn load_part(&self, owner: &str) -> Result<Option<(i64, Vec<u8>)>> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT version, data FROM world_parts WHERE owner = ?1",
+                [owner],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?)
     }
 
     /// The saved world, or None if this file never had one (a fresh world).
@@ -583,6 +620,36 @@ mod tests {
             s.db.query_row("SELECT COUNT(*) FROM player_items", [], |r| r.get(0))
                 .unwrap();
         assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn world_parts_round_trip_and_replace() {
+        let s = Store::open_in_memory().unwrap();
+        assert_eq!(s.load_part("lights").unwrap(), None);
+        s.save_part("lights", 1, &[1, 2, 3]).unwrap();
+        s.save_part("world", 2, &[9]).unwrap();
+        assert_eq!(s.load_part("lights").unwrap(), Some((1, vec![1, 2, 3])));
+        s.save_part("lights", 3, &[4]).unwrap();
+        assert_eq!(s.load_part("lights").unwrap(), Some((3, vec![4])));
+        assert_eq!(s.load_part("world").unwrap(), Some((2, vec![9])));
+    }
+
+    #[test]
+    fn a_version_4_file_gains_world_parts_and_keeps_its_players() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            "CREATE TABLE players (name TEXT PRIMARY KEY COLLATE NOCASE, key TEXT NOT NULL,
+                health REAL NOT NULL DEFAULT 0, x REAL, y REAL, z REAL,
+                first_seen INTEGER NOT NULL, last_saved INTEGER NOT NULL, tokens INTEGER NOT NULL DEFAULT 0);
+            INSERT INTO players (name, key, health, first_seen, last_saved) VALUES ('Allan', 'k', 50, 1, 1);
+            PRAGMA user_version = 4;",
+        )
+        .unwrap();
+        let s = Store::setup(db).unwrap();
+        assert_eq!(s.claim("Allan", "k", 2).unwrap(), Claim::Returning);
+        assert_eq!(s.load_part("world").unwrap(), None);
+        s.save_part("world", 1, &[7]).unwrap();
+        assert_eq!(s.load_part("world").unwrap(), Some((1, vec![7])));
     }
 
     #[test]

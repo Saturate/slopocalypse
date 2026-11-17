@@ -34,6 +34,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.subscribe(&"lights.lamp_broken", _on_lamp_broken)
 	Net.peer_joined.connect(_on_peer_joined)
+	add_to_group(&"world_state")
 
 
 func _exit_tree() -> void:
@@ -138,3 +139,21 @@ func apply_broken(ids: Array) -> void:
 		var it := lamp(id)
 		if it != null:
 			it.break_bulb(false)
+
+
+## The `world_state` contract (persistence): shot-out bulbs stay out across restarts.
+func world_state_owner() -> String:
+	return "lights"
+
+
+func world_state_version() -> int:
+	return 1
+
+
+func server_world_state() -> Array:
+	return _broken.keys()
+
+
+func server_restore_world_state(version: int, data: Variant) -> void:
+	if version == 1 and data is Array:
+		apply_broken(data)

@@ -124,6 +124,41 @@ impl SaveStore {
         }
     }
 
+    /// Saves `owner`'s part of the world: a module's own record (craters, broken lights...)
+    /// as bytes, with that module's format `version`.
+    #[func]
+    fn save_part(&mut self, owner: GString, version: i64, data: PackedByteArray) -> bool {
+        let Some(store) = self.store.as_ref() else {
+            return self.closed();
+        };
+        match store.save_part(&owner.to_string(), version, data.as_slice()) {
+            Ok(()) => true,
+            Err(e) => self.fail(e),
+        }
+    }
+
+    /// `{version, data}` for `owner`'s saved part, or `{}` if it never saved one.
+    #[func]
+    fn load_part(&mut self, owner: GString) -> VarDictionary {
+        let Some(store) = self.store.as_ref() else {
+            self.closed();
+            return VarDictionary::new();
+        };
+        match store.load_part(&owner.to_string()) {
+            Ok(Some((version, data))) => {
+                let mut out = VarDictionary::new();
+                out.set("version", version);
+                out.set("data", &PackedByteArray::from(data.as_slice()).to_variant());
+                out
+            }
+            Ok(None) => VarDictionary::new(),
+            Err(e) => {
+                self.fail(e);
+                VarDictionary::new()
+            }
+        }
+    }
+
     /// The same shape `save_world` takes, or `{}` if no world was ever saved here.
     #[func]
     fn load_world(&mut self) -> VarDictionary {

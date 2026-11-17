@@ -21,6 +21,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)
 	EventBus.subscribe(&"towers.holed", _on_holed)
 	Net.peer_joined.connect(_on_peer_joined)
+	add_to_group(&"world_state")
 
 
 func _exit_tree() -> void:
@@ -113,3 +114,27 @@ func apply_snapshot(state: Dictionary) -> void:
 			it.catch_up(state[key])
 		else:
 			_waiting[id] = state[key]
+
+
+## The `world_state` contract (persistence): holes stay holed and tanks stay drained across
+## restarts (the time the server was off doesn't count).
+func world_state_owner() -> String:
+	return "towers"
+
+
+func world_state_version() -> int:
+	return 1
+
+
+func server_world_state() -> Dictionary:
+	var state: Dictionary = {}
+	for t in towers:
+		var holes := t.snapshot()
+		if not holes.is_empty():
+			state[t.tower_id] = holes
+	return state
+
+
+func server_restore_world_state(version: int, data: Variant) -> void:
+	if version == 1 and data is Dictionary:
+		apply_snapshot(data)

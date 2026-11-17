@@ -52,6 +52,10 @@ var _tile_voxel: Dictionary[Vector2i, float] = {}
 ## Craters (x, y, z, radius), listed under every tile they reach, so a height sample only
 ## looks at the few near it however many have been dug.
 var _digs_in: Dictionary[Vector2i, Array] = {}
+## Every dig in order (Vector4: centre, radius), for late joiners and the save; the oldest go
+## first past `max_dig_log` (they're also the most likely to have been dug over since).
+var _dig_log: Array[Vector4] = []
+var max_dig_log := 4000
 ## How far past the road's edge a levelled pad fades out, metres.
 const PAD_ROAD_GAP := 1.0
 ## Levelled pads (`set_pads`), listed under every tile they reach like craters.
@@ -77,6 +81,7 @@ func _ready() -> void:
 		return
 	_cfg = world["voxel"]
 	max_dig_depth = _cfg["max_dig_depth"]
+	max_dig_log = int(_cfg.get("max_saved_digs", 4000))
 	_lods = _cfg["lods"]
 	heights = TerrainHeights.new(world)
 	if world.get("biomes") is Dictionary:
@@ -279,6 +284,9 @@ func server_dig(at: Vector3, radius: float) -> void:
 	var floor_y := ground_height(at.x, at.z) - max_dig_depth
 	var center := Vector3(at.x, maxf(at.y, floor_y + radius), at.z)
 	var dig := Vector4(center.x, center.y, center.z, radius)
+	_dig_log.append(dig)
+	if _dig_log.size() > max_dig_log:
+		_dig_log.remove_at(0)
 	var low := _tile_of(center - Vector3(radius, 0, radius))
 	var high := _tile_of(center + Vector3(radius, 0, radius))
 	for tx in range(low.x, high.x + 1):
@@ -296,6 +304,11 @@ func server_dig(at: Vector3, radius: float) -> void:
 	if puddle != Vector4.ZERO:
 		flooded.emit(puddle)
 	dug.emit(center, radius)
+
+
+## Every dig so far (centre, radius), oldest first.
+func dig_log() -> Array[Vector4]:
+	return _dig_log
 
 
 ## Builds collision and visible tiles near `points` (at most `budget` this call) and frees

@@ -43,6 +43,7 @@
   },
   "voxel": {
     "max_dig_depth": 3.0,
+    "max_saved_digs": 4000.0,
     "collision_distance": 96.0,
     "load_distance": 300.0,
     "builds_per_frame": 2.0,
