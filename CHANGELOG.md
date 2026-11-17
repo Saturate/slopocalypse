@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.7.0 - 2026-11-17
+
+#### A cleaner HUD: health and ammo are a number and a thin line that fade back when you're fine, the screen edges pulse red when you're low, a red arc shows which side a hit came from, ammo turns amber when the magazine runs low, and the HUD gets out of the way when you die
+
+#### The title screen shows the city at golden hour behind the menu, the camera drifting slowly down an avenue
+
+#### Settings, from the title screen or the Esc menu: mouse sensitivity, field of view, volume, interface size, fullscreen and your own keys, saved between games
+
+#### The game opens on a title screen: the logo and the main choices down the left, your name in the corner, and hosting and joining friends on their own screen
+
+#### Soldiers now belong to three factions, each with its own uniform and kit, and rival factions fight each other on sight
+
+#### Esc closes the screen on top first (modding over the inventory closes modding), clicks on the admin panel no longer grab the mouse, and the Esc menu is called Menu since the world keeps running
+
+#### The title screen has a What's new card with the latest changes, a full changelog, and credits for the people, agents and open-source parts behind the game
+
+#### The interface has a new look: worn steel panels, a stencil heading font and amber highlights, and it now scales with the window so menus fit at 720p and text is bigger at 1080p
+
+#### Soldiers guard the city: at upper-floor windows, on flat roofs, at street corners and on patrol round the blocks
+
+#### The city mixes in hand-made blocks: a market in the square, courtyard gardens and a ruined block
+
+#### Prompts like Search crate, Trade and Ride out stack neatly under the crosshair instead of overlapping, and every key hint shows the key you actually have bound
+
+#### Fixed the mouse barely turning the view in game, mostly at low frame rates. Thanks to LOLIVER for the report
+
+#### Craters, felled trees, shot-out lamps and holed water towers now stay after a server restart, and players who join later see the craters too
+
+### Internal
+
+#### Nothing players will notice: fresh checkouts import cleanly again, so CI and release builds work
+
 ## 0.6.0 - 2026-11-17
 
 #### The asset library's GPU voxels switch draws models straight from their voxels on the graphics card
