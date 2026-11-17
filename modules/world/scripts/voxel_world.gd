@@ -33,6 +33,8 @@ const GRAVEL := Color(0.3, 0.29, 0.27)
 
 ## A hole was dug (after clamping), so grass over it can go.
 signal dug(center: Vector3, radius: float)
+## A crater next to a pond filled with its water: Vector4(x, z, radius at the surface, level).
+signal flooded(puddle: Vector4)
 
 @export_file("*.json") var config_path: String = "res://modules/world/data/world.json"
 
@@ -91,6 +93,7 @@ func _ready() -> void:
 			view.water = heights.water
 			view.config = world.get("water", {})
 			add_child(view)
+			flooded.connect(view.add_puddle)
 	# The spawn is solid before anyone arrives.
 	update_around([Vector3.ZERO], INF)
 
@@ -144,18 +147,19 @@ func is_ready_at(point: Vector3, radius: float = 8.0) -> bool:
 
 ## How deep the water is at `position` (0 outside every pond): its level less the ground
 ## under it. From the world data, so the server and every client agree without sending it.
+## Craters included: one in a pond is deeper water, one beside it may have flooded.
 func water_depth_at(position: Vector3) -> float:
-	if heights == null:
+	var level := water_level_at(position)
+	if is_nan(level):
 		return 0.0
-	return heights.water.depth(position.x, position.z, heights.height_at(position.x, position.z))
+	return maxf(level - surface_height(position.x, position.z), 0.0)
 
 
-## The surface of the water at `position`'s x and z, or NAN outside every pond.
+## The surface of the water at `position`'s x and z (a pond or a flooded crater), or NAN.
 func water_level_at(position: Vector3) -> float:
 	if heights == null:
 		return NAN
-	var i := heights.water.body_at(position.x, position.z)
-	return heights.water.level_of(i) if i >= 0 else NAN
+	return heights.water.level_at(position.x, position.z)
 
 
 ## Height of the untouched ground (ignores digging) for placing spawns and scenery.
@@ -269,6 +273,9 @@ func server_dig(at: Vector3, radius: float) -> void:
 				_collision[key] = _build_collision(key)
 			if _tiles.has(key):
 				_replace_tile(key, _tile_voxel[key])
+	var puddle := heights.water.flood(center, radius)
+	if puddle != Vector4.ZERO:
+		flooded.emit(puddle)
 	dug.emit(center, radius)
 
 

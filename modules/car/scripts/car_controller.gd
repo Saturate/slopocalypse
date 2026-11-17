@@ -18,6 +18,8 @@ const REQUIRED := {
 	"high_speed_steer_share": TYPE_FLOAT,
 	"downforce": TYPE_FLOAT,
 	"flip_seconds": TYPE_FLOAT,
+	"stall_depth": TYPE_FLOAT,
+	"water_drag": TYPE_FLOAT,
 }
 const DRIVER := &"driver"
 const PASSENGER := &"passenger"
@@ -48,6 +50,10 @@ var _intent: CarIntent
 var _exit_point: Marker3D
 var _passenger_exit: Marker3D
 var _stuck_for := 0.0
+## The engine is under water (`stall_depth` at the front axle): no power until it is out.
+var stalled := false
+## The node answering `water_depth_at` (the voxel world), found once.
+var _ground: Node
 
 
 ## The car's key bindings from data, for registering before any car exists on a client.
@@ -183,7 +189,17 @@ func _physics_tick(delta: float) -> void:
 		force = throttle * float(config["engine_force"]) * fade
 	elif throttle < 0.0:
 		force = throttle * float(config["reverse_force"])
+	var under := water_depth(global_transform * Vector3(0.0, 0.0, float(config["wheel_z"])))
+	if (under > float(config["stall_depth"])) != stalled:
+		stalled = not stalled
+		Log.info(&"car", "%s %s" % [name, "stalled in the water" if stalled else "is out of the water and starts again"])
+	if stalled:
+		force = 0.0
 	engine_force = force
+	# Water holds the car back the deeper it sits, a share of its speed a second per metre.
+	var wet := water_depth(global_position)
+	if wet > 0.0:
+		apply_central_force(-linear_velocity * mass * float(config["water_drag"]) * minf(wet, 1.5))
 	var wants_brake := _intent.brake or driver == null
 	brake = float(config["brake_force"]) if wants_brake else 0.0
 	# Less lock at speed: full lock for parking, a gentler turn near top speed, so a tap
@@ -194,6 +210,16 @@ func _physics_tick(delta: float) -> void:
 	# Grip that grows with speed keeps it planted over crests.
 	apply_central_force(-global_transform.basis.y * float(config["downforce"]) * linear_velocity.length_squared())
 	_right_when_stuck(delta)
+
+
+## How deep the water is at `at` (0 on land, or with no world that knows).
+func water_depth(at: Vector3) -> float:
+	if _ground == null or not is_instance_valid(_ground):
+		_ground = get_tree().get_first_node_in_group(&"ground") if is_inside_tree() else null
+		if _ground == null or not _ground.has_method(&"water_depth_at"):
+			_ground = null
+			return 0.0
+	return float(_ground.call(&"water_depth_at", at))
 
 
 ## On its roof or side and barely moving for `flip_seconds`: put back on its wheels where it

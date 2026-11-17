@@ -20,6 +20,8 @@
   "max_steer_degrees": 30.0,
   "steer_speed": 2.5,
   "enter_distance": 3.5,
+  "stall_depth": 0.6,
+  "water_drag": 0.8,
   "bindings": {
     "car_throttle": ["W"],
     "car_reverse": ["S"],
