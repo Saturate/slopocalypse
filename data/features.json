@@ -20,6 +20,7 @@
     "trader": true,
     "range": true,
     "web": true,
-    "smoke": true
+    "smoke": true,
+    "lights": true
   }
 }

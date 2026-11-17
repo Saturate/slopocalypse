@@ -41,6 +41,8 @@ func _ready() -> void:
 	lamp.light_energy = 1.2
 	lamp.omni_range = 5.0
 	lamp.position = Vector3(0, 2.2, -0.6)
+	# Counted against the light budget (lights module) when it is there.
+	lamp.add_to_group(&"light_points")
 	add_child(lamp)
 
 

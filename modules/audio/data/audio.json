@@ -37,6 +37,7 @@
     "laminated_glass": "glass",
     "security_glass": "glass",
     "tempered_glass": "glass_small",
+    "bulb": "glass_small",
     "brick": "brick",
     "mortar": "brick",
     "concrete": "concrete"
