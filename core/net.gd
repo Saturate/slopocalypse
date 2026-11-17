@@ -463,6 +463,9 @@ func _start_server() -> void:
 		Log.error(&"net", "could not start server on port %d (%s)" % [port, error_string(err)])
 		return
 	multiplayer.multiplayer_peer = peer
+	var relevance := NetRelevance.new()
+	relevance.name = "Relevance"
+	add_child(relevance)
 	Log.info(&"net", "server listening on port %d" % port)
 
 
