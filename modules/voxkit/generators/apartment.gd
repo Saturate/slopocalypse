@@ -174,6 +174,14 @@ func layout(values: Dictionary) -> Dictionary:
 	return plan
 
 
+## A pane of glass (windows, glazed doors, glass railings): window glass, so it draws
+## see-through and breaks like any other; the brush goes back to concrete after.
+static func _glass_box(m: VoxelModel, lo: Vector3, hi: Vector3, colour: Color) -> void:
+	m.set_material(VoxMaterials.index_of("window_glass"))
+	m.fill_box(lo, hi, colour, 0.0, 0)
+	m.set_material(VoxMaterials.index_of("concrete"))
+
+
 ## A flat's floor inside its walls, as x and z.
 static func inner_rect(plan: Dictionary, flat: Vector2) -> Rect2:
 	var wall: float = plan["wall"]
@@ -227,6 +235,8 @@ func build(values: Dictionary) -> VoxelModel:
 	var rise := (d / 2.0 + EAVES_OVERHANG) * ROOF_PITCH if roof_kind != 2 else PARAPET
 	var m := new_model()
 	m.setup(_size(p, plan, rise), v)
+	# Structure in concrete; glass and furniture switch the brush and switch it back.
+	m.set_material(VoxMaterials.index_of("concrete"))
 	var wall_colour: Color = WALL_COLOURS[int(p["walls"])]
 	_walls(m, p, plan, wall_colour, rng, seed)
 	_interior(m, plan, v)
@@ -238,7 +248,9 @@ func build(values: Dictionary) -> VoxelModel:
 	_entrances(m, plan, door_colour, v, seed)
 	_balconies(m, p, plan, rng, v, seed)
 	if interior == 2:
+		m.set_material(VoxMaterials.index_of("furniture"))
 		_furnish(m, plan, seed)
+		m.set_material(VoxMaterials.index_of("concrete"))
 	_elevators(m, plan, v, seed)
 	if roof_kind == 2:
 		_flat_roof(m, plan, wall_colour, v, seed)
@@ -405,7 +417,7 @@ func _window(m: VoxelModel, at: Vector3, size: Vector2, side: float, wall: float
 	m.fill_box(Vector3(at.x - half - frame, at.y - frame, minf(outer, outer + side * v)), Vector3(at.x + half + frame, at.y + size.y + frame, maxf(outer, outer + side * v)), TRIM, 0.03, 0)
 	m.carve_box(Vector3(at.x - half, at.y, minf(inner, outer) - v * 2.0), Vector3(at.x + half, at.y + size.y, maxf(inner, outer) + v * 2.0))
 	var glass := (outer + inner) / 2.0
-	m.fill_box(Vector3(at.x - half, at.y, glass - v / 2.0), Vector3(at.x + half, at.y + size.y, glass + v / 2.0), GLASS, 0.0, 0)
+	_glass_box(m, Vector3(at.x - half, at.y, glass - v / 2.0), Vector3(at.x + half, at.y + size.y, glass + v / 2.0), GLASS)
 	if mullion:
 		m.fill_box(Vector3(at.x - v / 2.0, at.y, glass - v / 2.0), Vector3(at.x + v / 2.0, at.y + size.y, glass + v / 2.0), TRIM, 0.0, 0)
 		var transom := at.y + size.y * 0.68
@@ -428,7 +440,7 @@ func _entrances(m: VoxelModel, plan: Dictionary, colour: Color, v: float, seed: 
 		# The leaf is set back into the opening, with a glass panel in its top half.
 		var leaf := z + wall * 0.5
 		m.fill_box(Vector3(door.x - half, ground, leaf - v / 2.0), Vector3(door.x + half, ground + DOOR.y, leaf + v / 2.0), colour, 0.04, seed)
-		m.fill_box(Vector3(door.x - half + 0.2, ground + DOOR.y * 0.5, leaf - v / 2.0), Vector3(door.x + half - 0.2, ground + DOOR.y - 0.2, leaf + v / 2.0), GLASS, 0.0, 0)
+		_glass_box(m, Vector3(door.x - half + 0.2, ground + DOOR.y * 0.5, leaf - v / 2.0), Vector3(door.x + half - 0.2, ground + DOOR.y - 0.2, leaf + v / 2.0), GLASS)
 		m.fill_box(Vector3(door.x - 0.9, ground + DOOR.y + 0.15, z - 0.9), Vector3(door.x + 0.9, ground + DOOR.y + 0.3, z), CONCRETE, 0.04, seed)
 		var steps := int(ceilf(ground / STREET_STEP))
 		for k in range(1, steps + 1):
@@ -503,7 +515,7 @@ func _door(m: VoxelModel, at: Vector3, side: float, wall: float, v: float) -> vo
 	m.fill_box(Vector3(at.x - half - v, at.y, minf(outer, outer + side * v)), Vector3(at.x + half + v, at.y + FLAT_DOOR.y + v, maxf(outer, outer + side * v)), TRIM, 0.03, 0)
 	m.carve_box(Vector3(at.x - half, at.y, minf(outer, inner) - v * 2.0), Vector3(at.x + half, at.y + FLAT_DOOR.y, maxf(outer, inner) + v * 2.0))
 	var glass := (outer + inner) / 2.0
-	m.fill_box(Vector3(at.x - half, at.y, glass - v / 2.0), Vector3(at.x + half, at.y + FLAT_DOOR.y, glass + v / 2.0), GLASS, 0.0, 0)
+	_glass_box(m, Vector3(at.x - half, at.y, glass - v / 2.0), Vector3(at.x + half, at.y + FLAT_DOOR.y, glass + v / 2.0), GLASS)
 	m.fill_box(Vector3(at.x - half, at.y + 0.9, glass - v / 2.0), Vector3(at.x + half, at.y + 0.9 + v, glass + v / 2.0), TRIM, 0.0, 0)
 
 
@@ -533,7 +545,7 @@ func _railing(m: VoxelModel, lo: Vector3, hi: Vector3, side: float, kind: int, p
 						m.fill_box(Vector3(f.position.x, f.position.y, at), Vector3(f.end.x, top, at + v * 0.5), STEEL, 0.0, 0)
 					at += v * 2.0
 			1:
-				m.fill_box(f.position, Vector3(f.end.x, top - v, f.end.z), RAIL_GLASS, 0.0, 0)
+				_glass_box(m, f.position, Vector3(f.end.x, top - v, f.end.z), RAIL_GLASS)
 				m.fill_box(Vector3(f.position.x, top - v, f.position.z), f.end, STEEL, 0.0, 0)
 			_:
 				m.fill_box(f.position, f.end, panel, 0.04, 0)
@@ -547,7 +559,7 @@ func _elevators(m: VoxelModel, plan: Dictionary, v: float, seed: int) -> void:
 		var top := box.end.y
 		m.fill_box(box.position, Vector3(box.end.x, top, box.end.z), CLADDING, 0.05, seed)
 		var cx := box.get_center().x
-		m.fill_box(Vector3(cx - 0.4, ground + 0.4, box.end.z - v), Vector3(cx + 0.4, top - 0.4, box.end.z + v * 0.5), RAIL_GLASS, 0.0, 0)
+		_glass_box(m, Vector3(cx - 0.4, ground + 0.4, box.end.z - v), Vector3(cx + 0.4, top - 0.4, box.end.z + v * 0.5), RAIL_GLASS)
 		m.carve_box(Vector3(cx - 0.5, ground, box.end.z - v * 2.0), Vector3(cx + 0.5, ground + 2.1, box.end.z + v))
 		m.fill_box(Vector3(cx - 0.5, ground, box.end.z - v * 2.0), Vector3(cx + 0.5, ground + 2.1, box.end.z - v), STEEL, 0.0, 0)
 		m.fill_box(Vector3(box.position.x - v, top, box.position.z - v), Vector3(box.end.x + v, top + v, box.end.z + v), STEEL, 0.0, 0)
@@ -596,7 +608,7 @@ func _gable_roof(m: VoxelModel, p: Dictionary, plan: Dictionary, wall: Color, ti
 			# Flush with the tiles: a metal frame round the glass.
 			for s in skylights:
 				m.fill_box(Vector3(s.x - v, top - v, z), Vector3(s.y + v, top, z + v), STEEL, 0.0, 0)
-				m.fill_box(Vector3(s.x, top - v, z), Vector3(s.y, top, z + v), GLASS, 0.0, 0)
+				_glass_box(m, Vector3(s.x, top - v, z), Vector3(s.y, top, z + v), GLASS)
 		z += v
 		row += 1
 	var ridge := eaves + slope * d

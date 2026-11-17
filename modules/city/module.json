@@ -1,0 +1,6 @@
+{
+  "id": "city",
+  "depends_on": ["world", "voxkit"],
+  "flag": "city",
+  "entry": "city_module.gd"
+}

@@ -13,6 +13,7 @@ const REQUIRED := {
 	"wade_speed": TYPE_FLOAT,
 	"swim_depth": TYPE_FLOAT,
 	"swim_speed": TYPE_FLOAT,
+	"step_height": TYPE_FLOAT,
 	"acceleration": TYPE_FLOAT,
 	"sprint_acceleration": TYPE_FLOAT,
 	"ads_speed_multiplier": TYPE_FLOAT,
@@ -46,6 +47,8 @@ const REQUIRED := {
 	"respawn_seconds": TYPE_FLOAT,
 }
 const PITCH_LIMIT := deg_to_rad(89.0)
+## How far ahead a step is looked for, so a slow walk still finds the step before touching it.
+const STEP_PROBE := 0.12
 ## How quickly a swimmer settles to floating height (per second, of the gap).
 const SWIM_SETTLE := 4.0
 
@@ -239,7 +242,31 @@ func _step_normal(delta: float) -> void:
 	var horizontal := Vector2(velocity.x, velocity.z).move_toward(Vector2(target.x, target.z), accel * delta)
 	velocity.x = horizontal.x
 	velocity.z = horizontal.y
+	_move_with_steps(delta)
+
+
+## `move_and_slide`, but a step no higher than `step_height` in the way (a stair, a kerb, a
+## door sill) is walked up instead of stopping at: if the way ahead is blocked at the feet and
+## free `step_height` higher, the body rises first and the floor snap sets it down on top.
+func _move_with_steps(delta: float) -> void:
+	var step := float(config["step_height"])
+	var ahead := Vector3(velocity.x, 0.0, velocity.z) * delta
+	var stepped := false
+	if is_on_floor() and not swimming and ahead.length() > 0.0001:
+		var probe := ahead.normalized() * maxf(ahead.length(), STEP_PROBE)
+		if test_move(global_transform, probe):
+			var up := Vector3.UP * step
+			var raised := global_transform.translated(up)
+			if not test_move(global_transform, up) and not test_move(raised, probe):
+				global_position += up
+				stepped = true
+	var snap := floor_snap_length
+	if stepped:
+		floor_snap_length = step + 0.05
 	move_and_slide()
+	if stepped:
+		apply_floor_snap()
+		floor_snap_length = snap
 
 
 ## How deep the water is where the player stands (0 on land, or with no world that knows).

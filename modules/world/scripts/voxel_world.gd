@@ -184,13 +184,32 @@ func surface_height(x: float, z: float) -> float:
 	return _dig_into(_pad_into(ground_height(x, z), x, z, _pads_in.get(key, [])), x, z, _digs_in.get(key, []))
 
 
+## Pad sets by who owns them (missions, the city...): each owner replaces only its own.
+var _pad_sets: Dictionary[StringName, Array] = {}
+
+
+## `owner`'s pads (see `set_pads`), replacing that owner's earlier ones and keeping everyone
+## else's.
+func set_pads_for(owner: StringName, pads: Array) -> void:
+	_pad_sets[owner] = pads
+	var all: Array = []
+	for key: StringName in _pad_sets:
+		all.append_array(_pad_sets[key])
+	_apply_pads(all)
+
+
+## Pads for callers that name no owner (the missions).
+func set_pads(pads: Array) -> void:
+	set_pads_for(&"", pads)
+
+
 ## Levels the ground under footprints (mission buildings), replacing any earlier set. Each
 ## pad is `{at: Vector3, half: Vector2, yaw: float, blend: float}`: a rectangle `half` either
 ## side of `at` (x across, y along, turned by `yaw` like a node's rotation.y) flat at `at.y`,
 ## easing back into the natural ground over `blend` metres. Raises and lowers alike; craters
 ## still dig into it. Every instance sets the same pads from the same layout, so nothing about
 ## it is sent.
-func set_pads(pads: Array) -> void:
+func _apply_pads(pads: Array) -> void:
 	var touched: Dictionary[Vector2i, bool] = {}
 	for key: Vector2i in _pads_in:
 		touched[key] = true
