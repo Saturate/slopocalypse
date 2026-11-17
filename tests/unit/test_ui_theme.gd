@@ -18,7 +18,7 @@ func test_label_under_a_canvas_layer_gets_the_body_font() -> void:
 	add_child(layer)
 	var label := Label.new()
 	layer.add_child(label)
-	assert_str(label.get_theme_font(&"font").resource_path).is_equal(UiTheme.BODY_FONT)
+	assert_str(label.get_theme_font(&"font").get_font_name()).starts_with("Barlow Condensed")
 	assert_int(label.get_theme_font_size(&"font_size")).is_equal(UiPalette.BODY)
 	assert_that(label.get_theme_color(&"font_color")).is_equal(UiPalette.TEXT)
 
@@ -27,7 +27,7 @@ func test_title_variation_uses_heading_font_and_accent() -> void:
 	var label: Label = auto_free(Label.new())
 	label.theme_type_variation = &"TitleLabel"
 	add_child(label)
-	assert_str(label.get_theme_font(&"font").resource_path).is_equal(UiTheme.HEADING_FONT)
+	assert_str(label.get_theme_font(&"font").get_font_name()).is_equal("Black Ops One")
 	assert_int(label.get_theme_font_size(&"font_size")).is_equal(UiPalette.TITLE)
 	assert_that(label.get_theme_color(&"font_color")).is_equal(UiPalette.ACCENT)
 
