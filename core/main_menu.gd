@@ -24,6 +24,7 @@ const MARGIN := Vector2(96, 72)
 const BUTTON_SIZE := Vector2(360, 50)
 const LOGO_SIZE := 104
 const WHATS_NEW_LINES := 3
+const WORLD_FADE_SECONDS := 1.5
 const WHATS_NEW_WIDTH := 460.0
 
 ## Why the last session ended; shown above the buttons.
@@ -42,6 +43,7 @@ var _port: LineEdit
 var _message: Label
 var _friend_message: Label
 var _friends: ScreenFrame
+var _plain: Array[CanvasItem] = []
 var _changelog: ChangelogScreen
 var _credits: CreditsScreen
 var _settings: SettingsScreen
@@ -100,6 +102,18 @@ func _input(event: InputEvent) -> void:
 func _exit_tree() -> void:
 	for frame: ScreenFrame in [_friends, _changelog, _credits, _settings]:
 		UiStack.pop(frame)
+
+
+## The live world behind the title has loaded: fade the plain backdrop away, keeping the
+## vignette so the logo and buttons stay readable.
+func show_world() -> void:
+	for item: CanvasItem in _plain:
+		if is_instance_valid(item):
+			create_tween().tween_property(item, ^"modulate:a", 0.0, WORLD_FADE_SECONDS)
+
+
+func is_showing_world() -> bool:
+	return not _plain.is_empty() and _plain[0].modulate.a < 1.0
 
 
 func open_settings() -> void:
@@ -189,12 +203,14 @@ func _backdrop() -> void:
 	bg.color = BG
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
+	_plain.append(bg)
 	var grain := TextureRect.new()
 	grain.texture = SteelPlate.grain()
 	grain.stretch_mode = TextureRect.STRETCH_TILE
 	grain.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	grain.modulate = Color(1, 1, 1, 0.5)
 	add_child(grain)
+	_plain.append(grain)
 	var shade := TextureRect.new()
 	var g := Gradient.new()
 	g.set_color(0, Color(0, 0, 0, 0))
@@ -205,9 +221,26 @@ func _backdrop() -> void:
 	t.fill_from = Vector2(0.35, 0.45)
 	t.fill_to = Vector2(1.1, 1.1)
 	shade.texture = t
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	shade.stretch_mode = TextureRect.STRETCH_SCALE
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(shade)
+	# Over the live world the logo and buttons sit on bright walls and sky: a dark band from
+	# the left edge keeps them readable and leaves the right of the view clear.
+	var band := TextureRect.new()
+	var bg2 := Gradient.new()
+	bg2.set_color(0, Color(0, 0, 0, 0.88))
+	bg2.set_color(1, Color(0, 0, 0, 0.0))
+	bg2.add_point(0.5, Color(0, 0, 0, 0.72))
+	var lt := GradientTexture2D.new()
+	lt.gradient = bg2
+	lt.fill_from = Vector2(0, 0)
+	lt.fill_to = Vector2(0.75, 0)
+	band.texture = lt
+	band.stretch_mode = TextureRect.STRETCH_SCALE
+	band.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(band)
 
 
 func _title_column() -> void:
@@ -262,12 +295,15 @@ func _title_column() -> void:
 
 ## Your name, top right: what servers keep your gear under.
 func _name_corner() -> void:
+	# On a steel plate: over the live world it would sit on bright walls.
+	var plate := PanelContainer.new()
+	plate.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	plate.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	plate.offset_right = -MARGIN.x
+	plate.offset_top = MARGIN.y
+	add_child(plate)
 	var box := VBoxContainer.new()
-	box.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	box.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	box.offset_right = -MARGIN.x
-	box.offset_top = MARGIN.y
-	add_child(box)
+	plate.add_child(box)
 	var head := Label.new()
 	head.theme_type_variation = &"HintLabel"
 	head.text = "PLAYING AS"
