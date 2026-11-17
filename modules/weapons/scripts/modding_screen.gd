@@ -37,7 +37,7 @@ var _waiting := false
 
 
 func _ready() -> void:
-	layer = 40
+	layer = UiLayers.SCREENS
 	_build_ui()
 	_root.visible = false
 	EventBus.subscribe(&"weapons.build_changed", _on_build_changed)
@@ -50,11 +50,11 @@ func _exit_tree() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed(&"modding"):
-		toggle()
-		get_viewport().set_input_as_handled()
-	elif is_open() and event is InputEventKey and event.is_pressed() and (event as InputEventKey).keycode == KEY_ESCAPE:
+	if UiStack.is_top(self) and UiStack.is_cancel(event):
 		close()
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed(&"modding") and (not is_open() or UiStack.is_top(self)):
+		toggle()
 		get_viewport().set_input_as_handled()
 
 
@@ -81,14 +81,14 @@ func open() -> void:
 	_fill_pickers()
 	_root.visible = true
 	_preview_port.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	UiStack.push(self)
 	_refresh()
 
 
 func close() -> void:
 	_root.visible = false
 	_preview_port.render_target_update_mode = SubViewport.UPDATE_DISABLED
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	UiStack.pop(self)
 
 
 ## Puts `part_id` ("" for none) in `slot` on the draft.

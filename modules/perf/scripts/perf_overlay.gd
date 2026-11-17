@@ -12,7 +12,7 @@ var _key: int = KEY_F3
 
 
 func _ready() -> void:
-	layer = 45
+	layer = UiLayers.PERF
 	_key = OS.find_keycode_from_string(str(perf.get(&"config").get("overlay_key", "F3")))
 	var panel := PanelContainer.new()
 	panel.position = Vector2(8, 8)

@@ -56,14 +56,14 @@ func is_open() -> bool:
 
 func open() -> void:
 	_root.visible = true
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	UiStack.push(self)
 	_refresh()
 
 
 func _hide() -> void:
 	_dragging = {}
 	_root.visible = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	UiStack.pop(self)
 
 
 func _gear(theirs: bool) -> InventoryGear:
@@ -184,14 +184,14 @@ func _process(delta: float) -> void:
 
 ## Esc closes; R turns what is dragged. Subclasses add their own keys.
 func _input(event: InputEvent) -> void:
-	if not is_open():
+	if not UiStack.is_top(self):
 		return
-	if event is InputEventKey and event.is_pressed() and not event.is_echo():
+	if UiStack.is_cancel(event):
+		_close_requested()
+		get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.is_pressed() and not event.is_echo():
 		var key := (event as InputEventKey).keycode
-		if key == KEY_ESCAPE:
-			_close_requested()
-			get_viewport().set_input_as_handled()
-		elif key == KEY_R and not _dragging.is_empty():
+		if key == KEY_R and not _dragging.is_empty():
 			_drag_rotated = not _drag_rotated
 			get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton:

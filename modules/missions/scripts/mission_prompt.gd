@@ -11,7 +11,7 @@ var _mission: Label
 
 
 func _ready() -> void:
-	layer = 4
+	layer = UiLayers.PROMPTS
 	_label = _make(17, Color(0.95, 0.93, 0.85))
 	_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	_label.position += Vector2(-160, 64)

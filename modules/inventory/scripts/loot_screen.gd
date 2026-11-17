@@ -17,7 +17,7 @@ func _hint() -> String:
 func _ready() -> void:
 	super._ready()
 	# Over the inventory screen and the HUD.
-	layer = 41
+	layer = UiLayers.LOOT
 	EventBus.subscribe(&"inventory.loot_changed", _on_loot_changed)
 	EventBus.subscribe(&"inventory.loot_closed", _on_loot_closed)
 

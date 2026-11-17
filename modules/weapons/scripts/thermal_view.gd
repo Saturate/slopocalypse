@@ -60,7 +60,7 @@ static func warm_in_range(nodes: Array, eye: Vector3, reach: float, viewer_node:
 
 
 func _ready() -> void:
-	layer = 4
+	layer = UiLayers.PROMPTS
 	var material := ShaderMaterial.new()
 	var shader := Shader.new()
 	shader.code = SHADER

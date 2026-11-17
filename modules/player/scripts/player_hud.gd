@@ -19,7 +19,7 @@ var _respawn_seconds := 5.0
 
 
 func _ready() -> void:
-	layer = 3
+	layer = UiLayers.HUD
 	_health = player.get_node_or_null("Health") as HealthComponent
 	_respawn_seconds = float(player.config.get("respawn_seconds", 5.0))
 	_canvas = Control.new()
