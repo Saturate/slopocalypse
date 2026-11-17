@@ -6,6 +6,10 @@ extends StyleBox
 ## The chips and scratches are seeded by the plate's size, so a plate looks the same every
 ## frame and two plates of different sizes don't look copied.
 
+## By path: the project theme loads this at startup, before class names are known on a
+## fresh checkout.
+const Palette := preload("res://core/ui/ui_palette.gd")
+
 const GRAIN_SIZE := 128
 const RIVET_INSET := 11.0
 const RIVET_RADIUS := 4.0
@@ -15,7 +19,7 @@ const RIVET_MIN_SIDE := 72.0
 const CHIP_SPACING := 38.0
 const STRIPE_WIDTH := 12.0
 
-@export var fill := UiPalette.STEEL
+@export var fill := Palette.STEEL
 ## Off draws only the outline (a focus ring over the normal plate).
 @export var filled := true
 @export var outline := Color(0, 0, 0, 0)
@@ -41,7 +45,7 @@ func _draw(to_canvas_item: RID, rect: Rect2) -> void:
 	var rs := RenderingServer
 	if filled:
 		if shadow != Vector2.ZERO:
-			rs.canvas_item_add_rect(to_canvas_item, Rect2(rect.position + shadow, rect.size), UiPalette.SHADOW)
+			rs.canvas_item_add_rect(to_canvas_item, Rect2(rect.position + shadow, rect.size), Palette.SHADOW)
 		rs.canvas_item_add_rect(to_canvas_item, rect, fill)
 		rs.canvas_item_add_texture_rect(to_canvas_item, rect, grain().get_rid(), true)
 		var seed_from := int(rect.size.x) * 7919 + int(rect.size.y) * 104729
@@ -72,7 +76,7 @@ func _chips(ci: RID, rect: Rect2, seed_from: int) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_from
 	var perimeter := 2.0 * (rect.size.x + rect.size.y)
-	var bare := fill.lerp(UiPalette.STEEL_BARE, 0.45)
+	var bare := fill.lerp(Palette.STEEL_BARE, 0.45)
 	for i in int(perimeter / CHIP_SPACING):
 		var along := rng.randf() * perimeter
 		var depth := rng.randf_range(0.0, 2.0)
@@ -110,7 +114,7 @@ func _stripes(ci: RID, rect: Rect2) -> void:
 		var top := maxf(y - 6.0, rect.position.y)
 		var bottom := minf(y + 6.0, rect.end.y)
 		var poly := PackedVector2Array([Vector2(x, y), Vector2(x + STRIPE_WIDTH, top), Vector2(x + STRIPE_WIDTH, minf(y, rect.end.y)), Vector2(x, bottom)])
-		RenderingServer.canvas_item_add_polygon(ci, poly, PackedColorArray([UiPalette.INK]))
+		RenderingServer.canvas_item_add_polygon(ci, poly, PackedColorArray([Palette.INK]))
 		y += step
 
 
