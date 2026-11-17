@@ -9,6 +9,10 @@ const LIBRARY := "res://modules/voxkit/library/asset_library.gd"
 
 ## The test range module (a solo game on a row of buildings for breaking things).
 const RANGE := "res://modules/range/range_module.gd"
+## The city module's live view behind the title, if the city is there and on.
+const BACKDROP := "res://modules/city/title/title_backdrop.gd"
+
+var _backdrop: Node
 
 ## `--library` opens the library straight away, once per launch (Back then goes to the menu).
 static var _library_from_args := OS.get_cmdline_user_args().has("--library")
@@ -46,6 +50,7 @@ func _show_menu() -> void:
 	menu.has_library = _library_available()
 	menu.has_range = Features.is_enabled(&"range") and ResourceLoader.exists(RANGE)
 	add_child(menu)
+	_show_backdrop(menu)
 	menu.solo_requested.connect(func() -> void: _begin(menu, func() -> void:
 		Net.awaiting_menu = false
 		Net.start_solo()))
@@ -58,7 +63,25 @@ func _show_menu() -> void:
 		Net.start_solo()))
 	menu.library_requested.connect(func() -> void:
 		menu.queue_free()
+		_free_backdrop()
 		_show_library())
+
+
+## The live city behind the title; the menu keeps its plain backdrop until it has loaded.
+func _show_backdrop(menu: MainMenu) -> void:
+	if not (Features.is_enabled(&"city") and Features.is_enabled(&"world") and ResourceLoader.exists(BACKDROP)):
+		return
+	_backdrop = (load(BACKDROP) as GDScript).new()
+	_backdrop.name = "TitleBackdrop"
+	_backdrop.connect(&"shown", menu.show_world)
+	add_child(_backdrop)
+	move_child(_backdrop, 0)
+
+
+func _free_backdrop() -> void:
+	if _backdrop != null and is_instance_valid(_backdrop):
+		_backdrop.queue_free()
+	_backdrop = null
 
 
 static func _library_available() -> bool:
@@ -76,6 +99,7 @@ func _show_library() -> void:
 
 func _begin(menu: MainMenu, start: Callable) -> void:
 	menu.queue_free()
+	_free_backdrop()
 	Net.menu_message = ""
 	start.call()
 	# A start that failed has already asked for the menu again.

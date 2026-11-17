@@ -121,3 +121,11 @@ func test_a_tall_screen_frame_scrolls_inside_the_view() -> void:
 	await get_tree().process_frame
 	frame._fit()
 	assert_float(frame.panel_height()).is_less_equal(frame.get_viewport_rect().size.y * ScreenFrame.MAX_SHARE + 1.0)
+
+
+func test_the_plain_backdrop_fades_once_the_world_is_shown() -> void:
+	assert_bool(_menu.is_showing_world()).is_false()
+	_menu.show_world()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_bool(_menu.is_showing_world()).is_true()
