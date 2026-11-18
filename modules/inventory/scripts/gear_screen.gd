@@ -333,7 +333,6 @@ func _build_ui() -> void:
 			var take := Button.new()
 			take.text = "Take all"
 			take.focus_mode = Control.FOCUS_NONE
-			take.add_theme_font_size_override("font_size", 16)
 			take.pressed.connect(func() -> void: inventory.call(&"request_take_all"))
 			head.add_child(take)
 		var gear_panel := GearPanel.new()
@@ -352,8 +351,4 @@ func _build_ui() -> void:
 
 
 func _label(text: String, size: int, colour: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", colour)
-	return l
+	return UiText.label(text, size, colour)

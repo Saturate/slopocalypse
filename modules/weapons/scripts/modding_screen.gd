@@ -366,11 +366,7 @@ func _preview() -> Control:
 
 
 func _label(text: String, size: int, colour: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", colour)
-	return l
+	return UiText.label(text, size, colour)
 
 
 func _button(text: String, on_press: Callable, primary: bool = false) -> Button:
@@ -379,10 +375,6 @@ func _button(text: String, on_press: Callable, primary: bool = false) -> Button:
 	b.text = text
 	b.custom_minimum_size = Vector2(100, 38)
 	if primary:
-		var st := StyleBoxFlat.new()
-		st.bg_color = ACCENT.darkened(0.15)
-		st.set_corner_radius_all(2)
-		b.add_theme_stylebox_override("normal", st)
-		b.add_theme_color_override("font_color", Color(0.07, 0.08, 0.08))
+		b.theme_type_variation = &"AccentButton"
 	b.pressed.connect(on_press)
 	return b

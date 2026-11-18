@@ -5,8 +5,6 @@ extends CanvasLayer
 ## the whole group (the server decides). Esc or F closes it.
 
 const BG := UiPalette.BACKDROP
-const SHEET := Color(0.16, 0.17, 0.15)
-const CHOSEN := Color(0.24, 0.22, 0.14)
 const ACCENT := UiPalette.ACCENT
 const TEXT := UiPalette.TEXT
 const DIM := UiPalette.DIM
@@ -82,12 +80,16 @@ func _refresh() -> void:
 
 func _sheet(index: int, offer: Dictionary, chosen: bool, running: bool) -> Control:
 	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = CHOSEN if chosen else SHEET
-	style.border_color = ACCENT if chosen else SHEET.lightened(0.15)
-	style.set_border_width_all(2)
-	style.set_content_margin_all(16)
-	panel.add_theme_stylebox_override("panel", style)
+	# A raised plate on the board; the chosen one ringed in the accent.
+	var plate := SteelPlate.new()
+	plate.fill = UiPalette.STEEL_RAISED.lightened(0.05) if chosen else UiPalette.STEEL_RAISED
+	plate.shadow = Vector2(4, 4)
+	plate.outline = ACCENT if chosen else Color(0, 0, 0, 0)
+	plate.content_margin_left = 16
+	plate.content_margin_right = 16
+	plate.content_margin_top = 14
+	plate.content_margin_bottom = 14
+	panel.add_theme_stylebox_override("panel", plate)
 	panel.custom_minimum_size.x = SHEET_WIDTH
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 8)
@@ -144,8 +146,4 @@ func _build_ui() -> void:
 
 
 func _label(text: String, size: int, colour: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", colour)
-	return l
+	return UiText.label(text, size, colour)

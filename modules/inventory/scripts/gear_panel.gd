@@ -114,7 +114,7 @@ static func _slot_rank(slot: String) -> int:
 func _caption(text: String) -> Label:
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override("font_size", 14)
+	l.add_theme_font_size_override("font_size", UiPalette.HINT)
 	l.add_theme_color_override("font_color", ACCENT)
 	return l
 
