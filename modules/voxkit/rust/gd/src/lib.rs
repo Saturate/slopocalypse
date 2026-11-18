@@ -618,6 +618,30 @@ impl VoxelModel {
         });
     }
 
+    /// How many sections (4 x 4 x 4 chunks each) the model is drawn as.
+    #[func]
+    fn section_count(&self) -> i64 {
+        self.grid.as_ref().map_or(0, |g| g.section_count() as i64)
+    }
+
+    /// Meshes every chunk changed since the last call and joins the sections they sit in:
+    /// `{section id: [arrays, clear arrays]}` (empty arrays where a layer has nothing to
+    /// draw), every section the first time. One mesh per section is what gets drawn.
+    #[func]
+    fn remesh_dirty_sections(&mut self) -> VarDictionary {
+        let mut out = VarDictionary::new();
+        if let Some(grid) = self.grid.as_mut() {
+            grid.corners = shading().is_some();
+            for (id, mesh, clear) in grid.remesh_dirty_sections() {
+                let mut pair = VarArray::new();
+                pair.push(&arrays_of(&mesh).to_variant());
+                pair.push(&arrays_of(&clear).to_variant());
+                out.set(id as i64, &pair);
+            }
+        }
+        out
+    }
+
     /// Like `remesh_dirty`, with both layers: `{chunk id: [arrays, clear arrays]}` (empty arrays
     /// where a layer has nothing to draw).
     #[func]

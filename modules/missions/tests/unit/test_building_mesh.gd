@@ -52,15 +52,18 @@ func test_thirty_holes_in_a_second_each_show_on_the_next_frame() -> void:
 		assert_float(after).override_failure_message("hole %d: the mesh differs from the model" % i).is_equal_approx(_whole_area(model), 0.001)
 
 
-func test_a_hole_rebuilds_only_the_chunks_it_touched() -> void:
+func test_a_hole_rebuilds_only_the_sections_it_touched() -> void:
 	var b := _building()
 	var shown := b.get_node("Mesh") as VoxelChunkedMesh
 	var model: VoxelModel = b.get(&"_model")
 	model.carve_ellipsoid(Vector3(float(b.spec["width"]) / 2.0, 1.0, 0.0), Vector3.ONE * 0.13)
 	var rebuilt := shown.refresh()
-	assert_int(rebuilt).is_greater(0)
-	assert_int(rebuilt).is_less(model.chunk_count() / 2)
+	# One section, or two where the hole sits on a border between them.
+	assert_int(rebuilt).is_between(1, 2)
 	assert_int(shown.refresh()).is_equal(0)
+	# Drawn as sections, not chunks: a building is a few instances.
+	assert_int(shown.part_count()).is_less_equal(model.section_count() * 2)
+	assert_int(model.section_count()).is_less(model.chunk_count())
 
 
 func _fragments_under(node: Node) -> Array:

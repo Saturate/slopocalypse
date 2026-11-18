@@ -1,48 +1,48 @@
 class_name VoxelChunkedMesh
 extends Node3D
-## Draws a `VoxelModel` as one mesh per 16-cell chunk, so an edit (a bullet hole, a broken
-## wall piece) rebuilds only the chunks it touched instead of the whole model. Call
-## `refresh()` after editing; it replaces just the changed chunks. One mesh instance per
-## chunk rather than one surface per chunk, because an `ArrayMesh` surface cannot be replaced
-## on its own.
+## Draws a `VoxelModel` as one mesh per section of 4 x 4 x 4 chunks of 16 cells (9.6 m at
+## 0.15 m voxels), so a building is a handful of mesh instances rather than hundreds: each
+## instance is a draw call per pass, and a city of them was fifteen thousand. An edit (a
+## bullet hole, a broken wall piece) still meshes only the chunks it touched; the model keeps
+## every chunk's mesh and joins the sections round the edit again. Call `refresh()` after
+## editing; it replaces just the changed sections. One mesh instance per section rather than
+## one surface per section, because an `ArrayMesh` surface cannot be replaced on its own.
 
 var model: VoxelModel:
 	set(value):
 		model = value
 		_clear()
 ## True when the model draws some materials see-through (`VoxelModel.set_clear_materials`):
-## each chunk then has a second, see-through mesh for them.
+## each section then has a second, see-through mesh for them.
 var layered := false
 
 ## The look of see-through voxels (glass): their own colour, mostly transparent, a little shine.
 static var _glass: StandardMaterial3D
 
-## Chunk id -> its mesh instance (chunks with nothing to draw have none).
+## Section id -> its mesh instance (sections with nothing to draw have none).
 var _parts: Dictionary[int, MeshInstance3D] = {}
-## Chunk id -> its see-through mesh instance.
+## Section id -> its see-through mesh instance.
 var _clear_parts: Dictionary[int, MeshInstance3D] = {}
 
 
-## Rebuilds the chunks changed since the last refresh. Returns how many it rebuilt.
+## Rebuilds the sections changed since the last refresh. Returns how many it rebuilt.
 func refresh() -> int:
 	if model == null:
 		return 0
 	VoxShading.ensure()
 	var t := Prof.start()
-	var rebuilt: Dictionary = model.remesh_dirty_layers() if layered else model.remesh_dirty()
+	var rebuilt: Dictionary = model.remesh_dirty_sections()
 	for key: Variant in rebuilt:
 		var id := int(key)
+		var pair: Array = rebuilt[key]
+		_show(_parts, id, pair[0], VoxGenerator.material(), "Section%d" % id)
 		if layered:
-			var pair: Array = rebuilt[key]
-			_show(_parts, id, pair[0], VoxGenerator.material(), "Chunk%d" % id)
 			_show(_clear_parts, id, pair[1], glass_material(), "Glass%d" % id)
-		else:
-			_show(_parts, id, rebuilt[key], VoxGenerator.material(), "Chunk%d" % id)
 	Prof.stop(&"voxkit/remesh", t)
 	return rebuilt.size()
 
 
-## Puts `arrays` on chunk `id`'s instance in `parts` (making it), or frees it when empty.
+## Puts `arrays` on section `id`'s instance in `parts` (making it), or frees it when empty.
 func _show(parts: Dictionary[int, MeshInstance3D], id: int, arrays: Array, material: Material, part_name: String) -> void:
 	if arrays.is_empty():
 		if parts.has(id):
@@ -75,7 +75,7 @@ static func glass_material() -> StandardMaterial3D:
 	return _glass
 
 
-## The see-through chunk meshes drawn now, for tests and tools.
+## The see-through section meshes drawn now, for tests and tools.
 func clear_meshes() -> Array[Mesh]:
 	var out: Array[Mesh] = []
 	for part: MeshInstance3D in _clear_parts.values():
@@ -83,12 +83,17 @@ func clear_meshes() -> Array[Mesh]:
 	return out
 
 
-## The chunk meshes drawn now, for tests and tools.
+## The section meshes drawn now, for tests and tools.
 func chunk_meshes() -> Array[Mesh]:
 	var out: Array[Mesh] = []
 	for part: MeshInstance3D in _parts.values():
 		out.append(part.mesh)
 	return out
+
+
+## How many mesh instances this model is drawn with (both layers).
+func part_count() -> int:
+	return _parts.size() + _clear_parts.size()
 
 
 func _clear() -> void:
