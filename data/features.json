@@ -24,6 +24,7 @@
     "lights": true,
     "towers": true,
     "city": true,
-    "factions": true
+    "factions": true,
+    "stats": true
   }
 }

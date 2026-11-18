@@ -1,0 +1,6 @@
+{
+  "id": "stats",
+  "depends_on": [],
+  "flag": "stats",
+  "entry": "stats_module.gd"
+}
