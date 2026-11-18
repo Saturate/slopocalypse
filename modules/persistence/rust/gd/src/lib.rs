@@ -80,7 +80,7 @@ impl SaveStore {
     }
 
     /// `save` is `{health, tokens, position: Vector3 or null, items: [{item, container, x, y, rotated}],
-    /// builds: {weapon_slot: {part_slot: part}}, standing: {faction: value}}`.
+    /// builds: {weapon_slot: {part_slot: part}}, standing: {faction: value}, stats: {counter: value}}`.
     #[func]
     fn save_player(&mut self, name: GString, save: VarDictionary) -> bool {
         let player = player_from(&save);
@@ -271,6 +271,14 @@ fn player_from(d: &VarDictionary) -> PlayerSave {
             }
         }
     }
+    let mut stats = std::collections::BTreeMap::new();
+    if let Ok(all) = d.get_or_nil("stats").try_to::<VarDictionary>() {
+        for (stat, value) in all.iter_shared() {
+            if let (Ok(s), Ok(v)) = (stat.try_to::<GString>(), value.try_to::<f64>()) {
+                stats.insert(s.to_string(), v);
+            }
+        }
+    }
     PlayerSave {
         health: num(d, "health"),
         tokens: num(d, "tokens") as i64,
@@ -278,6 +286,7 @@ fn player_from(d: &VarDictionary) -> PlayerSave {
         items,
         builds,
         standing,
+        stats,
     }
 }
 
@@ -315,6 +324,11 @@ fn player_to(p: &PlayerSave) -> VarDictionary {
         standing.set(faction.as_str(), *value);
     }
     d.set("standing", &standing);
+    let mut stats = VarDictionary::new();
+    for (stat, value) in &p.stats {
+        stats.set(stat.as_str(), *value);
+    }
+    d.set("stats", &stats);
     d
 }
 

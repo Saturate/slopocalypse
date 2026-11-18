@@ -193,6 +193,9 @@ func _restore(peer: int, saved: Dictionary) -> void:
 	var factions := get_tree().get_first_node_in_group(&"factions_api")
 	if factions != null and saved.get("standing") is Dictionary:
 		factions.call(&"server_set_standing", peer, saved["standing"])
+	var stats := get_tree().get_first_node_in_group(&"stats_api")
+	if stats != null and saved.get("stats") is Dictionary:
+		stats.call(&"server_set_stats", peer, saved["stats"])
 	var player := _player_of(peer)
 	var at: Variant = saved.get("position")
 	# Saved dead (or never placed): they start over at the spawn like a respawn would.
@@ -252,6 +255,7 @@ func server_save_player(peer: int) -> bool:
 	var weapons := get_tree().get_first_node_in_group(&"weapons_api")
 	var missions := get_tree().get_first_node_in_group(&"missions_api")
 	var factions := get_tree().get_first_node_in_group(&"factions_api")
+	var stats := get_tree().get_first_node_in_group(&"stats_api")
 	var save := {
 		"health": 0.0 if dead else health.health,
 		"tokens": int(missions.call(&"server_tokens_of", peer)) if missions != null else 0,
@@ -259,6 +263,7 @@ func server_save_player(peer: int) -> bool:
 		"items": inventory.call(&"server_items_of", peer) if inventory != null else [],
 		"builds": weapons.call(&"server_builds_of", peer) if weapons != null else {},
 		"standing": factions.call(&"server_standing_of", peer) if factions != null else {},
+		"stats": stats.call(&"server_stats_of", peer) if stats != null else {},
 	}
 	if not store.save_player(player_name, save):
 		Log.error(&"persistence", "could not save %s: %s" % [player_name, store.last_error()])

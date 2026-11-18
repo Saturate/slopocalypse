@@ -306,7 +306,9 @@ func _keep_above_ground() -> void:
 		velocity.y = maxf(velocity.y, 0.0)
 
 
-func _on_died(_source: Node) -> void:
+func _on_died(source: Node) -> void:
+	# Server-local: who brought it down, for kill stats.
+	EventBus.publish(&"drone.died", {"drone": self, "source": source})
 	downed = true
 	_fall_left = config["fall_seconds"]
 	_tumble = Vector3(_rng.randf_range(-3, 3), _rng.randf_range(-6, 6), _rng.randf_range(-3, 3))

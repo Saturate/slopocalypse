@@ -196,6 +196,9 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 			if health != null:
 				target = health.get_parent()
 				damage = health.server_apply_damage(_damage_for(target, hit_point, health) * damage_scale, holder)
+				if damage > 0.0 and health.is_dead() and is_headshot(target, hit_point):
+					# Server-local: a kill through the head, for kill stats.
+					EventBus.publish(&"weapon.headshot_kill", {"holder": holder, "target": target})
 		var target_path := String(target.get_path()) if target != null else ""
 		var collider_path := String((collider as Node).get_path()) if collider is Node else ""
 		# Decided here; replayed here and on every client that has the shooter, for effects and

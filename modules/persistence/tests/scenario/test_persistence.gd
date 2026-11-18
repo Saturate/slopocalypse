@@ -186,6 +186,20 @@ func test_faction_standing_comes_back_with_the_player() -> void:
 	assert_float(float(back["militia"])).is_equal(-80.0)
 
 
+func test_kill_stats_come_back_with_the_player() -> void:
+	var stats: Node = auto_free((load("res://modules/stats/stats_module.gd") as GDScript).new())
+	add_child(stats)
+	var first := _spawn(77)
+	assert_bool(_saves.call(&"server_admit", 77, "Tally", "key-t")).is_true()
+	stats.call(&"server_set_stats", 77, {"kills.soldier": 4.0, "longest_kill": 180.0})
+	_leave(77, first)
+	_spawn(78)
+	assert_bool(_saves.call(&"server_admit", 78, "Tally", "key-t")).is_true()
+	var back: Dictionary = stats.call(&"server_stats_of", 78)
+	assert_float(float(back["kills.soldier"])).is_equal(4.0)
+	assert_float(float(back["longest_kill"])).is_equal(180.0)
+
+
 func test_a_new_player_starts_with_the_starting_tokens_and_a_save_keeps_its_own() -> void:
 	var missions: Node = auto_free((load("res://modules/missions/missions_module.gd") as GDScript).new())
 	add_child(missions)
