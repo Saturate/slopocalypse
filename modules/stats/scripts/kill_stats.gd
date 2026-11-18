@@ -4,7 +4,7 @@ extends RefCounted
 ## killed you, headshots and the longest kill. Pure, so the server and tests use it the same
 ## way; the stats module feeds it from death events and persistence saves it.
 ##
-## Keys: kills.soldier, kills.soldier.<faction>, kills.player, kills.drone, deaths,
+## Keys: kills.soldier, kills.soldier.<faction>, kills.player, kills.drone, kills.civilian, deaths,
 ## deaths.<soldier|player|drone|self|other>, headshots, longest_kill (metres).
 
 const LONGEST := "longest_kill"

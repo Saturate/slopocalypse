@@ -29,6 +29,8 @@ var config: Dictionary = {}
 var site: CitySite
 ## Server: the city's guards.
 var garrison: CityGarrison
+## Server: the people living in it.
+var civilians: CityCivilians
 ## Players (server) and bots (local) that arrived before the city stood, for when it does.
 var _waiting_players: Array[Node3D] = []
 var _waiting_bots: Array[CityBot] = []
@@ -155,6 +157,11 @@ func place(where: Transform3D) -> void:
 		garrison.config = config.get("guards", {})
 		garrison.site = site
 		add_child(garrison)
+		civilians = CityCivilians.new()
+		civilians.name = "Civilians"
+		civilians.config = config.get("civilians", {})
+		civilians.site = site
+		add_child(civilians)
 	for bot in _waiting_bots:
 		if is_instance_valid(bot):
 			bot.site = site

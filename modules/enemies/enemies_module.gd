@@ -63,6 +63,7 @@ func _ready() -> void:
 	_rng.randomize()
 	EventBus.subscribe(&"world.ready", _on_world_ready)
 	EventBus.subscribe(&"enemy.died", _on_enemy_died)
+	EventBus.subscribe(&"civilian.died", _on_civilian_died)
 	EventBus.subscribe(&"enemy.surrendered", _on_enemy_surrendered)
 	EventBus.subscribe(&"admin.spawn", _on_admin_spawn)
 
@@ -70,6 +71,7 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	EventBus.unsubscribe(&"world.ready", _on_world_ready)
 	EventBus.unsubscribe(&"enemy.died", _on_enemy_died)
+	EventBus.unsubscribe(&"civilian.died", _on_civilian_died)
 	EventBus.unsubscribe(&"enemy.surrendered", _on_enemy_surrendered)
 	EventBus.unsubscribe(&"admin.spawn", _on_admin_spawn)
 
@@ -182,23 +184,38 @@ func server_spawn_guard(at: Vector3, yaw: float, route: Array = [], faction := "
 	return _spawner.spawn({"index": _spawned, "position": at + Vector3.UP * 0.3, "home": at, "post_yaw": yaw, "route": route, "faction": faction})
 
 
+## Server: an unarmed civilian at `at` (#342), strolling near there and running to the
+## nearest of `refuges` (world positions, building doors) when shooting starts. Same body,
+## network sync and relevance as soldiers; their own side, which nobody is hostile to.
+func server_spawn_civilian(at: Vector3, yaw: float, refuges: Array) -> Node:
+	_spawned += 1
+	return _spawner.spawn({"index": _spawned, "position": at + Vector3.UP * 0.3, "home": at, "post_yaw": yaw, "civilian": true, "refuges": refuges})
+
+
+func civilians() -> Array[Node]:
+	return get_tree().get_nodes_in_group(&"civilians").filter(func(n: Node) -> bool: return not n.get_meta(&"dead", false))
+
+
 ## Runs on the server and, through the spawner, on every client.
 func _make_enemy(data: Variant) -> Node:
 	var info: Dictionary = data
 	var prof := Prof.start()
 	var enemy: PlayerController = _scene().instantiate()
 	Prof.stop(&"enemies/instantiate", prof)
-	enemy.name = "Enemy%d" % int(info["index"])
+	var civilian: bool = info.get("civilian", false)
+	enemy.name = ("Civilian%d" if civilian else "Enemy%d") % int(info["index"])
 	enemy.position = info["position"]
 	enemy.set_meta(&"peer_id", FIRST_ID - int(info["index"]))
 	# A soldier's side is its faction; without factions, all soldiers are one side.
 	var faction := str(info.get("faction", ""))
-	enemy.set_meta(&"team", faction if not faction.is_empty() else "enemies")
+	enemy.set_meta(&"team", "civilians" if civilian else (faction if not faction.is_empty() else "enemies"))
 	enemy.set_meta(&"faction", faction)
+	enemy.set_meta(&"civilian", civilian)
 	# Many, spread over the map: each client is sent only those near it (NetRelevance).
 	enemy.set_meta(&"net_relevance", true)
 	enemy.set_meta(&"net_smooth", true)
-	enemy.add_to_group(&"enemies")
+	# Soldiers count and scan the `enemies` group; civilians are neither.
+	enemy.add_to_group(&"civilians" if civilian else &"enemies")
 	if not multiplayer.is_server():
 		enemy.set_physics_process(false)
 	enemy.rotation.y = float(info.get("post_yaw", 0.0))
@@ -207,6 +224,9 @@ func _make_enemy(data: Variant) -> Node:
 
 
 func _on_enemy_ready(enemy: PlayerController, home: Vector3, info: Dictionary = {}) -> void:
+	if enemy.get_meta(&"civilian", false):
+		_on_civilian_ready(enemy, home, info)
+		return
 	var health := enemy.get_node("Health") as HealthComponent
 	health.max_health = config["max_health"]
 	health.server_reset()
@@ -243,6 +263,41 @@ func _on_enemy_ready(enemy: PlayerController, home: Vector3, info: Dictionary = 
 		animator.name = "BodyAnimator"
 		animator.player = enemy
 		enemy.add_child(animator)
+
+
+func _on_civilian_ready(person: PlayerController, home: Vector3, info: Dictionary) -> void:
+	var cfg: Dictionary = config.get("civilians", {})
+	var health := person.get_node("Health") as HealthComponent
+	health.max_health = float(cfg.get("max_health", 60.0))
+	health.server_reset()
+	# No gun, no gear: the weapons module equips nothing for an unarmed body.
+	EventBus.publish(&"player.spawned", {"player": person, "local": false, "npc": true, "unarmed": true, "gear": {}})
+	if multiplayer.is_server():
+		health.died.connect(func(source: Node) -> void:
+			if person.get_meta(&"dead", false):
+				return
+			Net.server_broadcast(&"civilian.died", {"civilian": person, "source": source, "position": person.global_position})
+			get_tree().create_timer(float(config["corpse_seconds"])).timeout.connect(person.queue_free))
+		var brain := CivilianBrain.new()
+		brain.name = "Brain"
+		brain.body = person
+		brain.config = cfg
+		brain.home = home
+		for r: Variant in info.get("refuges", []):
+			brain.refuges.append(r as Vector3)
+		person.add_child(brain)
+	if DisplayServer.get_name() != "headless":
+		var clothes: Array = cfg.get("clothes", [[0.6, 0.6, 0.6]])
+		_tint(person, clothes[int(info["index"]) % clothes.size()])
+		var animator := PlayerBodyAnimator.new()
+		animator.name = "BodyAnimator"
+		animator.player = person
+		person.add_child(animator)
+
+
+## Everywhere: a civilian drops like a soldier does.
+func _on_civilian_died(p: Dictionary) -> void:
+	_on_enemy_died({"enemy": p.get("civilian")})
 
 
 ## The soldiers' config with a faction's leanings: how far it sees and hears.

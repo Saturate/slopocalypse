@@ -15,7 +15,11 @@
   "floors_edge": 4.0,
   "floors_middle": 6.0,
   "style": "danish",
-  "asphalt": [0.43, 0.43, 0.42],
+  "asphalt": [
+    0.43,
+    0.43,
+    0.42
+  ],
   "kerb_width": 0.3,
   "tile_size": 0.6,
   "crossing_width": 3.0,
@@ -33,7 +37,27 @@
   "spot_nudge": 3.0,
   "handmade_share": 0.3,
   "handmade_slack": 4.0,
-  "guards": { "window_posts": 8.0, "roof_posts": 3.0, "corner_posts": 4.0, "patrols": 2.0, "refill_seconds": 600.0, "refill_distance": 150.0 },
+  "guards": {
+    "window_posts": 8.0,
+    "roof_posts": 3.0,
+    "corner_posts": 4.0,
+    "patrols": 2.0,
+    "refill_seconds": 600.0,
+    "refill_distance": 150.0
+  },
   "pad_blend": 14.0,
-  "builds_per_frame": 2.0
+  "builds_per_frame": 2.0,
+  "civilians": {
+    "_comment": "People living in the city (#342): per_building ([min, max] at each building near a player), max_alive (in the city at once), spawn_distance (a building fills when a player is this close to its door), despawn_distance (its living civilians go when every player is further), refuge_distance (doors this close count as places to run to), check_seconds, seed.",
+    "per_building": [
+      0,
+      3
+    ],
+    "max_alive": 60,
+    "spawn_distance": 120.0,
+    "despawn_distance": 200.0,
+    "refuge_distance": 40.0,
+    "check_seconds": 2.0,
+    "seed": 7
+  }
 }
