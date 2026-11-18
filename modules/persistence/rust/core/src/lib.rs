@@ -11,8 +11,9 @@ use std::collections::BTreeMap;
 
 /// Bumped with every change to the tables; `open` upgrades older files step by step.
 /// 2: items name the slot or grid they are in (`container`). 3: players have tokens.
-/// 4: items carry their own data (`data`, JSON: a gun's build).
-pub const SCHEMA_VERSION: i64 = 5;
+/// 4: items carry their own data (`data`, JSON: a gun's build). 5: world parts.
+/// 6: each player's standing with each faction (`player_standing`).
+pub const SCHEMA_VERSION: i64 = 6;
 pub const MAX_NAME_CHARS: usize = 16;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -39,6 +40,8 @@ pub struct PlayerSave {
     pub position: Option<[f64; 3]>,
     pub items: Vec<PlacedItem>,
     pub builds: Builds,
+    /// Faction id -> standing, -100 to 100. Factions not listed are at their start value.
+    pub standing: BTreeMap<String, f64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -228,6 +231,20 @@ impl Store {
                 COMMIT;",
             )?;
         }
+        if version < 6 {
+            // Older files have none: every player starts at each faction's start value.
+            db.execute_batch(
+                "BEGIN;
+                CREATE TABLE player_standing (
+                    player TEXT NOT NULL COLLATE NOCASE REFERENCES players(name) ON DELETE CASCADE,
+                    faction TEXT NOT NULL,
+                    value REAL NOT NULL,
+                    PRIMARY KEY (player, faction)
+                );
+                PRAGMA user_version = 6;
+                COMMIT;",
+            )?;
+        }
         Ok(Store { db })
     }
 
@@ -271,6 +288,7 @@ impl Store {
         }
         tx.execute("DELETE FROM player_items WHERE player = ?1", [name])?;
         tx.execute("DELETE FROM player_builds WHERE player = ?1", [name])?;
+        tx.execute("DELETE FROM player_standing WHERE player = ?1", [name])?;
         {
             let mut add = tx.prepare(
                 "INSERT INTO player_items (player, item, x, y, rotated, container, data) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -293,6 +311,12 @@ impl Store {
                 for (part_slot, part) in parts {
                     fit.execute(params![name, weapon_slot, part_slot, part])?;
                 }
+            }
+            let mut stand = tx.prepare(
+                "INSERT INTO player_standing (player, faction, value) VALUES (?1, ?2, ?3)",
+            )?;
+            for (faction, value) in &save.standing {
+                stand.execute(params![name, faction, value.clamp(-100.0, 100.0)])?;
             }
         }
         tx.commit()?;
@@ -351,12 +375,21 @@ impl Store {
                 .or_default()
                 .insert(part_slot, part);
         }
+        let mut standing_q = self
+            .db
+            .prepare("SELECT faction, value FROM player_standing WHERE player = ?1")?;
+        let standing = standing_q
+            .query_map([name], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?))
+            })?
+            .collect::<rusqlite::Result<BTreeMap<_, _>>>()?;
         Ok(Some(PlayerSave {
             health,
             tokens,
             position,
             items,
             builds,
+            standing,
         }))
     }
 
@@ -497,6 +530,7 @@ mod tests {
                 },
             ],
             builds,
+            standing: BTreeMap::from([("militia".into(), -80.0), ("regulars".into(), 45.5)]),
         }
     }
 
@@ -538,6 +572,7 @@ mod tests {
         let mut less = kit();
         less.items.pop();
         less.position = None;
+        less.standing.remove("militia");
         s.save_player("Allan", &less, 6).unwrap();
         assert_eq!(s.load_player("Allan").unwrap(), Some(less));
     }

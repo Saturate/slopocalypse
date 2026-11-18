@@ -172,6 +172,20 @@ func test_tokens_come_back_with_the_player() -> void:
 	assert_int(missions.call(&"server_tokens_of", 72)).is_equal(340)
 
 
+func test_faction_standing_comes_back_with_the_player() -> void:
+	var factions: Node = auto_free((load("res://modules/factions/factions_module.gd") as GDScript).new())
+	add_child(factions)
+	var first := _spawn(75)
+	assert_bool(_saves.call(&"server_admit", 75, "Envoy", "key-e")).is_true()
+	factions.call(&"server_set_standing", 75, {"regulars": 45.0, "militia": -80.0})
+	_leave(75, first)
+	_spawn(76)
+	assert_bool(_saves.call(&"server_admit", 76, "Envoy", "key-e")).is_true()
+	var back: Dictionary = factions.call(&"server_standing_of", 76)
+	assert_float(float(back["regulars"])).is_equal(45.0)
+	assert_float(float(back["militia"])).is_equal(-80.0)
+
+
 func test_a_new_player_starts_with_the_starting_tokens_and_a_save_keeps_its_own() -> void:
 	var missions: Node = auto_free((load("res://modules/missions/missions_module.gd") as GDScript).new())
 	add_child(missions)
