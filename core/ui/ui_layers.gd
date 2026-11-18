@@ -15,5 +15,7 @@ const TRADER := 43
 const PERF := 45
 ## The Esc menu and the connecting card, over every screen.
 const SESSION := 50
+## Screens opened from the Esc menu (a module's own, like faction standing).
+const MENU_SCREENS := 51
 ## The ride fade covers everything, menus included.
 const FADE := 60

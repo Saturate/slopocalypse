@@ -14,10 +14,12 @@ var _connecting_label: Label
 var _pause: Control
 var _host_info: Label
 var _settings: SettingsScreen
+var _leave: Button
 
 
 func _ready() -> void:
 	layer = UiLayers.SESSION
+	add_to_group(&"session_overlay")
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_connecting = _card()
 	var waiting: VBoxContainer = _connecting.get_meta(&"col")
@@ -41,7 +43,7 @@ func _ready() -> void:
 	_add_button(col, &"BackToSpawn", "Back to spawn", func() -> void:
 		EventBus.publish(&"session.back_to_spawn", {})
 		_resume())
-	_add_button(col, &"Leave", "Leave to menu", func() -> void: Net.leave())
+	_leave = _add_button(col, &"Leave", "Leave to menu", func() -> void: Net.leave())
 	_add_button(col, &"Quit", "Quit game", func() -> void: get_tree().quit(0))
 	_connecting.visible = false
 	_pause.visible = false
@@ -73,6 +75,14 @@ func _process(delta: float) -> void:
 		var mine := MainMenu.rank_addresses(IP.get_local_addresses())
 		_host_info.text = "Hosting. Friends join at %s:%d" % [mine[0] if not mine.is_empty() else "your address", Net.hosting_port]
 	_host_info.visible = Net.hosting_port > 0
+
+
+## For modules: an entry in the Esc menu, above "Leave to menu" (factions adds Standing).
+func add_menu_entry(id: StringName, text: String, on_press: Callable) -> Button:
+	var col := _leave.get_parent() as VBoxContainer
+	var b := _add_button(col, id, text, on_press)
+	col.move_child(b, _leave.get_index())
+	return b
 
 
 func is_paused() -> bool:

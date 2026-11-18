@@ -223,6 +223,9 @@ func _on_enemy_ready(enemy: PlayerController, home: Vector3, info: Dictionary = 
 	EventBus.publish(&"player.spawned", spawned)
 	if multiplayer.is_server():
 		health.died.connect(_server_died.bind(enemy))
+		# Server-local: who hurt whom, for faction standing.
+		health.damaged.connect(func(_amount: float, source: Node) -> void:
+			EventBus.publish(&"enemy.hurt", {"enemy": enemy, "source": source}))
 		var brain := EnemyBrain.new()
 		brain.name = "Brain"
 		brain.body = enemy

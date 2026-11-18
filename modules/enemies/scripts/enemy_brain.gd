@@ -326,13 +326,16 @@ func _refresh_rivals(delta: float) -> void:
 			_near_rivals.append(other)
 
 
-## Whether `who` is on a side this soldier fights: players always; another soldier when the
-## factions module says their factions are hostile.
+## Whether `who` is on a side this soldier fights: a player when their standing with this
+## soldier's faction is hostile (every player, without the factions module); another soldier
+## when the factions module says their factions are hostile.
 func is_hostile(who: Node) -> bool:
 	var mine := HitscanWeapon.team_of(body)
 	var theirs := HitscanWeapon.team_of(who)
 	if theirs == "players":
-		return true
+		if _factions == null or not is_instance_valid(_factions):
+			_factions = get_tree().get_first_node_in_group(&"factions_api")
+		return _factions == null or bool(_factions.call(&"hostile_to_player", mine, who))
 	if theirs.is_empty() or theirs == mine:
 		return false
 	if _factions == null or not is_instance_valid(_factions):
