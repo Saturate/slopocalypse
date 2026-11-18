@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.0 - 2026-11-18
+
+#### The city has people: unarmed civilians stroll near their front doors and run for cover or crouch when shooting starts. Killing them counts in your stats
+
+#### Every in-game screen (inventory, trader, modding, mission board, admin) now uses the same steel look and readable text sizes, and the trader's stock scrolls instead of running off the screen
+
+#### Your kills are counted: soldiers by faction, players, drones, headshots, your longest kill and your deaths, kept with your save and shown under Stats in the Esc menu
+
+#### Each faction remembers how you've treated it: kill their soldiers and they hate you more, kill their enemies and they warm to you, and once they're no longer hostile their squads let you pass. See your standing from the Esc menu
+
+### Internal
+
+#### Benchmarks: a city walk scenario, GPU and draw-call numbers; --start=city puts you down in the city
+
+#### Nothing players will notice: a missing script id file is committed, and a test keeps them all committed so CI stays green
+
 ## 0.7.0 - 2026-11-17
 
 #### A cleaner HUD: health and ammo are a number and a thin line that fade back when you're fine, the screen edges pulse red when you're low, a red arc shows which side a hit came from, ammo turns amber when the magazine runs low, and the HUD gets out of the way when you die
