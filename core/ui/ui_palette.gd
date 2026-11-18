@@ -27,6 +27,7 @@ const WARN := Color("f5c542")
 const TITLE := 44
 const HEADING := 28
 const BODY := 20
-const HINT := 16
+## The smallest text anywhere: about 14 px on a 720p window.
+const HINT := 17
 const HUD := 21
 const HUD_NUMBER := 40

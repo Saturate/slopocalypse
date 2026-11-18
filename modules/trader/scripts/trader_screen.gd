@@ -10,6 +10,8 @@ const ACCENT := UiPalette.ACCENT
 const TEXT := UiPalette.TEXT
 const DIM := UiPalette.DIM
 const STOCK_COLUMNS := 3
+## Height of the stock list at the 1600x900 base: the panel fits at 720p with room around it.
+const STOCK_HEIGHT := 520.0
 
 var trader: Node
 var peer := 0
@@ -161,11 +163,16 @@ func _build_ui() -> void:
 	var theirs := VBoxContainer.new()
 	sides.add_child(theirs)
 	theirs.add_child(_label("FOR SALE", 22, ACCENT))
+	# The stock scrolls in a box sized to the window, so a long list never runs off it.
+	var stock_scroll := ScrollContainer.new()
+	stock_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	stock_scroll.custom_minimum_size.y = STOCK_HEIGHT
+	theirs.add_child(stock_scroll)
 	_stock = GridContainer.new()
 	_stock.columns = STOCK_COLUMNS
 	_stock.add_theme_constant_override("h_separation", 6)
 	_stock.add_theme_constant_override("v_separation", 6)
-	theirs.add_child(_stock)
+	stock_scroll.add_child(_stock)
 	var inventory := _inventory()
 	for entry: Dictionary in trader.call(&"stock"):
 		var item := str(entry["item"])
@@ -175,7 +182,7 @@ func _build_ui() -> void:
 		b.tooltip_text = str(info.get("name", item))
 		b.custom_minimum_size = Vector2(130, 46)
 		b.focus_mode = Control.FOCUS_NONE
-		b.add_theme_font_size_override("font_size", 14)
+		b.add_theme_font_size_override("font_size", UiPalette.HINT)
 		b.pressed.connect(buy.bind(item))
 		_stock.add_child(b)
 	_info = _label("", 15, TEXT)
@@ -184,8 +191,4 @@ func _build_ui() -> void:
 
 
 func _label(text: String, size: int, colour: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", colour)
-	return l
+	return UiText.label(text, size, colour)

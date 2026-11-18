@@ -110,10 +110,7 @@ func _card() -> Control:
 
 
 func _text(col: VBoxContainer, text: String, size: int, color: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", color)
+	var l := UiText.label(text, size, color)
 	col.add_child(l)
 	return l
 
