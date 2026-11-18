@@ -30,6 +30,12 @@ func test_the_test_range_flag_reaches_the_server() -> void:
 	assert_bool(args.has("--bot=range")).is_false()
 
 
+func test_where_players_start_reaches_the_server() -> void:
+	var args := SoloServer.server_args(7801, PackedStringArray(["--start=city", "--bot=city"]), "", "log.txt")
+	assert_bool(args.has("--start=city")).is_true()
+	assert_bool(args.has("--bot=city")).is_false()
+
+
 func test_picks_a_port_nothing_else_is_bound_to() -> void:
 	# Take whichever port is free first: a running solo game may already hold FIRST_PORT.
 	var first := SoloServer.pick_port()

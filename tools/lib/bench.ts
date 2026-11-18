@@ -8,12 +8,18 @@ export interface Summary {
 	frame_ms_worst: number;
 	physics_ms: number;
 	physics_peak_ms: number;
+	// What drawing a frame costs the graphics card and the processor's render thread, and
+	// how much it draws: zero on a headless server.
 	gpu_ms: number;
+	render_cpu_ms: number;
+	draw_calls: number;
+	objects_drawn: number;
+	primitives: number;
 	memory_mb: number;
 	nodes: number;
 }
 
-export const METRICS: readonly (keyof Omit<Summary, "samples">)[] = ["frame_ms_mean", "frame_ms_p95", "frame_ms_worst", "physics_ms", "physics_peak_ms", "gpu_ms", "memory_mb", "nodes"];
+export const METRICS: readonly (keyof Omit<Summary, "samples">)[] = ["frame_ms_mean", "frame_ms_p95", "frame_ms_worst", "physics_ms", "physics_peak_ms", "gpu_ms", "render_cpu_ms", "draw_calls", "objects_drawn", "primitives", "memory_mb", "nodes"];
 
 // Differences smaller than this are noise however large in percent (a 0.1 ms frame doubling).
 export const FLOOR: Readonly<Record<(typeof METRICS)[number], number>> = {
@@ -23,6 +29,10 @@ export const FLOOR: Readonly<Record<(typeof METRICS)[number], number>> = {
 	physics_ms: 0.3,
 	physics_peak_ms: 5.0,
 	gpu_ms: 0.5,
+	render_cpu_ms: 0.5,
+	draw_calls: 100,
+	objects_drawn: 100,
+	primitives: 100_000,
 	memory_mb: 20,
 	nodes: 200,
 };
@@ -62,6 +72,10 @@ export function summarise(records: readonly Record<string, unknown>[], warmupSec
 		physics_ms: round(mean("physics_nodes_ms")),
 		physics_peak_ms: round(mean("physics_peak_ms")),
 		gpu_ms: round(mean("gpu_ms")),
+		render_cpu_ms: round(mean("render_cpu_ms")),
+		draw_calls: Math.round(mean("draw_calls")),
+		objects_drawn: Math.round(mean("objects_drawn")),
+		primitives: Math.round(mean("primitives")),
 		memory_mb: round(max("memory_mb"), 1),
 		nodes: max("nodes"),
 	};

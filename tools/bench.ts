@@ -1,8 +1,10 @@
 // Benchmarks: runs fixed scenarios, reads the perf log each writes, and compares with this
 // machine's baseline. Not part of the gate (timings are too noisy on shared machines).
-//   node tools/bench.ts [solo-walk] [solo-drive] [range-destroy] [server-bots] [server-crowd] [--save-baseline] [--tolerance 0.15]
+//   node tools/bench.ts [solo-walk] [solo-drive] [solo-city] [range-destroy] [server-bots] [server-crowd] [--save-baseline] [--tolerance 0.15]
 //     [--server-flags car:off,enemies:off]  (server-bots: switch modules off to see what costs what)
 //     [--crowd 30]  (server-crowd: how many soldiers)
+//     [--driver vulkan]  (windowed scenarios: another rendering driver; on macOS the Metal driver
+//                         times out its GPU timers once frames pass a second, Vulkan still reads them)
 // Results and baselines live in bench/ (git-ignored): timings mean nothing across machines.
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,6 +23,9 @@ const outDir = join(root, "bench");
 const WARMUP_SECONDS = 10;
 // The game quits after this many frames (--net-report-after); about a minute at 60 fps.
 const RUN_FRAMES = 3600;
+// A windowed run too slow to get there is stopped after this long instead: its samples are
+// on disk already, and a frame rate that low is the finding.
+const RUN_SECONDS = 150;
 const BOT_CLIENTS = 6;
 const CROWD_CLIENTS = 4;
 const TOP_ZONES = 12;
@@ -30,27 +35,32 @@ interface Scenario {
 	run: (perfLog: string) => Promise<void>;
 }
 
+// A windowed solo game driven by a bot, with the perf module writing to `perfLog`.
+// `--driver vulkan` (or another rendering driver) goes to the engine, for comparing drivers
+// or when the default one cannot time the GPU.
+async function windowed(name: string, userArgs: readonly string[], perfLog: string): Promise<void> {
+	const driver = arg("driver");
+	const engine = driver === undefined ? [] : ["--rendering-driver", driver];
+	const r = await run(godot, [...engine, "--path", root, "--", "--solo", ...userArgs, "--uncapped", "--perf-spike-ms=20", `--net-report-after=${RUN_FRAMES}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: RUN_SECONDS * 1000 });
+	if (r.timedOut) console.log(`  ${name}: stopped after ${RUN_SECONDS} s, before ${RUN_FRAMES} frames (under ${(RUN_FRAMES / RUN_SECONDS).toFixed(0)} fps)`);
+}
+
 const SCENARIOS: Record<string, Scenario> = {
 	"solo-walk": {
 		what: "windowed solo game, a bot walks the road and shoots (client rendering)",
-		run: async (perfLog) => {
-			const r = await run(godot, ["--path", root, "--", "--solo", "--bot=walk", "--no-save", "--uncapped", "--perf-spike-ms=20", `--net-report-after=${RUN_FRAMES}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: 240_000 });
-			if (r.timedOut) throw new Error("solo-walk timed out");
-		},
+		run: (perfLog) => windowed("solo-walk", ["--bot=walk", "--no-save"], perfLog),
 	},
 	"solo-drive": {
 		what: "windowed solo game, a bot drives the car down the road (terrain and scenery streaming, car physics)",
-		run: async (perfLog) => {
-			const r = await run(godot, ["--path", root, "--", "--solo", "--bot=drive", "--no-save", "--uncapped", "--perf-spike-ms=20", `--net-report-after=${RUN_FRAMES}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: 240_000 });
-			if (r.timedOut) throw new Error("solo-drive timed out");
-		},
+		run: (perfLog) => windowed("solo-drive", ["--bot=drive", "--no-save"], perfLog),
+	},
+	"solo-city": {
+		what: "windowed solo game starting in the city, a bot walks the ring of avenues round the square (the heaviest place to render: buildings, lamps, trees, guards)",
+		run: (perfLog) => windowed("solo-city", ["--start=city", "--bot=city", "--no-save"], perfLog),
 	},
 	"range-destroy": {
 		what: "windowed solo game on the test range, the range bot shoots and blasts each building in turn (destruction cost: remeshing, debris, collapse)",
-		run: async (perfLog) => {
-			const r = await run(godot, ["--path", root, "--", "--solo", ...rangeArgs(root), "--bot=range", "--uncapped", "--perf-spike-ms=20", `--net-report-after=${RUN_FRAMES}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: 240_000 });
-			if (r.timedOut) throw new Error("range-destroy timed out");
-		},
+		run: (perfLog) => windowed("range-destroy", [...rangeArgs(root), "--bot=range"], perfLog),
 	},
 	"server-bots": {
 		what: `headless dedicated server with ${BOT_CLIENTS} bot clients (server cost)`,
@@ -95,7 +105,7 @@ function arg(name: string): string | undefined {
 
 async function main(): Promise<void> {
 	if (!existsSync(godot)) throw new Error("Godot missing: run node tools/get-godot.ts");
-	const asked = argv.slice(2).filter((a) => !a.startsWith("--") && a !== arg("tolerance") && a !== arg("server-flags") && a !== arg("crowd"));
+	const asked = argv.slice(2).filter((a) => !a.startsWith("--") && a !== arg("tolerance") && a !== arg("server-flags") && a !== arg("crowd") && a !== arg("driver"));
 	const names = asked.length > 0 ? asked : Object.keys(SCENARIOS);
 	for (const n of names) if (!(n in SCENARIOS)) throw new Error(`unknown scenario ${n}; known: ${Object.keys(SCENARIOS).join(", ")}`);
 	const tolerance = Number(arg("tolerance") ?? "0.15");
@@ -117,6 +127,7 @@ async function main(): Promise<void> {
 			if (summary.samples === 0) throw new Error(`${name}: no samples after the ${WARMUP_SECONDS} s warm-up`);
 			const zones = zoneCosts(records, WARMUP_SECONDS);
 			console.log(`  nodes' physics per tick: ${summary.physics_ms} ms; worst moment per second (Godot's peak): physics ${summary.physics_peak_ms} ms`);
+			if (summary.gpu_ms > 0) console.log(`  drawing a frame: GPU ${summary.gpu_ms} ms, render CPU ${summary.render_cpu_ms} ms; ${summary.draw_calls} draw calls, ${summary.objects_drawn} objects, ${summary.primitives} primitives`);
 			console.log("  most expensive zones (microseconds per frame):");
 			for (const [zone, us] of zones.slice(0, TOP_ZONES)) console.log(`    ${zone.padEnd(38)} ${us.toFixed(1).padStart(8)}`);
 			const net = netCosts(records, WARMUP_SECONDS);

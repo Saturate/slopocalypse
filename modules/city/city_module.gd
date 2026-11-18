@@ -19,11 +19,19 @@ const REQUIRED := {
 }
 ## Clearing circles over the footprint are this far apart.
 const CLEARING_STEP := 20.0
+## `--start=city`: the server puts every player down in the city's streets instead of at
+## the spawn (and back there after dying); `--bot=city` walks its avenues (CityBot). Both
+## for `tools/bench.ts solo-city` and for playtesting the city without the drive out.
+const START_ARG := "--start=city"
+const BOT_ARG := "--bot=" + CityBot.BEHAVIOUR
 
 var config: Dictionary = {}
 var site: CitySite
 ## Server: the city's guards.
 var garrison: CityGarrison
+## Players (server) and bots (local) that arrived before the city stood, for when it does.
+var _waiting_players: Array[Node3D] = []
+var _waiting_bots: Array[CityBot] = []
 
 
 func _ready() -> void:
@@ -32,10 +40,49 @@ func _ready() -> void:
 		return
 	config = data
 	EventBus.subscribe(&"world.ready", _on_world_ready)
+	EventBus.subscribe(&"player.spawned", _on_player_spawned)
+	EventBus.subscribe(&"player.respawned", _on_player_respawned)
 
 
 func _exit_tree() -> void:
 	EventBus.unsubscribe(&"world.ready", _on_world_ready)
+	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
+	EventBus.unsubscribe(&"player.respawned", _on_player_respawned)
+
+
+func _on_player_spawned(p: Dictionary) -> void:
+	var player := p.get("player") as PlayerController
+	if player == null:
+		return
+	var args := Net.session_args()
+	if bool(p.get("local", false)) and args.has(BOT_ARG):
+		var bot := CityBot.new()
+		bot.name = "CityBot"
+		bot.player = player
+		bot.site = site
+		player.add_child(bot)
+		if site == null:
+			_waiting_bots.append(bot)
+	if multiplayer.is_server() and args.has(START_ARG):
+		_server_put_in_city(player)
+
+
+func _on_player_respawned(p: Dictionary) -> void:
+	var player := p.get("player") as PlayerController
+	if player != null and multiplayer.is_server() and Net.session_args().has(START_ARG):
+		_server_put_in_city(player)
+
+
+## Server: down in the street where the city walk starts, once the city stands. After the
+## spawn settles, so other modules equip and place the player first.
+func _server_put_in_city(player: Node3D) -> void:
+	if site == null:
+		_waiting_players.append(player)
+		return
+	(func() -> void:
+		if is_instance_valid(player) and site != null:
+			EventBus.publish(&"player.move_requested", {"player": player, "position": CityBot.start_spot(site)})
+	).call_deferred()
 
 
 func _on_world_ready(_p: Dictionary) -> void:
@@ -108,3 +155,11 @@ func place(where: Transform3D) -> void:
 		garrison.config = config.get("guards", {})
 		garrison.site = site
 		add_child(garrison)
+	for bot in _waiting_bots:
+		if is_instance_valid(bot):
+			bot.site = site
+	_waiting_bots.clear()
+	for player in _waiting_players:
+		if is_instance_valid(player):
+			_server_put_in_city(player)
+	_waiting_players.clear()
