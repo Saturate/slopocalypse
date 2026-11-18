@@ -17,6 +17,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"enemy.died", _on_enemy_died)
 	EventBus.subscribe(&"player.died", _on_player_died)
 	EventBus.subscribe(&"drone.died", _on_drone_died)
+	EventBus.subscribe(&"civilian.died", _on_civilian_died)
 	EventBus.subscribe(&"weapon.headshot_kill", _on_headshot)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	if DisplayServer.get_name() != "headless":
@@ -31,6 +32,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"enemy.died", _on_enemy_died)
 	EventBus.unsubscribe(&"player.died", _on_player_died)
 	EventBus.unsubscribe(&"drone.died", _on_drone_died)
+	EventBus.unsubscribe(&"civilian.died", _on_civilian_died)
 	EventBus.unsubscribe(&"weapon.headshot_kill", _on_headshot)
 	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
 
@@ -129,6 +131,16 @@ func _on_drone_died(p: Dictionary) -> void:
 		return
 	var drone := p.get("drone") as Node3D
 	stats.record_kill(_key(peer), "drone", "", _distance(p.get("source"), drone.global_position if drone != null else null))
+	_send(peer)
+
+
+func _on_civilian_died(p: Dictionary) -> void:
+	if not multiplayer.is_server():
+		return
+	var peer := _killer_peer(p.get("source"))
+	if peer == 0:
+		return
+	stats.record_kill(_key(peer), "civilian", "", _distance(p.get("source"), p.get("position")))
 	_send(peer)
 
 

@@ -8,6 +8,7 @@ const ROWS := [
 	["kills.soldier", "Soldiers"],
 	["kills.player", "Players"],
 	["kills.drone", "Drones"],
+	["kills.civilian", "Civilians"],
 	["headshots", "Headshots"],
 	["longest_kill", "Longest kill"],
 	["deaths", "Deaths"],

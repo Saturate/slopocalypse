@@ -93,6 +93,9 @@ func _on_player_spawned(p: Dictionary) -> void:
 	if local:
 		_local_player = player
 	var peer := int(player.get_meta(&"peer_id", 1))
+	# Civilians carry nothing.
+	if p.get("unarmed", false):
+		return
 	for slot: String in WEAPON_SLOTS:
 		var build := build_of(peer, slot)
 		if not build.is_empty():
