@@ -156,6 +156,9 @@ func _sample() -> Dictionary:
 	rec["memory_mb"] = snappedf(Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0, 0.1)
 	if DisplayServer.get_name() != "headless":
 		rec["draw_calls"] = int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+		# Mesh instances drawn after culling, summed over every pass (shadow maps included):
+		# with the draw calls, how many things the frame is made of, not just how heavy.
+		rec["objects_drawn"] = int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))
 		rec["primitives"] = int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
 		rec["video_mb"] = snappedf(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0, 0.1)
 		var vp := get_viewport().get_viewport_rid()
