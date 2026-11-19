@@ -105,7 +105,8 @@ export async function runGdUnit(godot: string, root: string, testDirs: readonly 
 	if (lines.length > 0) {
 		const failed = stripAnsi(r.output)
 			.split(/\r?\n/)
-			.filter((l) => /FAILED|Parse Error|at '/.test(l))
+			// The Expecting/but was lines carry the values a failed assertion saw.
+			.filter((l) => /FAILED|Parse Error|at '|Expecting|but was/.test(l))
 			.slice(0, 20);
 		return { ok: false, detail: [...lines, ...failed].join("\n") };
 	}
