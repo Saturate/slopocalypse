@@ -1,14 +1,21 @@
 class_name LimbSevering
 extends Node
-## Limbs come off (#387), on each client from what it saw; nothing is synced. A ragdoll that
-## has just fallen (`player.corpse_fell`) is matched with the killing blow, which may arrive a
-## moment before or after it: a blast (`explosion`) within `blast_sever_radius` takes the
-## limbs nearest it, and a killing shot (`weapon.fired`) whose round carried at least
-## `shot_sever_damage` into an arm or leg cuts at the joint above the hit, `shot_sever_chance` of
-## the time (LimbRules). The ragdoll loses the limb (`Corpse.remove_limb`), a red cap shows at
-## the stump, and the piece, cut from
-## the body's own mesh (LimbPieces), flies off as a small rigid body that bleeds and leaves a
-## few marks where it lands. Pieces go with their corpse; at most `max_limbs` lie about.
+## Limbs come off (#387), on each client from what it saw; nothing is synced. A blast
+## (`explosion`) within `blast_sever_radius` of a death takes the limbs nearest it, and a
+## killing shot (`weapon.fired`) whose round carried at least `shot_sever_damage` into a leg,
+## or into an arm from the side, cuts at the joint above the hit, `shot_sever_chance` of the
+## time (LimbRules). The ragdoll loses the limb (`Corpse.remove_limb`), a red cap shows at the
+## stump, and the piece, cut from the body's own mesh (LimbPieces), flies off as a small rigid
+## body that bleeds and leaves a few marks where it lands. Pieces go with their corpse; at most
+## `max_limbs` lie about.
+##
+## The decision is made once, the frame after a ragdoll falls (`player.corpse_fell`), from the
+## blows seen within `sever_window_seconds` of it. That relies on the death and the replayed
+## shot or blast arriving in the same network poll, which they do: the server sends them on the
+## same reliable channel, the death first. For the same reason the ragdoll still holds the
+## death pose then, which is what the hips' axis and the nearest bone are judged by. The chance
+## is rolled from what every client shares (the body's path and the hit point), so co-op
+## players see the same limb come off.
 ##
 ## With the "Blood" setting off nothing comes off.
 
@@ -21,7 +28,7 @@ const REQUIRED := {
 	"limb_fling_up": TYPE_FLOAT, "limb_spin": TYPE_FLOAT, "limb_mass": TYPE_FLOAT, "limb_damp": TYPE_FLOAT,
 	"limb_friction": TYPE_FLOAT, "max_limbs": TYPE_FLOAT, "stump_spray_count": TYPE_FLOAT,
 	"limb_bleed_seconds": TYPE_FLOAT, "limb_bleed_interval": TYPE_FLOAT, "limb_bleed_drops": TYPE_FLOAT,
-	"limb_trail_marks": TYPE_FLOAT, "limb_trail_mark_size": TYPE_FLOAT,
+	"limb_trail_marks": TYPE_FLOAT, "limb_trail_mark_size": TYPE_FLOAT, "arm_shot_side_min": TYPE_FLOAT,
 }
 const GROUP := &"gore_limbs"
 ## Meta on a corpse once its killing blow has been looked at, so it is cut at most once.
@@ -212,8 +219,9 @@ func _on_fired(p: Dictionary) -> void:
 	# What the round carried (after passing through a wall), not what it dealt: a finishing
 	# shot into a wounded body deals only the health that was left. Shots replayed without it
 	# fall back to what was dealt.
-	var damage := float(p.get("round_damage", p.get("damage", 0.0)))
-	_hits[(target as Object).get_instance_id()] = {"point": to, "direction": (to - from).normalized(), "damage": damage, "at": Time.get_ticks_msec()}
+	var carried := float(p.get("round_damage", -1.0))
+	var damage := carried if carried >= 0.0 else float(p.get("damage", 0.0))
+	_hits[(target as Object).get_instance_id()] = {"point": to, "direction": (to - from).normalized(), "damage": damage, "at": Time.get_ticks_msec(), "who": _who(target as Node)}
 
 
 func _on_explosion(p: Dictionary) -> void:
@@ -264,14 +272,16 @@ func _decide(corpse: Corpse, entry: Dictionary, cfg: Dictionary, window: int, cl
 		return
 	corpse.set_meta(SEVERED, true)
 	var limb := shot_limb(corpse, hit["point"], hit["direction"], float(hit["damage"]), cfg)
-	if not limb.is_empty() and _rng.randf() < float(cfg["shot_sever_chance"]):
+	if not limb.is_empty() and sever_roll(String(hit["who"]), hit["point"]) < float(cfg["shot_sever_chance"]):
 		sever(corpse, limb, hit["direction"], velocity)
 
 
 ## The limb a shot that hit `corpse` at `point` going along `direction` would take, before the
 ## chance: judged a little way into the body (`shot_sever_depth`), since a bullet stops on the
-## body's outline, which the arms held out in front of the chest fill. An arm only when the
-## point is further out to the side of the spine than that arm's shoulder.
+## body's outline, which the arms held out in front of the chest fill. An arm only from the
+## side (the shot at least `arm_shot_side_min` along the hips' left-right axis) and only when
+## the point is further out from the spine than that arm's shoulder: from the front or back
+## the arms are in line with the chest.
 func shot_limb(corpse: Corpse, point: Vector3, direction: Vector3, damage: float, cfg: Dictionary) -> String:
 	var inside := point + direction.normalized() * float(cfg["shot_sever_depth"])
 	var bone := LimbPieces.nearest_bone(_sources(corpse), corpse.skeleton, inside)
@@ -279,6 +289,8 @@ func shot_limb(corpse: Corpse, point: Vector3, direction: Vector3, damage: float
 		return ""
 	var bone_name := corpse.skeleton.get_bone_name(bone)
 	if bone_name in ARM_BONES:
+		if absf(direction.normalized().dot(_hips_side(corpse))) < float(cfg["arm_shot_side_min"]):
+			return ""
 		var shoulder := _bone_position(corpse, "UpperArm_" + bone_name.right(1))
 		if _from_spine(corpse, inside) < _from_spine(corpse, shoulder):
 			return ""
@@ -288,11 +300,28 @@ func shot_limb(corpse: Corpse, point: Vector3, direction: Vector3, damage: float
 ## How far `point` is out to the side of the spine, along the hips' left-right axis: arms
 ## held out in front of the chest are close in by this, however far forward they reach.
 func _from_spine(corpse: Corpse, point: Vector3) -> float:
+	return absf((point - _bone_position(corpse, "Hips")).dot(_hips_side(corpse)))
+
+
+## The body's left-right axis, from its hips as they lie.
+func _hips_side(corpse: Corpse) -> Vector3:
 	var hips := corpse.skeleton.find_bone("Hips")
 	if hips < 0:
-		return 0.0
-	var pose := corpse.skeleton.global_transform * corpse.skeleton.get_bone_global_pose(hips)
-	return absf((point - pose.origin).dot(pose.basis.x.normalized()))
+		return Vector3.RIGHT
+	return (corpse.skeleton.global_transform.basis * corpse.skeleton.get_bone_global_pose(hips).basis).x.normalized()
+
+
+## A number from 0 to 1 every client works out the same for a shot on the body at path `who`
+## hitting `point` (rounded to centimetres, as the server sent it).
+static func sever_roll(who: String, point: Vector3) -> float:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("%s|%d|%d|%d" % [who, roundi(point.x * 100.0), roundi(point.y * 100.0), roundi(point.z * 100.0)])
+	return rng.randf()
+
+
+## A body's name as every client knows it: its path in the tree, which the server spawned.
+func _who(body: Node) -> String:
+	return String(body.get_path()) if body.is_inside_tree() else String(body.name)
 
 
 ## Takes `limb` off `corpse`: its bones collapse and lose their physics, a cap shows at the

@@ -45,5 +45,6 @@
   "limb_damp": 0.6,
   "limb_friction": 1.0,
   "shot_sever_chance": 0.4,
-  "shot_sever_depth": 0.1
+  "shot_sever_depth": 0.1,
+  "arm_shot_side_min": 0.5
 }

@@ -58,10 +58,10 @@ func _frames(count: int) -> void:
 
 ## Where a bullet flying along `direction` at `height` above `body`'s feet stops on it, as the
 ## server's ray sees it: on the body's capsule.
-func _hit_on(body: Node3D, height: float, direction: Vector3) -> Vector3:
+func _hit_on(body: Node3D, height: float, direction: Vector3, offset := Vector3.ZERO) -> Vector3:
 	await get_tree().physics_frame
 	await get_tree().physics_frame
-	var start := body.global_position + Vector3(0.0, height, 0.0) - direction * 5.0
+	var start := body.global_position + Vector3(0.0, height, 0.0) + offset - direction * 5.0
 	var query := PhysicsRayQueryParameters3D.create(start, start + direction * 10.0, PhysicsLayers.BULLETS)
 	var hit := body.get_world_3d().direct_space_state.intersect_ray(query)
 	assert_bool(hit.is_empty()).is_false()
@@ -131,10 +131,39 @@ func test_a_side_shot_at_shoulder_height_takes_the_arm() -> void:
 	assert_bool(_gone(corpse, "UpperArm_L")).is_true()
 
 
-func test_chest_shots_from_the_front_never_take_the_arms_held_there() -> void:
-	for height in [1.1, 1.2, 1.3, 1.4, 1.5]:
-		var at: Vector3 = await _hit_on(_player, height, Vector3.FORWARD)
-		assert_str(_severing.shot_limb(_corpse_for_probe(), at, Vector3.FORWARD, 100.0, LimbSevering.config())).is_empty()
+func test_shots_from_the_front_or_back_never_take_the_arms() -> void:
+	# The body faces -Z: a shot from in front of it flies along +Z (Vector3.BACK).
+	for direction in [Vector3.BACK, Vector3.FORWARD]:
+		for height in [1.1, 1.2, 1.3, 1.4, 1.5]:
+			for x in [0.0, -0.2, 0.2, -0.3, 0.3]:
+				var at: Vector3 = await _hit_on(_player, height, direction, Vector3(x, 0.0, 0.0))
+				var limb := _severing.shot_limb(_corpse_for_probe(), at, direction, 100.0, LimbSevering.config())
+				assert_bool(limb.begins_with("upper_arm") or limb.begins_with("forearm")).override_failure_message("%s at %.1f m, x %.1f took %s" % [direction, height, x, limb]).is_false()
+
+
+func test_side_shots_at_arm_height_take_an_arm() -> void:
+	var left: Vector3 = await _hit_on(_player, 1.45, Vector3.RIGHT)
+	assert_str(_severing.shot_limb(_corpse_for_probe(), left, Vector3.RIGHT, 100.0, LimbSevering.config())).is_equal("upper_arm_L")
+	var right: Vector3 = await _hit_on(_player, 1.45, Vector3.LEFT)
+	assert_str(_severing.shot_limb(_corpse_for_probe(), right, Vector3.LEFT, 100.0, LimbSevering.config())).is_equal("upper_arm_R")
+
+
+func test_every_client_rolls_the_same_chance_for_the_same_shot() -> void:
+	var at := Vector3(1.234, 0.456, -7.891)
+	assert_float(LimbSevering.sever_roll("/root/World/Enemy3", at)).is_equal(LimbSevering.sever_roll("/root/World/Enemy3", at + Vector3(0.0001, 0.0, 0.0)))
+	var rolls := {}
+	for i in 20:
+		rolls[LimbSevering.sever_roll("/root/World/Enemy%d" % i, at)] = true
+	# Different bodies roll differently.
+	assert_int(rolls.size()).is_greater(15)
+
+
+func test_a_shot_replayed_without_its_round_falls_back_to_what_it_dealt() -> void:
+	var at: Vector3 = await _hit_on(_player, 0.3, Vector3.FORWARD)
+	var corpse := _kill(_player)
+	EventBus.publish(&"weapon.fired", {"from": at - Vector3.FORWARD * 6.0, "to": at, "target": _player, "collider": _player, "damage": 30.0})
+	await _frames(3)
+	assert_bool(_gone(corpse, "LowerLeg_L") or _gone(corpse, "LowerLeg_R")).is_true()
 
 
 var _probe: Corpse

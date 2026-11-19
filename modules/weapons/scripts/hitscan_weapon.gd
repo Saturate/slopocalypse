@@ -231,14 +231,14 @@ static func max_pass_throughs() -> int:
 ## `through`: this stretch is the same round carrying on after going through something, so
 ## there's no new shot to hear, flash or kick.
 @rpc("authority", "call_local", "reliable")
-func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_path: String, collider_path: String, through: bool = false, round_damage: float = 0.0) -> void:
+func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_path: String, collider_path: String, through: bool = false, round_damage: float = -1.0) -> void:
 	var target: Node = get_node_or_null(target_path) if not target_path.is_empty() else null
 	var collider: Node = get_node_or_null(collider_path) if not collider_path.is_empty() else null
 	if not through:
 		_play_shot_effects()
 	# `collider` lets other modules react to what was hit (the world digs into terrain).
 	# `damage` is what the hit dealt; `round_damage` what the round carried (gore judges a
-	# killing shot by it, not by the health that happened to be left).
+	# killing shot by it, not by the health that happened to be left), -1 when not sent.
 	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "collider": collider, "damage": damage, "through": through, "round_damage": round_damage})
 
 
