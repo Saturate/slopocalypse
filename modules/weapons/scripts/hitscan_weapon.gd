@@ -213,11 +213,13 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 		var collider_path := String((collider as Node).get_path()) if collider is Node else ""
 		# Decided here; replayed here and on every client that has the shooter, for effects and
 		# craters. A client the shooter isn't sent to (too far away) hasn't got this node.
-		_replay_shot(from, hit_point, damage, target_path, collider_path, passes > 0, cycles)
+		# What the round carried here, before what was left of the target's health cut it short.
+		var round_damage := float(stats["damage"]) * damage_scale
+		_replay_shot(from, hit_point, damage, target_path, collider_path, passes > 0, round_damage, cycles)
 		var peers := replay_peers(holder)
 		for peer in peers:
-			_replay_shot.rpc_id(peer, from, hit_point, damage, target_path, collider_path, passes > 0, cycles)
-		NetStats.add(&"rpc/shot", NetStats.size_of([from, hit_point, damage, target_path, collider_path, passes > 0, cycles]) * peers.size())
+			_replay_shot.rpc_id(peer, from, hit_point, damage, target_path, collider_path, passes > 0, round_damage, cycles)
+		NetStats.add(&"rpc/shot", NetStats.size_of([from, hit_point, damage, target_path, collider_path, passes > 0, round_damage, cycles]) * peers.size())
 		if target != null or collider == null or passes >= max_passes or not collider.has_method(&"bullet_exit"):
 			return
 		var exit: Variant = collider.call(&"bullet_exit", hit_point, dir, float(stats["damage"]) * damage_scale)
@@ -247,13 +249,15 @@ static func max_pass_throughs() -> int:
 ## there's no new shot to hear, flash or kick. `cycles`: the bolt is worked after this shot
 ## (a manual action with rounds left).
 @rpc("authority", "call_local", "reliable")
-func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_path: String, collider_path: String, through: bool = false, cycles: bool = false) -> void:
+func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_path: String, collider_path: String, through: bool = false, round_damage: float = -1.0, cycles: bool = false) -> void:
 	var target: Node = get_node_or_null(target_path) if not target_path.is_empty() else null
 	var collider: Node = get_node_or_null(collider_path) if not collider_path.is_empty() else null
 	if not through:
 		_play_shot_effects()
 	# `collider` lets other modules react to what was hit (the world digs into terrain).
-	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "collider": collider, "damage": damage, "through": through, "cycles": cycles})
+	# `damage` is what the hit dealt; `round_damage` what the round carried (gore judges a
+	# killing shot by it, not by the health that happened to be left), -1 when not sent.
+	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "collider": collider, "damage": damage, "through": through, "round_damage": round_damage, "cycles": cycles})
 
 
 ## A shot's damage: the gun's, unless it hit the head. Headshots kill the teams listed in

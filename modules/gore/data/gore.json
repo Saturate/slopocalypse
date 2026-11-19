@@ -1,5 +1,10 @@
 {
-  "colour": [0.46, 0.03, 0.03, 1.0],
+  "colour": [
+    0.46,
+    0.03,
+    0.03,
+    1.0
+  ],
   "spray_count": 10,
   "headshot_spray_count": 24,
   "spray_exit_depth": 0.35,
@@ -19,5 +24,27 @@
   "pool_seconds": 6.0,
   "mark_seconds": 90.0,
   "fade_seconds": 4.0,
-  "max_marks": 48
+  "max_marks": 48,
+  "shot_sever_damage": 25,
+  "headshot_sever": false,
+  "blast_sever_radius": 3.0,
+  "blast_max_limbs": 2,
+  "blast_all_limbs_within": 1.5,
+  "sever_window_seconds": 0.5,
+  "limb_fling": 2.0,
+  "limb_fling_up": 1.2,
+  "limb_spin": 8.0,
+  "limb_mass": 3.0,
+  "max_limbs": 12,
+  "stump_spray_count": 16,
+  "limb_bleed_seconds": 1.2,
+  "limb_bleed_interval": 0.1,
+  "limb_bleed_drops": 2,
+  "limb_trail_marks": 3,
+  "limb_trail_mark_size": 0.3,
+  "limb_damp": 0.6,
+  "limb_friction": 1.0,
+  "shot_sever_chance": 0.4,
+  "shot_sever_depth": 0.1,
+  "arm_shot_side_min": 0.5
 }

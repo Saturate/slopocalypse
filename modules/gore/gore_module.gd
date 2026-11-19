@@ -1,5 +1,6 @@
 extends Node
-## Gore: blood where bullets hit people, marks behind them and pools under the dead (#385).
+## Gore: blood where bullets hit people, marks behind them and pools under the dead (#385),
+## and limbs torn off the dead by blasts and heavy killing shots (#387).
 ## Client-only and purely for show: a dedicated server, which draws nothing, loads nothing.
 
 
@@ -9,3 +10,7 @@ func _ready() -> void:
 	var effects := BloodEffects.new()
 	effects.name = "Blood"
 	add_child(effects)
+	var limbs := LimbSevering.new()
+	limbs.name = "Limbs"
+	limbs.blood = effects
+	add_child(limbs)

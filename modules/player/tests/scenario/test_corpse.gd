@@ -148,3 +148,18 @@ func test_a_far_loot_body_is_not_taken() -> void:
 	add_child(loot)
 	await _frames(2)
 	assert_object(corpse.loot_body()).is_null()
+
+
+func test_a_removed_limb_loses_its_physics_and_stays_collapsed_once_settled() -> void:
+	var corpse := Corpse.from_body(_player, Vector3(1.0, 0.5, 0.0))
+	var arm: Array[StringName] = [&"UpperArm_L", &"LowerArm_L", &"Hand_L"]
+	corpse.remove_limb(arm, &"UpperArm_L")
+	var bone := corpse.skeleton.find_bone("UpperArm_L")
+	assert_float(corpse.skeleton.get_bone_pose_scale(bone).x).is_less(0.01)
+	assert_object(corpse.simulator.get_node_or_null("UpperArm_L")).is_null()
+	assert_object(corpse.simulator.get_node_or_null("LowerArm_L")).is_null()
+	assert_object(corpse.simulator.get_node_or_null("UpperArm_R")).is_not_null()
+	await _frames(int(Corpse.config()["settle_seconds"] * 60.0) + 10)
+	assert_bool(corpse.is_settled()).is_true()
+	assert_float(corpse.skeleton.get_bone_pose_scale(bone).x).is_less(0.01)
+	assert_float(corpse.skeleton.get_bone_pose_scale(corpse.skeleton.find_bone("UpperArm_R")).x).is_equal_approx(1.0, 0.01)
