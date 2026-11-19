@@ -19,6 +19,7 @@ var folder := ""
 
 var _screen: ReportScreen
 var _key := KEY_F8
+var _opening := false
 
 
 func _ready() -> void:
@@ -46,7 +47,7 @@ func _input(event: InputEvent) -> void:
 	if key == null or not key.pressed or key.echo or key.keycode != _key or _screen == null or _screen.is_open():
 		return
 	get_viewport().set_input_as_handled()
-	open()
+	open_clean()
 
 
 ## Opens the form, with a screenshot of the game as it is now (before the form covers it).
@@ -54,19 +55,27 @@ func open() -> void:
 	_screen.open(_screenshot())
 
 
-## From the Esc menu: the menu is hidden for a frame so the screenshot shows the game, not
-## the menu (which can show a host's address).
-func open_from_menu() -> void:
+## F8 and the Esc menu: the session overlay (Esc menu, connecting card) is hidden for a frame
+## so the screenshot shows the game, not a host's or server's address on those cards.
+func open_clean() -> void:
+	if _opening:
+		return
 	var overlay := get_tree().get_first_node_in_group(&"session_overlay") as CanvasLayer
-	if overlay != null:
-		overlay.visible = false
-		await RenderingServer.frame_post_draw
-		await RenderingServer.frame_post_draw
-		var shot := _screenshot()
-		overlay.visible = true
-		_screen.open(shot)
-	else:
+	if overlay == null:
 		open()
+		return
+	_opening = true
+	overlay.visible = false
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	# Leaving the session in between frees both.
+	if not is_instance_valid(self) or not is_inside_tree():
+		return
+	var shot := _screenshot()
+	if is_instance_valid(overlay):
+		overlay.visible = true
+	_opening = false
+	_screen.open(shot)
 
 
 ## Writes a report of `kind` ("bug", "benchmark") with `description` and a screenshot (PNG
@@ -123,12 +132,13 @@ func attachments() -> Dictionary:
 ## The newest `cap` bytes of a log, with home folders and addresses written over.
 func _shareable(path: String, cap: int) -> PackedByteArray:
 	var text := ReportWriter.tail_of(path, cap).get_string_from_utf8()
-	return ReportWriter.scrub(text, _private_folders()).to_utf8_buffer()
+	var account := OS.get_environment("USERNAME") if OS.get_environment("USER").is_empty() else OS.get_environment("USER")
+	return ReportWriter.scrub(text, _private_folders(), account).to_utf8_buffer()
 
 
 ## Folders whose full path names the OS user: the user data folder, home, Desktop.
 func _private_folders() -> Array[String]:
-	var out: Array[String] = [ProjectSettings.globalize_path("user://").trim_suffix("/"), OS.get_system_dir(OS.SYSTEM_DIR_DESKTOP), OS.get_environment("HOME"), OS.get_environment("USERPROFILE")]
+	var out: Array[String] = [ProjectSettings.globalize_path("user://").trim_suffix("/"), OS.get_system_dir(OS.SYSTEM_DIR_DESKTOP), OS.get_environment("HOME"), OS.get_environment("USERPROFILE"), OS.get_executable_path().get_base_dir()]
 	# Longest first, so the user data folder is not half replaced by home.
 	out.sort_custom(func(a: String, b: String) -> bool: return a.length() > b.length())
 	return out
@@ -215,4 +225,4 @@ func _session_perf_logs() -> Array[String]:
 func _add_menu_entry() -> void:
 	var overlay := get_tree().get_first_node_in_group(&"session_overlay")
 	if overlay != null and overlay.has_method(&"add_menu_entry"):
-		overlay.call(&"add_menu_entry", &"ReportBug", "Report a bug", open_from_menu)
+		overlay.call(&"add_menu_entry", &"ReportBug", "Report a bug", open_clean)

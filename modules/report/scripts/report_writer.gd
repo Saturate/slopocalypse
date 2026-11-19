@@ -7,8 +7,15 @@ extends RefCounted
 ## Command-line flags safe to share: how the game was started, never where it connected,
 ## what it is called or where files are (those carry addresses and the OS user name).
 const PUBLIC_ARGS: Array[String] = ["--solo", "--flags=", "--all-optional-off", "--world=", "--start=", "--bot=", "--bench=", "--uncapped", "--range", "--crowd=", "--debug-api"]
-## IPv4 addresses, written over in shared logs.
-const ADDRESS := "\\b\\d{1,3}(\\.\\d{1,3}){3}\\b"
+## Written over in shared logs: IPv4 addresses, IPv6 ones with a `::` in them, and host
+## names given with a port (`name.example.org:7777`).
+const ADDRESSES: Array[String] = [
+	"\\b\\d{1,3}(\\.\\d{1,3}){3}\\b",
+	"(?i)\\[?[0-9a-f]*::[0-9a-f:]*\\]?",
+	"(?i)\\b[a-z0-9-]+(\\.[a-z0-9-]+)*\\.[a-z]{2,}(?=:\\d)",
+]
+## An account name shorter than this is too likely to be an ordinary word to write over.
+const MIN_ACCOUNT_NAME := 3
 
 
 
@@ -56,15 +63,21 @@ static func public_args(args: PackedStringArray) -> Array[String]:
 	return out
 
 
-## `text` fit to send: `folders` (home, user data) become `<folder>`, so paths stop naming the
-## OS user; addresses and the host after "connecting to" become `<address>`.
-static func scrub(text: String, folders: Array[String]) -> String:
+## `text` fit to send: `folders` (home, user data; either slash) become `<folder>`, the OS
+## `account` name becomes `<user>`, and addresses and the host after "connecting to" become
+## `<address>`.
+static func scrub(text: String, folders: Array[String], account := "") -> String:
 	for folder in folders:
-		if not folder.is_empty():
-			text = text.replace(folder, "<folder>")
-	var connecting := RegEx.create_from_string("connecting to [^\\s:]+")
-	text = connecting.sub(text, "connecting to <address>", true)
-	return RegEx.create_from_string(ADDRESS).sub(text, "<address>", true)
+		if folder.is_empty():
+			continue
+		for form in [folder, folder.replace("\\", "/"), folder.replace("/", "\\")]:
+			text = text.replace(form, "<folder>")
+	text = RegEx.create_from_string("connecting to [^\\s:]+").sub(text, "connecting to <address>", true)
+	for pattern in ADDRESSES:
+		text = RegEx.create_from_string(pattern).sub(text, "<address>", true)
+	if account.length() >= MIN_ACCOUNT_NAME:
+		text = text.replace(account, "<user>")
+	return text
 
 
 ## `slopocalypse-report-YYYYMMDD-HHMMSS.zip` for a `Time` datetime dictionary.

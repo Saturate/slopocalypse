@@ -66,3 +66,13 @@ func test_logs_lose_home_folders_and_addresses() -> void:
 	assert_str(out).contains("connecting to <address>:7777")
 	assert_str(out).contains("<folder>/Library/x.ndjson")
 	assert_str(out).contains("build 0.8.0")
+
+
+func test_failed_joins_ipv6_windows_paths_and_the_account_name_are_written_over() -> void:
+	var log := "WARN net: Could not reach friend.duckdns.org:7777. Is the host running?\nINFO net: connecting to [fe80::1c2b:3d4e]:7777\nINFO data: using C:/Users/Bob/Downloads/game/tweaks/x.json\nhello bob and Bob\nat 10:41:20"
+	var out := ReportWriter.scrub(log, ["C:\\Users\\Bob"], "Bob")
+	assert_str(out).not_contains("duckdns")
+	assert_str(out).not_contains("fe80")
+	assert_str(out).not_contains("Bob")
+	assert_str(out).contains("<folder>/Downloads")
+	assert_str(out).contains("at 10:41:20")

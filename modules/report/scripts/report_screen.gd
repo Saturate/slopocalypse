@@ -24,7 +24,7 @@ func _ready() -> void:
 	add_child(_frame)
 	var hint := Label.new()
 	hint.theme_type_variation = &"HintLabel"
-	hint.text = "Saves one file to send us: a screenshot, your settings and machine, and this session's game and performance logs. Your player name can be in the logs; folder paths and server addresses are blanked out."
+	hint.text = "Saves one file to send us: a screenshot, your settings and machine, and this session's game and performance logs. The screenshot is what was on screen; your player name can be in the logs, while folder paths and addresses are blanked out."
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.custom_minimum_size.x = WIDTH - 40.0
 	_frame.content.add_child(hint)
