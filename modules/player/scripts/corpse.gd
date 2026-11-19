@@ -13,7 +13,7 @@ extends Node3D
 
 const CONFIG := "res://modules/player/data/ragdoll.json"
 const REQUIRED := {
-	"settle_seconds": TYPE_FLOAT, "max_simulating": TYPE_FLOAT, "seconds_without_body": TYPE_FLOAT,
+	"settle_seconds": TYPE_FLOAT, "min_fall_seconds": TYPE_FLOAT, "max_simulating": TYPE_FLOAT, "seconds_without_body": TYPE_FLOAT,
 	"link_radius": TYPE_FLOAT, "link_seconds": TYPE_FLOAT, "push": TYPE_FLOAT, "push_up": TYPE_FLOAT, "linear_damp": TYPE_FLOAT,
 	"angular_damp": TYPE_FLOAT, "friction": TYPE_FLOAT, "bones": TYPE_DICTIONARY,
 }
@@ -53,7 +53,8 @@ static func config() -> Dictionary:
 ## A corpse falling from `player`'s body as it stands now, pushed along `push` (metres a
 ## second) on top of the speed it had. Null when not `enabled`, or without a body.
 static func from_body(player: Node3D, push: Vector3, velocity := Vector3.ZERO) -> Corpse:
-	if not enabled or not player.is_inside_tree():
+	# Hidden (sitting in a car) there is no body to fall: it would land inside the car.
+	if not enabled or not player.is_inside_tree() or not player.is_visible_in_tree():
 		return null
 	var cfg := config()
 	var body := player.get_node_or_null("Body") as Node3D
@@ -115,6 +116,8 @@ static func push_from(victim: Node3D, source: Variant) -> Vector3:
 ## last `link_seconds`, if any. Only recent ones: a death that leaves no LootBody (a civilian
 ## carries nothing) must not take one from a later death nearby.
 static func link_near(loot: Node3D) -> void:
+	if not enabled:
+		return
 	loot.set_meta(ARRIVED, Time.get_ticks_msec())
 	if loot.has_meta(LINK):
 		return
@@ -123,11 +126,17 @@ static func link_near(loot: Node3D) -> void:
 	var best: Corpse = null
 	for node in loot.get_tree().get_nodes_in_group(GROUP):
 		var corpse := node as Corpse
-		var d := corpse._fell_at.distance_to(loot.global_position)
-		if not corpse.has_meta(LINK) and corpse._age <= float(cfg.get("link_seconds", 0.0)) and d <= radius and (best == null or d < best._fell_at.distance_to(loot.global_position)):
+		var d := _flat_distance(corpse._fell_at, loot.global_position)
+		if not corpse.has_meta(LINK) and corpse._age <= float(cfg.get("link_seconds", 0.0)) and d <= radius and (best == null or d < _flat_distance(best._fell_at, loot.global_position)):
 			best = corpse
 	if best != null:
 		best._link(loot)
+
+
+## Across the ground only: a LootBody lies on the ground below a death in mid-air or in deep
+## water, metres under where the body was.
+static func _flat_distance(a: Vector3, b: Vector3) -> float:
+	return Vector2(a.x - b.x, a.z - b.z).length()
 
 
 static func _copy_pose(from: Skeleton3D, to: Skeleton3D) -> void:
@@ -158,10 +167,14 @@ func _ready() -> void:
 	simulator.physical_bones_start_simulation()
 	_simulating.append(self)
 	var cap := int(config()["max_simulating"])
-	while _simulating.size() > cap:
-		var oldest := _simulating.pop_front() as Corpse
-		if is_instance_valid(oldest):
-			oldest._settle()
+	# Over the cap, settle the oldest that have fallen for a while; one that has barely started
+	# would keep a standing pose, so the cap gives way for a moment instead.
+	var fallen := float(config()["min_fall_seconds"])
+	for corpse in _simulating.duplicate():
+		if _simulating.size() <= cap:
+			break
+		if corpse != self and corpse._age >= fallen:
+			corpse._settle()
 
 
 func _exit_tree() -> void:
@@ -200,11 +213,13 @@ func _look_for_loot() -> void:
 		var loot := node as Node3D
 		if loot == null or loot.has_meta(LINK) or Time.get_ticks_msec() - int(loot.get_meta(ARRIVED, 0)) > recent:
 			continue
-		if loot.global_position.distance_to(_fell_at) <= radius:
+		if _flat_distance(loot.global_position, _fell_at) <= radius:
 			_link(loot)
 			return
 
 
+## The inventory's LootBody (group `loot_bodies`, `show_figure`) is matched by group and
+## duck typing, so either module works without the other.
 func _link(loot: Node3D) -> void:
 	set_meta(LINK, loot)
 	loot.set_meta(LINK, self)
@@ -273,7 +288,8 @@ func _add_bones(cfg: Dictionary) -> void:
 		bone.friction = float(cfg["friction"])
 		bone.linear_damp = float(cfg["linear_damp"])
 		bone.angular_damp = float(cfg["angular_damp"])
-		# Debris: it lands on the ground and buildings, and nothing else notices it.
+		# Debris layer, so bullets, eyes and bodies ignore it. Its mask is everything solid,
+		# which includes people and cars (they share the solid layer): it can lean on them.
 		bone.collision_layer = PhysicsLayers.DEBRIS
 		bone.collision_mask = PhysicsLayers.SOLID | PhysicsLayers.GLASS
 		var swing := float(spec["swing"])

@@ -1,5 +1,6 @@
 {
   "settle_seconds": 4.0,
+  "min_fall_seconds": 1.5,
   "max_simulating": 8,
   "seconds_without_body": 60.0,
   "link_radius": 2.0,

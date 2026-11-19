@@ -89,6 +89,23 @@ func test_an_old_corpse_does_not_take_a_new_loot_body() -> void:
 	assert_object(corpse.loot_body()).is_null()
 
 
+func test_a_burst_of_deaths_past_the_cap_still_all_lie_down() -> void:
+	var count := int(Corpse.config()["max_simulating"]) + 2
+	var corpses: Array[Corpse] = []
+	for i in count:
+		var body: PlayerController = auto_free((load(PLAYER) as PackedScene).instantiate())
+		body.set_physics_process(false)
+		add_child(body)
+		body.global_position = Vector3(float(i) * 2.0 - 10.0, 0.0, 5.0)
+		corpses.append(Corpse.from_body(body, Vector3.ZERO))
+	await _frames(int(Corpse.config()["settle_seconds"] * 60.0) + 10)
+	for corpse in corpses:
+		var head := corpse.skeleton.find_bone("Head")
+		var at := corpse.skeleton.global_transform * corpse.skeleton.get_bone_global_pose(head).origin
+		assert_bool(corpse.is_settled()).is_true()
+		assert_float(at.y).is_less(0.8)
+
+
 func test_the_living_body_is_left_alone() -> void:
 	var corpse := Corpse.from_body(_player, Vector3.ZERO)
 	await _frames(5)

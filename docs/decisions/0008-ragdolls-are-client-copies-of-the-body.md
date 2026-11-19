@@ -30,5 +30,7 @@ box figure and goes when the `LootBody` goes. The server makes no corpses and sy
 ## Consequences
 Each client's ragdoll lands its own way (Jolt isn't deterministic across machines), so two
 players can see a body lying slightly differently; the `LootBody`, where you search, is the
-same for everyone. Corpses don't block movement or bullets. A death with no `LootBody` (nothing
+same for everyone. Corpses don't block movement or bullets, but they do land on people and
+cars (those share the solid layer with the ground), and a settled one keeps its pose if what
+it leant on moves away. A layer of its own for characters and cars would end that. A death with no `LootBody` (nothing
 carried) keeps its corpse `seconds_without_body`.
