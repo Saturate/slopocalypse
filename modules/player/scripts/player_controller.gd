@@ -35,6 +35,7 @@ const REQUIRED := {
 	"slide_boost": TYPE_FLOAT,
 	"slide_time": TYPE_FLOAT,
 	"slide_friction": TYPE_FLOAT,
+	"slide_cooldown_seconds": TYPE_FLOAT,
 	"stand_height": TYPE_FLOAT,
 	"crouch_height": TYPE_FLOAT,
 	"lean_offset": TYPE_FLOAT,
@@ -87,6 +88,9 @@ var _path_to: Vector3
 var _path_exit_velocity := Vector3.ZERO
 
 var _slide_left := 0.0
+## Seconds until another slide may start: chained short slides, each starting fast, would
+## otherwise outrun sprinting.
+var _slide_cooldown := 0.0
 
 
 ## A copy of someone else's body on a client: it shows what the server sends and runs no
@@ -224,7 +228,8 @@ func _wants_sprint() -> bool:
 func _step_normal(delta: float) -> void:
 	var crouching := _intent.crouch
 	var crouch_pressed := crouching and not _was_crouching
-	if crouch_pressed and is_on_floor() and _wants_sprint() and horizontal_speed() >= float(config["slide_min_speed"]):
+	_slide_cooldown = maxf(_slide_cooldown - delta, 0.0)
+	if crouch_pressed and _slide_cooldown <= 0.0 and is_on_floor() and _wants_sprint() and horizontal_speed() >= float(config["slide_min_speed"]):
 		_start_slide()
 		return
 	_apply_height(config["crouch_height"] if crouching else config["stand_height"])
@@ -375,7 +380,11 @@ func _start_slide() -> void:
 	mode = Mode.SLIDE
 	_slide_left = config["slide_time"]
 	var flat := Vector3(velocity.x, 0.0, velocity.z)
-	var boosted := flat.normalized() * (flat.length() + float(config["slide_boost"]))
+	# The boost tops out one boost over sprint speed (repeated slides stacked it: 93 m/s in a
+	# second and a half, and the server takes whatever intent it gets); faster than that
+	# already, a slide keeps the speed it has rather than braking.
+	var top := float(config["sprint_speed"]) + float(config["slide_boost"])
+	var boosted := flat.normalized() * maxf(flat.length(), minf(flat.length() + float(config["slide_boost"]), top))
 	velocity.x = boosted.x
 	velocity.z = boosted.z
 	_apply_height(config["crouch_height"])
@@ -391,6 +400,7 @@ func _step_slide(delta: float) -> void:
 	move_and_slide()
 	if _slide_left <= 0.0 or flat.length() <= float(config["crouch_speed"]) or not _intent.crouch:
 		mode = Mode.NORMAL
+		_slide_cooldown = float(config["slide_cooldown_seconds"])
 
 
 ## Resizes the capsule from the feet up, so crouching never pushes the body into the ground.
