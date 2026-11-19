@@ -91,3 +91,13 @@ func test_source_locations_survive_while_hosts_go() -> void:
 func test_the_account_name_goes_only_as_a_whole_word() -> void:
 	var out := ReportWriter.scrub("deck logged in from steamdeck, Deck again", [], "deck")
 	assert_str(out).is_equal("<user> logged in from steamdeck, <user> again")
+
+
+func test_hosts_without_a_dot_and_long_ipv6_go_too() -> void:
+	var log := "WARN net: Could not reach DESKTOP-AB12CD:7777.\nWARN net: Could not connect to allans-pc:7777 (Can't resolve)\nINFO net: Connecting to [2001:db8::1]:7777"
+	var out := ReportWriter.scrub(log, [])
+	assert_str(out).not_contains("DESKTOP")
+	assert_str(out).not_contains("allans")
+	assert_str(out).not_contains("db8")
+	assert_str(out).not_contains("]")
+	assert_str(out).contains("Could not reach <address>:7777")

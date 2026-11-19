@@ -7,15 +7,18 @@ extends RefCounted
 ## Command-line flags safe to share: how the game was started, never where it connected,
 ## what it is called or where files are (those carry addresses and the OS user name).
 const PUBLIC_ARGS: Array[String] = ["--solo", "--flags=", "--all-optional-off", "--world=", "--start=", "--bot=", "--bench=", "--uncapped", "--range", "--crowd=", "--debug-api"]
-## Written over in shared logs: IPv4 addresses, IPv6 ones with a `::` in them, and host
-## names given with a port (`name.example.org:7777`).
+## Written over in shared logs: IPv4 addresses, compressed IPv6 ones (`fe80::1`, `2001:db8::1`,
+## in brackets or not), and dotted host names given with a port (`name.example.org:7777`).
+## Hosts with no dot are caught by the phrases the game logs them in (`HOST_PHRASES`).
 ## Source locations must survive: a path's file name (`res://core/net.gd:12`) has a slash or
 ## dot before it and `Node::get` has letters round its `::`, which these patterns refuse.
 const ADDRESSES: Array[String] = [
 	"\\b\\d{1,3}(\\.\\d{1,3}){3}\\b",
-	"(?i)(?<![\\w:])\\[?(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:?)*\\]?(?![\\w:])",
+	"(?i)(?<![\\w:])\\[?(?:[0-9a-f]{1,4}:)*(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:?)*(?:[0-9a-f]{1,4})?\\]?(?![\\w])",
 	"(?i)(?<![/\\\\.\\w])[a-z0-9-]+(\\.[a-z0-9-]+)*\\.[a-z]{2,}(?=:\\d)",
 ]
+## The game's own words just before a host it logs (net.gd: joining, failing to).
+const HOST_PHRASES := "(?i)(connecting to|connect to|reach) [^\\s:]+"
 ## An account name shorter than this is too likely to be an ordinary word to write over.
 const MIN_ACCOUNT_NAME := 3
 
@@ -75,9 +78,10 @@ static func scrub(text: String, folders: Array[String], account := "") -> String
 		# Windows paths ignore case, and logs print them either way.
 		for form in [folder, folder.replace("\\", "/"), folder.replace("/", "\\")]:
 			text = text.replacen(form, "<folder>")
-	text = RegEx.create_from_string("connecting to [^\\s:]+").sub(text, "connecting to <address>", true)
+	# Addresses first: the phrase rule stops at a colon and would cut an IPv6 one in half.
 	for pattern in ADDRESSES:
 		text = RegEx.create_from_string(pattern).sub(text, "<address>", true)
+	text = RegEx.create_from_string(HOST_PHRASES).sub(text, "$1 <address>", true)
 	if account.length() >= MIN_ACCOUNT_NAME:
 		# A whole word only: "deck" must not turn "steamdeck" into "steam<user>".
 		var name := RegEx.create_from_string("(?i)(?<![\\w])" + _escape(account) + "(?![\\w])")
