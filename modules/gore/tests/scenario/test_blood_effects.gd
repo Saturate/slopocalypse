@@ -146,6 +146,11 @@ func test_a_pool_spreads_under_a_settled_ragdoll_only() -> void:
 	assert_float(pool.global_position.y).is_equal_approx(0.0, 0.05)
 	assert_float(Vector2(pool.global_position.x - chest.x, pool.global_position.z - chest.z).length()).is_less(0.05)
 	assert_vector(pool.global_transform.basis.y.normalized()).is_equal_approx(Vector3.UP, Vector3.ONE * 0.01)
+	# The ragdoll is a copy of the body and keeps its layers: it lies in the pool, unpainted.
+	var meshes := corpse.find_children("*", "GeometryInstance3D", true, false)
+	assert_bool(meshes.is_empty()).is_false()
+	for mesh in meshes:
+		assert_int((mesh as GeometryInstance3D).layers & pool.cull_mask).is_equal(0)
 
 
 func test_with_blood_off_no_pool_spreads() -> void:
@@ -172,7 +177,7 @@ func test_gear_given_to_a_body_later_is_kept_clean_too() -> void:
 	var gun := MeshInstance3D.new()
 	_player.add_child(gun)
 	assert_int(gun.layers & 1).is_equal(0)
-	assert_int(gun.layers & BloodMarks.NO_DECALS).is_equal(BloodMarks.NO_DECALS)
+	assert_int(gun.layers & RenderLayers.NO_DECALS).is_equal(RenderLayers.NO_DECALS)
 	# Not a body: the world keeps its layer.
 	var rock: MeshInstance3D = auto_free(MeshInstance3D.new())
 	add_child(rock)

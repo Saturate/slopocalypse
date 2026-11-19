@@ -57,6 +57,19 @@ func test_the_oldest_drops_are_reused_once_the_ring_is_full() -> void:
 	assert_int(spray.live_count()).is_equal(5)
 
 
+func test_no_drops_at_all_when_the_pool_is_zero_or_they_live_no_time() -> void:
+	for key in ["max_drops", "drop_seconds"]:
+		var cfg := BloodEffects.config().duplicate()
+		cfg[key] = 0.0
+		var spray: BloodSpray = auto_free(BloodSpray.new())
+		spray.setup(cfg)
+		add_child(spray)
+		spray.warm(Vector3.ZERO)
+		spray.spray(Vector3.ZERO, Vector3.FORWARD, 10)
+		spray.advance(0.1)
+		assert_int(spray.live_count()).is_equal(0)
+
+
 func test_clear_drops_every_drop_in_flight() -> void:
 	var spray := _spray()
 	spray.spray(Vector3.ZERO, Vector3.FORWARD, 8)

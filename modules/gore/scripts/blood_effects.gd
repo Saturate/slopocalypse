@@ -169,13 +169,13 @@ func _is_local(body: Node) -> bool:
 
 
 func _on_node_added(node: Node) -> void:
-	if not node is VisualInstance3D or node is Decal:
+	if not node is GeometryInstance3D:
 		return
 	var prof := Prof.start()
 	var up := node.get_parent()
 	while up != null:
 		if _bleeds(up):
-			keep_clean(node as VisualInstance3D)
+			keep_clean(node as GeometryInstance3D)
 			break
 		up = up.get_parent()
 	Prof.stop(&"gore/keep_clean", prof)
@@ -238,14 +238,15 @@ func _pool_under(corpse: Corpse) -> void:
 
 ## Moves `node`'s meshes onto the render layer marks and pools leave alone: a corpse lies in
 ## its pool instead of being painted by it (its meshes are copies of the living body's), and
-## someone walking through a pool or standing against a splattered wall stays clean.
+## someone walking through a pool or standing against a splattered wall stays clean. Meshes
+## added later are caught as they enter the tree, which only works for a body that joins its
+## group (`players`, `enemies`, `civilians`) before it enters the tree, as both spawners do.
 static func keep_blood_off(node: Node) -> void:
-	for child in node.find_children("*", "VisualInstance3D", true, false):
-		if not child is Decal:
-			keep_clean(child as VisualInstance3D)
+	for child in node.find_children("*", "GeometryInstance3D", true, false):
+		keep_clean(child as GeometryInstance3D)
 
 
-## Off the default layer, which marks paint, and onto the one they leave alone. Cameras and
-## lights see every layer, and nothing else in the game draws by layer.
-static func keep_clean(mesh: VisualInstance3D) -> void:
-	mesh.layers = (mesh.layers | BloodMarks.NO_DECALS) & ~1
+## Off the default layer, which marks paint, and onto the one they leave alone
+## (RenderLayers.NO_DECALS). Only drawn geometry: a light's layers decide what it lights.
+static func keep_clean(mesh: GeometryInstance3D) -> void:
+	mesh.layers = (mesh.layers | RenderLayers.NO_DECALS) & ~RenderLayers.DEFAULT

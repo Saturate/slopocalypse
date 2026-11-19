@@ -45,6 +45,9 @@ func setup(cfg: Dictionary) -> void:
 	_speed_jitter = float(cfg["spray_speed_jitter"])
 	_angle_jitter = float(cfg["spray_angle_jitter_degrees"])
 	_size = float(cfg["drop_size"])
+	if _lifetime <= 0.0:
+		# A drop that lives no time is no drop; it would also divide by zero as it shrinks.
+		_capacity = 0
 	_rng.randomize()
 	_positions.resize(_capacity)
 	_velocities.resize(_capacity)
@@ -86,6 +89,8 @@ func spray(at: Vector3, direction: Vector3, count: int) -> void:
 
 ## One drop too small to see at `at`, so the spray's draw is set up while loading.
 func warm(at: Vector3) -> void:
+	if _capacity <= 0:
+		return
 	spray(at, Vector3.DOWN, 1)
 	_bases[(_next - 1 + _capacity) % _capacity] = Basis.from_scale(Vector3.ONE * WARM_SCALE)
 	_place()

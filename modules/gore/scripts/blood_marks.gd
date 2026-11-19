@@ -5,10 +5,6 @@ extends Node3D
 ## `mark_seconds` over `fade_seconds`, and at most `max_marks` exist at once; a new one past
 ## that takes the oldest away (gore.json).
 
-## Render layer (20) for what blood must not paint: people. A pool is a box reaching a little
-## above the ground, and a body lying in it or someone walking through it would otherwise turn
-## red; a mark on a wall would paint whoever stands against it.
-const NO_DECALS := 1 << 19
 ## Fades a mark out on faces turned away from it, so a splat on a wall doesn't smear down the
 ## side of a step or a window frame.
 const NORMAL_FADE := 0.6
@@ -125,7 +121,10 @@ func _add(at: Vector3, normal: Vector3, along: Vector3, full: Vector3, spread: f
 	# centre in it; road paint and kerbs sit a few centimetres off and showed through.
 	decal.upper_fade = EDGE_FADE
 	decal.lower_fade = EDGE_FADE
-	decal.cull_mask = 0xFFFFF & ~NO_DECALS
+	# People are on their own layer: a pool is a box reaching a little above the ground, and a
+	# body lying in it or someone walking through would turn red, as would anyone standing
+	# against a splattered wall.
+	decal.cull_mask = 0xFFFFF & ~RenderLayers.NO_DECALS
 	decal.size = full if spread <= 0.0 else _spread_size(full, 0.0)
 	add_child(decal)
 	decal.global_transform = Transform3D(Basis(x, y, x.cross(y)), at)

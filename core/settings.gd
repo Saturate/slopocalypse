@@ -61,9 +61,13 @@ static func value(key: String) -> Variant:
 	return _values.get(key, DEFAULTS.get(key))
 
 
+## Sets `key` and tells modules that read a setting as they go (gore's blood) through
+## `settings.changed` ({key, value}), only when the value really changes.
 static func set_value(key: String, v: Variant) -> void:
+	var before: Variant = value(key)
 	_values[key] = v
 	_clamp()
+	_announce(key, before)
 
 
 static func mouse_scale() -> float:
@@ -76,7 +80,10 @@ static func fov_offset() -> float:
 
 ## Everything back to the game's defaults, keys included.
 static func reset() -> void:
+	var before := _values.duplicate()
 	_values = DEFAULTS.duplicate()
+	for key: String in DEFAULTS:
+		_announce(key, before.get(key))
 	for action: String in _keys:
 		InputBindings.restore(action)
 	_keys.clear()
@@ -124,6 +131,12 @@ static func _bind_now(action: String, physical: Key) -> void:
 	var ev := InputEventKey.new()
 	ev.physical_keycode = physical
 	InputMap.action_add_event(action, ev)
+
+
+static func _announce(key: String, before: Variant) -> void:
+	var now: Variant = value(key)
+	if typeof(now) != typeof(before) or now != before:
+		EventBus.publish(&"settings.changed", {"key": key, "value": now})
 
 
 static func _clamp() -> void:

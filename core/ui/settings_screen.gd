@@ -119,7 +119,6 @@ func _slider(key: String, label: String, low: float, high: float, step: float, s
 	row.add_child(value_label)
 	slider.value_changed.connect(func(v: float) -> void:
 		Settings.set_value(key, v)
-		_changed(key)
 		value_label.text = shown.call(v)
 		_apply())
 	var pad := Control.new()
@@ -176,7 +175,6 @@ func _toggle(label: String, key: String) -> Button:
 	button.set_meta(&"setting", key)
 	button.toggled.connect(func(on: bool) -> void:
 		Settings.set_value(key, on)
-		_changed(key)
 		_show_toggle(button)
 		_apply())
 	content.add_child(button)
@@ -191,16 +189,8 @@ func _show_toggle(button: Button) -> void:
 
 func _reset() -> void:
 	Settings.reset()
-	for key: String in Settings.DEFAULTS:
-		_changed(key)
 	_apply()
 	_refresh()
-
-
-## Tells modules that read a setting as they go (blood) that it changed, so they can act on
-## it now rather than at their next use.
-func _changed(key: String) -> void:
-	EventBus.publish(&"settings.changed", {"key": key, "value": Settings.value(key)})
 
 
 func _apply() -> void:
