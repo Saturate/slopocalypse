@@ -4,7 +4,8 @@ extends RefCounted
 ## lights see every layer; nothing culls by layer except the decals noted here
 ## (docs/decisions/0009).
 
-## Where everything is drawn unless it says otherwise.
+## Layer 1, Godot's own default: named so code moving something off it says which layer it
+## leaves rather than clearing a bare bit.
 const DEFAULT := 1
 ## Layer 20: people's meshes (players, soldiers, civilians, their gear and their ragdolls).
 ## Decals leave it alone, so blood on a wall or under a body never paints a person.

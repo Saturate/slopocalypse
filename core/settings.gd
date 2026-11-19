@@ -4,7 +4,9 @@ extends RefCounted
 ## volume, fullscreen, UI scale, blood and key bindings. Gameplay code asks for the values
 ## (`mouse_scale()`, `fov_offset()`); boot applies the rest once at start.
 ##
-## Static, like UiStack: one set per machine, no node needed.
+## Static, like UiStack: one set per machine, no node needed. It still reaches autoloads by
+## name: `save()` logs through Log, and `set_value()` and `reset()` announce real changes on
+## the EventBus as `settings.changed` ({key, value}) for modules that act on a setting at once.
 
 const PATH := "user://settings.cfg"
 

@@ -71,8 +71,8 @@ func test_a_body_shot_sprays_out_of_the_far_side_and_marks_the_wall_behind() -> 
 	assert_float(mark.global_position.y).is_equal_approx(1.0, 0.05)
 	assert_vector(mark.global_transform.basis.y.normalized()).is_equal_approx(Vector3.BACK, Vector3.ONE * 0.01)
 	# The body that was shot is never painted by marks around it.
-	for mesh in _player.find_children("*", "VisualInstance3D", true, false):
-		assert_int((mesh as VisualInstance3D).layers & mark.cull_mask).is_equal(0)
+	for mesh in _player.find_children("*", "GeometryInstance3D", true, false):
+		assert_int((mesh as GeometryInstance3D).layers & mark.cull_mask).is_equal(0)
 
 
 func test_a_headshot_sprays_more() -> void:
@@ -167,8 +167,8 @@ func test_turning_blood_off_clears_what_is_already_shown() -> void:
 	_effects.on_fired(_shot(Vector3(0.0, 1.0, 0.35), _player, _player))
 	assert_int(_effects.marks.count()).is_equal(1)
 	assert_int(_effects.spray.live_count()).is_greater(0)
+	# Through the bus as the settings screen does it: set_value announces the change.
 	Settings.set_value("blood", false)
-	EventBus.publish(&"settings.changed", {"key": "blood", "value": false})
 	assert_int(_effects.marks.count()).is_equal(0)
 	assert_int(_effects.spray.live_count()).is_equal(0)
 

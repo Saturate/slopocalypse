@@ -39,7 +39,7 @@ var _gravity := Vector3.DOWN * float(ProjectSettings.get_setting("physics/3d/def
 
 
 func setup(cfg: Dictionary) -> void:
-	_capacity = int(cfg["max_drops"])
+	_capacity = maxi(int(cfg["max_drops"]), 0)
 	_lifetime = float(cfg["drop_seconds"])
 	_speed = float(cfg["spray_speed"])
 	_speed_jitter = float(cfg["spray_speed_jitter"])
