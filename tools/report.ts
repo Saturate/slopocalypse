@@ -16,7 +16,7 @@ const TOP_ERRORS = 10;
 // Everything printed comes from the tester's file, so every line goes through `printable`.
 const say = (line: string): void => console.log(printable(line));
 // Only plain files: a crafted zip can hold links that point elsewhere on this machine.
-const files = (dir: string): string[] => (existsSync(dir) ? readdirSync(dir).filter((n) => lstatSync(join(dir, n)).isFile()) : []);
+const files = (dir: string): string[] => (existsSync(dir) && lstatSync(dir).isDirectory() ? readdirSync(dir).filter((n) => lstatSync(join(dir, n)).isFile()) : []);
 
 const zip = argv[2];
 if (zip === undefined || !existsSync(zip)) {
@@ -39,7 +39,14 @@ if (!lstatSync(reportFile).isFile()) {
 	console.error(`${zip}: report.json is not a plain file`);
 	exit(1);
 }
-for (const line of summariseReport(JSON.parse(readFileSync(reportFile, "utf8")))) say(line);
+let report: unknown;
+try {
+	report = JSON.parse(readFileSync(reportFile, "utf8"));
+} catch {
+	console.error(`${zip}: report.json is not valid JSON`);
+	exit(1);
+}
+for (const line of summariseReport(report)) say(line);
 
 const perfDir = join(dir, "perf");
 for (const name of files(perfDir)) {

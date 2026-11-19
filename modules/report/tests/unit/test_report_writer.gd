@@ -76,3 +76,18 @@ func test_failed_joins_ipv6_windows_paths_and_the_account_name_are_written_over(
 	assert_str(out).not_contains("Bob")
 	assert_str(out).contains("<folder>/Downloads")
 	assert_str(out).contains("at 10:41:20")
+
+
+func test_source_locations_survive_while_hosts_go() -> void:
+	var log := "   at: _ready (res://core/net.gd:123)\n   at: get_node (scene/main/node.cpp:1877)\nERROR: slop_core::inventory::place failed in Node::get\npanicked at src/lib.rs:88:5\nCould not reach friend.duckdns.org:7777\nconnecting to [fe80::1]:7777 and ::1"
+	var out := ReportWriter.scrub(log, [])
+	for kept in ["res://core/net.gd:123", "scene/main/node.cpp:1877", "slop_core::inventory::place", "Node::get", "src/lib.rs:88:5"]:
+		assert_str(out).override_failure_message(kept + " in: " + out).contains(kept)
+	assert_str(out).not_contains("duckdns")
+	assert_str(out).not_contains("fe80")
+	assert_str(out).not_contains(" ::1")
+
+
+func test_the_account_name_goes_only_as_a_whole_word() -> void:
+	var out := ReportWriter.scrub("deck logged in from steamdeck, Deck again", [], "deck")
+	assert_str(out).is_equal("<user> logged in from steamdeck, <user> again")

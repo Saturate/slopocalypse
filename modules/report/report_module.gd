@@ -66,8 +66,9 @@ func open_clean() -> void:
 		return
 	_opening = true
 	overlay.visible = false
-	await RenderingServer.frame_post_draw
-	await RenderingServer.frame_post_draw
+	# By the second frame's start, one frame has been drawn with the overlay hidden.
+	await get_tree().process_frame
+	await get_tree().process_frame
 	# Leaving the session in between frees both.
 	if not is_instance_valid(self) or not is_inside_tree():
 		return
@@ -184,6 +185,9 @@ func _local_player() -> Node3D:
 
 
 func _screenshot() -> PackedByteArray:
+	# Headless draws nothing, and asking for the image logs an engine error.
+	if DisplayServer.get_name() == "headless":
+		return PackedByteArray()
 	var image := get_viewport().get_texture().get_image()
 	return image.save_png_to_buffer() if image != null else PackedByteArray()
 

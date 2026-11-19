@@ -9,10 +9,12 @@ extends RefCounted
 const PUBLIC_ARGS: Array[String] = ["--solo", "--flags=", "--all-optional-off", "--world=", "--start=", "--bot=", "--bench=", "--uncapped", "--range", "--crowd=", "--debug-api"]
 ## Written over in shared logs: IPv4 addresses, IPv6 ones with a `::` in them, and host
 ## names given with a port (`name.example.org:7777`).
+## Source locations must survive: a path's file name (`res://core/net.gd:12`) has a slash or
+## dot before it and `Node::get` has letters round its `::`, which these patterns refuse.
 const ADDRESSES: Array[String] = [
 	"\\b\\d{1,3}(\\.\\d{1,3}){3}\\b",
-	"(?i)\\[?[0-9a-f]*::[0-9a-f:]*\\]?",
-	"(?i)\\b[a-z0-9-]+(\\.[a-z0-9-]+)*\\.[a-z]{2,}(?=:\\d)",
+	"(?i)(?<![\\w:])\\[?(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:?)*\\]?(?![\\w:])",
+	"(?i)(?<![/\\\\.\\w])[a-z0-9-]+(\\.[a-z0-9-]+)*\\.[a-z]{2,}(?=:\\d)",
 ]
 ## An account name shorter than this is too likely to be an ordinary word to write over.
 const MIN_ACCOUNT_NAME := 3
@@ -70,14 +72,25 @@ static func scrub(text: String, folders: Array[String], account := "") -> String
 	for folder in folders:
 		if folder.is_empty():
 			continue
+		# Windows paths ignore case, and logs print them either way.
 		for form in [folder, folder.replace("\\", "/"), folder.replace("/", "\\")]:
-			text = text.replace(form, "<folder>")
+			text = text.replacen(form, "<folder>")
 	text = RegEx.create_from_string("connecting to [^\\s:]+").sub(text, "connecting to <address>", true)
 	for pattern in ADDRESSES:
 		text = RegEx.create_from_string(pattern).sub(text, "<address>", true)
 	if account.length() >= MIN_ACCOUNT_NAME:
-		text = text.replace(account, "<user>")
+		# A whole word only: "deck" must not turn "steamdeck" into "steam<user>".
+		var name := RegEx.create_from_string("(?i)(?<![\\w])" + _escape(account) + "(?![\\w])")
+		if name.is_valid():
+			text = name.sub(text, "<user>", true)
 	return text
+
+
+static func _escape(literal: String) -> String:
+	var out := ""
+	for c in literal:
+		out += ("\\" + c) if "\\^$.|?*+()[]{}".contains(c) else c
+	return out
 
 
 ## `slopocalypse-report-YYYYMMDD-HHMMSS.zip` for a `Time` datetime dictionary.

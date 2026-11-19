@@ -54,3 +54,21 @@ func test_extra_fields_go_into_report_json_and_no_screenshot_is_fine() -> void:
 func test_the_report_lists_feature_flags() -> void:
 	var game: Dictionary = (_module.call(&"gather", "bug", "") as Dictionary)["game"]
 	assert_bool((game["flags"] as Dictionary).has("report")).is_true()
+
+
+func test_a_clean_shot_hides_the_session_overlay_and_brings_it_back() -> void:
+	var overlay := auto_free(CanvasLayer.new()) as CanvasLayer
+	overlay.add_to_group(&"session_overlay")
+	add_child(overlay)
+	var screen := ReportScreen.new()
+	add_child(auto_free(screen))
+	_module.set(&"_screen", screen)
+	_module.call(&"open_clean")
+	assert_bool(overlay.visible).is_false()
+	# A second press while it waits for the clean frame is ignored.
+	_module.call(&"open_clean")
+	for i in 4:
+		await get_tree().process_frame
+	assert_bool(overlay.visible).is_true()
+	assert_bool(screen.is_open()).is_true()
+	screen.close()
