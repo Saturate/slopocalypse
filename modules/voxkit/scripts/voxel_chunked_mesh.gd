@@ -2,16 +2,27 @@ class_name VoxelChunkedMesh
 extends Node3D
 ## Draws a `VoxelModel` as one mesh per section of 4 x 4 x 4 chunks of 16 cells (9.6 m at
 ## 0.15 m voxels), so a building is a handful of mesh instances rather than hundreds: each
-## instance is a draw call per pass, and a city of them was fifteen thousand. An edit (a
-## bullet hole, a broken wall piece) still meshes only the chunks it touched; the model keeps
-## every chunk's mesh and joins the sections round the edit again. Call `refresh()` after
-## editing; it replaces just the changed sections. One mesh instance per section rather than
-## one surface per section, because an `ArrayMesh` surface cannot be replaced on its own.
+## instance is a draw call per pass, and a city of them was fifteen thousand. Models that
+## get shot at (`editable`) use smaller sections (`sections.editable_chunks` in voxkit.json),
+## because an edit re-joins its whole section. Once a section is edited the model keeps its
+## chunks' meshes, so later edits mesh only the chunks they touch; sections never edited keep
+## nothing. Call `refresh()` after editing; it replaces just the changed sections. One mesh
+## instance per section rather than one surface per section, because an `ArrayMesh` surface
+## cannot be replaced on its own.
+
+const CONFIG := "res://modules/voxkit/data/voxkit.json"
+## Editable section size when the data leaves it out.
+const FALLBACK_EDITABLE_CHUNKS := 2
 
 var model: VoxelModel:
 	set(value):
 		model = value
 		_clear()
+		_sized = false
+## True for a model that gets shot at or broken: drawn in smaller sections.
+var editable := false
+
+static var _editable_chunks := -1
 ## True when the model draws some materials see-through (`VoxelModel.set_clear_materials`):
 ## each section then has a second, see-through mesh for them.
 var layered := false
@@ -19,6 +30,8 @@ var layered := false
 ## The look of see-through voxels (glass): their own colour, mostly transparent, a little shine.
 static var _glass: StandardMaterial3D
 
+## Whether the section size has been set on the model yet.
+var _sized := false
 ## Section id -> its mesh instance (sections with nothing to draw have none).
 var _parts: Dictionary[int, MeshInstance3D] = {}
 ## Section id -> its see-through mesh instance.
@@ -30,6 +43,9 @@ func refresh() -> int:
 	if model == null:
 		return 0
 	VoxShading.ensure()
+	if editable and not _sized:
+		model.set_section_chunks(editable_chunks())
+	_sized = true
 	var t := Prof.start()
 	var rebuilt: Dictionary = model.remesh_dirty_sections()
 	for key: Variant in rebuilt:
@@ -40,6 +56,16 @@ func refresh() -> int:
 			_show(_clear_parts, id, pair[1], glass_material(), "Glass%d" % id)
 	Prof.stop(&"voxkit/remesh", t)
 	return rebuilt.size()
+
+
+## Section side in chunks for models that get edited (voxkit.json `sections.editable_chunks`).
+static func editable_chunks() -> int:
+	if _editable_chunks < 0:
+		_editable_chunks = FALLBACK_EDITABLE_CHUNKS
+		var data: Variant = Data.load_json(CONFIG)
+		if data is Dictionary and (data as Dictionary).get("sections") is Dictionary:
+			_editable_chunks = maxi(1, int((data["sections"] as Dictionary).get("editable_chunks", FALLBACK_EDITABLE_CHUNKS)))
+	return _editable_chunks
 
 
 ## Puts `arrays` on section `id`'s instance in `parts` (making it), or frees it when empty.
@@ -70,7 +96,7 @@ static func glass_material() -> StandardMaterial3D:
 		_glass.albedo_color = Color(1.0, 1.0, 1.0, 0.32)
 		_glass.metallic = 0.1
 		_glass.roughness = 0.08
-		_glass.specular = 0.8
+		_glass.metallic_specular = 0.8
 		_glass.cull_mode = BaseMaterial3D.CULL_DISABLED
 	return _glass
 

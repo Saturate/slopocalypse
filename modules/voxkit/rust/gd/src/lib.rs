@@ -618,10 +618,26 @@ impl VoxelModel {
         });
     }
 
-    /// How many sections (4 x 4 x 4 chunks each) the model is drawn as.
+    /// How many sections the model is drawn as (`set_section_chunks` a side, 4 unless set).
     #[func]
     fn section_count(&self) -> i64 {
         self.grid.as_ref().map_or(0, |g| g.section_count() as i64)
+    }
+
+    /// Draws the model in sections of `chunks` chunks a side (1 to 8); everything is drawn
+    /// again on the next remesh. Models that get shot at use small ones: an edit re-joins its
+    /// whole section.
+    #[func]
+    fn set_section_chunks(&mut self, chunks: i64) {
+        if let Some(grid) = self.grid.as_mut() {
+            grid.set_section(chunks.clamp(1, 64) as usize);
+        }
+    }
+
+    /// How many sections keep their chunks' meshes (edited since their first draw).
+    #[func]
+    fn kept_sections(&self) -> i64 {
+        self.grid.as_ref().map_or(0, |g| g.kept_sections() as i64)
     }
 
     /// Meshes every chunk changed since the last call and joins the sections they sit in:
@@ -637,37 +653,6 @@ impl VoxelModel {
                 pair.push(&arrays_of(&mesh).to_variant());
                 pair.push(&arrays_of(&clear).to_variant());
                 out.set(id as i64, &pair);
-            }
-        }
-        out
-    }
-
-    /// Like `remesh_dirty`, with both layers: `{chunk id: [arrays, clear arrays]}` (empty arrays
-    /// where a layer has nothing to draw).
-    #[func]
-    fn remesh_dirty_layers(&mut self) -> VarDictionary {
-        let mut out = VarDictionary::new();
-        if let Some(grid) = self.grid.as_mut() {
-            grid.corners = shading().is_some();
-            for (id, mesh, clear) in grid.remesh_dirty_layers() {
-                let mut pair = VarArray::new();
-                pair.push(&arrays_of(&mesh).to_variant());
-                pair.push(&arrays_of(&clear).to_variant());
-                out.set(id as i64, &pair);
-            }
-        }
-        out
-    }
-
-    /// Meshes every chunk changed since the last call (all of them the first time) and marks
-    /// them clean: `{chunk id: arrays}`, empty arrays where a chunk has nothing to draw.
-    #[func]
-    fn remesh_dirty(&mut self) -> VarDictionary {
-        let mut out = VarDictionary::new();
-        if let Some(grid) = self.grid.as_mut() {
-            grid.corners = shading().is_some();
-            for (id, mesh) in grid.remesh_dirty() {
-                out.set(id as i64, &arrays_of(&mesh));
             }
         }
         out

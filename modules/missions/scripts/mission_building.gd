@@ -216,6 +216,8 @@ func _ready() -> void:
 		_model.set_clear_materials(glass)
 		_mesh = VoxelChunkedMesh.new()
 		_mesh.layered = true
+		# Shot at and broken: smaller sections keep each bullet hole's rebuild cheap.
+		_mesh.editable = true
 		_mesh.name = "Mesh"
 		_mesh.model = _model
 		add_child(_mesh)
