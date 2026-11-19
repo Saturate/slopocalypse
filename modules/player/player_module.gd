@@ -21,6 +21,8 @@ var _holding: Dictionary = {}
 ## Server: dead player -> seconds until they come back.
 var _respawn_in: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
+## Server: how far apart players who join together start; -1 until read.
+var _spacing := -1.0
 ## Server: player -> seconds until they may go back to the spawn again.
 var _back_cooldown: Dictionary = {}
 
@@ -171,7 +173,41 @@ func _on_peer_left(peer: int) -> void:
 func _server_spawn(peer: int) -> void:
 	if _players.has(peer):
 		return
-	_spawner.spawn({"peer": peer, "position": _spawn})
+	var taken: Array[Vector3] = []
+	for p: PlayerController in _players.values():
+		taken.append(p.global_position if p.is_inside_tree() else p.position)
+	_spawner.spawn({"peer": peer, "position": free_spawn_point(_spawn, taken, _spawn_spacing())})
+
+
+## How far apart players who join together start, from player.json, read once; 0 (everyone
+## on the spawn) if the file is broken, which Data.require has already reported.
+func _spawn_spacing() -> float:
+	if _spacing < 0.0:
+		var data: Variant = Data.load_json(PlayerController.CONFIG)
+		var fields := {"spawn_spacing": TYPE_FLOAT, "spawn_min_gap": TYPE_FLOAT, "radius": TYPE_FLOAT}
+		_spacing = spawn_spacing_from(data) if data is Dictionary and Data.require(PlayerController.CONFIG, data, fields) else 0.0
+	return _spacing
+
+
+## `spawn_spacing`, but never so tight that two bodies overlap: at least two radii plus
+## `spawn_min_gap` between their centres.
+static func spawn_spacing_from(config: Dictionary) -> float:
+	return maxf(float(config["spawn_spacing"]), float(config["radius"]) * 2.0 + float(config["spawn_min_gap"]))
+
+
+## The spawn itself when nobody stands on it, else the first spot on rings `spacing` apart
+## around it that is `spacing` from everyone. Two bodies in one spot push each other out the
+## same way every tick and slide off together at tens of metres a second.
+static func free_spawn_point(spawn: Vector3, taken: Array[Vector3], spacing: float) -> Vector3:
+	const PER_RING := 8
+	const MAX_RINGS := 4
+	for ring in MAX_RINGS + 1:
+		for i in (1 if ring == 0 else PER_RING):
+			var angle := TAU * float(i) / float(PER_RING)
+			var at := spawn + Vector3(cos(angle), 0.0, sin(angle)) * spacing * float(ring)
+			if taken.all(func(t: Vector3) -> bool: return Vector2(t.x - at.x, t.z - at.z).length() >= spacing):
+				return at
+	return spawn
 
 
 ## Runs on the server and, through the spawner, on every client.

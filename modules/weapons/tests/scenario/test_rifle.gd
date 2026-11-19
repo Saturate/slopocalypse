@@ -30,10 +30,14 @@ func before_test() -> void:
 	_rifle.holder = _player
 	_player.get_node("Head/Camera").add_child(_rifle)
 
-	# Straight ahead (-Z), torso at eye height.
+	# Straight ahead (-Z), aimed at the middle of its body. The 1.75 m dummy's top is only
+	# 10 cm over the eyes, and the gun's seeded spread (0.6 degrees, about 10 cm at this range)
+	# took about one shot in 60 over it at eye level.
 	_dummy = (load(DUMMY) as PackedScene).instantiate()
 	add_child(_dummy)
 	_dummy.global_position = Vector3(0.0, 0.0, -10.0)
+	var eyes := float(_player.config["stand_height"]) - float(_player.config["eye_offset"])
+	_player.intent().look_delta = Vector2(0.0, atan2(eyes - 1.0, 10.0))
 
 	_shots.clear()
 	EventBus.subscribe(&"weapon.fired", _on_fired)

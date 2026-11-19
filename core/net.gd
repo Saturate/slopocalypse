@@ -17,7 +17,8 @@ extends Node
 ## downstream can ask `identity_of(peer)`; one that stays silent is dropped.
 ##
 ## Test hook: --net-report-after=FRAMES prints a NET-REPORT line and quits, so tools can
-## check a session from the outside.
+## check a session from the outside. The physics frames count from the first peer: for a
+## client its server, for a server its first player.
 
 ## Server: a peer connected and said who they are.
 signal peer_joined(peer_id: int)
@@ -383,7 +384,10 @@ func _physics_process(delta: float) -> void:
 func _physics_tick(delta: float) -> void:
 	_watch_empty(delta)
 	_drop_silent(delta)
-	if _report_after < 0:
+	# Counted from when the session has someone in it, not from launch: a slow machine can
+	# spend seconds loading first, and the smoke tests start their processes seconds apart, so
+	# counting from launch let a server stop before a slow client had reported.
+	if _report_after < 0 or not _had_peers:
 		return
 	_frames += 1
 	if _frames == _report_after:
@@ -397,12 +401,25 @@ func _physics_tick(delta: float) -> void:
 ## counts as leaving; one that never connected is caught here. (Watching the parent pid does
 ## not work: on Windows Godot only tracks processes it started itself.)
 func _watch_empty(delta: float) -> void:
-	if not _quit_when_empty or _had_peers:
+	if not _waited_too_long(delta):
 		return
-	_waited_for_first += delta
-	if _waited_for_first >= FIRST_JOIN_SECONDS:
+	if _report_after >= 0:
+		Log.error(&"net", "nobody to report on: no peer within %d s; quitting" % int(FIRST_JOIN_SECONDS))
+	else:
 		Log.info(&"net", "nobody joined within %d s; server quitting" % int(FIRST_JOIN_SECONDS))
-		_stop()
+	_stop()
+
+
+## True once FIRST_JOIN_SECONDS have passed without a first peer, for a --quit-when-empty
+## server and for tool runs (--net-report-after) of a server or a solo game: their report
+## frames only count once there is a peer, so without this they would wait out the tool's
+## timeout instead of failing.
+func _waited_too_long(delta: float) -> bool:
+	var tool_run := _report_after >= 0 and mode != Mode.CLIENT
+	if not (_quit_when_empty or tool_run) or _had_peers:
+		return false
+	_waited_for_first += delta
+	return _waited_for_first >= FIRST_JOIN_SECONDS
 
 
 ## One line describing the session, for tools and tests. `moved` is the furthest any player
@@ -469,6 +486,9 @@ func _start_server() -> void:
 	var err := peer.create_server(port, MAX_CLIENTS)
 	if err != OK:
 		Log.error(&"net", "could not start server on port %d (%s)" % [port, error_string(err)])
+		# A test run would otherwise wait out its tool's timeout for a report that never comes.
+		if _report_after >= 0:
+			get_tree().quit(1)
 		return
 	multiplayer.multiplayer_peer = peer
 	var relevance := NetRelevance.new()
