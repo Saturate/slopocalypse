@@ -11,8 +11,20 @@ const BLEND_RATE := 12.0
 const AIM_RATE := 15.0
 
 var player: PlayerController
+## Someone else's body: posed less often when far off or out of view (BodyLod). Off for your
+## own, which is posed every frame. Set before adding to the tree.
+var lod := false
+## How many times the body has been posed; tests read it.
+var poses := 0
 
 var _tree: AnimationTree
+var _skeleton: Skeleton3D
+## Seconds since the body was last posed.
+var _since := 0.0
+var _posed := false
+## Taken off the first wait only, so bodies that arrive together are not all posed on the
+## same frames; never counted as time passing.
+var _lead := 0.0
 var _aim: Node
 var _hand_ik: Node
 var _head: Node3D
@@ -24,6 +36,11 @@ var _camera: Node3D
 ## The first-person hip point the body was set up with; zero in third person.
 var _default_hip := Vector3.ZERO
 var _hip_read := false
+var _socket: Node3D
+## The held gun's markers (`Sight`, `GripR`, `GripL`), looked up once per gun: a search
+## through the gun's parts every frame was a large share of a crowd's cost.
+var _markers: Dictionary[StringName, Object] = {}
+var _markers_found := false
 
 
 ## How far into aiming down sights the body is, 0 to 1. The camera reads it for its zoom.
@@ -51,13 +68,41 @@ func _ready() -> void:
 	_hand_ik = body.get_node_or_null("Skeleton/HandIK")
 	_head = player.get_node("Head")
 	_camera = player.get_node("Head/Camera")
+	_skeleton = body.get_node("Skeleton")
+	_socket = PlayerBody.weapon_socket(player)
+	if _socket != null:
+		# A gun is built whole before it goes into the hands, so a change of child is a new gun.
+		_socket.child_order_changed.connect(_forget_markers)
+	if lod:
+		# Posed by hand below, on the frames the body is due.
+		_tree.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+		_skeleton.modifier_callback_mode_process = Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_MANUAL
 	_tree.active = true
 
 
 func _process(delta: float) -> void:
 	var prof := Prof.start()
-	_process_tick(delta)
+	if not lod:
+		_process_tick(delta)
+		poses += 1
+	else:
+		_since += delta
+		var middle := player.global_position + Vector3.UP
+		if not _posed or _since + _lead >= BodyLod.shared().interval_at(get_viewport(), middle):
+			_pose(_since)
 	Prof.stop(&"player/player_body_animator:frame", prof)
+
+
+func _pose(delta: float) -> void:
+	_process_tick(delta)
+	_tree.advance(delta)
+	_skeleton.advance(delta)
+	poses += 1
+	_since = 0.0
+	_lead = 0.0
+	if not _posed:
+		_posed = true
+		_lead = fposmod(float(get_instance_id()) * 0.618034, 1.0) / BodyLod.shared().off_screen_rate
 
 
 func _process_tick(delta: float) -> void:
@@ -111,8 +156,7 @@ func _update_ads(delta: float) -> void:
 	if sight != null:
 		# The sight in the space of the bone the weapon hangs from (the socket's parent is
 		# that bone's attachment). Both globals are from this frame, so the lag cancels out.
-		var socket := PlayerBody.weapon_socket(player)
-		_aim.set(&"sight", socket.transform * (socket.global_transform.affine_inverse() * sight.global_position))
+		_aim.set(&"sight", _socket.transform * (_socket.global_transform.affine_inverse() * sight.global_position))
 
 
 ## Tells the hand IK where the held gun wants each hand (its `GripR` / `GripL` markers), in
@@ -120,19 +164,40 @@ func _update_ads(delta: float) -> void:
 func _update_hands() -> void:
 	if _hand_ik == null:
 		return
-	var socket := PlayerBody.weapon_socket(player)
 	var targets := {}
-	if socket != null:
+	if _socket != null:
 		for side: StringName in [&"R", &"L"]:
-			var marker := socket.find_child("Grip" + String(side), true, false) as Node3D
+			var marker := _marker(&"Grip" + side)
 			if marker != null:
-				targets[side] = socket.transform * (socket.global_transform.affine_inverse() * marker.global_position)
+				targets[side] = _socket.transform * (_socket.global_transform.affine_inverse() * marker.global_position)
 	_hand_ik.set(&"targets", targets)
 
 
 func _sight_marker() -> Node3D:
-	var socket := PlayerBody.weapon_socket(player)
-	return socket.find_child("Sight", true, false) as Node3D if socket != null else null
+	return _marker(&"Sight")
+
+
+func _marker(marker_name: StringName) -> Node3D:
+	if _socket == null:
+		return null
+	if not _markers_found:
+		_markers_found = true
+		_markers.clear()
+		for key: StringName in [&"Sight", &"GripR", &"GripL"]:
+			var found := _socket.find_child(String(key), true, false) as Node3D
+			if found != null:
+				_markers[key] = found
+	var marker: Object = _markers.get(marker_name)
+	if marker == null:
+		return null
+	if not is_instance_valid(marker):
+		_forget_markers()
+		return _marker(marker_name)
+	return marker as Node3D
+
+
+func _forget_markers() -> void:
+	_markers_found = false
 
 
 ## The server and solo simulate the body and know floor contact; remote copies only get

@@ -206,7 +206,12 @@ func _process_tick(delta: float) -> void:
 		# Held still (someone else's copy on a client; on the server a held or dead body), it
 		# never steps, so its eye (where its gun aims from) follows crouch and slide here.
 		_apply_height(config["crouch_height"] if _intent.crouch or mode == Mode.SLIDE else config["stand_height"])
-	var want := float(_intent.lean) if mode == Mode.NORMAL and not is_sprinting() else 0.0
+	var want := 0.0
+	if _intent.lean != 0 and mode == Mode.NORMAL and not is_sprinting():
+		want = float(_intent.lean)
+	if _lean == 0.0 and want == 0.0 and _head.position.x == 0.0:
+		# Not leaning (nearly everyone, nearly always): nothing to move.
+		return
 	_lean = move_toward(_lean, want, delta / maxf(float(config["lean_seconds"]), 0.01))
 	var offset := _lean * float(config["lean_offset"])
 	if absf(offset) > 0.01 and is_inside_tree():

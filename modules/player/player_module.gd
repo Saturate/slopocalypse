@@ -337,6 +337,7 @@ func _on_player_ready(player: PlayerController, local: bool) -> void:
 	var animator := PlayerBodyAnimator.new()
 	animator.name = "BodyAnimator"
 	animator.player = player
+	animator.lod = not local
 	player.add_child(animator)
 	if local:
 		_setup_local(player)
