@@ -777,6 +777,11 @@ impl Grid {
 
     /// The see-through cells of chunk `id` alone (glass): faces only where they meet air.
     pub fn mesh_chunk_clear(&self, id: usize) -> Mesh {
+        // Most models draw nothing see-through; scanning their cells for it again cost a
+        // shot-at water tower half as much again per hole.
+        if !self.clear.iter().any(|&c| c) {
+            return Mesh::default();
+        }
         let (lo, hi) = self.chunk_cells(id);
         self.mesh_region(lo, hi, usize::MAX, true)
     }
@@ -869,6 +874,15 @@ impl Grid {
                         clear.append(&self.mesh_chunk_clear(chunk));
                     }
                     return (section, mesh, clear);
+                }
+                // A one-chunk section is only ever redrawn for its own chunk: nothing to keep.
+                if chunks.len() == 1 {
+                    let chunk = chunks[0];
+                    return (
+                        section,
+                        self.mesh_chunk(chunk),
+                        self.mesh_chunk_clear(chunk),
+                    );
                 }
                 // Edited: from now on this section keeps its chunks' meshes.
                 let fresh = !self.kept[section];

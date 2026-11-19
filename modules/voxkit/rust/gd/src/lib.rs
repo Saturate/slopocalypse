@@ -630,7 +630,7 @@ impl VoxelModel {
     #[func]
     fn set_section_chunks(&mut self, chunks: i64) {
         if let Some(grid) = self.grid.as_mut() {
-            grid.set_section(chunks.clamp(1, 64) as usize);
+            grid.set_section(chunks.clamp(1, voxkit_core::MAX_SECTION as i64) as usize);
         }
     }
 

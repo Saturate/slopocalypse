@@ -64,7 +64,8 @@ func test_a_hole_rebuilds_only_the_sections_it_touched() -> void:
 	# One section, or two where the hole sits on a border between them.
 	assert_int(rebuilt).is_between(1, 2)
 	assert_int(rebuilt).is_less(model.section_count())
-	assert_int(model.kept_sections()).is_equal(rebuilt)
+	# A section of one chunk has nothing worth keeping: it is only redrawn for that chunk.
+	assert_int(model.kept_sections()).is_equal(0)
 	assert_int(shown.refresh()).is_equal(0)
 	# Shot at, so drawn a chunk a section (voxkit.json `sections.editable_chunks`): a hole
 	# remeshes one chunk, as cheap as before sections.

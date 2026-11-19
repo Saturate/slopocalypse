@@ -3,9 +3,9 @@ extends Node3D
 ## Draws a `VoxelModel` as one mesh per section of chunks of 16 cells, 4 x 4 x 4 chunks
 ## (9.6 m at 0.15 m voxels) unless told otherwise, so a building is a handful of mesh
 ## instances rather than hundreds: each instance is a draw call per pass, and a city of them
-## was fifteen thousand. Models that get shot at (`editable`, set before the model) use
-## `sections.editable_chunks` from voxkit.json (1: a chunk each, as cheap per bullet hole as
-## meshing one chunk), because an edit re-joins its whole section. Once a section is edited the model keeps its
+## was fifteen thousand. Models that get shot at (`editable`, set before the first
+## `refresh()`) use `sections.editable_chunks` from voxkit.json (1: a chunk each, as cheap
+## per bullet hole as meshing one chunk), because an edit re-joins its whole section. Once a section is edited the model keeps its
 ## chunks' meshes, so later edits mesh only the chunks they touch; sections never edited keep
 ## nothing. Call `refresh()` after editing; it replaces just the changed sections. One mesh
 ## instance per section rather than one surface per section, because an `ArrayMesh` surface
