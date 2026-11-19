@@ -15,7 +15,9 @@ extends Node
 ## same reliable channel, the death first. For the same reason the ragdoll still holds the
 ## death pose then, which is what the hips' axis and the nearest bone are judged by. The chance
 ## is rolled from what every client shares (the body's path and the hit point), so co-op
-## players see the same limb come off.
+## players agree whether a shot takes a limb. Which limb is judged from each client's own copy
+## of the death pose, so for a hit near the boundary between two bones, two clients can pick
+## different limbs.
 ##
 ## With the "Blood" setting off nothing comes off.
 
@@ -312,7 +314,8 @@ func _hips_side(corpse: Corpse) -> Vector3:
 
 
 ## A number from 0 to 1 every client works out the same for a shot on the body at path `who`
-## hitting `point` (rounded to centimetres, as the server sent it).
+## hitting `point`. The server sends the point unrounded; it is rounded to centimetres here, so
+## the last bits of a float can't make two clients roll differently.
 static func sever_roll(who: String, point: Vector3) -> float:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash("%s|%d|%d|%d" % [who, roundi(point.x * 100.0), roundi(point.y * 100.0), roundi(point.z * 100.0)])

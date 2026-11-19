@@ -142,10 +142,24 @@ func test_shots_from_the_front_or_back_never_take_the_arms() -> void:
 
 
 func test_side_shots_at_arm_height_take_an_arm() -> void:
-	var left: Vector3 = await _hit_on(_player, 1.45, Vector3.RIGHT)
-	assert_str(_severing.shot_limb(_corpse_for_probe(), left, Vector3.RIGHT, 100.0, LimbSevering.config())).is_equal("upper_arm_L")
-	var right: Vector3 = await _hit_on(_player, 1.45, Vector3.LEFT)
-	assert_str(_severing.shot_limb(_corpse_for_probe(), right, Vector3.LEFT, 100.0, LimbSevering.config())).is_equal("upper_arm_R")
+	# Standing as in play, holding the rifle pose its animation gives it, not the rest pose.
+	var animator := PlayerBodyAnimator.new()
+	animator.name = "BodyAnimator"
+	animator.player = _player
+	_player.add_child(animator)
+	await _frames(90)
+	# The right arm hangs at the side down to the grip; the left reaches forward to the
+	# handguard, so from the left only the shoulder is out at the side.
+	var taken := {"L": [], "R": []}
+	for height in [1.0, 1.1, 1.2, 1.3]:
+		var right: Vector3 = await _hit_on(_player, height, Vector3.LEFT)
+		taken["R"].append(_severing.shot_limb(_corpse_for_probe(), right, Vector3.LEFT, 100.0, LimbSevering.config()))
+	for height in [1.4, 1.5]:
+		var left: Vector3 = await _hit_on(_player, height, Vector3.RIGHT)
+		taken["L"].append(_severing.shot_limb(_corpse_for_probe(), left, Vector3.RIGHT, 100.0, LimbSevering.config()))
+	for side: String in ["L", "R"]:
+		var arms := (taken[side] as Array).filter(func(l: String) -> bool: return l in ["upper_arm_" + side, "forearm_" + side])
+		assert_bool(arms.is_empty()).override_failure_message("side %s took %s" % [side, taken[side]]).is_false()
 
 
 func test_every_client_rolls_the_same_chance_for_the_same_shot() -> void:
