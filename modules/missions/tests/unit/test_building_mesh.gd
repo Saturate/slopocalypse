@@ -1,15 +1,15 @@
 extends GdUnitTestSuite
-## Bullet holes in a building's mesh: only the chunks a hole touched are rebuilt, and every
-## hole shows up on the next frame.
+## Bullet holes in a building's mesh: only the sections a hole touched are rebuilt, an edited
+## section keeps its chunks' meshes while untouched ones keep none, and every hole shows up on
+## the next frame.
 
 const CONFIG := "res://modules/missions/data/missions.json"
 
 
-func _building() -> MissionBuilding:
-	var cfg: Dictionary = (Data.load_json(CONFIG) as Dictionary)["buildings"]
+func _building(width := 6.0) -> MissionBuilding:
 	var b: MissionBuilding = auto_free(MissionBuilding.new())
 	# No windows: a pane takes no hole, and this is about holes rebuilding chunks.
-	b.spec = {"width": 6.0, "depth": 5.0, "wall_height": 3.0, "seed": 4, "paint": 1, "windows": 0.0}
+	b.spec = {"width": width, "depth": 5.0, "wall_height": 3.0, "seed": 4, "paint": 1, "windows": 0.0}
 	b.material_cfg = VoxMaterials.named("wood")
 	# Headless runs skip the model; this test is about the model.
 	b.set(&"_visual", true)
@@ -52,15 +52,24 @@ func test_thirty_holes_in_a_second_each_show_on_the_next_frame() -> void:
 		assert_float(after).override_failure_message("hole %d: the mesh differs from the model" % i).is_equal_approx(_whole_area(model), 0.001)
 
 
-func test_a_hole_rebuilds_only_the_chunks_it_touched() -> void:
-	var b := _building()
+func test_a_hole_rebuilds_only_the_sections_it_touched() -> void:
+	# Wide enough for several sections, so rebuilding fewer than all of them means something.
+	var b := _building(14.0)
 	var shown := b.get_node("Mesh") as VoxelChunkedMesh
 	var model: VoxelModel = b.get(&"_model")
+	assert_int(model.section_count()).is_greater(2)
+	assert_int(model.kept_sections()).is_equal(0)
 	model.carve_ellipsoid(Vector3(float(b.spec["width"]) / 2.0, 1.0, 0.0), Vector3.ONE * 0.13)
 	var rebuilt := shown.refresh()
-	assert_int(rebuilt).is_greater(0)
-	assert_int(rebuilt).is_less(model.chunk_count() / 2)
+	# One section, or two where the hole sits on a border between them.
+	assert_int(rebuilt).is_between(1, 2)
+	assert_int(rebuilt).is_less(model.section_count())
+	# A section of one chunk has nothing worth keeping: it is only redrawn for that chunk.
+	assert_int(model.kept_sections()).is_equal(0)
 	assert_int(shown.refresh()).is_equal(0)
+	# Shot at, so drawn a chunk a section (voxkit.json `sections.editable_chunks`): a hole
+	# remeshes one chunk, as cheap as before sections.
+	assert_int(model.section_count()).is_equal(model.chunk_count())
 
 
 func _fragments_under(node: Node) -> Array:
