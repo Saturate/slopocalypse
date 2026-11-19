@@ -39,6 +39,7 @@ var _fell_at := Vector3.ZERO
 var _age := 0.0
 var _settled := false
 var _velocity := Vector3.ZERO
+var _pushed := false
 
 
 static func config() -> Dictionary:
@@ -82,6 +83,11 @@ static func from_body(player: Node3D, push: Vector3, velocity := Vector3.ZERO) -
 			geometry.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	_copy_pose(source, corpse.skeleton)
 	corpse._add_bones(cfg)
+	if player is PhysicsBody3D:
+		# It starts inside the dead body's capsule, which is only switched off at the end of
+		# the frame; hitting it would stop the fall where it began.
+		for bone in corpse.simulator.get_children():
+			(bone as PhysicalBone3D).add_collision_exception_with(player)
 	corpse._velocity = velocity + push
 	# Placed before it enters the tree: its physics starts in `_ready`, from where it is then.
 	corpse.transform = body.global_transform
@@ -150,8 +156,6 @@ func _ready() -> void:
 	# The LootBody may have got here first; later ones find this corpse themselves.
 	_look_for_loot()
 	simulator.physical_bones_start_simulation()
-	for bone in simulator.get_children():
-		(bone as PhysicalBone3D).linear_velocity = _velocity
 	_simulating.append(self)
 	var cap := int(config()["max_simulating"])
 	while _simulating.size() > cap:
@@ -174,6 +178,8 @@ func _physics_process(delta: float) -> void:
 
 
 func _physics_tick(delta: float) -> void:
+	if not _pushed and not _settled:
+		_push()
 	_age += delta
 	var cfg := config()
 	if not _settled and _age >= float(cfg["settle_seconds"]):
@@ -205,6 +211,17 @@ func _link(loot: Node3D) -> void:
 	if loot.has_method(&"show_figure"):
 		loot.call(&"show_figure", false)
 	loot.tree_exiting.connect(queue_free)
+
+
+## Sets the bones moving once they really simulate: the simulator only switches them over in
+## its own processing, and a bone still following the skeleton drops what it is given.
+func _push() -> void:
+	var bones := simulator.get_children()
+	if bones.is_empty() or not (bones[0] as PhysicalBone3D).is_simulating_physics():
+		return
+	_pushed = true
+	for bone in bones:
+		(bone as PhysicalBone3D).linear_velocity = _velocity
 
 
 ## Keeps the pose the ragdoll fell into and drops its physics.
