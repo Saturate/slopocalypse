@@ -26,6 +26,7 @@ func _ready() -> void:
 	# its default for the same action.
 	Settings.load_from()
 	Settings.apply(get_tree().root)
+	RenderSwitches.apply(get_tree().root, OS.get_cmdline_user_args())
 	Settings.apply_keys()
 	# Before anything reads the profile or opens a save.
 	var moved := UserDataMove.run()

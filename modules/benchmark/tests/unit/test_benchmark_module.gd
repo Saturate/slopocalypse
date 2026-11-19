@@ -41,6 +41,8 @@ func test_the_results_screen_shows_numbers_and_hitches() -> void:
 	add_child(auto_free(screen))
 	var results := BenchmarkStats.summarise(PackedFloat32Array([16.0, 17.0, 40.0]))
 	results["draw_calls"] = 900.0
+	results["driver"] = "metal"
+	results["budget"] = {"frame_ms": 10.0, "scripts_ms": 3.0, "physics_ms": 1.0, "render_ms": 4.0, "other_ms": 2.0}
 	results["hitches"] = [{"t": 30.0, "ms": 90.0, "zones": {"world/x": 2.5, "audio/y": 0.1}, "compiles": {"draw": 2.0}}]
 	screen.show_results(results, false)
 	assert_bool(screen.is_open()).is_true()
