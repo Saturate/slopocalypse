@@ -114,7 +114,8 @@ func test_the_bolt_action_is_a_manual_action_with_a_magnified_scope() -> void:
 	assert_float(GunAssembly.cycle_seconds_of(slots, stats)).is_greater(0.0)
 	assert_float(GunAssembly.cycle_seconds_of(GunAssembly.build("ar_standard"), rifle)).is_equal(0.0)
 	assert_float(stats["damage"]).is_greater(float(rifle["damage"]) * 2.0)
-	assert_float(stats["spread_degrees"]).is_less(float(rifle["spread_degrees"]))
+	# Accurate only aimed: its hip spread is wide, its receiver makes aiming tighten it.
+	assert_float(float(GunAssembly.receiver_of(slots).get("ads_spread_multiplier", 1.0))).is_less(0.05)
 	# The long scope magnifies more than any other optic.
 	for id: String in GunModding.options("optic"):
 		if id != "opt_scope_8x":
