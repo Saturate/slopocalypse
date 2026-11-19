@@ -15,9 +15,9 @@ const WEAPON_SLOTS: Array[String] = ["primary", "secondary"]
 ## A bullet landing this close to a placed charge sets it off.
 const CHARGE_SHOT_RADIUS := 0.35
 ## Gun items and the default build each comes with.
-const GUN_ITEMS := {"gun_rifle": "primary", "gun_pistol": "secondary", "gun_rocket": "primary"}
+const GUN_ITEMS := {"gun_rifle": "primary", "gun_pistol": "secondary", "gun_rocket": "primary", "gun_bolt": "primary"}
 ## Gun items that aren't their slot's default gun, with the build they come as.
-const ITEM_BUILDS := {"gun_rocket": "launcher"}
+const ITEM_BUILDS := {"gun_rocket": "launcher", "gun_bolt": "bolt_standard"}
 
 var _charge_spawner := MultiplayerSpawner.new()
 var _rocket_spawner := MultiplayerSpawner.new()
@@ -428,6 +428,7 @@ func _equip(player: PlayerController, slots: Dictionary) -> void:
 	if player.has_meta(&"damage_scale"):
 		weapon.stats["damage"] = float(weapon.stats.get("damage", 0.0)) * float(player.get_meta(&"damage_scale"))
 	weapon.semi_auto = GunAssembly.receiver_of(slots).get("fire_mode", "auto") == "semi"
+	weapon.cycle_seconds = GunAssembly.cycle_seconds_of(slots, weapon.stats)
 	weapon.set_meta(&"build", slots)
 	camera.add_child(weapon)
 	if old != null:

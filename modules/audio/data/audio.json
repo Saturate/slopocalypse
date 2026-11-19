@@ -28,7 +28,9 @@
     "break_brick": -3.0,
     "break_concrete": -3.0,
     "collapse": 0.0,
-    "launch": 0.0
+    "launch": 0.0,
+    "bolt_rifle": 0.0,
+    "bolt_cycle": -9.0
   },
   "surface_families": {
     "wood": "wood",
@@ -57,5 +59,10 @@
     "max_seconds": 8.0,
     "distance_min": 12.0,
     "distance_max": 45.0
+  },
+  "bolt_cycle": {
+    "start_share": 0.3,
+    "reference_seconds": 0.95,
+    "range": 60.0
   }
 }

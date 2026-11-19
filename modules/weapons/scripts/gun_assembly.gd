@@ -59,6 +59,14 @@ static func weapon_slot_of(slots: Dictionary) -> String:
 	return str(receiver_of(slots).get("weapon_slot", "primary"))
 
 
+## Seconds to work the bolt after each shot for a receiver with a manual action (`action`
+## "manual", its `cycle_seconds` among the assembled `stats`); 0 for a self-loading gun.
+static func cycle_seconds_of(slots: Dictionary, stats: Dictionary) -> float:
+	if str(receiver_of(slots).get("action", "")) != "manual":
+		return 0.0
+	return maxf(float(stats.get("cycle_seconds", 0.0)), 0.0)
+
+
 ## Where the model sits relative to the hands' socket: a pistol is held further out and
 ## higher than a rifle's receiver.
 static func hold_offset(slots: Dictionary) -> Vector3:

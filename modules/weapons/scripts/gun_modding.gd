@@ -8,10 +8,12 @@ extends RefCounted
 ## Mirrors weapons_core::parts::REQUIRED_SLOTS, for receivers that do not name their own.
 const REQUIRED: Array[String] = ["receiver", "barrel", "grip", "magazine"]
 
-## Stats the screen compares: key, label, format, and whether more is better.
+## Stats the screen compares: key, label, format, whether more is better, and whether to
+## leave the row out when both guns have none of it (only bolt-actions have a bolt cycle).
 const STAT_ROWS: Array[Dictionary] = [
 	{"key": "damage", "label": "Damage", "format": "%.0f", "higher_better": true},
 	{"key": "rounds_per_minute", "label": "Fire rate", "format": "%.0f rpm", "higher_better": true},
+	{"key": "cycle_seconds", "label": "Bolt cycle", "format": "%.2f s", "higher_better": false, "hide_zero": true},
 	{"key": "magazine", "label": "Magazine", "format": "%.0f", "higher_better": true},
 	{"key": "range", "label": "Range", "format": "%.0f m", "higher_better": true},
 	{"key": "recoil_pitch_degrees", "label": "Recoil", "format": "%.2f", "higher_better": false},
@@ -105,6 +107,8 @@ static func compare(before: Dictionary, after: Dictionary) -> Array[Dictionary]:
 		var key: String = row["key"]
 		var a := float(before.get(key, 0.0))
 		var b := float(after.get(key, 0.0))
+		if bool(row.get("hide_zero", false)) and is_zero_approx(a) and is_zero_approx(b):
+			continue
 		var verdict := 0
 		if not is_equal_approx(a, b):
 			verdict = 1 if (b > a) == bool(row["higher_better"]) else -1

@@ -36,7 +36,7 @@ func _gap(player: PlayerController, side: String) -> float:
 
 
 func test_hands_hold_the_grip_and_the_handguard() -> void:
-	for build: String in ["ar_standard", "ar_heavy", "ar_cqb"]:
+	for build: String in ["ar_standard", "ar_heavy", "ar_cqb", "bolt_standard"]:
 		var player := _spawn(build)
 		for i in 10:
 			await get_tree().process_frame

@@ -62,7 +62,9 @@
       "sld_pistol_long": 1,
       "bag_small": 2,
       "bag_large": 1,
-      "rig_heavy": 1
+      "rig_heavy": 1,
+      "opt_scope_8x": 1,
+      "mag_bolt_5": 1
     }
   },
   "loot": [
@@ -154,7 +156,10 @@
       "bag_large": 1,
       "rig_light": 1,
       "rig_heavy": 1,
-      "breach_charge": 3
+      "breach_charge": 3,
+      "gun_bolt": 1,
+      "opt_scope_8x": 1,
+      "mag_bolt_5": 2
     }
   },
   "starting_kit": [
@@ -562,6 +567,60 @@
         2
       ],
       "kind": "primary_gun"
+    },
+    "gun_bolt": {
+      "name": "Bolt-action rifle (with its parts)",
+      "short": "Bolt rifle",
+      "size": [
+        6,
+        2
+      ],
+      "kind": "primary_gun"
+    },
+    "bar_bolt_24": {
+      "name": "24 inch heavy barrel (bolt-action)",
+      "short": "24in barrel",
+      "size": [
+        5,
+        1
+      ],
+      "kind": "barrel"
+    },
+    "stk_bolt_walnut": {
+      "name": "Walnut rifle stock (bolt-action)",
+      "short": "Walnut stock",
+      "size": [
+        4,
+        1
+      ],
+      "kind": "furniture"
+    },
+    "bolt_std": {
+      "name": "Rifle bolt (bolt-action)",
+      "short": "Bolt",
+      "size": [
+        2,
+        1
+      ],
+      "kind": "furniture"
+    },
+    "mag_bolt_5": {
+      "name": "5 round 7.62x51 magazine",
+      "short": "5 rd",
+      "size": [
+        1,
+        1
+      ],
+      "kind": "magazine"
+    },
+    "opt_scope_8x": {
+      "name": "8x long scope",
+      "short": "8x scope",
+      "size": [
+        3,
+        1
+      ],
+      "kind": "optic"
     }
   }
 }

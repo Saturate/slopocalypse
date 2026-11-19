@@ -27,6 +27,10 @@
       "price": 30
     },
     {
+      "item": "gun_bolt",
+      "price": 60
+    },
+    {
       "item": "medkit",
       "price": 10
     },
@@ -137,6 +141,14 @@
     {
       "item": "bag_large",
       "price": 60
+    },
+    {
+      "item": "mag_bolt_5",
+      "price": 10
+    },
+    {
+      "item": "opt_scope_8x",
+      "price": 30
     }
   ]
 }

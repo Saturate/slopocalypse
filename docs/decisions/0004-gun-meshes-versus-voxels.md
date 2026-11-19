@@ -22,3 +22,8 @@ Not made. Until it is, new gun parts follow `GunPartMeshes`.
 
 ## Consequences
 Two art pipelines to maintain. Settle this before the guns work (#193) adds many more parts.
+
+The bolt-action rifle (#192) is a trial of the voxel option: its parts come from the voxel kit
+(`VoxBoltRifle`, shown in the asset library) and `GunPartMeshes` hands them out by mesh id
+(`vox_bolt_*`) like any other part, so both kinds mix on one gun (its scope fits the AR). The
+weapons module now depends on the voxel kit. Compare the two in play before deciding.

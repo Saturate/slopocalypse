@@ -65,6 +65,14 @@
     },
     "launcher": {
       "receiver": "rcv_launcher"
+    },
+    "bolt_standard": {
+      "receiver": "rcv_bolt",
+      "bolt_barrel": "bar_bolt_24",
+      "bolt_stock": "stk_bolt_walnut",
+      "bolt_handle": "bolt_std",
+      "bolt_magazine": "mag_bolt_5",
+      "optic": "opt_scope_8x"
     }
   },
   "parts": {
@@ -678,6 +686,164 @@
         "weight": 6.5,
         "magazine": 1,
         "range": 300.0
+      }
+    },
+    "rcv_bolt": {
+      "name": "Bolt-action receiver, 7.62x51",
+      "slot": "receiver",
+      "mesh": "vox_bolt_receiver",
+      "weapon_slot": "primary",
+      "fire_mode": "semi",
+      "action": "manual",
+      "provides": [
+        "bolt_barrel",
+        "bolt_stock",
+        "bolt_handle",
+        "bolt_magazine",
+        "optic"
+      ],
+      "requires": [
+        "bolt_barrel",
+        "bolt_stock",
+        "bolt_handle",
+        "bolt_magazine"
+      ],
+      "mounts": {
+        "bolt_barrel": [
+          0.0,
+          0.03,
+          -0.115
+        ],
+        "bolt_stock": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "bolt_handle": [
+          0.0,
+          0.03,
+          0.07
+        ],
+        "bolt_magazine": [
+          0.0,
+          0.01,
+          -0.04
+        ],
+        "optic": [
+          0.0,
+          0.056,
+          -0.02
+        ]
+      },
+      "markers": {
+        "Sight": [
+          0.0,
+          0.052,
+          0.076
+        ]
+      },
+      "stats": {
+        "rounds_per_minute": 300.0,
+        "damage": 80.0,
+        "spread_degrees": 0.12,
+        "recoil_pitch_degrees": 3.2,
+        "recoil_yaw_degrees": 0.6,
+        "reload_seconds": 3.0,
+        "ads_seconds": 0.26,
+        "cycle_seconds": 0.95,
+        "ergonomics": 28.0,
+        "weight": 1.4
+      }
+    },
+    "bar_bolt_24": {
+      "name": "24 inch heavy barrel",
+      "slot": "bolt_barrel",
+      "mesh": "vox_bolt_barrel",
+      "provides": [],
+      "markers": {
+        "Muzzle": [
+          0.0,
+          0.0,
+          -0.62
+        ]
+      },
+      "stats": {
+        "range": 600.0,
+        "weight": 1.1
+      }
+    },
+    "stk_bolt_walnut": {
+      "name": "Walnut rifle stock",
+      "slot": "bolt_stock",
+      "mesh": "vox_bolt_stock",
+      "provides": [],
+      "markers": {
+        "GripR": [
+          0.0,
+          -0.07,
+          0.115
+        ],
+        "GripL": [
+          -0.03,
+          -0.01,
+          -0.22
+        ]
+      },
+      "stats": {
+        "recoil_pct": -20.0,
+        "ergonomics": 8.0,
+        "weight": 1.1
+      }
+    },
+    "bolt_std": {
+      "name": "Rifle bolt",
+      "slot": "bolt_handle",
+      "mesh": "vox_bolt_bolt",
+      "provides": [],
+      "markers": {
+        "BoltKnob": [
+          0.05,
+          -0.016,
+          0.008
+        ]
+      },
+      "stats": {
+        "ergonomics": 4.0,
+        "weight": 0.3
+      }
+    },
+    "mag_bolt_5": {
+      "name": "5 round 7.62x51 magazine",
+      "slot": "bolt_magazine",
+      "mesh": "vox_bolt_magazine",
+      "provides": [],
+      "stats": {
+        "magazine": 5.0,
+        "weight": 0.15
+      }
+    },
+    "opt_scope_8x": {
+      "name": "8x long scope",
+      "slot": "optic",
+      "mesh": "vox_bolt_scope",
+      "provides": [],
+      "markers": {
+        "Sight": [
+          0.0,
+          0.04,
+          0.14
+        ]
+      },
+      "marker_meta": {
+        "Sight": {
+          "eye_relief": 0.06
+        }
+      },
+      "stats": {
+        "zoom": 1.1,
+        "magnification": 8.0,
+        "ergonomics": -14.0,
+        "weight": 0.75
       }
     }
   },

@@ -3,7 +3,8 @@ extends Node3D
 ## A carried hitscan gun's logic, at the holder's camera so shots follow the aim. It has
 ## no mesh: the one visible rifle is in the body's hands. Reads the holder's PlayerIntent;
 ## the server decides every hit.
-## Fire rules (rate, magazine, reload, spread) run in Rust (`WeaponRules`).
+## Fire rules (rate, magazine, reload, the bolt after each shot, spread) run in Rust
+## (`WeaponRules`).
 
 const CONFIG := "res://modules/weapons/data/weapons.json"
 const REQUIRED := {
@@ -36,6 +37,9 @@ const HEAD_BELOW_EYES := 0.22
 var active := true
 ## One shot per trigger pull (pistols) instead of firing while held.
 var semi_auto := false
+## Seconds to work the bolt after each shot before the next can fire; 0 for a gun that
+## loads itself. Set from the receiver's `action` ("manual") and `cycle_seconds`.
+var cycle_seconds := 0.0
 var rules := WeaponRules.new()
 
 var _recoil_rng := RandomNumberGenerator.new()
@@ -62,7 +66,7 @@ func _ready() -> void:
 		set_physics_process(false)
 		return
 	# Seeded per weapon so server and owning client roll the same spread.
-	rules.setup(stats["rounds_per_minute"], int(stats["magazine"]), stats["reload_seconds"], deg_to_rad(stats["spread_degrees"]), get_instance_id())
+	rules.setup(stats["rounds_per_minute"], int(stats["magazine"]), stats["reload_seconds"], deg_to_rad(stats["spread_degrees"]), cycle_seconds, get_instance_id())
 
 
 ## Rounds left. Clients show what the server last told them; only the server fires.
@@ -70,6 +74,12 @@ func ammo() -> int:
 	if not multiplayer.is_server() and _synced_ammo >= 0:
 		return _synced_ammo
 	return rules.ammo()
+
+
+## True while the bolt is being worked after a shot (server and solo; clients don't run the
+## rules).
+func is_cycling() -> bool:
+	return rules.is_cycling()
 
 
 func is_reloading() -> bool:
