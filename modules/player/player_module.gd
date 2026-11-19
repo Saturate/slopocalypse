@@ -184,10 +184,11 @@ func _spawn_player(data: Variant) -> Node:
 	player.set_meta(&"peer_id", peer)
 	player.add_to_group(&"players")
 	_players[peer] = player
-	# The server simulates every player; client copies wait for movement sync (#10).
-	if not multiplayer.is_server():
-		player.set_physics_process(false)
 	var local := Net.has_local_player() and peer == Net.local_peer_id()
+	# The server simulates every player; copies of others on a client only show what it sends
+	# (#10). Your own copy keeps its step: eye height, floor contact and camera feel come from it.
+	if not multiplayer.is_server() and not local:
+		PlayerController.hold_still(player)
 	# Others are shown a moment in the past, blended between updates; our own camera can't lag.
 	player.set_meta(&"net_smooth", not local)
 	player.ready.connect(_on_player_ready.bind(player, local), CONNECT_ONE_SHOT)

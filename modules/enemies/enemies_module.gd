@@ -242,7 +242,7 @@ func _make_enemy(data: Variant) -> Node:
 	# Soldiers count and scan the `enemies` group; civilians are neither.
 	enemy.add_to_group(&"civilians" if civilian else &"enemies")
 	if not multiplayer.is_server():
-		enemy.set_physics_process(false)
+		PlayerController.hold_still(enemy)
 	enemy.rotation.y = float(info.get("post_yaw", 0.0))
 	enemy.ready.connect(_on_enemy_ready.bind(enemy, info["home"], info), CONNECT_ONE_SHOT)
 	return enemy
