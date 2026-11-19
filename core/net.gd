@@ -198,9 +198,17 @@ func leave(reason: String = "") -> void:
 	_identities.clear()
 	_unnamed.clear()
 	_kick_reason = ""
+	forget_menu_choice()
 	menu_message = reason
 	awaiting_menu = true
 	get_tree().reload_current_scene.call_deferred()
+
+
+## What a menu choice added (the range, the benchmark) belongs to that session only; left in,
+## the next Solo or Join would run it again, flags and all.
+func forget_menu_choice() -> void:
+	extra_args.clear()
+	Features.reload(session_args())
 
 
 ## A session that cannot start: a player gets the menu and the reason, a tool run an error.

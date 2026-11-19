@@ -36,3 +36,10 @@ test("error lines are picked out of a log, newest last", () => {
 test("escape codes from a report are not printed", () => {
 	assert.equal(printable("red\u001b[31m text\u0007"), "red[31m text");
 });
+
+test("a benchmark report lists its numbers and each hitch", () => {
+	const lines = summariseReport({ kind: "benchmark", benchmark: { fps_mean: 58, hitches: [{ t: 31, ms: 148.7, zones: { "world/scenery_build": 120 }, compiles: { draw: 2 } }] } }).join("\n");
+	assert.match(lines, /benchmark: fps_mean 58/);
+	assert.match(lines, /hitch 148\.7 ms at 31 s: world\/scenery_build 120; shaders compiled/);
+	assert.doesNotMatch(lines, /hitches/);
+});

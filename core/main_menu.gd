@@ -12,6 +12,7 @@ signal host_requested(port: int)
 signal join_requested(host: String, port: int)
 signal library_requested
 signal range_requested
+signal benchmark_requested
 
 const BG := UiPalette.BACKGROUND
 const ACCENT := UiPalette.ACCENT
@@ -36,6 +37,8 @@ var profile_path := PlayerProfile.FILE
 var has_library := false
 ## Set by boot when the test range module is there and on; shows its button.
 var has_range := false
+## Set by boot when the benchmark module is there and on; shows its button.
+var has_benchmark := false
 
 var _name: LineEdit
 var _address: LineEdit
@@ -286,6 +289,8 @@ func _title_column() -> void:
 		buttons.add_child(_button(&"Range", "Test range", func() -> void: range_requested.emit()))
 	if has_library:
 		buttons.add_child(_button(&"Library", "Asset library", func() -> void: library_requested.emit()))
+	if has_benchmark:
+		buttons.add_child(_button(&"Benchmark", "Benchmark", func() -> void: benchmark_requested.emit()))
 	buttons.add_child(_button(&"Settings", "Settings", open_settings))
 	buttons.add_child(_button(&"Changelog", "Changelog", open_changelog))
 	buttons.add_child(_button(&"Credits", "Credits", open_credits))

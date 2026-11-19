@@ -9,6 +9,7 @@ const LIBRARY := "res://modules/voxkit/library/asset_library.gd"
 
 ## The test range module (a solo game on a row of buildings for breaking things).
 const RANGE := "res://modules/range/range_module.gd"
+const BENCHMARK := "res://modules/benchmark/benchmark_module.gd"
 ## The city module's live view behind the title, if the city is there and on.
 const BACKDROP := "res://modules/city/title/title_backdrop.gd"
 
@@ -49,6 +50,9 @@ func _show_menu() -> void:
 	menu.message = Net.menu_message
 	menu.has_library = _library_available()
 	menu.has_range = Features.is_enabled(&"range") and ResourceLoader.exists(RANGE)
+	# Its run happens in the city with squads dying in view; without either the numbers would
+	# not be the benchmark's.
+	menu.has_benchmark = Features.is_enabled(&"benchmark") and Features.is_enabled(&"city") and Features.is_enabled(&"enemies") and ResourceLoader.exists(BENCHMARK)
 	add_child(menu)
 	_show_backdrop(menu)
 	menu.solo_requested.connect(func() -> void: _begin(menu, func() -> void:
@@ -59,6 +63,11 @@ func _show_menu() -> void:
 	menu.range_requested.connect(func() -> void: _begin(menu, func() -> void:
 		Net.awaiting_menu = false
 		Net.extra_args = (load(RANGE) as GDScript).call(&"session_args")
+		Features.reload(Net.session_args())
+		Net.start_solo()))
+	menu.benchmark_requested.connect(func() -> void: _begin(menu, func() -> void:
+		Net.awaiting_menu = false
+		Net.extra_args = (load(BENCHMARK) as GDScript).call(&"session_args")
 		Features.reload(Net.session_args())
 		Net.start_solo()))
 	menu.library_requested.connect(func() -> void:
