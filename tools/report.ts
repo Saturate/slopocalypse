@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { argv, exit } from "node:process";
 import { worstSpikes } from "./lib/bench.ts";
 import { extract } from "./lib/download.ts";
-import { errorLines, summariseReport } from "./lib/report.ts";
+import { errorLines, printable, summariseReport } from "./lib/report.ts";
 
 const TOP_SPIKES = 8;
 const TOP_ERRORS = 10;
@@ -19,7 +19,12 @@ if (zip === undefined || !existsSync(zip)) {
 	exit(1);
 }
 const dir = mkdtempSync(join(tmpdir(), "slopocalypse-report-"));
-extract(zip, dir);
+try {
+	extract(zip, dir);
+} catch {
+	console.error(`${zip} could not be unpacked; is it a whole zip?`);
+	exit(1);
+}
 const reportFile = join(dir, "report.json");
 if (!existsSync(reportFile)) {
 	console.error(`${zip} has no report.json; is it a Slopocalypse report?`);
@@ -43,6 +48,6 @@ const logDir = join(dir, "logs");
 for (const name of existsSync(logDir) ? readdirSync(logDir) : []) {
 	const errors = errorLines(readFileSync(join(logDir, name), "utf8"), TOP_ERRORS);
 	console.log(`\n${name}: ${errors.length === 0 ? "no errors" : `last ${errors.length} errors`}`);
-	for (const e of errors) console.log(`  ${e}`);
+	for (const e of errors) console.log(`  ${printable(e)}`);
 }
 console.log(`\nUnpacked in ${dir} (screenshot.png, logs/, perf/).`);

@@ -26,7 +26,7 @@ export function summariseReport(raw: unknown): string[] {
 	const settings = obj(r["settings"]);
 	const description = text(r["description"], "");
 	const lines = [
-		`${text(r["kind"])}: ${description === "" ? "(no description)" : description}`,
+		`${text(r["kind"])}: ${description === "" ? "(no description)" : printable(description)}`,
 		`  at ${text(r["time"])} UTC, build ${text(sys["version"])}`,
 		`  machine: ${text(sys["os"])}; ${text(sys["cpu"])} (${text(sys["cpu_cores"])} threads), ${text(sys["memory_mb"])} MB`,
 		`  graphics: ${text(sys["gpu"])}, driver ${text(sys["gpu_driver"])}; ${text(sys["renderer"])}; window ${text(sys["window"])}`,
@@ -37,6 +37,12 @@ export function summariseReport(raw: unknown): string[] {
 	const bench = obj(r["benchmark"]);
 	if (Object.keys(bench).length > 0) lines.push(`  benchmark: ${Object.entries(bench).map(([k, v]) => `${k} ${text(v)}`).join(", ")}`);
 	return lines;
+}
+
+// `s` without control characters (bar tab and newline): a report is the tester's file, and
+// escape codes in it must not drive the terminal it is printed in.
+export function printable(s: string): string {
+	return s.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
 }
 
 // The last `n` error lines of a Godot log: what broke, without the stack lines under each.

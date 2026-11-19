@@ -24,7 +24,7 @@ func _ready() -> void:
 	add_child(_frame)
 	var hint := Label.new()
 	hint.theme_type_variation = &"HintLabel"
-	hint.text = "Saves one file to send us: a screenshot, your settings and machine, and this session's game and performance logs. Your player name can be in the logs."
+	hint.text = "Saves one file to send us: a screenshot, your settings and machine, and this session's game and performance logs. Your player name can be in the logs; folder paths and server addresses are blanked out."
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.custom_minimum_size.x = WIDTH - 40.0
 	_frame.content.add_child(hint)
@@ -44,7 +44,6 @@ func _ready() -> void:
 	row.add_theme_constant_override(&"separation", 12)
 	_frame.content.add_child(row)
 	_save = _button(row, &"Save", "Save report", func() -> void:
-		_status.text = "Saving..."
 		save_requested.emit(_note.text.strip_edges(), _shot))
 	_show = _button(row, &"Show", "Open folder", func() -> void:
 		OS.shell_show_in_file_manager(_saved_path))

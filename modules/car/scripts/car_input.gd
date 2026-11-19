@@ -25,6 +25,14 @@ func _physics_process(_delta: float) -> void:
 
 func _physics_tick(_delta: float) -> void:
 	var driving := seat == &"driver"
+	# A screen is open (a text box, the map): its keys are not driving.
+	if UiStack.is_blocking():
+		if driving:
+			intent.throttle = 0.0
+			intent.steer = 0.0
+			intent.brake = false
+		_exit_armed = false
+		return
 	if driving:
 		intent.throttle = Input.get_axis(&"car_reverse", &"car_throttle")
 		intent.steer = Input.get_axis(&"car_left", &"car_right")

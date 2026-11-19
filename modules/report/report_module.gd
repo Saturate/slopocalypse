@@ -10,9 +10,6 @@ const CONFIG := "res://modules/report/data/report.json"
 const REQUIRED := {"key": TYPE_STRING, "max_log_kb": TYPE_FLOAT, "folder_without_desktop": TYPE_STRING}
 const SOLO_LOG := "user://logs/solo-server.log"
 const PERF_DIR := "user://perf"
-## A perf log counts as this session's when it was written to since the session began, give
-## or take this many seconds (the solo server starts a moment before this module).
-const SESSION_SLACK_SECONDS := 60
 
 var config: Dictionary = {}
 ## Where the last report went (empty until one is saved).
@@ -22,7 +19,6 @@ var folder := ""
 
 var _screen: ReportScreen
 var _key := KEY_F8
-var _began := 0
 
 
 func _ready() -> void:
@@ -30,11 +26,13 @@ func _ready() -> void:
 	if not (data is Dictionary and Data.require(CONFIG, data, REQUIRED)):
 		return
 	config = data
-	_began = int(Time.get_unix_time_from_system())
 	add_to_group(&"report_api")
 	if DisplayServer.get_name() == "headless":
 		return
 	_key = OS.find_keycode_from_string(str(config["key"]))
+	if _key == KEY_NONE:
+		Log.warn(&"report", "%s: unknown key %s, using F8" % [CONFIG, config["key"]])
+		_key = KEY_F8
 	_screen = ReportScreen.new()
 	_screen.name = "ReportScreen"
 	_screen.save_requested.connect(func(description: String, shot: PackedByteArray) -> void:
@@ -54,6 +52,21 @@ func _input(event: InputEvent) -> void:
 ## Opens the form, with a screenshot of the game as it is now (before the form covers it).
 func open() -> void:
 	_screen.open(_screenshot())
+
+
+## From the Esc menu: the menu is hidden for a frame so the screenshot shows the game, not
+## the menu (which can show a host's address).
+func open_from_menu() -> void:
+	var overlay := get_tree().get_first_node_in_group(&"session_overlay") as CanvasLayer
+	if overlay != null:
+		overlay.visible = false
+		await RenderingServer.frame_post_draw
+		await RenderingServer.frame_post_draw
+		var shot := _screenshot()
+		overlay.visible = true
+		_screen.open(shot)
+	else:
+		open()
 
 
 ## Writes a report of `kind` ("bug", "benchmark") with `description` and a screenshot (PNG
@@ -99,12 +112,26 @@ func attachments() -> Dictionary:
 	var files := {}
 	var own_log := _own_log()
 	if not own_log.is_empty():
-		files["logs/game.log"] = ReportWriter.tail_of(own_log, cap)
+		files["logs/game.log"] = _shareable(own_log, cap)
 	if Net.solo_server_pid >= 0:
-		files["logs/solo-server.log"] = ReportWriter.tail_of(SOLO_LOG, cap)
+		files["logs/solo-server.log"] = _shareable(SOLO_LOG, cap)
 	for path in _session_perf_logs():
-		files["perf/" + path.get_file()] = ReportWriter.tail_of(path, cap)
+		files["perf/" + path.get_file()] = _shareable(path, cap)
 	return files
+
+
+## The newest `cap` bytes of a log, with home folders and addresses written over.
+func _shareable(path: String, cap: int) -> PackedByteArray:
+	var text := ReportWriter.tail_of(path, cap).get_string_from_utf8()
+	return ReportWriter.scrub(text, _private_folders()).to_utf8_buffer()
+
+
+## Folders whose full path names the OS user: the user data folder, home, Desktop.
+func _private_folders() -> Array[String]:
+	var out: Array[String] = [ProjectSettings.globalize_path("user://").trim_suffix("/"), OS.get_system_dir(OS.SYSTEM_DIR_DESKTOP), OS.get_environment("HOME"), OS.get_environment("USERPROFILE")]
+	# Longest first, so the user data folder is not half replaced by home.
+	out.sort_custom(func(a: String, b: String) -> bool: return a.length() > b.length())
+	return out
 
 
 func _game() -> Dictionary:
@@ -119,13 +146,24 @@ func _game() -> Dictionary:
 		"connected": Net.is_session_connected(),
 		"uptime_seconds": Time.get_ticks_msec() / 1000,
 		"modules": modules,
-		"args": Array(OS.get_cmdline_user_args()).filter(func(a: String) -> bool: return not a.begins_with("--connect=") and not a.begins_with("--name=")),
+		"args": ReportWriter.public_args(OS.get_cmdline_user_args()),
+		"flags": _flags(),
 	}
 	var player := _local_player()
 	if player != null:
 		game["position"] = [snappedf(player.global_position.x, 0.1), snappedf(player.global_position.y, 0.1), snappedf(player.global_position.z, 0.1)]
 		game["dead"] = bool(player.get_meta(&"dead", false))
 	return game
+
+
+## Every feature flag and whether it is on in this run.
+func _flags() -> Dictionary:
+	var out := {}
+	var data: Variant = Data.load_json("res://data/features.json")
+	if data is Dictionary and (data as Dictionary).get("flags") is Dictionary:
+		for flag: String in (data as Dictionary)["flags"]:
+			out[flag] = Features.is_enabled(StringName(flag))
+	return out
 
 
 func _local_player() -> Node3D:
@@ -165,15 +203,16 @@ func _session_perf_logs() -> Array[String]:
 	var mine := str(perf.call(&"log_path")) if perf != null else ""
 	if not mine.is_empty():
 		out.append(mine)
-	if Net.solo_server_pid >= 0:
+	# The solo server's own log: perf names its files after the process id.
+	if Net.solo_server_pid >= 0 and DirAccess.dir_exists_absolute(PERF_DIR):
+		var suffix := "-%d.ndjson" % Net.solo_server_pid
 		for name in DirAccess.get_files_at(PERF_DIR):
-			var path := PERF_DIR.path_join(name)
-			if name.begins_with("server-") and FileAccess.get_modified_time(path) >= _began - SESSION_SLACK_SECONDS:
-				out.append(path)
+			if name.begins_with("server-") and name.ends_with(suffix):
+				out.append(PERF_DIR.path_join(name))
 	return out
 
 
 func _add_menu_entry() -> void:
 	var overlay := get_tree().get_first_node_in_group(&"session_overlay")
 	if overlay != null and overlay.has_method(&"add_menu_entry"):
-		overlay.call(&"add_menu_entry", &"ReportBug", "Report a bug", open)
+		overlay.call(&"add_menu_entry", &"ReportBug", "Report a bug", open_from_menu)

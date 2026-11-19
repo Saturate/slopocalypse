@@ -50,3 +50,19 @@ func test_system_info_names_the_machine() -> void:
 	var info := ReportWriter.system_info()
 	for key in ["os", "cpu", "cpu_cores", "gpu", "renderer", "version"]:
 		assert_bool(info.has(key)).override_failure_message(key).is_true()
+
+
+func test_only_shareable_flags_are_kept() -> void:
+	var args := PackedStringArray(["--connect=10.0.0.5:7777", "--name=Allan", "--solo", "--flags=car:off", "--log-file=/Users/someone/x.log", "--bind=0.0.0.0", "--save=/tmp/w.db", "--bench=deaths"])
+	assert_array(ReportWriter.public_args(args)).contains_exactly(["--solo", "--flags=car:off", "--bench=deaths"])
+
+
+func test_logs_lose_home_folders_and_addresses() -> void:
+	var log := "[INFO] net: connecting to friend.example.org:7777\n[INFO] perf: logging to /Users/someone/Library/x.ndjson\nFriends join at 192.168.1.20:7777\nbuild 0.8.0"
+	var out := ReportWriter.scrub(log, ["/Users/someone"])
+	assert_str(out).not_contains("friend.example.org")
+	assert_str(out).not_contains("someone")
+	assert_str(out).not_contains("192.168.1.20")
+	assert_str(out).contains("connecting to <address>:7777")
+	assert_str(out).contains("<folder>/Library/x.ndjson")
+	assert_str(out).contains("build 0.8.0")

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { errorLines, summariseReport } from "./report.ts";
+import { errorLines, printable, summariseReport } from "./report.ts";
 
 const report = {
 	kind: "bug",
@@ -31,4 +31,8 @@ test("a report missing fields still summarises", () => {
 test("error lines are picked out of a log, newest last", () => {
 	const log = ["[INFO] ok", "ERROR: first", "  at: x", "SCRIPT ERROR: second", "[WARN] w", "ERROR: third"].join("\n");
 	assert.deepEqual(errorLines(log, 2), ["SCRIPT ERROR: second", "ERROR: third"]);
+});
+
+test("escape codes from a report are not printed", () => {
+	assert.equal(printable("red\u001b[31m text\u0007"), "red[31m text");
 });

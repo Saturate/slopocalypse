@@ -51,7 +51,6 @@ func test_extra_fields_go_into_report_json_and_no_screenshot_is_fine() -> void:
 	assert_float(float((report["benchmark"] as Dictionary)["fps_mean"])).is_equal(61.5)
 
 
-func test_addresses_and_names_from_the_command_line_stay_out() -> void:
+func test_the_report_lists_feature_flags() -> void:
 	var game: Dictionary = (_module.call(&"gather", "bug", "") as Dictionary)["game"]
-	for arg: String in game["args"]:
-		assert_bool(arg.begins_with("--connect=") or arg.begins_with("--name=")).is_false()
+	assert_bool((game["flags"] as Dictionary).has("report")).is_true()

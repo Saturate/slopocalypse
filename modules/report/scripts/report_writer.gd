@@ -4,6 +4,13 @@ extends RefCounted
 ## the game) and whatever files go with it (screenshot, logs, perf logs). Bug reports and the
 ## benchmark write the same shape, and `tools/report.ts` reads it.
 
+## Command-line flags safe to share: how the game was started, never where it connected,
+## what it is called or where files are (those carry addresses and the OS user name).
+const PUBLIC_ARGS: Array[String] = ["--solo", "--flags=", "--all-optional-off", "--world=", "--start=", "--bot=", "--bench=", "--uncapped", "--range", "--crowd=", "--debug-api"]
+## IPv4 addresses, written over in shared logs.
+const ADDRESS := "\\b\\d{1,3}(\\.\\d{1,3}){3}\\b"
+
+
 
 ## `report` as report.json, then `files` (path in the zip -> bytes), to `path`.
 static func write(path: String, report: Dictionary, files: Dictionary) -> Error:
@@ -36,6 +43,28 @@ static func tail_of(path: String, max_bytes: int) -> PackedByteArray:
 		if newline >= 0:
 			bytes = bytes.slice(newline + 1)
 	return bytes
+
+
+## The `args` worth sharing, from `PUBLIC_ARGS`.
+static func public_args(args: PackedStringArray) -> Array[String]:
+	var out: Array[String] = []
+	for arg in args:
+		for allowed in PUBLIC_ARGS:
+			if arg == allowed or (allowed.ends_with("=") and arg.begins_with(allowed)):
+				out.append(arg)
+				break
+	return out
+
+
+## `text` fit to send: `folders` (home, user data) become `<folder>`, so paths stop naming the
+## OS user; addresses and the host after "connecting to" become `<address>`.
+static func scrub(text: String, folders: Array[String]) -> String:
+	for folder in folders:
+		if not folder.is_empty():
+			text = text.replace(folder, "<folder>")
+	var connecting := RegEx.create_from_string("connecting to [^\\s:]+")
+	text = connecting.sub(text, "connecting to <address>", true)
+	return RegEx.create_from_string(ADDRESS).sub(text, "<address>", true)
 
 
 ## `slopocalypse-report-YYYYMMDD-HHMMSS.zip` for a `Time` datetime dictionary.
