@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.9.0 - 2026-11-19
+
+#### Press F8 (or Report a bug in the Esc menu) to save one file with a screenshot, your logs and machine details to send us
+
+#### Starting a session no longer freezes for a moment while soldiers fill the map
+
+#### Frames are about 30% quicker near other players and soldiers (measured in the city): your machine no longer runs their movement as well as the server
+
+#### Players who join at the same moment start side by side instead of being flung off the spawn together
+
+#### The heavy rifle's support hand holds the handguard instead of hovering just off it
+
+#### Tapping crouch while sprinting no longer stacks slide boosts into absurd speed
+
+#### Smoother frame rate near the city and buildings: each voxel building is drawn as a few big pieces instead of hundreds of small ones
+
+#### The dead fall as ragdolls, pushed away from whoever shot them
+
+#### Blasts can tear arms, legs or heads off the dead, and a hard killing shot to a leg or arm sometimes does too; the piece flies off bleeding (off with Blood in Settings)
+
+#### Shots draw blood: hits spray out of the far side and mark the wall behind, and pools spread under the dead (turn it off with Blood in Settings)
+
+#### Turning while sprinting follows your new direction straight away instead of sliding
+
+#### A bolt-action rifle: hard-hitting 7.62 rounds, a 5 round magazine and an 8x scope, and you work the bolt after every shot. Find it in crates, buy it from the trader, or take it off the marksmen some squads now bring
+
+#### Benchmark in the main menu: a fixed one-minute run that shows your frame rate and worst stutters, and saves a report you can send us
+
+### Internal
+
+#### The gate retries Godot's import once when the engine crashes during it
+
 ## 0.8.0 - 2026-11-18
 
 #### The city has people: unarmed civilians stroll near their front doors and run for cover or crouch when shooting starts. Killing them counts in your stats
