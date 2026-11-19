@@ -232,6 +232,17 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_reload_after_a_part_swap_drops_the_cycle() {
+        let mut w = WeaponState::new(bolt_action(), 1);
+        w.try_fire().unwrap();
+        assert!(w.is_cycling());
+        w.start_empty_reload();
+        assert!(!w.is_cycling());
+        w.tick(3.01);
+        assert!(w.try_fire().is_ok());
+    }
+
+    #[test]
     fn a_reload_chambers_a_round_instead_of_the_bolt() {
         let mut w = WeaponState::new(bolt_action(), 1);
         w.try_fire().unwrap();

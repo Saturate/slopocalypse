@@ -63,3 +63,11 @@ func test_a_bolt_action_takes_only_its_own_parts_and_shares_the_optic_rail() -> 
 		assert_bool(slots.has(slot)).override_failure_message(slot).is_true()
 	assert_bool(slots.has("magazine")).is_false()
 	assert_bool(GunModding.options("optic").has("opt_scope_8x")).is_true()
+
+
+func test_a_bolt_actions_fire_rate_is_what_the_bolt_allows() -> void:
+	var bolt: Dictionary = GunAssembly.assemble_named("bolt_standard")["stats"]
+	var shown := GunModding.shown_value(bolt, "rounds_per_minute")
+	assert_float(shown).is_equal_approx(60.0 / float(bolt["cycle_seconds"]), 0.01)
+	var rifle: Dictionary = GunAssembly.assemble_named("ar_standard")["stats"]
+	assert_float(GunModding.shown_value(rifle, "rounds_per_minute")).is_equal(float(rifle["rounds_per_minute"]))

@@ -429,6 +429,10 @@ func _equip(player: PlayerController, slots: Dictionary) -> void:
 		weapon.stats["damage"] = float(weapon.stats.get("damage", 0.0)) * float(player.get_meta(&"damage_scale"))
 	weapon.semi_auto = GunAssembly.receiver_of(slots).get("fire_mode", "auto") == "semi"
 	weapon.cycle_seconds = GunAssembly.cycle_seconds_of(slots, weapon.stats)
+	# A receiver can set how much aiming tightens its spread (a bolt-action: almost all of it).
+	var receiver := GunAssembly.receiver_of(slots)
+	if receiver.has("ads_spread_multiplier"):
+		weapon.stats["ads_spread_multiplier"] = float(receiver["ads_spread_multiplier"])
 	weapon.set_meta(&"build", slots)
 	camera.add_child(weapon)
 	if old != null:

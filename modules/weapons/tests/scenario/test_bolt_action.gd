@@ -64,3 +64,47 @@ func test_two_quick_pulls_fire_once_then_again_after_the_bolt() -> void:
 	await _pull()
 	assert_int(_shots.size()).is_equal(2)
 	assert_int(gun.ammo()).is_equal(3)
+
+
+func _draw_wait(gun: HitscanWeapon) -> void:
+	await _frames(int(ceil(float(gun.stats.get("draw_seconds", 0.0)) * Engine.physics_ticks_per_second)) + 2)
+
+
+func test_from_the_hip_it_scatters_and_aimed_it_is_precise() -> void:
+	var gun := _gun()
+	var spread := float(gun.stats["spread_degrees"])
+	assert_float(spread * gun.spread_scale(false)).is_greater(1.0)
+	assert_float(spread * gun.spread_scale(true)).is_less(0.05)
+	# Aimed, tighter than an aimed rifle; from the hip, far looser.
+	var rifle: Dictionary = GunAssembly.assemble_named("ar_standard")["stats"]
+	var rifle_aimed := float(rifle["spread_degrees"]) * float((Data.load_json(HitscanWeapon.CONFIG) as Dictionary)["rifle"]["ads_spread_multiplier"])
+	assert_float(spread * gun.spread_scale(true)).is_less(rifle_aimed)
+	assert_float(spread * gun.spread_scale(false)).is_greater(rifle_aimed * 5.0)
+
+
+func test_every_shot_but_the_last_is_followed_by_the_bolt() -> void:
+	var gun := _gun()
+	await _draw_wait(gun)
+	for i in 5:
+		await _pull()
+		await _frames(int(ceil(gun.cycle_seconds * Engine.physics_ticks_per_second)) + 2)
+	assert_int(_shots.size()).is_equal(5)
+	for i in 4:
+		assert_bool(bool(_shots[i]["cycles"])).override_failure_message("shot %d" % i).is_true()
+	assert_bool(bool(_shots[4]["cycles"])).is_false()
+	assert_bool(gun.is_cycling()).is_false()
+
+
+func test_a_holstered_bolt_action_finishes_its_cycle() -> void:
+	var gun := _gun()
+	await _draw_wait(gun)
+	await _pull()
+	assert_bool(gun.is_cycling()).is_true()
+	_player.intent().weapon_slot = 1
+	await _frames(int(ceil(gun.cycle_seconds * Engine.physics_ticks_per_second)) + 2)
+	assert_bool(gun.active).is_false()
+	assert_bool(gun.is_cycling()).is_false()
+	_player.intent().weapon_slot = 0
+	await _draw_wait(gun)
+	await _pull()
+	assert_int(_shots.size()).is_equal(2)

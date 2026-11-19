@@ -6,6 +6,8 @@ extends Node
 ## bolt knob and back. Cosmetic: the server's rules decide when the gun can fire again, over
 ## the same `cycle_seconds`.
 ##
+## Stops early, back at rest, when the gun starts reloading: the reload chambers the round.
+##
 ## Phases as shares of the cycle; the audio module's bolt sound is laid out for these.
 
 const HAND_OFF := 0.12
@@ -20,6 +22,8 @@ const LIFT_RADIANS := deg_to_rad(65.0)
 const THROW := 0.075
 
 var seconds := 1.0
+## The gun's logic, to see a reload start; null to always run to the end.
+var weapon: HitscanWeapon
 
 var _t := 0.0
 var _bolt: Node3D
@@ -32,7 +36,7 @@ var _knob := Vector3.ZERO
 
 ## Starts a cycle on `gun` (an assembled gun with a `bolt_handle` part), replacing one that is
 ## still running so the parts start from rest.
-static func start(gun: Node3D, cycle_seconds: float) -> BoltCycle:
+static func start(gun: Node3D, cycle_seconds: float, logic: HitscanWeapon = null) -> BoltCycle:
 	var old := gun.get_node_or_null("BoltCycle") as BoltCycle
 	if old != null:
 		old.finish()
@@ -44,6 +48,7 @@ static func start(gun: Node3D, cycle_seconds: float) -> BoltCycle:
 	var cycle := BoltCycle.new()
 	cycle.name = "BoltCycle"
 	cycle.seconds = maxf(cycle_seconds, 0.05)
+	cycle.weapon = logic
 	cycle._bolt = bolt
 	cycle._bolt_rest = bolt.transform
 	cycle._grip = gun.get_node_or_null("GripR") as Node3D
@@ -57,12 +62,14 @@ static func start(gun: Node3D, cycle_seconds: float) -> BoltCycle:
 
 
 func _process(delta: float) -> void:
+	var prof := Prof.start()
 	_t += delta / seconds
-	if _t >= 1.0:
+	if _t >= 1.0 or (is_instance_valid(weapon) and weapon.is_reloading()):
 		finish()
 		queue_free()
-		return
-	pose(_t)
+	else:
+		pose(_t)
+	Prof.stop(&"weapons/bolt_cycle:frame", prof)
 
 
 ## Puts the bolt and the hand where they are `share` of the way through the cycle.

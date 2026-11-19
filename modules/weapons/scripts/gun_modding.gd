@@ -99,14 +99,24 @@ static func with_part(build: Dictionary, slot: String, part_id: String) -> Dicti
 	return out
 
 
+## A stat as the screen shows it: the fire rate of a bolt-action is what working the bolt
+## allows, not its mechanism's rate.
+static func shown_value(stats: Dictionary, key: String) -> float:
+	var value := float(stats.get(key, 0.0))
+	var cycle := float(stats.get("cycle_seconds", 0.0))
+	if key == "rounds_per_minute" and cycle > 0.0 and value > 0.0:
+		return 60.0 / maxf(60.0 / value, cycle)
+	return value
+
+
 ## One row per stat: label, both values and the change formatted, and whether the change
 ## is better (1), worse (-1) or the same (0).
 static func compare(before: Dictionary, after: Dictionary) -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []
 	for row in STAT_ROWS:
 		var key: String = row["key"]
-		var a := float(before.get(key, 0.0))
-		var b := float(after.get(key, 0.0))
+		var a := shown_value(before, key)
+		var b := shown_value(after, key)
 		if bool(row.get("hide_zero", false)) and is_zero_approx(a) and is_zero_approx(b):
 			continue
 		var verdict := 0

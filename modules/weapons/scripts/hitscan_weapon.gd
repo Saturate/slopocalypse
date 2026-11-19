@@ -175,9 +175,9 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 		return
 	if not rules.try_fire():
 		return
-	var spread := rules.last_spread()
-	if holder != null and holder.intent().aim:
-		spread *= float(stats["ads_spread_multiplier"])
+	var spread := rules.last_spread() * spread_scale(holder != null and holder.intent().aim)
+	# Clients don't run the rules, so the effects learn from here whether a bolt follows.
+	var cycles := rules.is_cycling()
 	var basis := Basis.looking_at(direction)
 	var dir := (basis * Vector3(tan(spread.x), tan(spread.y), -1.0)).normalized()
 	var to := origin + dir * float(stats["range"])
@@ -213,11 +213,11 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 		var collider_path := String((collider as Node).get_path()) if collider is Node else ""
 		# Decided here; replayed here and on every client that has the shooter, for effects and
 		# craters. A client the shooter isn't sent to (too far away) hasn't got this node.
-		_replay_shot(from, hit_point, damage, target_path, collider_path, passes > 0)
+		_replay_shot(from, hit_point, damage, target_path, collider_path, passes > 0, cycles)
 		var peers := replay_peers(holder)
 		for peer in peers:
-			_replay_shot.rpc_id(peer, from, hit_point, damage, target_path, collider_path, passes > 0)
-		NetStats.add(&"rpc/shot", NetStats.size_of([from, hit_point, damage, target_path, collider_path, passes > 0]) * peers.size())
+			_replay_shot.rpc_id(peer, from, hit_point, damage, target_path, collider_path, passes > 0, cycles)
+		NetStats.add(&"rpc/shot", NetStats.size_of([from, hit_point, damage, target_path, collider_path, passes > 0, cycles]) * peers.size())
 		if target != null or collider == null or passes >= max_passes or not collider.has_method(&"bullet_exit"):
 			return
 		var exit: Variant = collider.call(&"bullet_exit", hit_point, dir, float(stats["damage"]) * damage_scale)
@@ -226,6 +226,13 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 		from = exit["exit"]
 		damage_scale *= float(exit.get("scale", 1.0))
 		passes += 1
+
+
+## How much of the gun's spread a shot gets: all of it from the hip, `ads_spread_multiplier`
+## of it aimed (a bolt-action's receiver sets its own, far smaller, so it is only accurate
+## through the scope).
+func spread_scale(aimed: bool) -> float:
+	return float(stats["ads_spread_multiplier"]) if aimed else 1.0
 
 
 ## How many times one round may go on through something (weapons.json).
@@ -237,15 +244,16 @@ static func max_pass_throughs() -> int:
 ## Runs on the server and every client: publishes `weapon.fired` locally (tracers, hit
 ## markers, craters) and kicks the aim on the instance that owns this player.
 ## `through`: this stretch is the same round carrying on after going through something, so
-## there's no new shot to hear, flash or kick.
+## there's no new shot to hear, flash or kick. `cycles`: the bolt is worked after this shot
+## (a manual action with rounds left).
 @rpc("authority", "call_local", "reliable")
-func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_path: String, collider_path: String, through: bool = false) -> void:
+func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_path: String, collider_path: String, through: bool = false, cycles: bool = false) -> void:
 	var target: Node = get_node_or_null(target_path) if not target_path.is_empty() else null
 	var collider: Node = get_node_or_null(collider_path) if not collider_path.is_empty() else null
 	if not through:
 		_play_shot_effects()
 	# `collider` lets other modules react to what was hit (the world digs into terrain).
-	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "collider": collider, "damage": damage, "through": through})
+	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "collider": collider, "damage": damage, "through": through, "cycles": cycles})
 
 
 ## A shot's damage: the gun's, unless it hit the head. Headshots kill the teams listed in

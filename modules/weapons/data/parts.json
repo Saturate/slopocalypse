@@ -745,7 +745,7 @@
       "stats": {
         "rounds_per_minute": 300.0,
         "damage": 80.0,
-        "spread_degrees": 0.12,
+        "spread_degrees": 1.5,
         "recoil_pitch_degrees": 3.2,
         "recoil_yaw_degrees": 0.6,
         "reload_seconds": 3.0,
@@ -753,7 +753,8 @@
         "cycle_seconds": 0.95,
         "ergonomics": 28.0,
         "weight": 1.4
-      }
+      },
+      "ads_spread_multiplier": 0.02
     },
     "bar_bolt_24": {
       "name": "24 inch heavy barrel",
@@ -768,7 +769,7 @@
         ]
       },
       "stats": {
-        "range": 600.0,
+        "range": 300.0,
         "weight": 1.1
       }
     },

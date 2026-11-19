@@ -112,7 +112,8 @@ func _on_fired(p: Dictionary) -> void:
 	if not bool(p.get("through", false)):
 		play_at(shot_sound(p.get("weapon")), from, float(config.get("shot_range", 300.0)))
 		var cycle := cycle_of(p.get("weapon"))
-		if cycle > 0.0:
+		# The last round leaves nothing to chamber: the reload does it.
+		if cycle > 0.0 and bool(p.get("cycles", false)):
 			_play_bolt(from, cycle)
 	if float(p.get("damage", 0.0)) > 0.0 and p.get("holder") == _local:
 		play_flat("hit")
