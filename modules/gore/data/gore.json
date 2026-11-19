@@ -1,0 +1,23 @@
+{
+  "colour": [0.46, 0.03, 0.03, 1.0],
+  "spray_count": 10,
+  "headshot_spray_count": 24,
+  "spray_exit_depth": 0.35,
+  "spray_speed": 3.5,
+  "spray_speed_jitter": 0.4,
+  "spray_angle_jitter_degrees": 28,
+  "drop_size": 0.07,
+  "drop_seconds": 0.7,
+  "max_drops": 256,
+  "splatter_reach": 2.5,
+  "mark_size": 0.55,
+  "mark_size_jitter": 0.3,
+  "mark_stretch_max": 2.5,
+  "mark_depth": 0.3,
+  "pool_radius": 0.75,
+  "pool_start_share": 0.2,
+  "pool_seconds": 6.0,
+  "mark_seconds": 90.0,
+  "fade_seconds": 4.0,
+  "max_marks": 48
+}

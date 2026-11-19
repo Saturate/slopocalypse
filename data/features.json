@@ -26,6 +26,7 @@
     "city": true,
     "factions": true,
     "stats": true,
-    "report": true
+    "report": true,
+    "gore": true
   }
 }

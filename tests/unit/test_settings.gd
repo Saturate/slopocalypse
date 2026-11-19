@@ -82,3 +82,19 @@ func test_the_screen_binds_the_next_key_and_esc_cancels() -> void:
 	assert_bool(screen.visible).is_true()
 	screen.close()
 	assert_bool(FileAccess.file_exists(PATH)).is_true()
+
+
+func test_blood_is_on_by_default_and_the_screen_turns_it_off() -> void:
+	assert_bool(bool(Settings.value("blood"))).is_true()
+	var screen: SettingsScreen = auto_free(SettingsScreen.new())
+	add_child(screen)
+	screen.open()
+	var toggle := screen.find_child("Blood", true, false) as Button
+	assert_object(toggle).is_not_null()
+	assert_bool(toggle.button_pressed).is_true()
+	toggle.button_pressed = false
+	assert_bool(bool(Settings.value("blood"))).is_false()
+	screen.close()
+	Settings.reset()
+	Settings.load_from(PATH)
+	assert_bool(bool(Settings.value("blood"))).is_false()
