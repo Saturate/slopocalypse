@@ -17,6 +17,7 @@ const REQUIRED := {
 	"link_radius": TYPE_FLOAT, "link_seconds": TYPE_FLOAT, "push": TYPE_FLOAT, "push_up": TYPE_FLOAT, "linear_damp": TYPE_FLOAT,
 	"angular_damp": TYPE_FLOAT, "friction": TYPE_FLOAT, "bones": TYPE_DICTIONARY,
 }
+const BONE_REQUIRED := {"size": TYPE_ARRAY, "centre": TYPE_ARRAY, "mass": TYPE_FLOAT, "swing": TYPE_FLOAT, "twist": TYPE_FLOAT}
 ## Parts of the living body a corpse has no use for: what animates it, aims it and holds the gun.
 const STRIP: Array[String] = ["AnimationTree", "AnimationPlayer", "Skeleton/Aim", "Skeleton/HandIK", "Skeleton/WeaponAttachment"]
 const GROUP := &"corpses"
@@ -209,17 +210,20 @@ func _look_for_loot() -> void:
 	var cfg := config()
 	var radius := float(cfg["link_radius"])
 	var recent := int(float(cfg["link_seconds"]) * 1000.0)
+	var best: Node3D = null
 	for node in get_tree().get_nodes_in_group(&"loot_bodies"):
 		var loot := node as Node3D
 		if loot == null or loot.has_meta(LINK) or Time.get_ticks_msec() - int(loot.get_meta(ARRIVED, 0)) > recent:
 			continue
-		if _flat_distance(loot.global_position, _fell_at) <= radius:
-			_link(loot)
-			return
+		var d := _flat_distance(loot.global_position, _fell_at)
+		if d <= radius and (best == null or d < _flat_distance(best.global_position, _fell_at)):
+			best = loot
+	if best != null:
+		_link(best)
 
 
 ## The inventory's LootBody (group `loot_bodies`, `show_figure`) is matched by group and
-## duck typing, so either module works without the other.
+## duck typing, so the player module needs nothing from the inventory.
 func _link(loot: Node3D) -> void:
 	set_meta(LINK, loot)
 	loot.set_meta(LINK, self)
@@ -261,7 +265,7 @@ func fallen_pose() -> Array[Transform3D]:
 	var out: Array[Transform3D] = []
 	for i in skeleton.get_bone_count():
 		var parent := skeleton.get_bone_parent(i)
-		var bone := simulator.get_node_or_null(NodePath(skeleton.get_bone_name(i))) as PhysicalBone3D if simulator != null else null
+		var bone := simulator.get_node_or_null(NodePath(skeleton.get_bone_name(i))) as PhysicalBone3D if is_instance_valid(simulator) else null
 		if bone != null:
 			out.append(to_skeleton * bone.global_transform * bone.body_offset.affine_inverse())
 		elif parent >= 0:
@@ -280,7 +284,13 @@ func _add_bones(cfg: Dictionary) -> void:
 	for bone_name: String in bones:
 		if skeleton.find_bone(bone_name) < 0:
 			continue
-		var spec: Dictionary = bones[bone_name]
+		var spec: Variant = bones[bone_name]
+		# Players tweak these: a broken entry costs that bone, not every death.
+		if not spec is Dictionary or not Data.require("%s bones.%s" % [CONFIG, bone_name], spec, BONE_REQUIRED):
+			continue
+		if (spec["size"] as Array).size() != 3 or (spec["centre"] as Array).size() != 3:
+			Log.warn(&"player", "%s bones.%s: size and centre need three numbers" % [CONFIG, bone_name])
+			continue
 		var bone := PhysicalBone3D.new()
 		bone.name = bone_name
 		bone.bone_name = bone_name
