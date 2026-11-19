@@ -21,7 +21,7 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | Player health and respawn | `modules/player/data/player.json` | `max_health`, `respawn_seconds`, `respawn_spread`, `back_to_spawn_cooldown_seconds` (Esc menu "Back to spawn": how long before you can use it again) |
 | Wading and swimming | `modules/player/data/player.json` | `wade_depth` (water deeper than this, in metres, slows you), `wade_speed` (share of your speed while wading), `swim_depth` (deeper than this you swim: afloat, no firing), `swim_speed` (share of walking speed while swimming) |
 | Steps you walk up without jumping | `modules/player/data/player.json` | `step_height` (metres: stairs, kerbs and sills up to this are walked up; anything taller needs a jump or a mantle) |
-| Movement: speeds, jump, slide, vault, mantle | `modules/player/data/player.json` | `walk_speed`, `sprint_speed`, `crouch_speed`, `jump_velocity`, `slide_*`, `vault_*`, `mantle_*` |
+| Movement: speeds, jump, slide, vault, mantle | `modules/player/data/player.json` | `walk_speed`, `sprint_speed`, `crouch_speed`, `jump_velocity`, `slide_*` (a slide starts at most `slide_boost` over `sprint_speed`; `slide_cooldown_seconds` between slides), `vault_*`, `mantle_*` |
 | Camera and mouse | `modules/player/data/player.json` | `fov`, `fov_sprint_bonus`, `bob_amplitude`, `mouse_sensitivity` |
 | Aiming down sights | `modules/player/data/player.json` | `ads_speed_multiplier`, `ads_seconds`, `ads_eye_relief` |
 | Keys | `player.json`, `weapons.json`, `items.json`, `car.json` | `bindings` (Godot key names: `"W"`, `"Tab"`, `"Shift"`) |
