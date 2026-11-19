@@ -9,8 +9,6 @@ extends Node
 ## enough that a one-frame flicker (a bump while walking) does not pop the pose.
 const BLEND_RATE := 12.0
 const AIM_RATE := 15.0
-## Vertical speed that counts as airborne where floor contact is unknown (remote copies).
-const AIRBORNE_SPEED := 1.5
 
 var player: PlayerController
 
@@ -140,6 +138,4 @@ func _sight_marker() -> Node3D:
 ## The server and solo simulate the body and know floor contact; remote copies only get
 ## the synced velocity.
 func _airborne() -> bool:
-	if player.is_physics_processing():
-		return not player.is_on_floor()
-	return absf(player.velocity.y) > AIRBORNE_SPEED
+	return not player.grounded()

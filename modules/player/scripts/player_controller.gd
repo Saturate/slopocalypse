@@ -139,8 +139,9 @@ func is_sprinting() -> bool:
 	return mode == Mode.NORMAL and _wants_sprint() and grounded() and horizontal_speed() > float(config["walk_speed"]) + 0.1
 
 
-## On the ground: floor contact where this copy simulates; for a copy held still (someone
-## else's, on a client) only the synced velocity says, so no climb or fall means grounded.
+## On the ground: floor contact where this copy simulates; for one held still (someone else's
+## copy on a client; on the server a held, parked or dead body) only its velocity says, so no
+## climb or fall means grounded.
 func grounded() -> bool:
 	if is_physics_processing():
 		return is_on_floor()
@@ -198,8 +199,8 @@ func _process_tick(delta: float) -> void:
 	if _head == null or config.is_empty():
 		return
 	if not is_physics_processing():
-		# A copy held still never steps, so its eye (where its gun aims from) follows the
-		# synced crouch and slide here instead.
+		# Held still (someone else's copy on a client; on the server a held or dead body), it
+		# never steps, so its eye (where its gun aims from) follows crouch and slide here.
 		_apply_height(config["crouch_height"] if _intent.crouch or mode == Mode.SLIDE else config["stand_height"])
 	var want := float(_intent.lean) if mode == Mode.NORMAL and not is_sprinting() else 0.0
 	_lean = move_toward(_lean, want, delta / maxf(float(config["lean_seconds"]), 0.01))
