@@ -86,6 +86,13 @@ var _path_exit_velocity := Vector3.ZERO
 var _slide_left := 0.0
 
 
+## A copy of someone else's body on a client: it shows what the server sends and runs no
+## movement of its own. Switched off once it is ready, because Godot switches physics on at
+## `ready` for any script with `_physics_process`, undoing a switch-off made before.
+static func hold_still(copy: PlayerController) -> void:
+	copy.ready.connect(copy.set_physics_process.bind(false), CONNECT_ONE_SHOT)
+
+
 func _ready() -> void:
 	_intent = get_node(intent_path)
 	_head = get_node(head_path)
