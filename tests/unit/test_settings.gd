@@ -82,3 +82,38 @@ func test_the_screen_binds_the_next_key_and_esc_cancels() -> void:
 	assert_bool(screen.visible).is_true()
 	screen.close()
 	assert_bool(FileAccess.file_exists(PATH)).is_true()
+
+
+func test_blood_is_on_by_default_and_the_screen_turns_it_off() -> void:
+	assert_bool(bool(Settings.value("blood"))).is_true()
+	var screen: SettingsScreen = auto_free(SettingsScreen.new())
+	add_child(screen)
+	screen.open()
+	var toggle := screen.find_child("Blood", true, false) as Button
+	assert_object(toggle).is_not_null()
+	# Offered only while the gore module, which reads it, is on.
+	assert_bool(toggle.visible).is_equal(Features.is_enabled(&"gore"))
+	assert_bool(toggle.button_pressed).is_true()
+	var heard: Array[Dictionary] = []
+	var listen := func(p: Dictionary) -> void: heard.append(p)
+	EventBus.subscribe(&"settings.changed", listen)
+	toggle.button_pressed = false
+	EventBus.unsubscribe(&"settings.changed", listen)
+	assert_bool(bool(Settings.value("blood"))).is_false()
+	assert_array(heard).is_equal([{"key": "blood", "value": false}])
+	screen.close()
+	Settings.reset()
+	Settings.load_from(PATH)
+	assert_bool(bool(Settings.value("blood"))).is_false()
+
+
+func test_a_change_is_announced_once_and_an_unchanged_value_not_at_all() -> void:
+	var heard: Array[Dictionary] = []
+	var listen := func(p: Dictionary) -> void: heard.append(p)
+	EventBus.subscribe(&"settings.changed", listen)
+	Settings.set_value("blood", true)
+	Settings.set_value("volume", 0.5)
+	Settings.set_value("volume", 0.5)
+	Settings.reset()
+	EventBus.unsubscribe(&"settings.changed", listen)
+	assert_array(heard).is_equal([{"key": "volume", "value": 0.5}, {"key": "volume", "value": 1.0}])

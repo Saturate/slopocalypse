@@ -1,6 +1,6 @@
 class_name SettingsScreen
 extends ScreenFrame
-## Mouse sensitivity, field of view, volume, UI scale, fullscreen and key bindings. Changes
+## Mouse sensitivity, field of view, volume, UI scale, fullscreen, blood and key bindings. Changes
 ## apply at once and are saved when the screen closes. Keys are listed for the actions the
 ## running game has registered, so the list is full in a session and empty on the title
 ## (modules register their keys when they load).
@@ -17,6 +17,7 @@ var _waiting_for := ""
 var _key_buttons: Dictionary[String, Button] = {}
 var _sliders: Dictionary[String, HSlider] = {}
 var _fullscreen: Button
+var _blood: Button
 
 
 func _init() -> void:
@@ -27,17 +28,11 @@ func _init() -> void:
 	_slider("fov_offset", "Field of view", Settings.FOV_MIN, Settings.FOV_MAX, 1.0, func(v: float) -> String: return "%+d°" % int(v))
 	_slider("volume", "Volume", 0.0, 1.0, 0.05, func(v: float) -> String: return "%d %%" % roundi(v * 100.0))
 	_slider("ui_scale", "Interface size", Settings.UI_MIN, Settings.UI_MAX, 0.05, func(v: float) -> String: return "%d %%" % roundi(v * 100.0))
-	# A plain toggle button saying its state: the engine's switch icon is too small to read.
-	_fullscreen = Button.new()
-	_fullscreen.name = "Fullscreen"
-	_fullscreen.toggle_mode = true
-	_fullscreen.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	_fullscreen.custom_minimum_size = Vector2(220, 40)
-	_fullscreen.toggled.connect(func(on: bool) -> void:
-		Settings.set_value("fullscreen", on)
-		_show_fullscreen()
-		_apply())
-	content.add_child(_fullscreen)
+	_fullscreen = _toggle("Fullscreen", "fullscreen")
+	# Read by the gore module as blood shows; nothing for the engine to apply. Without the
+	# module the toggle would do nothing, so it isn't offered.
+	_blood = _toggle("Blood", "blood")
+	_blood.visible = Features.is_enabled(&"gore")
 	var keys_head := Label.new()
 	keys_head.theme_type_variation = &"HeadingLabel"
 	keys_head.text = "KEYS"
@@ -137,8 +132,9 @@ func _refresh() -> void:
 	for key: String in _sliders:
 		_sliders[key].set_value_no_signal(float(Settings.value(key)))
 		_sliders[key].value_changed.emit(_sliders[key].value)
-	_fullscreen.set_pressed_no_signal(bool(Settings.value("fullscreen")))
-	_show_fullscreen()
+	for toggle: Button in [_fullscreen, _blood]:
+		toggle.set_pressed_no_signal(bool(Settings.value(String(toggle.get_meta(&"setting")))))
+		_show_toggle(toggle)
 	var keys := content.get_node(^"Keys") as GridContainer
 	for child in keys.get_children():
 		child.queue_free()
@@ -168,10 +164,27 @@ func _refresh() -> void:
 		_key_buttons[action] = b
 
 
-func _show_fullscreen() -> void:
-	var on := _fullscreen.button_pressed
-	_fullscreen.text = "Fullscreen: %s" % ("On" if on else "Off")
-	_fullscreen.theme_type_variation = &"AccentButton" if on else &""
+## An on/off setting as a toggle button named `label` that says its state: the engine's
+## switch icon is too small to read.
+func _toggle(label: String, key: String) -> Button:
+	var button := Button.new()
+	button.name = label
+	button.toggle_mode = true
+	button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	button.custom_minimum_size = Vector2(220, 40)
+	button.set_meta(&"setting", key)
+	button.toggled.connect(func(on: bool) -> void:
+		Settings.set_value(key, on)
+		_show_toggle(button)
+		_apply())
+	content.add_child(button)
+	return button
+
+
+func _show_toggle(button: Button) -> void:
+	var on := button.button_pressed
+	button.text = "%s: %s" % [button.name, "On" if on else "Off"]
+	button.theme_type_variation = &"AccentButton" if on else &""
 
 
 func _reset() -> void:

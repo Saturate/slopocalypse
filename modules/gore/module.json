@@ -1,0 +1,6 @@
+{
+  "id": "gore",
+  "depends_on": ["world", "player", "weapons"],
+  "flag": "gore",
+  "entry": "gore_module.gd"
+}

@@ -1,10 +1,12 @@
 class_name Settings
 extends RefCounted
 ## The player's own settings, kept in user://settings.cfg: mouse sensitivity, field of view,
-## volume, fullscreen, UI scale and key bindings. Gameplay code asks for the values
+## volume, fullscreen, UI scale, blood and key bindings. Gameplay code asks for the values
 ## (`mouse_scale()`, `fov_offset()`); boot applies the rest once at start.
 ##
-## Static, like UiStack: one set per machine, no node needed.
+## Static, like UiStack: one set per machine, no node needed. It still reaches autoloads by
+## name: `save()` logs through Log, and `set_value()` and `reset()` announce real changes on
+## the EventBus as `settings.changed` ({key, value}) for modules that act on a setting at once.
 
 const PATH := "user://settings.cfg"
 
@@ -22,6 +24,7 @@ const DEFAULTS := {
 	"volume": 1.0,
 	"fullscreen": false,
 	"ui_scale": 1.0,
+	"blood": true,
 }
 
 static var _values: Dictionary = DEFAULTS.duplicate()
@@ -60,9 +63,13 @@ static func value(key: String) -> Variant:
 	return _values.get(key, DEFAULTS.get(key))
 
 
+## Sets `key` and tells modules that read a setting as they go (gore's blood) through
+## `settings.changed` ({key, value}), only when the value really changes.
 static func set_value(key: String, v: Variant) -> void:
+	var before: Variant = value(key)
 	_values[key] = v
 	_clamp()
+	_announce(key, before)
 
 
 static func mouse_scale() -> float:
@@ -75,7 +82,10 @@ static func fov_offset() -> float:
 
 ## Everything back to the game's defaults, keys included.
 static func reset() -> void:
+	var before := _values.duplicate()
 	_values = DEFAULTS.duplicate()
+	for key: String in DEFAULTS:
+		_announce(key, before.get(key))
 	for action: String in _keys:
 		InputBindings.restore(action)
 	_keys.clear()
@@ -125,9 +135,16 @@ static func _bind_now(action: String, physical: Key) -> void:
 	InputMap.action_add_event(action, ev)
 
 
+static func _announce(key: String, before: Variant) -> void:
+	var now: Variant = value(key)
+	if typeof(now) != typeof(before) or now != before:
+		EventBus.publish(&"settings.changed", {"key": key, "value": now})
+
+
 static func _clamp() -> void:
 	_values["mouse_scale"] = clampf(float(_values["mouse_scale"]), MOUSE_MIN, MOUSE_MAX)
 	_values["fov_offset"] = clampf(float(_values["fov_offset"]), FOV_MIN, FOV_MAX)
 	_values["volume"] = clampf(float(_values["volume"]), 0.0, 1.0)
 	_values["ui_scale"] = clampf(float(_values["ui_scale"]), UI_MIN, UI_MAX)
 	_values["fullscreen"] = bool(_values["fullscreen"])
+	_values["blood"] = bool(_values["blood"])
