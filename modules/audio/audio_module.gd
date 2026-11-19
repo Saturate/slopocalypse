@@ -1,6 +1,7 @@
 extends Node
 ## Client only: plays the game's sounds from events it hears on the bus, positioned in the
-## world. Shots (rifle, pistol, suppressed) at the shooter, impacts where bullets land, a
+## world. Shots (rifle, pistol, bolt-action, suppressed) at the shooter, the bolt being worked
+## after a bolt-action's shot, impacts where bullets land, a
 ## tick when your own shot hits, explosions, everyone's footsteps, and for your own player
 ## reload clicks, a pickup blip, a thump when hurt, plus quiet wind, birds by day and crickets at night.
 ## Things that break say what they are made of (`missions.surface_hit`, `surface_broke`,
@@ -78,8 +79,9 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"missions.surface_landed", _on_surface_landed)
 
 
-## Which shot sound a weapon makes: a suppressor on its build quiets it, a semi-auto gun
-## is a pistol. Reads the weapon by duck typing so this module needs no other.
+## Which shot sound a weapon makes: a suppressor on its build quiets it, a gun whose bolt
+## is worked by hand (`cycle_seconds` above 0) is the heavy bolt-action crack, another
+## semi-auto gun is a pistol. Reads the weapon by duck typing so this module needs no other.
 static func shot_sound(weapon: Object) -> String:
 	if weapon == null:
 		return "rifle"
@@ -88,9 +90,19 @@ static func shot_sound(weapon: Object) -> String:
 		for slot: Variant in build:
 			if "supp" in str((build as Dictionary)[slot]):
 				return "suppressed"
+	if cycle_of(weapon) > 0.0:
+		return "bolt_rifle"
 	if weapon.get(&"semi_auto") == true:
 		return "pistol"
 	return "rifle"
+
+
+## Seconds the weapon's bolt takes to work by hand after a shot, 0 if it loads itself.
+static func cycle_of(weapon: Object) -> float:
+	if weapon == null:
+		return 0.0
+	var cycle: Variant = weapon.get(&"cycle_seconds")
+	return float(cycle) if cycle is float else 0.0
 
 
 func _on_fired(p: Dictionary) -> void:
@@ -99,10 +111,24 @@ func _on_fired(p: Dictionary) -> void:
 	# A round carrying on through a wall is the same shot: no second bang.
 	if not bool(p.get("through", false)):
 		play_at(shot_sound(p.get("weapon")), from, float(config.get("shot_range", 300.0)))
+		var cycle := cycle_of(p.get("weapon"))
+		# The last round leaves nothing to chamber: the reload does it.
+		if cycle > 0.0 and bool(p.get("cycles", false)):
+			_play_bolt(from, cycle)
 	if float(p.get("damage", 0.0)) > 0.0 and p.get("holder") == _local:
 		play_flat("hit")
 	elif p.get("target") == null and from.distance_to(to) < float(config.get("shot_range", 300.0)) - 1.0 and not _has_surface_sounds(p.get("collider")):
 		play_at("impact", to, 60.0)
+
+
+## The bolt being worked, from where the shot was fired: it starts as the handle lifts and
+## its clacks are laid out for `bolt_cycle.reference_seconds`, played faster or slower to
+## fit this gun's cycle.
+func _play_bolt(at: Vector3, cycle: float) -> void:
+	var cfg: Dictionary = config.get("bolt_cycle", {})
+	var reference := float(cfg.get("reference_seconds", cycle))
+	get_tree().create_timer(cycle * float(cfg.get("start_share", 0.0))).timeout.connect(func() -> void:
+		play_at("bolt_cycle", at, float(cfg.get("range", 60.0)), reference / cycle))
 
 
 ## Something that sends its own surface sounds (a building): the plain impact stays quiet.

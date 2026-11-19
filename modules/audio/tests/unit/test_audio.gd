@@ -5,7 +5,7 @@ const MODULE := "res://modules/audio/audio_module.gd"
 
 
 func test_every_sound_is_synthesised() -> void:
-	for sound in ["rifle", "pistol", "suppressed", "impact", "hit", "explosion", "footstep", "reload", "pickup", "hurt", "wind", "crickets", "bird0", "bird1", "bird2", "bird3"]:
+	for sound in ["rifle", "pistol", "bolt_rifle", "bolt_cycle", "suppressed", "impact", "hit", "explosion", "footstep", "reload", "pickup", "hurt", "wind", "crickets", "bird0", "bird1", "bird2", "bird3"]:
 		var wav := SoundBank.get_sound(sound)
 		assert_object(wav).override_failure_message(sound).is_not_null()
 		assert_float(wav.get_length()).override_failure_message(sound).is_greater(0.02)
@@ -71,6 +71,39 @@ func test_a_suppressor_quiets_and_a_semi_auto_is_a_pistol() -> void:
 	assert_str((load(MODULE) as GDScript).call(&"shot_sound", gun)).is_equal("rifle")
 	gun.set_meta(&"build", {"muzzle": "muz_supp"})
 	assert_str((load(MODULE) as GDScript).call(&"shot_sound", gun)).is_equal("suppressed")
+
+
+func test_a_bolt_action_cracks_and_then_its_bolt_is_worked() -> void:
+	var gun: Node = auto_free(BoltGun.new())
+	assert_str((load(MODULE) as GDScript).call(&"shot_sound", gun)).is_equal("bolt_rifle")
+	var module: Node = (load(MODULE) as GDScript).new()
+	module.set(&"enabled", true)
+	add_child(auto_free(module))
+	EventBus.publish(&"weapon.fired", {"from": Vector3(1, 1, 1), "to": Vector3(1, 1, -50), "damage": 0.0, "weapon": gun, "cycles": true})
+	var crack := _players_of(module).filter(func(n: Node) -> bool: return (n as AudioStreamPlayer3D).stream == SoundBank.get_sound("bolt_rifle"))
+	assert_int(crack.size()).is_equal(1)
+	# The bolt is heard once the handle starts to lift, after the shot.
+	await get_tree().create_timer(gun.cycle_seconds * 0.5).timeout
+	var bolt := _players_of(module).filter(func(n: Node) -> bool: return (n as AudioStreamPlayer3D).stream == SoundBank.get_sound("bolt_cycle"))
+	assert_int(bolt.size()).is_equal(1)
+
+
+func test_no_bolt_after_the_last_round() -> void:
+	var gun: Node = auto_free(BoltGun.new())
+	var module: Node = (load(MODULE) as GDScript).new()
+	module.set(&"enabled", true)
+	add_child(auto_free(module))
+	EventBus.publish(&"weapon.fired", {"from": Vector3(1, 1, 1), "to": Vector3(1, 1, -50), "damage": 0.0, "weapon": gun, "cycles": false})
+	await get_tree().create_timer(gun.cycle_seconds * 0.5).timeout
+	var bolt := _players_of(module).filter(func(n: Node) -> bool: return (n as AudioStreamPlayer3D).stream == SoundBank.get_sound("bolt_cycle"))
+	assert_int(bolt.size()).is_equal(0)
+
+
+## A gun whose bolt is worked by hand, as the audio module sees one (by its properties).
+class BoltGun:
+	extends Node
+	var cycle_seconds := 0.6
+	var semi_auto := true
 
 
 func test_a_shot_plays_where_it_was_fired() -> void:

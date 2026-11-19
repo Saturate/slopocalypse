@@ -23,6 +23,8 @@ static func get_sound(sound: String) -> AudioStreamWAV:
 	match sound:
 		"rifle": samples = _shot(0.42, 70.0, 1.0, 9000.0, 1)
 		"pistol": samples = _shot(0.3, 110.0, 0.8, 7000.0, 2)
+		"bolt_rifle": samples = _shot(0.75, 52.0, 1.25, 11000.0, 6)
+		"bolt_cycle": samples = _bolt_cycle()
 		"suppressed": samples = _shot(0.16, 140.0, 0.35, 1800.0, 3)
 		"impact": samples = _thud(0.09, 900.0, 4)
 		"hit": samples = _tick()
@@ -293,6 +295,32 @@ static func _clicks() -> PackedFloat32Array:
 			if t >= at:
 				var u := t - at
 				v += rng.randf_range(-1.0, 1.0) * exp(-u * 160.0) * 0.8 + sin(TAU * 1800.0 * u) * exp(-u * 120.0) * 0.4
+		out.append(clampf(v, -1.0, 1.0))
+	return out
+
+
+## A bolt worked by hand: a click as the handle lifts, a scrape back to a clack at the
+## stop, a scrape forward to a heavier clack, and the click of the handle turning down.
+static func _bolt_cycle() -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	var rng := _rng(8)
+	# [time, loudness, ring pitch] of each metal-on-metal hit.
+	var hits := [[0.0, 0.6, 2400.0], [0.23, 0.9, 1500.0], [0.36, 1.0, 1300.0], [0.5, 0.6, 2600.0]]
+	var scrapes := [[0.11, 0.23], [0.27, 0.36]]
+	var lp := 0.0
+	var a := _one_pole(3500.0)
+	for i in int(0.62 * RATE):
+		var t := float(i) / RATE
+		var noise := rng.randf_range(-1.0, 1.0)
+		lp += (noise - lp) * a
+		var v := 0.0
+		for s: Array in scrapes:
+			if t >= float(s[0]) and t < float(s[1]):
+				v += lp * 0.18
+		for h: Array in hits:
+			if t >= float(h[0]):
+				var u := t - float(h[0])
+				v += (noise * exp(-u * 180.0) * 0.7 + sin(TAU * float(h[2]) * u) * exp(-u * 90.0) * 0.35) * float(h[1])
 		out.append(clampf(v, -1.0, 1.0))
 	return out
 

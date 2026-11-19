@@ -29,6 +29,8 @@ pub struct PartStats {
     pub zoom: Option<f64>,
     /// How much a scope's lens magnifies, seen picture in picture; 1 for open sights.
     pub magnification: Option<f64>,
+    /// Receivers with a manual action: seconds to work the bolt after each shot.
+    pub cycle_seconds: Option<f64>,
     pub ergonomics: f64,
     pub weight: f64,
     /// Percent changes, summed over parts: -10 means 10% less.
@@ -62,6 +64,8 @@ pub struct BuildStats {
     pub magazine: u32,
     pub zoom: f64,
     pub magnification: f64,
+    /// 0 for a self-loading gun.
+    pub cycle_seconds: f64,
     pub ergonomics: f64,
     pub weight: f64,
 }
@@ -172,6 +176,7 @@ fn combine(parts: &[&PartDef]) -> BuildStats {
         magazine: parts.iter().find_map(|p| p.stats.magazine).unwrap_or(0),
         zoom: base(|s| s.zoom, 1.0),
         magnification: base(|s| s.magnification, 1.0),
+        cycle_seconds: base(|s| s.cycle_seconds, 0.0),
         ergonomics,
         weight: sum(|s| s.weight),
     }
@@ -429,6 +434,22 @@ mod tests {
         let stats = assemble(&catalogue(), &b).expect("valid");
         assert_eq!(stats.magnification, 4.0);
         assert_eq!(stats.zoom, 1.1);
+    }
+
+    #[test]
+    fn a_self_loading_gun_has_no_cycle_and_a_manual_receiver_sets_it() {
+        let mut cat = catalogue();
+        assert_eq!(
+            assemble(&cat, &standard()).expect("valid").cycle_seconds,
+            0.0
+        );
+        if let Some(rcv) = cat.get_mut("rcv") {
+            rcv.stats.cycle_seconds = Some(1.1);
+        }
+        assert_eq!(
+            assemble(&cat, &standard()).expect("valid").cycle_seconds,
+            1.1
+        );
     }
 
     #[test]

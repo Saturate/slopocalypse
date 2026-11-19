@@ -3,7 +3,8 @@ extends Node3D
 ## A carried hitscan gun's logic, at the holder's camera so shots follow the aim. It has
 ## no mesh: the one visible rifle is in the body's hands. Reads the holder's PlayerIntent;
 ## the server decides every hit.
-## Fire rules (rate, magazine, reload, spread) run in Rust (`WeaponRules`).
+## Fire rules (rate, magazine, reload, the bolt after each shot, spread) run in Rust
+## (`WeaponRules`).
 
 const CONFIG := "res://modules/weapons/data/weapons.json"
 const REQUIRED := {
@@ -36,6 +37,9 @@ const HEAD_BELOW_EYES := 0.22
 var active := true
 ## One shot per trigger pull (pistols) instead of firing while held.
 var semi_auto := false
+## Seconds to work the bolt after each shot before the next can fire; 0 for a gun that
+## loads itself. Set from the receiver's `action` ("manual") and `cycle_seconds`.
+var cycle_seconds := 0.0
 var rules := WeaponRules.new()
 
 var _recoil_rng := RandomNumberGenerator.new()
@@ -62,7 +66,7 @@ func _ready() -> void:
 		set_physics_process(false)
 		return
 	# Seeded per weapon so server and owning client roll the same spread.
-	rules.setup(stats["rounds_per_minute"], int(stats["magazine"]), stats["reload_seconds"], deg_to_rad(stats["spread_degrees"]), get_instance_id())
+	rules.setup(stats["rounds_per_minute"], int(stats["magazine"]), stats["reload_seconds"], deg_to_rad(stats["spread_degrees"]), cycle_seconds, get_instance_id())
 
 
 ## Rounds left. Clients show what the server last told them; only the server fires.
@@ -70,6 +74,12 @@ func ammo() -> int:
 	if not multiplayer.is_server() and _synced_ammo >= 0:
 		return _synced_ammo
 	return rules.ammo()
+
+
+## True while the bolt is being worked after a shot (server and solo; clients don't run the
+## rules).
+func is_cycling() -> bool:
+	return rules.is_cycling()
 
 
 func is_reloading() -> bool:
@@ -165,9 +175,9 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 		return
 	if not rules.try_fire():
 		return
-	var spread := rules.last_spread()
-	if holder != null and holder.intent().aim:
-		spread *= float(stats["ads_spread_multiplier"])
+	var spread := rules.last_spread() * spread_scale(holder != null and holder.intent().aim)
+	# Clients don't run the rules, so the effects learn from here whether a bolt follows.
+	var cycles := rules.is_cycling()
 	var basis := Basis.looking_at(direction)
 	var dir := (basis * Vector3(tan(spread.x), tan(spread.y), -1.0)).normalized()
 	var to := origin + dir * float(stats["range"])
@@ -205,11 +215,11 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 		# craters. A client the shooter isn't sent to (too far away) hasn't got this node.
 		# What the round carried here, before what was left of the target's health cut it short.
 		var round_damage := float(stats["damage"]) * damage_scale
-		_replay_shot(from, hit_point, damage, target_path, collider_path, passes > 0, round_damage)
+		_replay_shot(from, hit_point, damage, target_path, collider_path, passes > 0, round_damage, cycles)
 		var peers := replay_peers(holder)
 		for peer in peers:
-			_replay_shot.rpc_id(peer, from, hit_point, damage, target_path, collider_path, passes > 0, round_damage)
-		NetStats.add(&"rpc/shot", NetStats.size_of([from, hit_point, damage, target_path, collider_path, passes > 0, round_damage]) * peers.size())
+			_replay_shot.rpc_id(peer, from, hit_point, damage, target_path, collider_path, passes > 0, round_damage, cycles)
+		NetStats.add(&"rpc/shot", NetStats.size_of([from, hit_point, damage, target_path, collider_path, passes > 0, round_damage, cycles]) * peers.size())
 		if target != null or collider == null or passes >= max_passes or not collider.has_method(&"bullet_exit"):
 			return
 		var exit: Variant = collider.call(&"bullet_exit", hit_point, dir, float(stats["damage"]) * damage_scale)
@@ -218,6 +228,13 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 		from = exit["exit"]
 		damage_scale *= float(exit.get("scale", 1.0))
 		passes += 1
+
+
+## How much of the gun's spread a shot gets: all of it from the hip, `ads_spread_multiplier`
+## of it aimed (a bolt-action's receiver sets its own, far smaller, so it is only accurate
+## through the scope).
+func spread_scale(aimed: bool) -> float:
+	return float(stats["ads_spread_multiplier"]) if aimed else 1.0
 
 
 ## How many times one round may go on through something (weapons.json).
@@ -229,9 +246,10 @@ static func max_pass_throughs() -> int:
 ## Runs on the server and every client: publishes `weapon.fired` locally (tracers, hit
 ## markers, craters) and kicks the aim on the instance that owns this player.
 ## `through`: this stretch is the same round carrying on after going through something, so
-## there's no new shot to hear, flash or kick.
+## there's no new shot to hear, flash or kick. `cycles`: the bolt is worked after this shot
+## (a manual action with rounds left).
 @rpc("authority", "call_local", "reliable")
-func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_path: String, collider_path: String, through: bool = false, round_damage: float = -1.0) -> void:
+func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_path: String, collider_path: String, through: bool = false, round_damage: float = -1.0, cycles: bool = false) -> void:
 	var target: Node = get_node_or_null(target_path) if not target_path.is_empty() else null
 	var collider: Node = get_node_or_null(collider_path) if not collider_path.is_empty() else null
 	if not through:
@@ -239,7 +257,7 @@ func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_pat
 	# `collider` lets other modules react to what was hit (the world digs into terrain).
 	# `damage` is what the hit dealt; `round_damage` what the round carried (gore judges a
 	# killing shot by it, not by the health that happened to be left), -1 when not sent.
-	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "collider": collider, "damage": damage, "through": through, "round_damage": round_damage})
+	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "collider": collider, "damage": damage, "through": through, "round_damage": round_damage, "cycles": cycles})
 
 
 ## A shot's damage: the gun's, unless it hit the head. Headshots kill the teams listed in

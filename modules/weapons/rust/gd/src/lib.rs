@@ -7,14 +7,15 @@
 use godot::prelude::*;
 use std::collections::BTreeMap;
 use weapons_core::parts::{self, BuildStats, PartDef, PartStats};
-use weapons_core::{WeaponState, WeaponStats};
+use weapons_core::{Action, WeaponState, WeaponStats};
 
 struct WeaponsExtension;
 
 #[gdextension]
 unsafe impl ExtensionLibrary for WeaponsExtension {}
 
-/// GDScript: `var rules := WeaponRules.new(); rules.setup(600.0, 30, 2.0, 0.01, seed)`.
+/// GDScript: `var rules := WeaponRules.new(); rules.setup(600.0, 30, 2.0, 0.01, 0.0, seed)`;
+/// a `cycle_seconds` above 0 makes it a manual action (the bolt is worked after each shot).
 #[derive(GodotClass)]
 #[class(init, base = RefCounted)]
 struct WeaponRules {
@@ -31,13 +32,20 @@ impl WeaponRules {
         magazine: i64,
         reload_seconds: f64,
         spread_radians: f64,
+        cycle_seconds: f64,
         seed: i64,
     ) {
+        let action = if cycle_seconds > 0.0 {
+            Action::Manual { cycle_seconds }
+        } else {
+            Action::SelfLoading
+        };
         let stats = WeaponStats {
             rounds_per_minute,
             magazine: u32::try_from(magazine).unwrap_or(0),
             reload_seconds,
             spread_radians,
+            action,
         };
         // The seed's bits matter, not its sign.
         self.state = Some(WeaponState::new(stats, seed as u64));
@@ -83,6 +91,12 @@ impl WeaponRules {
     #[func]
     fn is_reloading(&self) -> bool {
         self.state.as_ref().is_some_and(|s| s.is_reloading())
+    }
+
+    /// True while a manual action's bolt is being worked after a shot.
+    #[func]
+    fn is_cycling(&self) -> bool {
+        self.state.as_ref().is_some_and(|s| s.is_cycling())
     }
 }
 
@@ -170,6 +184,7 @@ fn part_from(id: String, data: &VarDictionary) -> PartDef {
         magazine: num(&s, "magazine").map(|m| m.max(0.0).round() as u32),
         zoom: num(&s, "zoom"),
         magnification: num(&s, "magnification"),
+        cycle_seconds: num(&s, "cycle_seconds"),
         ergonomics: num(&s, "ergonomics").unwrap_or(0.0),
         weight: num(&s, "weight").unwrap_or(0.0),
         recoil_pct: num(&s, "recoil_pct").unwrap_or(0.0),
@@ -199,7 +214,7 @@ fn strings(data: &VarDictionary, key: &str) -> Vec<String> {
 
 fn stats_to(s: &BuildStats) -> VarDictionary {
     let mut d = VarDictionary::new();
-    let fields: [(&str, f64); 13] = [
+    let fields: [(&str, f64); 14] = [
         ("rounds_per_minute", s.rounds_per_minute),
         ("damage", s.damage),
         ("spread_degrees", s.spread_degrees),
@@ -211,6 +226,7 @@ fn stats_to(s: &BuildStats) -> VarDictionary {
         ("magazine", f64::from(s.magazine)),
         ("ads_zoom", s.zoom),
         ("magnification", s.magnification),
+        ("cycle_seconds", s.cycle_seconds),
         ("ergonomics", s.ergonomics),
         ("weight", s.weight),
     ];

@@ -73,6 +73,10 @@ func _on_fired(p: Dictionary) -> void:
 		remember(held)
 		# The rifle's nose points along -Z, so the kick pushes it back toward the shoulder.
 		held.position.z += _kick_back
+		# A bolt-action's bolt is worked after every shot but the last; its hand goes to it.
+		var weapon := p.get("weapon") as HitscanWeapon
+		if weapon != null and weapon.cycle_seconds > 0.0 and bool(p.get("cycles", false)):
+			BoltCycle.start(held, weapon.cycle_seconds, weapon)
 	_spawn_tracer(from, to)
 	_spawn_muzzle_flash(from)
 	_spawn_impact(to)

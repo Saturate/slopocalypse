@@ -3,7 +3,8 @@ extends RefCounted
 ## Meshes for gun parts, each in its own space with the origin at the point it mounts on
 ## (the receiver's origin is the gun's). Metres; guns point down -Z. Original designs:
 ## side profiles extruded for silhouettes, lofts for curves, toothed rails, open optic
-## housings with glass. Built once at runtime and cached by mesh id.
+## housings with glass. Built once at runtime and cached by mesh id. Ids starting `vox_bolt_`
+## are the bolt-action rifle's voxel parts from the voxel kit (`VoxBoltRifle`).
 
 const GUNMETAL := Color(0.2, 0.21, 0.23)
 const LOWER := Color(0.25, 0.25, 0.26)
@@ -57,6 +58,9 @@ static func mesh(id: String) -> ArrayMesh:
 		"pistol_supp": built = _pistol_supp()
 		"optic_pistol_dot": built = _optic_pistol_dot()
 		"launcher": built = _launcher()
+		_:
+			if id.begins_with("vox_bolt_"):
+				built = VoxBoltRifle.part_mesh(id.trim_prefix("vox_bolt_"))
 	if built != null:
 		_cache[id] = built
 	return built
