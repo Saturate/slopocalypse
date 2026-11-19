@@ -31,6 +31,16 @@ pub struct Grid {
     /// Chunks per axis, and which chunks changed since they were last meshed.
     chunks: [usize; 3],
     dirty: Vec<bool>,
+    /// Each chunk's last mesh (normal, see-through), kept so the section round an edit can
+    /// be joined again without meshing its unchanged chunks. Only for sections edited after
+    /// their first draw (`kept`): most models are never edited, and keeping every chunk's
+    /// mesh would double what they cost in memory.
+    meshed: Vec<(Mesh, Mesh)>,
+    /// Section side in chunks (`set_section`), and per section whether it has been drawn
+    /// once and whether its chunks' meshes are kept.
+    section: usize,
+    built: Vec<bool>,
+    kept: Vec<bool>,
     /// Darken face corners by how many cells crowd them (see `corner_level`).
     pub corners: bool,
 }
@@ -47,6 +57,13 @@ pub struct Fragment {
 /// Chunk side in cells: each chunk meshes on its own, so an edit rebuilds only the chunks it
 /// touched.
 pub const CHUNK: usize = 16;
+/// Default section side in chunks: what gets drawn is one mesh per section
+/// (`remesh_dirty_sections`), so a building is a handful of instances instead of hundreds.
+/// Models that get shot at use smaller sections (`set_section`): an edit re-joins its whole
+/// section, and a big one costs milliseconds per bullet hole.
+pub const SECTION: usize = 4;
+/// Largest section side a model may ask for.
+pub const MAX_SECTION: usize = 8;
 
 /// Largest grid side in cells, so a typo in a parameter can't ask for gigabytes.
 pub const MAX_SIDE: usize = 1024;
@@ -71,6 +88,25 @@ impl Mesh {
     pub fn quad_count(&self) -> usize {
         self.indices.len() / 6
     }
+
+    /// Gives back the spare capacity pushing left behind, for meshes that are kept.
+    pub fn shrink(&mut self) {
+        self.positions.shrink_to_fit();
+        self.normals.shrink_to_fit();
+        self.colours.shrink_to_fit();
+        self.shade.shrink_to_fit();
+        self.indices.shrink_to_fit();
+    }
+
+    /// Adds `other`'s faces to this mesh.
+    pub fn append(&mut self, other: &Mesh) {
+        let base = self.positions.len() as u32;
+        self.positions.extend_from_slice(&other.positions);
+        self.normals.extend_from_slice(&other.normals);
+        self.colours.extend_from_slice(&other.colours);
+        self.shade.extend_from_slice(&other.shade);
+        self.indices.extend(other.indices.iter().map(|i| i + base));
+    }
 }
 
 impl Grid {
@@ -94,8 +130,35 @@ impl Grid {
             clear: [false; 256],
             chunks,
             dirty: vec![true; chunks[0] * chunks[1] * chunks[2]],
+            meshed: vec![Default::default(); chunks[0] * chunks[1] * chunks[2]],
+            section: SECTION,
+            built: Vec::new(),
+            kept: Vec::new(),
             corners: false,
         }
+        .with_sections()
+    }
+
+    /// Fresh section bookkeeping for the current chunk layout: nothing drawn, nothing kept.
+    fn with_sections(mut self) -> Self {
+        self.reset_sections();
+        self
+    }
+
+    fn reset_sections(&mut self) {
+        let n = self.section_count();
+        self.built = vec![false; n];
+        self.kept = vec![false; n];
+        self.meshed = vec![Default::default(); self.dirty.len()];
+    }
+
+    /// Draws the model in sections of `chunks` chunks a side (1 to `MAX_SECTION`) from the
+    /// next `remesh_dirty_sections` on; everything is drawn again. Meant before the first
+    /// draw: section ids change, so a caller must drop what it drew for the old ones.
+    pub fn set_section(&mut self, chunks: usize) {
+        self.section = chunks.clamp(1, MAX_SECTION);
+        self.reset_sections();
+        self.dirty.iter_mut().for_each(|d| *d = true);
     }
 
     fn index(&self, x: usize, y: usize, z: usize) -> usize {
@@ -524,6 +587,8 @@ impl Grid {
         g.materials = vec![0; n[0] * n[1] * n[2]];
         g.chunks = n.map(|v| v.div_ceil(CHUNK));
         g.dirty = vec![true; g.chunks[0] * g.chunks[1] * g.chunks[2]];
+        g.section = self.section;
+        g.reset_sections();
         g.brush = self.brush;
         g
     }
@@ -712,11 +777,18 @@ impl Grid {
 
     /// The see-through cells of chunk `id` alone (glass): faces only where they meet air.
     pub fn mesh_chunk_clear(&self, id: usize) -> Mesh {
+        // Most models draw nothing see-through; scanning their cells for it again cost a
+        // shot-at water tower half as much again per hole.
+        if !self.clear.iter().any(|&c| c) {
+            return Mesh::default();
+        }
         let (lo, hi) = self.chunk_cells(id);
         self.mesh_region(lo, hi, usize::MAX, true)
     }
 
-    /// Like `remesh_dirty`, with each chunk's see-through mesh beside its normal one.
+    /// Like `remesh_dirty`, with each chunk's see-through mesh beside its normal one. Tests
+    /// only: it marks chunks clean without refreshing kept section meshes.
+    #[cfg(test)]
     pub fn remesh_dirty_layers(&mut self) -> Vec<(usize, Mesh, Mesh)> {
         let ids = self.dirty_chunks();
         let out = ids
@@ -729,8 +801,124 @@ impl Grid {
         out
     }
 
+    /// Sections per axis: `section` chunks a side, the last row shorter where chunks run out.
+    fn sections(&self) -> [usize; 3] {
+        let n = self.section;
+        self.chunks.map(|c| c.div_ceil(n))
+    }
+
+    /// How many sections the grid is split into (ids run from 0).
+    pub fn section_count(&self) -> usize {
+        let s = self.sections();
+        s[0] * s[1] * s[2]
+    }
+
+    /// The section holding chunk `id`.
+    pub fn section_of_chunk(&self, id: usize) -> usize {
+        let cx = id % self.chunks[0];
+        let rest = id / self.chunks[0];
+        let cz = rest % self.chunks[2];
+        let cy = rest / self.chunks[2];
+        let s = self.sections();
+        let n = self.section;
+        ((cy / n) * s[2] + cz / n) * s[0] + cx / n
+    }
+
+    /// The chunks inside section `id`.
+    pub fn section_chunks(&self, id: usize) -> Vec<usize> {
+        let s = self.sections();
+        let sx = id % s[0];
+        let rest = id / s[0];
+        let sz = rest % s[2];
+        let sy = rest / s[2];
+        let n = self.section;
+        let mut out = Vec::new();
+        for cy in sy * n..((sy + 1) * n).min(self.chunks[1]) {
+            for cz in sz * n..((sz + 1) * n).min(self.chunks[2]) {
+                for cx in sx * n..((sx + 1) * n).min(self.chunks[0]) {
+                    out.push(self.chunk_id([cx, cy, cz]));
+                }
+            }
+        }
+        out
+    }
+
+    /// Meshes the changed chunks (both layers) and joins the sections they sit in:
+    /// `(section id, mesh, see-through mesh)` per section touched, an empty mesh where a
+    /// layer has nothing to draw. The first call returns every section. A section's first
+    /// draw keeps nothing; once it is edited its chunks' meshes are kept, so later edits mesh
+    /// only the chunks they touch.
+    pub fn remesh_dirty_sections(&mut self) -> Vec<(usize, Mesh, Mesh)> {
+        let ids = self.dirty_chunks();
+        let mut changed = vec![false; self.dirty.len()];
+        let mut touched: Vec<usize> = Vec::new();
+        for &id in &ids {
+            changed[id] = true;
+            self.dirty[id] = false;
+            let section = self.section_of_chunk(id);
+            if !touched.contains(&section) {
+                touched.push(section);
+            }
+        }
+        touched.sort_unstable();
+        touched
+            .into_iter()
+            .map(|section| {
+                let mut mesh = Mesh::default();
+                let mut clear = Mesh::default();
+                let chunks = self.section_chunks(section);
+                if !self.built[section] {
+                    self.built[section] = true;
+                    for chunk in chunks {
+                        mesh.append(&self.mesh_chunk(chunk));
+                        clear.append(&self.mesh_chunk_clear(chunk));
+                    }
+                    return (section, mesh, clear);
+                }
+                // A one-chunk section is only ever redrawn for its own chunk: nothing to keep.
+                if chunks.len() == 1 {
+                    let chunk = chunks[0];
+                    return (
+                        section,
+                        self.mesh_chunk(chunk),
+                        self.mesh_chunk_clear(chunk),
+                    );
+                }
+                // Edited: from now on this section keeps its chunks' meshes.
+                let fresh = !self.kept[section];
+                self.kept[section] = true;
+                for &chunk in &chunks {
+                    if fresh || changed[chunk] {
+                        let mut kept = (self.mesh_chunk(chunk), self.mesh_chunk_clear(chunk));
+                        kept.0.shrink();
+                        kept.1.shrink();
+                        self.meshed[chunk] = kept;
+                    }
+                    mesh.append(&self.meshed[chunk].0);
+                    clear.append(&self.meshed[chunk].1);
+                }
+                (section, mesh, clear)
+            })
+            .collect()
+    }
+
+    /// Section `id` meshed from scratch, for tests and tools.
+    pub fn mesh_chunks_of_section(&self, id: usize) -> Mesh {
+        let mut out = Mesh::default();
+        for chunk in self.section_chunks(id) {
+            out.append(&self.mesh_chunk(chunk));
+        }
+        out
+    }
+
+    /// How many sections keep their chunks' meshes (edited since their first draw).
+    pub fn kept_sections(&self) -> usize {
+        self.kept.iter().filter(|&&k| k).count()
+    }
+
     /// Meshes every changed chunk and marks it clean: `(chunk id, mesh)` per chunk, an empty
     /// mesh where a chunk has nothing left to draw.
+    #[cfg(test)]
     pub fn remesh_dirty(&mut self) -> Vec<(usize, Mesh)> {
         let ids = self.dirty_chunks();
         let out = ids.iter().map(|&id| (id, self.mesh_chunk(id))).collect();
@@ -792,6 +980,8 @@ impl Grid {
         out.clear = self.clear;
         out.chunks = n.map(|v| v.div_ceil(CHUNK));
         out.dirty = vec![true; out.chunks[0] * out.chunks[1] * out.chunks[2]];
+        out.section = self.section;
+        out.reset_sections();
         for y in y0..y1 {
             for z in z0..z1 {
                 for x in x0..x1 {
@@ -1667,6 +1857,127 @@ mod tests {
             let chunked = area_by_colour(&chunk_meshes(&g), g.voxel);
             assert_eq!(chunked, whole);
         }
+    }
+
+    #[test]
+    fn section_meshes_cover_the_same_faces_as_the_whole_mesh() {
+        for mut g in sample_models() {
+            let whole = area_by_colour(&[g.mesh()], g.voxel);
+            let sections = g.remesh_dirty_sections();
+            assert_eq!(sections.len(), g.section_count());
+            let meshes: Vec<Mesh> = sections.into_iter().map(|(_, m, _)| m).collect();
+            assert_eq!(area_by_colour(&meshes, g.voxel), whole);
+            // Nothing changed: nothing to draw again.
+            assert!(g.remesh_dirty_sections().is_empty());
+        }
+    }
+
+    #[test]
+    fn sections_group_chunks_and_every_chunk_is_in_one() {
+        // 8 x 2 x 3 chunks: 2 x 1 x 1 sections, the second with 4 x 2 x 3 chunks too.
+        let g = Grid::new([12.8, 3.2, 4.8], 0.1);
+        assert_eq!(g.chunk_count(), 48);
+        assert_eq!(g.section_count(), 2);
+        let mut seen = vec![0; g.chunk_count()];
+        for section in 0..g.section_count() {
+            for chunk in g.section_chunks(section) {
+                assert_eq!(g.section_of_chunk(chunk), section);
+                seen[chunk] += 1;
+            }
+        }
+        assert!(seen.iter().all(|&n| n == 1));
+        assert_eq!(g.section_of_chunk(g.chunk_of(63, 0, 0)), 0);
+        assert_eq!(g.section_of_chunk(g.chunk_of(64, 0, 0)), 1);
+    }
+
+    #[test]
+    fn an_edit_joins_only_the_sections_round_it_from_kept_chunk_meshes() {
+        let mut g = Grid::new([12.8, 1.6, 1.6], 0.1);
+        g.fill_box([-6.4, 0.0, -0.8], [6.4, 1.6, 0.8], fill(RED));
+        assert_eq!(g.remesh_dirty_sections().len(), 2);
+        // Inside the first section.
+        g.set(8, 8, 8, BLUE);
+        let again = g.remesh_dirty_sections();
+        assert_eq!(
+            again.iter().map(|(id, _, _)| *id).collect::<Vec<_>>(),
+            vec![0]
+        );
+        // Across the border between chunks 3 and 4 (x = 0): both sections change.
+        g.fill_box([-0.15, 0.2, -0.2], [0.15, 0.5, 0.2], Op::Carve);
+        let both = g.remesh_dirty_sections();
+        assert_eq!(
+            both.iter().map(|(id, _, _)| *id).collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+        // The joined sections hold exactly the faces the whole model has now.
+        let meshes: Vec<Mesh> = both.into_iter().map(|(_, m, _)| m).collect();
+        let total: i64 = area_by_colour(&meshes, g.voxel).values().sum();
+        assert_eq!(total, exposed_faces(&g));
+    }
+
+    #[test]
+    fn a_model_never_edited_keeps_no_chunk_meshes() {
+        let mut g = Grid::new([12.8, 1.6, 1.6], 0.1);
+        g.fill_box([-6.4, 0.0, -0.8], [6.4, 1.6, 0.8], fill(RED));
+        assert_eq!(g.remesh_dirty_sections().len(), 2);
+        assert_eq!(g.kept_sections(), 0);
+        assert!(
+            g.meshed
+                .iter()
+                .all(|(m, c)| m.positions.is_empty() && c.positions.is_empty())
+        );
+    }
+
+    #[test]
+    fn only_edited_sections_keep_their_chunk_meshes_and_still_join_right() {
+        let mut g = Grid::new([12.8, 1.6, 1.6], 0.1);
+        g.fill_box([-6.4, 0.0, -0.8], [6.4, 1.6, 0.8], fill(RED));
+        g.remesh_dirty_sections();
+        g.set(8, 8, 8, BLUE);
+        let first = g.remesh_dirty_sections();
+        assert_eq!(g.kept_sections(), 1);
+        // A second edit in the same section joins from the kept meshes.
+        g.set(20, 8, 8, BLUE);
+        let second = g.remesh_dirty_sections();
+        assert_eq!(second.len(), 1);
+        assert_eq!(first[0].0, second[0].0);
+        let untouched = g.mesh_chunks_of_section(1 - second[0].0);
+        let mut all: Vec<Mesh> = second.into_iter().map(|(_, m, _)| m).collect();
+        all.push(untouched);
+        let total: i64 = area_by_colour(&all, g.voxel).values().sum();
+        assert_eq!(total, exposed_faces(&g));
+    }
+
+    #[test]
+    fn smaller_sections_split_a_model_into_more_and_an_edit_touches_one() {
+        let mut g = Grid::new([12.8, 3.2, 3.2], 0.1);
+        g.fill_box([-6.4, 0.0, -1.6], [6.4, 3.2, 1.6], fill(RED));
+        assert_eq!(g.section_count(), 2);
+        g.set_section(2);
+        // 8 x 2 x 2 chunks in sections of 2: 4 x 1 x 1.
+        assert_eq!(g.section_count(), 4);
+        assert_eq!(g.remesh_dirty_sections().len(), 4);
+        g.set(8, 8, 8, BLUE);
+        assert_eq!(g.remesh_dirty_sections().len(), 1);
+        g.set_section(0);
+        assert_eq!(g.section, 1);
+        g.set_section(99);
+        assert_eq!(g.section, MAX_SECTION);
+    }
+
+    #[test]
+    fn see_through_cells_come_back_as_each_sections_clear_mesh() {
+        let mut g = Grid::new([3.2, 1.6, 1.6], 0.1);
+        g.fill_box([-1.6, 0.0, -0.8], [1.6, 1.6, 0.8], fill(RED));
+        g.brush = 7;
+        g.fill_box([-0.5, 0.5, -0.8], [0.5, 1.0, -0.7], fill(BLUE));
+        g.set_clear(7, true);
+        let sections = g.remesh_dirty_sections();
+        assert_eq!(sections.len(), 1);
+        let (_, mesh, clear) = &sections[0];
+        assert!(clear.quad_count() > 0);
+        assert!(mesh.colours.iter().all(|&c| c == RED));
+        assert!(clear.colours.iter().all(|&c| c == BLUE));
     }
 
     #[test]
