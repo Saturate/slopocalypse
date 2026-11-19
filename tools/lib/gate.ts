@@ -35,7 +35,23 @@ export function refreshExtensionList(root: string): void {
 	writeFileSync(join(root, ".godot", "extension_list.cfg"), found.map((p) => p + "\n").join(""));
 }
 
-export async function godotImport(godot: string, root: string): Promise<StepResult> {
+// Runs `step`, and once more if it fails. For steps where the engine itself crashes now and
+// then: a real failure fails again, and the pass still says it needed a second go.
+export async function retryOnce(step: () => Promise<StepResult>): Promise<StepResult> {
+	const first = await step();
+	if (first.ok) return first;
+	const second = await step();
+	if (!second.ok) return second;
+	return { ok: true, detail: `${second.detail} (retried after: ${first.detail.split("\n")[0]})` };
+}
+
+// Godot's headless import sometimes exits -1 with a thread error on CI runners
+// (`propagate_notification()` from the wrong thread), and passes when run again.
+export function godotImport(godot: string, root: string): Promise<StepResult> {
+	return retryOnce(() => importOnce(godot, root));
+}
+
+async function importOnce(godot: string, root: string): Promise<StepResult> {
 	refreshExtensionList(root);
 	const r = await run(godot, ["--headless", "--path", root, "--import"], { cwd: root, timeoutMs: 300_000 });
 	const problems = scanLog(r.output, GODOT_NOISE);
