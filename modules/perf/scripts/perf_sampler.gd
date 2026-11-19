@@ -4,10 +4,26 @@ extends RefCounted
 ## feeds it and adds the engine's own monitors.
 
 var _frames := PackedFloat32Array()
+## The slowest spike line offered since the last `take_spike`, or empty.
+var _spike: Dictionary = {}
 
 
 func add_frame(ms: float) -> void:
 	_frames.append(ms)
+
+
+## A slow frame's line (`spike_ms` and what ran). Spike lines are rate-limited, and the one
+## kept must be the worst: a hitch that follows a merely slow frame is the one worth reading.
+func offer_spike(line: Dictionary) -> void:
+	if _spike.is_empty() or float(line["spike_ms"]) > float(_spike["spike_ms"]):
+		_spike = line
+
+
+## The slowest spike offered since the last call, then forgets it; empty if none.
+func take_spike() -> Dictionary:
+	var out := _spike
+	_spike = {}
+	return out
 
 
 ## {frames, frame_ms_mean, frame_ms_p95, frame_ms_max} for the window so far, then empties it.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { compare, netCosts, parsePerfLog, summarise, zoneCosts, type Summary } from "./bench.ts";
+import { compare, netCosts, parsePerfLog, summarise, worstSpikes, zoneCosts, type Summary } from "./bench.ts";
 
 const log = [
 	'{"t":1,"frames":60,"frame_ms_mean":30,"frame_ms_p95":50,"frame_ms_max":90,"physics_nodes_ms":2,"physics_peak_ms":9,"memory_mb":100,"nodes":500}',
@@ -55,4 +55,19 @@ test("network spend averages the server's net blocks after the warm-up, biggest 
 	].join("\n"));
 	assert.deepEqual(netCosts(recs, 10), { outPerPeer: 1500, sources: [["sync/player", 1000], ["other", 200], ["event/a", 50]] });
 	assert.equal(netCosts(parsePerfLog('{"t":11,"frames":60}'), 10), undefined);
+});
+
+test("worst spikes after the warm-up come out slowest first, with zones and shader compiles", () => {
+	const text = [
+		'{"t":2,"spike_ms":300,"nodes":10,"zones":{}}',
+		'{"t":11,"spike_ms":40,"nodes":10,"zones":{"a":1.5}}',
+		'{"t":12,"frames":60}',
+		'{"t":13,"spike_ms":90,"nodes":10,"zones":{"b":0.2},"compiles":{"draw":3}}',
+		'{"t":14,"spike_ms":60,"nodes":10}',
+	].join("\n");
+	const out = worstSpikes(text, 10, 2);
+	assert.deepEqual(out, [
+		{ t: 13, ms: 90, zones: { b: 0.2 }, compiles: { draw: 3 } },
+		{ t: 14, ms: 60, zones: {}, compiles: {} },
+	]);
 });

@@ -1,6 +1,6 @@
 // Benchmarks: runs fixed scenarios, reads the perf log each writes, and compares with this
 // machine's baseline. Not part of the gate (timings are too noisy on shared machines).
-//   node tools/bench.ts [solo-walk] [solo-drive] [solo-city] [range-destroy] [server-bots] [server-crowd] [--save-baseline] [--tolerance 0.15]
+//   node tools/bench.ts [solo-walk] [solo-drive] [solo-city] [solo-deaths] [range-destroy] [server-bots] [server-crowd] [--save-baseline] [--tolerance 0.15]
 //     [--server-flags car:off,enemies:off]  (server-bots: switch modules off to see what costs what)
 //     [--crowd 30]  (server-crowd: how many soldiers)
 //     [--driver vulkan]  (windowed scenarios: another rendering driver; on macOS the Metal driver
@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { argv, exit } from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
-import { compare, netCosts, parsePerfLog, summarise, table, zoneCosts, type Summary } from "./lib/bench.ts";
+import { compare, netCosts, parsePerfLog, summarise, table, worstSpikes, zoneCosts, type Summary } from "./lib/bench.ts";
 import { localGodot } from "./lib/godot.ts";
 import { run } from "./lib/proc.ts";
 import { rangeArgs } from "./lib/range.ts";
@@ -29,6 +29,7 @@ const RUN_SECONDS = 150;
 const BOT_CLIENTS = 6;
 const CROWD_CLIENTS = 4;
 const TOP_ZONES = 12;
+const TOP_SPIKES = 6;
 
 interface Scenario {
 	what: string;
@@ -57,6 +58,10 @@ const SCENARIOS: Record<string, Scenario> = {
 	"solo-city": {
 		what: "windowed solo game starting in the city, a bot walks the ring of avenues round the square (the heaviest place to render: buildings, lamps, trees, guards)",
 		run: (perfLog) => windowed("solo-city", ["--start=city", "--bot=city", "--no-save"], perfLog),
+	},
+	"solo-deaths": {
+		what: "windowed solo game, squads land in front of the player and are killed one a second (what a soldier appearing and dying costs on screen)",
+		run: (perfLog) => windowed("solo-deaths", ["--bench=deaths", "--no-save"], perfLog),
 	},
 	"range-destroy": {
 		what: "windowed solo game on the test range, the range bot shoots and blasts each building in turn (destruction cost: remeshing, debris, collapse)",
@@ -122,7 +127,8 @@ async function main(): Promise<void> {
 			const perfLog = join(work, "perf.ndjson").replaceAll("\\", "/");
 			await scenario.run(perfLog);
 			if (!existsSync(perfLog)) throw new Error(`${name} wrote no perf log (is the perf module on?)`);
-			const records = parsePerfLog(readFileSync(perfLog, "utf8"));
+			const text = readFileSync(perfLog, "utf8");
+			const records = parsePerfLog(text);
 			const summary = summarise(records, WARMUP_SECONDS);
 			if (summary.samples === 0) throw new Error(`${name}: no samples after the ${WARMUP_SECONDS} s warm-up`);
 			const zones = zoneCosts(records, WARMUP_SECONDS);
@@ -130,6 +136,13 @@ async function main(): Promise<void> {
 			if (summary.gpu_ms > 0) console.log(`  drawing a frame: GPU ${summary.gpu_ms} ms, render CPU ${summary.render_cpu_ms} ms; ${summary.draw_calls} draw calls, ${summary.objects_drawn} objects, ${summary.primitives} primitives`);
 			console.log("  most expensive zones (microseconds per frame):");
 			for (const [zone, us] of zones.slice(0, TOP_ZONES)) console.log(`    ${zone.padEnd(38)} ${us.toFixed(1).padStart(8)}`);
+			const spikes = worstSpikes(text, WARMUP_SECONDS, TOP_SPIKES);
+			if (spikes.length > 0) console.log("  worst hitches (frame ms at second t: zones in ms, shader pipelines compiled):");
+			for (const s of spikes) {
+				const ran = Object.entries(s.zones).sort((a, b) => b[1] - a[1]).map(([z, ms]) => `${z} ${ms}`).join(", ");
+				const compiles = Object.entries(s.compiles).map(([k, c]) => `${c} ${k}`).join(", ");
+				console.log(`    ${s.ms.toFixed(1).padStart(7)} ms at ${s.t.toFixed(1)} s: ${ran || "no zones"}${compiles === "" ? "" : `; compiled ${compiles}`}`);
+			}
 			const net = netCosts(records, WARMUP_SECONDS);
 			if (net !== undefined) {
 				console.log(`  sent to each client: ${(net.outPerPeer / 1024).toFixed(1)} KB/s; by source (estimated, KB/s across all clients):`);
