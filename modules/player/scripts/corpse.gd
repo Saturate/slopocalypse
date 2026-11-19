@@ -95,6 +95,9 @@ static func from_body(player: Node3D, push: Vector3, velocity := Vector3.ZERO) -
 	corpse.transform = body.global_transform
 	corpse._fell_at = player.global_position
 	player.get_parent().add_child(corpse)
+	# For effects on the dead (gore severs limbs): which body this stands in for, and how it
+	# was thrown. Published once it simulates, so its bones can be changed at once.
+	EventBus.publish(&"player.corpse_fell", {"corpse": corpse, "body": player, "velocity": corpse._velocity})
 	return corpse
 
 
