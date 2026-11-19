@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { errorDetails, scanLog, stripAnsi, testSummary } from "./log-scan.ts";
+import { errorDetails, failureLines, scanLog, stripAnsi, testSummary } from "./log-scan.ts";
 
 const NOISE = [/Remote Debugger: Unable to connect to host '127\.0\.0\.1:0'/, /remote port number must be between/];
 
@@ -54,4 +54,44 @@ test("errorDetails keeps the lines Godot prints under an error, up to its at: li
 	assert.deepEqual(errorDetails(log, NOISE), [
 		'ERROR: Cannot export project with preset "macOS" due to configuration errors:\nCannot export for universal or arm64 if ETC2 ASTC texture format is disabled.',
 	]);
+});
+
+// Captured from gdUnit4 (colours included): an is_equal failure, then an is_equal_approx one.
+const GDUNIT_FAILURES = [
+	"\u001b[38;2;250;235;215mres://tests/unit/test_a.gd\u001b[0m > test_eq\u001b[38;2;178;34;34m FAILED\u001b[0m 1ms",
+	"  Report:",
+	"  \u001b[38;2;255;69;0mExpecting:\u001b[0m",
+	" '4'",
+	" but was",
+	" '3'\tat 'test_eq' in res://tests/unit/test_a.gd:5",
+	"",
+	"  res://tests/unit/test_b.gd > test_near FAILED 1ms",
+	"  Report:",
+	"  Expecting:",
+	" 100.000000",
+	" in range between",
+	" 84.999000 <> 85.001000\tat 'test_near' in res://tests/unit/test_b.gd:3",
+	"",
+	"Statistics: 2 test cases | 0 errors | 2 failures | 0 flaky | 0 skipped | 0 orphans | FAILED 5ms",
+].join("\n");
+
+test("failure lines keep both the expected and the actual value", () => {
+	const lines = failureLines(GDUNIT_FAILURES);
+	assert.deepEqual(lines.map((l) => l.trim()), [
+		"res://tests/unit/test_a.gd > test_eq FAILED 1ms",
+		"Expecting:",
+		"'4'",
+		"but was",
+		"'3'\tat 'test_eq' in res://tests/unit/test_a.gd:5",
+		"res://tests/unit/test_b.gd > test_near FAILED 1ms",
+		"Expecting:",
+		"100.000000",
+		"in range between",
+		"84.999000 <> 85.001000\tat 'test_near' in res://tests/unit/test_b.gd:3",
+	]);
+});
+
+test("failure lines have room for several failures", () => {
+	const many = Array.from({ length: 12 }, () => GDUNIT_FAILURES).join("\n");
+	assert.equal(failureLines(many).length, 60);
 });

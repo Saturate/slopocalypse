@@ -26,3 +26,26 @@ func test_frames_count_once_someone_is_there() -> void:
 	_net.set(&"_had_peers", true)
 	_ticks(20)
 	assert_int(int(_net.get(&"_frames"))).is_equal(20)
+
+
+func test_a_solo_tool_run_that_never_reaches_its_server_gives_up() -> void:
+	_net.set(&"mode", NetSession.Mode.SOLO)
+	var seconds := float(NetSession.FIRST_JOIN_SECONDS)
+	assert_bool(_net.call(&"_waited_too_long", seconds - 1.0)).is_false()
+	assert_bool(_net.call(&"_waited_too_long", 1.0)).is_true()
+
+
+func test_a_tool_server_nobody_joins_gives_up() -> void:
+	_net.set(&"mode", NetSession.Mode.SERVER)
+	assert_bool(_net.call(&"_waited_too_long", float(NetSession.FIRST_JOIN_SECONDS))).is_true()
+
+
+func test_a_connected_session_never_gives_up() -> void:
+	_net.set(&"mode", NetSession.Mode.SOLO)
+	_net.set(&"_had_peers", true)
+	assert_bool(_net.call(&"_waited_too_long", 1000.0)).is_false()
+
+
+func test_a_plain_client_is_left_to_its_join_timeout() -> void:
+	_net.set(&"mode", NetSession.Mode.CLIENT)
+	assert_bool(_net.call(&"_waited_too_long", 1000.0)).is_false()

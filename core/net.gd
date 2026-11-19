@@ -399,17 +399,27 @@ func _physics_tick(delta: float) -> void:
 
 ## A solo server must not linger as an orphan. A game that crashes is timed out by ENet and
 ## counts as leaving; one that never connected is caught here. (Watching the parent pid does
-## not work: on Windows Godot only tracks processes it started itself.) A test server
-## (--net-report-after) gives up the same way, since its report frames only count once
-## someone joined.
+## not work: on Windows Godot only tracks processes it started itself.)
 func _watch_empty(delta: float) -> void:
-	var tool_server := mode == Mode.SERVER and _report_after >= 0
-	if not (_quit_when_empty or tool_server) or _had_peers:
+	if not _waited_too_long(delta):
 		return
-	_waited_for_first += delta
-	if _waited_for_first >= FIRST_JOIN_SECONDS:
+	if _report_after >= 0:
+		Log.error(&"net", "nobody to report on: no peer within %d s; quitting" % int(FIRST_JOIN_SECONDS))
+	else:
 		Log.info(&"net", "nobody joined within %d s; server quitting" % int(FIRST_JOIN_SECONDS))
-		_stop()
+	_stop()
+
+
+## True once FIRST_JOIN_SECONDS have passed without a first peer, for a --quit-when-empty
+## server and for tool runs (--net-report-after) of a server or a solo game: their report
+## frames only count once there is a peer, so without this they would wait out the tool's
+## timeout instead of failing.
+func _waited_too_long(delta: float) -> bool:
+	var tool_run := _report_after >= 0 and mode != Mode.CLIENT
+	if not (_quit_when_empty or tool_run) or _had_peers:
+		return false
+	_waited_for_first += delta
+	return _waited_for_first >= FIRST_JOIN_SECONDS
 
 
 ## One line describing the session, for tools and tests. `moved` is the furthest any player

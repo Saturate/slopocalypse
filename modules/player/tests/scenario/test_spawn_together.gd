@@ -49,3 +49,10 @@ func test_players_joining_in_one_tick_get_their_own_spot_and_stay_near_the_spawn
 func test_a_lone_player_still_starts_on_the_spawn() -> void:
 	EventBus.publish(&"world.ready", {"spawn": SPAWN})
 	assert_vector(_players()[0].global_position).is_equal(SPAWN)
+
+
+func test_spacing_never_lets_two_bodies_overlap() -> void:
+	var tight := {"spawn_spacing": 0.1, "radius": 0.35, "spawn_min_gap": 0.1}
+	assert_float(_module.call(&"spawn_spacing_from", tight)).is_equal_approx(0.8, 0.0001)
+	var wide := {"spawn_spacing": 2.0, "radius": 0.35, "spawn_min_gap": 0.1}
+	assert_float(_module.call(&"spawn_spacing_from", wide)).is_equal_approx(2.0, 0.0001)

@@ -179,14 +179,20 @@ func _server_spawn(peer: int) -> void:
 	_spawner.spawn({"peer": peer, "position": free_spawn_point(_spawn, taken, _spawn_spacing())})
 
 
-## player.json's `spawn_spacing`, read once; 0 (everyone on the spawn) if the file is broken,
-## which Data.require has already reported.
+## How far apart players who join together start, from player.json, read once; 0 (everyone
+## on the spawn) if the file is broken, which Data.require has already reported.
 func _spawn_spacing() -> float:
 	if _spacing < 0.0:
 		var data: Variant = Data.load_json(PlayerController.CONFIG)
-		var ok := data is Dictionary and Data.require(PlayerController.CONFIG, data, {"spawn_spacing": TYPE_FLOAT})
-		_spacing = float((data as Dictionary)["spawn_spacing"]) if ok else 0.0
+		var fields := {"spawn_spacing": TYPE_FLOAT, "spawn_min_gap": TYPE_FLOAT, "radius": TYPE_FLOAT}
+		_spacing = spawn_spacing_from(data) if data is Dictionary and Data.require(PlayerController.CONFIG, data, fields) else 0.0
 	return _spacing
+
+
+## `spawn_spacing`, but never so tight that two bodies overlap: at least two radii plus
+## `spawn_min_gap` between their centres.
+static func spawn_spacing_from(config: Dictionary) -> float:
+	return maxf(float(config["spawn_spacing"]), float(config["radius"]) * 2.0 + float(config["spawn_min_gap"]))
 
 
 ## The spawn itself when nobody stands on it, else the first spot on rings `spacing` apart
