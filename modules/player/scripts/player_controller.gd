@@ -51,6 +51,9 @@ const PITCH_LIMIT := deg_to_rad(89.0)
 const STEP_PROBE := 0.12
 ## How quickly a swimmer settles to floating height (per second, of the gap).
 const SWIM_SETTLE := 4.0
+## Vertical speed (m/s) past which a copy held still counts as off the ground: the synced
+## velocity jitters a little on slopes and steps.
+const HELD_AIRBORNE_SPEED := 1.5
 
 enum Mode { NORMAL, MANTLE, VAULT, SLIDE }
 
@@ -84,6 +87,13 @@ var _path_to: Vector3
 var _path_exit_velocity := Vector3.ZERO
 
 var _slide_left := 0.0
+
+
+## A copy of someone else's body on a client: it shows what the server sends and runs no
+## movement of its own. Switched off once it is ready, because Godot switches physics on at
+## `ready` for any script with `_physics_process`, undoing a switch-off made before.
+static func hold_still(copy: PlayerController) -> void:
+	copy.ready.connect(copy.set_physics_process.bind(false), CONNECT_ONE_SHOT)
 
 
 func _ready() -> void:
@@ -126,7 +136,16 @@ func is_sliding() -> bool:
 
 ## True while the sprint key is driving speed above walking pace.
 func is_sprinting() -> bool:
-	return mode == Mode.NORMAL and _wants_sprint() and is_on_floor() and horizontal_speed() > float(config["walk_speed"]) + 0.1
+	return mode == Mode.NORMAL and _wants_sprint() and grounded() and horizontal_speed() > float(config["walk_speed"]) + 0.1
+
+
+## On the ground: floor contact where this copy simulates; for one held still (someone else's
+## copy on a client; on the server a held, parked or dead body) only its velocity says, so no
+## climb or fall means grounded.
+func grounded() -> bool:
+	if is_physics_processing():
+		return is_on_floor()
+	return absf(velocity.y) <= HELD_AIRBORNE_SPEED
 
 
 func _physics_process(delta: float) -> void:
@@ -179,6 +198,10 @@ func _process(delta: float) -> void:
 func _process_tick(delta: float) -> void:
 	if _head == null or config.is_empty():
 		return
+	if not is_physics_processing():
+		# Held still (someone else's copy on a client; on the server a held or dead body), it
+		# never steps, so its eye (where its gun aims from) follows crouch and slide here.
+		_apply_height(config["crouch_height"] if _intent.crouch or mode == Mode.SLIDE else config["stand_height"])
 	var want := float(_intent.lean) if mode == Mode.NORMAL and not is_sprinting() else 0.0
 	_lean = move_toward(_lean, want, delta / maxf(float(config["lean_seconds"]), 0.01))
 	var offset := _lean * float(config["lean_offset"])
