@@ -41,7 +41,7 @@ func _close_requested() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if is_open() and (event.is_action_pressed(&"inventory") or event.is_action_pressed(&"interact")):
+	if is_open() and UiStack.is_top(self) and (event.is_action_pressed(&"inventory") or event.is_action_pressed(&"interact")):
 		close()
 		get_viewport().set_input_as_handled()
 		return
