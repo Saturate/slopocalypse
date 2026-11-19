@@ -110,6 +110,21 @@ func test_killing_one_leaves_a_body_with_what_it_carried() -> void:
 	assert_int(get_tree().get_nodes_in_group(&"loot_bodies").size()).is_equal(before + 1)
 
 
+func test_a_killed_soldier_falls_as_a_ragdoll_once() -> void:
+	_player.global_position = Vector3(60, 0.1, 60)
+	var enemy := await _enemy_at(Vector3(0, 0, 0))
+	Corpse.enabled = true
+	(enemy.get_node("Health") as HealthComponent).server_apply_damage(1000.0)
+	# A second report of the same death must not drop a second body.
+	EventBus.publish(&"enemy.died", {"enemy": enemy})
+	await get_tree().process_frame
+	var corpses := get_tree().get_nodes_in_group(Corpse.GROUP)
+	Corpse.enabled = DisplayServer.get_name() != "headless"
+	assert_int(corpses.size()).is_equal(1)
+	for corpse in corpses:
+		corpse.free()
+
+
 func test_a_guard_holds_its_post_and_watches_its_arc() -> void:
 	_player.global_position = Vector3(80, 0.1, 80)
 	var post := Vector3(4, 0, -6)

@@ -261,6 +261,9 @@ func server_move_to(player: PlayerController, at: Vector3) -> void:
 func _on_player_died(p: Dictionary) -> void:
 	var player := p.get("player") as PlayerController
 	if player != null:
+		# Clients: a ragdoll falls where they stood; the body itself waits for the respawn.
+		if not player.get_meta(&"dead", false):
+			Corpse.from_body(player, Corpse.push_from(player, p.get("source")), player.velocity)
 		_set_dead(player, true)
 
 

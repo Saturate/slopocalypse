@@ -3,7 +3,8 @@ extends Node3D
 ## What is left where a soldier or player died: a body lying on the ground that still holds
 ## everything they carried. Searching it (F) opens the loot screen; the server keeps the
 ## contents and removes the body after a while. Created by the server and, through the
-## inventory module's spawner, on every client.
+## inventory module's spawner, on every client. On clients the ragdoll that fell there (a
+## Corpse) stands in for the simple figure drawn here, which only shows where there is none.
 
 ## Lying figure, local to the body: [size, centre] per part, the head towards -Z.
 const PARTS := [
@@ -21,6 +22,7 @@ const LABEL_RANGE := 6.0
 var colour := Color(0.3, 0.33, 0.26)
 
 var _label: Label3D
+var _figure: Array[MeshInstance3D] = []
 
 
 func _ready() -> void:
@@ -40,6 +42,7 @@ func _ready() -> void:
 		node.mesh = mesh
 		node.position = part[1]
 		add_child(node)
+		_figure.append(node)
 	_label = Label3D.new()
 	_label.text = "Body"
 	_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -49,6 +52,13 @@ func _ready() -> void:
 	_label.position.y = 0.55
 	_label.visibility_range_end = LABEL_RANGE
 	add_child(_label)
+	Corpse.link_near(self)
+
+
+## Hidden while a ragdoll lies here instead.
+func show_figure(on: bool) -> void:
+	for part in _figure:
+		part.visible = on
 
 
 ## Shown everywhere when the server says the body was emptied (or filled again).

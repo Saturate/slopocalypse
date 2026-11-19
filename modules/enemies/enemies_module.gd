@@ -329,7 +329,7 @@ func _on_civilian_ready(person: PlayerController, home: Vector3, info: Dictionar
 
 ## Everywhere: a civilian drops like a soldier does.
 func _on_civilian_died(p: Dictionary) -> void:
-	_on_enemy_died({"enemy": p.get("civilian")})
+	_on_enemy_died({"enemy": p.get("civilian"), "source": p.get("source")})
 
 
 ## The soldiers' config with a faction's leanings: how far it sees and hears.
@@ -365,11 +365,13 @@ func _server_died(source: Node, enemy: PlayerController) -> void:
 	get_tree().create_timer(float(config["corpse_seconds"])).timeout.connect(enemy.queue_free)
 
 
-## Everywhere: the soldier drops (hidden, not hittable) and its gun goes quiet.
+## Everywhere: the soldier drops (hidden, not hittable) and its gun goes quiet; on clients a
+## ragdoll of it falls in its place.
 func _on_enemy_died(p: Dictionary) -> void:
 	var enemy := p.get("enemy") as PlayerController
-	if enemy == null:
+	if enemy == null or enemy.get_meta(&"dead", false):
 		return
+	Corpse.from_body(enemy, Corpse.push_from(enemy, p.get("source")))
 	enemy.set_meta(&"dead", true)
 	(enemy.get_node("Body") as Node3D).visible = false
 	(enemy.get_node("Shape") as CollisionShape3D).set_deferred(&"disabled", true)

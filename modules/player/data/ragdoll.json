@@ -1,0 +1,27 @@
+{
+  "settle_seconds": 4.0,
+  "min_fall_seconds": 1.5,
+  "max_simulating": 8,
+  "seconds_without_body": 60.0,
+  "link_radius": 2.0,
+  "link_seconds": 3.0,
+  "push": 1.5,
+  "push_up": 0.6,
+  "linear_damp": 0.4,
+  "angular_damp": 2.0,
+  "friction": 0.9,
+  "bones": {
+    "Hips": {"size": [0.34, 0.2, 0.22], "centre": [0.0, 0.0, 0.0], "mass": 12.0, "swing": 0.0, "twist": 0.0},
+    "Spine": {"size": [0.34, 0.2, 0.22], "centre": [0.0, 0.1, 0.0], "mass": 10.0, "swing": 20.0, "twist": 15.0},
+    "Chest": {"size": [0.42, 0.26, 0.26], "centre": [0.0, 0.13, 0.0], "mass": 14.0, "swing": 20.0, "twist": 15.0},
+    "Head": {"size": [0.22, 0.26, 0.24], "centre": [0.0, 0.12, 0.0], "mass": 5.0, "swing": 35.0, "twist": 40.0},
+    "UpperArm_L": {"size": [0.1, 0.31, 0.1], "centre": [0.0, 0.155, 0.0], "mass": 2.5, "swing": 80.0, "twist": 30.0},
+    "UpperArm_R": {"size": [0.1, 0.31, 0.1], "centre": [0.0, 0.155, 0.0], "mass": 2.5, "swing": 80.0, "twist": 30.0},
+    "LowerArm_L": {"size": [0.09, 0.38, 0.09], "centre": [0.0, 0.19, 0.0], "mass": 2.0, "swing": 45.0, "twist": 10.0},
+    "LowerArm_R": {"size": [0.09, 0.38, 0.09], "centre": [0.0, 0.19, 0.0], "mass": 2.0, "swing": 45.0, "twist": 10.0},
+    "UpperLeg_L": {"size": [0.14, 0.43, 0.14], "centre": [0.0, -0.215, 0.0], "mass": 8.0, "swing": 50.0, "twist": 15.0},
+    "UpperLeg_R": {"size": [0.14, 0.43, 0.14], "centre": [0.0, -0.215, 0.0], "mass": 8.0, "swing": 50.0, "twist": 15.0},
+    "LowerLeg_L": {"size": [0.12, 0.5, 0.12], "centre": [0.0, -0.25, 0.0], "mass": 5.0, "swing": 35.0, "twist": 5.0},
+    "LowerLeg_R": {"size": [0.12, 0.5, 0.12], "centre": [0.0, -0.25, 0.0], "mass": 5.0, "swing": 35.0, "twist": 5.0}
+  }
+}
