@@ -57,6 +57,40 @@ export function parsePerfLog(text: string): Record<string, unknown>[] {
 	return out;
 }
 
+export interface Spike {
+	t: number;
+	ms: number;
+	// Script zones that ran in the slow frame (ms each) and shader pipelines compiled in it.
+	zones: Record<string, number>;
+	compiles: Record<string, number>;
+}
+
+function numbers(v: unknown): Record<string, number> {
+	const out: Record<string, number> = {};
+	if (typeof v !== "object" || v === null || Array.isArray(v)) return out;
+	for (const [k, n] of Object.entries(v)) if (typeof n === "number") out[k] = n;
+	return out;
+}
+
+// The `n` slowest spike lines after the warm-up, slowest first: the hitches a player feels,
+// and what ran in each.
+export function worstSpikes(text: string, warmupSeconds: number, n: number): Spike[] {
+	const out: Spike[] = [];
+	for (const line of text.split(/\r?\n/)) {
+		let rec: unknown;
+		try {
+			rec = JSON.parse(line);
+		} catch {
+			continue;
+		}
+		if (typeof rec !== "object" || rec === null || !("spike_ms" in rec) || !("t" in rec)) continue;
+		const { t, spike_ms: ms } = rec;
+		if (typeof t !== "number" || typeof ms !== "number" || t < warmupSeconds) continue;
+		out.push({ t, ms, zones: numbers("zones" in rec ? rec.zones : undefined), compiles: numbers("compiles" in rec ? rec.compiles : undefined) });
+	}
+	return out.sort((a, b) => b.ms - a.ms).slice(0, n);
+}
+
 const round = (n: number, places = 2): number => Math.round(n * 10 ** places) / 10 ** places;
 
 export function summarise(records: readonly Record<string, unknown>[], warmupSeconds: number): Summary {

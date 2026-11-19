@@ -35,8 +35,11 @@ var _world_ready := false
 var _forward := Vector3.ZERO
 var _next_squad_in := -1.0
 var _rng := RandomNumberGenerator.new()
-## Server: filling up to `max_alive` a squad a tick, once `first_spawn_seconds` have passed.
+## Server: filling up to `max_alive` a soldier a tick, once `first_spawn_seconds` have passed.
 var _filling := false
+## Server: soldiers of the map's own squads still to land, one a tick: each costs a few
+## milliseconds to set up, and a whole squad in one tick stalled the server.
+var _queued: Array[Dictionary] = []
 var _filled_once := false
 
 ## Kept loaded: Godot's resource cache lets go of a scene once nothing holds it, and loading
@@ -88,6 +91,11 @@ func _on_world_ready(payload: Dictionary) -> void:
 	_world_ready = true
 	if multiplayer.is_server():
 		_next_squad_in = float(config["first_spawn_seconds"])
+		if Net.session_args().has(DeathsBot.FLAG) and get_node_or_null("DeathsBot") == null:
+			var bot := DeathsBot.new()
+			bot.name = "DeathsBot"
+			bot.enemies = self
+			add_child(bot)
 		var crowd := crowd_arg(OS.get_cmdline_user_args())
 		if crowd > 0:
 			config = config.duplicate()
@@ -111,13 +119,17 @@ func _physics_process(delta: float) -> void:
 func _physics_tick(delta: float) -> void:
 	if not multiplayer.is_server() or not _world_ready or _next_squad_in < 0.0:
 		return
+	if not _queued.is_empty():
+		_spawn_one(_queued.pop_front())
+		return
 	if _filling:
-		# The first fill: a squad a tick until `max_alive`, so hundreds don't land in one frame.
+		# The first fill: squads until `max_alive`, their soldiers landing one a tick.
 		var room := int(config["max_alive"]) - enemies().size()
 		if room <= 0:
 			_filling = false
 		else:
-			server_spawn_squad(mini(room, _roll(config["squad_size"])))
+			# Lands from the next tick on, as the respawn's do.
+			_queued = _plan_squad(mini(room, _roll(config["squad_size"])))
 		return
 	_next_squad_in -= delta
 	if _next_squad_in > 0.0:
@@ -129,7 +141,7 @@ func _physics_tick(delta: float) -> void:
 		return
 	var room := int(config["max_alive"]) - enemies().size()
 	if room > 0:
-		server_spawn_squad(mini(room, _roll(config["squad_size"])))
+		_queued = _plan_squad(mini(room, _roll(config["squad_size"])))
 
 
 ## A spot for a squad: somewhere in `spawn_area` (metres out from the start, on its open
@@ -152,19 +164,32 @@ func _spread_spot() -> Vector3:
 	return spot
 
 
-## Server: a squad of `size` around `centre`, or around a spread spot (`_spread_spot`).
+## Server: a squad of `size` around `centre`, or around a spread spot (`_spread_spot`), all
+## at once (admin spawns, missions, tests). The map's own squads land a soldier a tick.
 func server_spawn_squad(size: int, centre: Variant = null) -> Array[Node]:
+	var out: Array[Node] = []
+	for info in _plan_squad(size, centre):
+		out.append(_spawn_one(info))
+	return out
+
+
+## Spawn data for a squad of `size` around `centre` or a spread spot: one faction to a squad
+## (the factions module picks by weight; without it, one side).
+func _plan_squad(size: int, centre: Variant = null) -> Array[Dictionary]:
 	var at: Vector3 = centre if centre is Vector3 else _spread_spot()
-	# One faction to a squad (the factions module picks by weight; without it, one side).
 	var api := _factions()
 	var faction := str(api.call(&"pick", _rng)) if api != null else ""
-	var out: Array[Node] = []
+	var out: Array[Dictionary] = []
 	for i in size:
 		var offset := Vector3(_rng.randf_range(-3.0, 3.0), 0.0, _rng.randf_range(-3.0, 3.0))
-		var pos := _on_ground(at + offset) + Vector3.UP * 0.5
-		_spawned += 1
-		out.append(_spawner.spawn({"index": _spawned, "position": pos, "home": at, "faction": faction}))
+		out.append({"position": _on_ground(at + offset) + Vector3.UP * 0.5, "home": at, "faction": faction})
 	return out
+
+
+func _spawn_one(info: Dictionary) -> Node:
+	_spawned += 1
+	info["index"] = _spawned
+	return _spawner.spawn(info)
 
 
 func _factions() -> Node:
@@ -224,6 +249,13 @@ func _make_enemy(data: Variant) -> Node:
 
 
 func _on_enemy_ready(enemy: PlayerController, home: Vector3, info: Dictionary = {}) -> void:
+	var prof := Prof.start()
+	_set_up(enemy, home, info)
+	Prof.stop(&"enemies/set_up", prof)
+
+
+## Runs as each soldier or civilian enters the tree, on the server and every client.
+func _set_up(enemy: PlayerController, home: Vector3, info: Dictionary = {}) -> void:
 	if enemy.get_meta(&"civilian", false):
 		_on_civilian_ready(enemy, home, info)
 		return

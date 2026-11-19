@@ -4,7 +4,9 @@ extends Node
 ## and physics step time, node and object counts, memory, draw calls, network bytes, and every
 ## Godot custom monitor that other modules register (`Performance.add_custom_monitor`), so
 ## this module never needs to know about them. A frame slower than `spike_ms` gets a line of
-## its own, at most one a second, once the warm-up is over. Clients get an overlay (F3).
+## its own once the warm-up is over, with any shader compiles: the first after a quiet second
+## at once, then the slowest of the rest each second, so lines can trail samples by a second.
+## Clients get an overlay (F3).
 ##
 ## Other code reads the newest sample through the `perf_api` group: `latest()`, `sampled`.
 ## `-- --perf-log=PATH` writes to that file instead, and `--uncapped` turns off vsync and the
@@ -16,6 +18,13 @@ const REQUIRED := {"sample_seconds": TYPE_FLOAT, "spike_ms": TYPE_FLOAT, "warmup
 const SPIKE_GAP_SECONDS := 1.0
 ## Zones listed on a spike line, most expensive first.
 const SPIKE_ZONES := 5
+const PIPELINE_MONITORS := {
+	"canvas": Performance.PIPELINE_COMPILATIONS_CANVAS,
+	"mesh": Performance.PIPELINE_COMPILATIONS_MESH,
+	"surface": Performance.PIPELINE_COMPILATIONS_SURFACE,
+	"draw": Performance.PIPELINE_COMPILATIONS_DRAW,
+	"specialization": Performance.PIPELINE_COMPILATIONS_SPECIALIZATION,
+}
 
 signal sampled(record: Dictionary)
 
@@ -29,6 +38,8 @@ var _path := ""
 var _since_sample := 0.0
 var _uptime := 0.0
 var _last_spike := -INF
+## Running pipeline compile totals by kind, as of last frame.
+var _compiled: Dictionary[String, int] = {}
 var _latest: Dictionary = {}
 ## Wall-clock time of the last frame: `delta` is clamped, scaled and fixed under --fixed-fps,
 ## so it is not what the frame really took.
@@ -82,6 +93,10 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	if _file != null:
+		# A bench run often ends right after the hitch it is about.
+		var spike := _sampler.take_spike()
+		if not spike.is_empty():
+			_write(spike)
 		_file.close()
 		_file = null
 
@@ -107,15 +122,37 @@ func _process(delta: float) -> void:
 	_frames += 1
 	# The zones that ran since this point last frame: what the frame just measured was doing.
 	var frame_zones := Prof.take_frame(SPIKE_ZONES)
-	if ms > float(config["spike_ms"]) and _uptime > float(config["warmup_seconds"]) and _uptime - _last_spike >= SPIKE_GAP_SECONDS:
-		_last_spike = _uptime
-		_write({"t": snappedf(_uptime, 0.001), "spike_ms": snappedf(ms, 0.01), "nodes": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)), "zones": frame_zones})
+	var compiles := _pipeline_compiles()
+	if ms > float(config["spike_ms"]) and _uptime > float(config["warmup_seconds"]):
+		var line := {"t": snappedf(_uptime, 0.001), "spike_ms": snappedf(ms, 0.01), "nodes": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)), "zones": frame_zones}
+		if not compiles.is_empty():
+			line["compiles"] = compiles
+		_sampler.offer_spike(line)
+	if _uptime - _last_spike >= SPIKE_GAP_SECONDS:
+		var spike := _sampler.take_spike()
+		if not spike.is_empty():
+			_last_spike = _uptime
+			_write(spike)
 	_since_sample += delta
 	if _since_sample >= float(config["sample_seconds"]):
 		_since_sample = 0.0
 		_latest = _sample()
 		_write(_latest)
 		sampled.emit(_latest)
+
+
+## Shader pipelines the renderer compiled since last frame, by kind, leaving out kinds with
+## none. A pipeline compiled while drawing stalls that frame and runs in no script zone, so
+## it is the usual reason a spike line shows nothing expensive.
+func _pipeline_compiles() -> Dictionary:
+	var out := {}
+	for kind: String in PIPELINE_MONITORS:
+		var total := int(Performance.get_monitor(PIPELINE_MONITORS[kind]))
+		var grew := total - int(_compiled.get(kind, total))
+		_compiled[kind] = total
+		if grew > 0:
+			out[kind] = grew
+	return out
 
 
 ## Called by the probe at the end of each physics tick's node processing.
