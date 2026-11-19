@@ -14,7 +14,7 @@ extends Node3D
 const CONFIG := "res://modules/player/data/ragdoll.json"
 const REQUIRED := {
 	"settle_seconds": TYPE_FLOAT, "max_simulating": TYPE_FLOAT, "seconds_without_body": TYPE_FLOAT,
-	"link_radius": TYPE_FLOAT, "push": TYPE_FLOAT, "push_up": TYPE_FLOAT, "linear_damp": TYPE_FLOAT,
+	"link_radius": TYPE_FLOAT, "link_seconds": TYPE_FLOAT, "push": TYPE_FLOAT, "push_up": TYPE_FLOAT, "linear_damp": TYPE_FLOAT,
 	"angular_damp": TYPE_FLOAT, "friction": TYPE_FLOAT, "bones": TYPE_DICTIONARY,
 }
 ## Parts of the living body a corpse has no use for: what animates it, aims it and holds the gun.
@@ -22,6 +22,8 @@ const STRIP: Array[String] = ["AnimationTree", "AnimationPlayer", "Skeleton/Aim"
 const GROUP := &"corpses"
 ## The LootBody this corpse stands in for, as meta on both.
 const LINK := &"corpse_link"
+## When a LootBody arrived (msec), as meta on it: a corpse only takes one that is recent.
+const ARRIVED := &"corpse_arrived"
 
 ## Off on a dedicated server, which draws nothing; tests turn it on.
 static var enabled := DisplayServer.get_name() != "headless"
@@ -71,15 +73,20 @@ static func from_body(player: Node3D, push: Vector3, velocity := Vector3.ZERO) -
 	corpse.add_child(copy)
 	corpse.skeleton = copy.get_node("Skeleton") as Skeleton3D
 	for mesh in corpse.skeleton.get_children():
-		# Your own first-person body only casts a shadow; dead, it is seen like anyone's.
+		# Your own first-person body only casts a shadow and its arms take none; dead, it is
+		# seen like anyone's.
 		if mesh is GeometryInstance3D:
-			(mesh as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+			var geometry := mesh as GeometryInstance3D
+			if geometry.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+				geometry.material_override = null
+			geometry.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	_copy_pose(source, corpse.skeleton)
 	corpse._add_bones(cfg)
 	corpse._velocity = velocity + push
-	player.get_parent().add_child(corpse)
-	corpse.global_transform = body.global_transform
+	# Placed before it enters the tree: its physics starts in `_ready`, from where it is then.
+	corpse.transform = body.global_transform
 	corpse._fell_at = player.global_position
+	player.get_parent().add_child(corpse)
 	return corpse
 
 
@@ -89,7 +96,7 @@ static func push_from(victim: Node3D, source: Variant) -> Vector3:
 	if cfg.is_empty():
 		return Vector3.ZERO
 	var away := Vector3.ZERO
-	if source is Node3D and is_instance_valid(source):
+	if is_instance_valid(source) and source is Node3D:
 		away = victim.global_position - (source as Node3D).global_position
 		away.y = 0.0
 	if away.length() < 0.01:
@@ -98,16 +105,20 @@ static func push_from(victim: Node3D, source: Variant) -> Vector3:
 	return away.normalized() * float(cfg["push"]) + Vector3.UP * float(cfg["push_up"])
 
 
-## Links `loot` (a LootBody that just arrived) with the corpse that fell nearest it, if any.
+## Links `loot` (a LootBody that just arrived) with the corpse that fell nearest it in the
+## last `link_seconds`, if any. Only recent ones: a death that leaves no LootBody (a civilian
+## carries nothing) must not take one from a later death nearby.
 static func link_near(loot: Node3D) -> void:
+	loot.set_meta(ARRIVED, Time.get_ticks_msec())
 	if loot.has_meta(LINK):
 		return
-	var radius := float(config().get("link_radius", 0.0))
+	var cfg := config()
+	var radius := float(cfg.get("link_radius", 0.0))
 	var best: Corpse = null
 	for node in loot.get_tree().get_nodes_in_group(GROUP):
 		var corpse := node as Corpse
 		var d := corpse._fell_at.distance_to(loot.global_position)
-		if not corpse.has_meta(LINK) and d <= radius and (best == null or d < best._fell_at.distance_to(loot.global_position)):
+		if not corpse.has_meta(LINK) and corpse._age <= float(cfg.get("link_seconds", 0.0)) and d <= radius and (best == null or d < best._fell_at.distance_to(loot.global_position)):
 			best = corpse
 	if best != null:
 		best._link(loot)
@@ -136,6 +147,8 @@ func loot_body() -> Node3D:
 
 func _ready() -> void:
 	add_to_group(GROUP)
+	# The LootBody may have got here first; later ones find this corpse themselves.
+	_look_for_loot()
 	simulator.physical_bones_start_simulation()
 	for bone in simulator.get_children():
 		(bone as PhysicalBone3D).linear_velocity = _velocity
@@ -149,6 +162,9 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	_simulating.erase(self)
+	var loot := loot_body()
+	if loot != null and not loot.is_queued_for_deletion() and loot.has_method(&"show_figure"):
+		loot.call(&"show_figure", true)
 
 
 func _physics_process(delta: float) -> void:
@@ -166,15 +182,19 @@ func _physics_tick(delta: float) -> void:
 		if _settled:
 			set_physics_process(false)
 		return
-	_look_for_loot(float(cfg["link_radius"]))
-	if not has_meta(LINK) and _age >= float(cfg["seconds_without_body"]):
+	if _age >= float(cfg["seconds_without_body"]):
 		queue_free()
 
 
-func _look_for_loot(radius: float) -> void:
+func _look_for_loot() -> void:
+	var cfg := config()
+	var radius := float(cfg["link_radius"])
+	var recent := int(float(cfg["link_seconds"]) * 1000.0)
 	for node in get_tree().get_nodes_in_group(&"loot_bodies"):
 		var loot := node as Node3D
-		if loot != null and not loot.has_meta(LINK) and loot.global_position.distance_to(_fell_at) <= radius:
+		if loot == null or loot.has_meta(LINK) or Time.get_ticks_msec() - int(loot.get_meta(ARRIVED, 0)) > recent:
+			continue
+		if loot.global_position.distance_to(_fell_at) <= radius:
 			_link(loot)
 			return
 

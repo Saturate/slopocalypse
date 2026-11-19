@@ -3,6 +3,7 @@
   "max_simulating": 8,
   "seconds_without_body": 60.0,
   "link_radius": 2.0,
+  "link_seconds": 3.0,
   "push": 2.0,
   "push_up": 0.6,
   "linear_damp": 0.4,

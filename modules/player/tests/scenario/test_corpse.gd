@@ -64,12 +64,38 @@ func test_a_pushed_corpse_falls_where_it_stood_and_does_not_slide_away() -> void
 	assert_float(moved).is_less(1.2)
 
 
+func test_it_falls_where_the_body_died_however_it_faced() -> void:
+	var at := Vector3(12.0, 0.0, -7.0)
+	_player.global_position = at
+	_player.rotation.y = 1.2
+	await _frames(1)
+	var corpse := Corpse.from_body(_player, Vector3.ZERO)
+	await _frames(6)
+	var hips := corpse.simulator.get_node("Hips") as PhysicalBone3D
+	assert_float(Vector2(hips.global_position.x - at.x, hips.global_position.z - at.z).length()).is_less(0.3)
+	await _frames(int(Corpse.config()["settle_seconds"] * 60.0) + 10)
+	var bone := corpse.skeleton.find_bone("Hips")
+	var lying := corpse.skeleton.global_transform * corpse.skeleton.get_bone_global_pose(bone).origin
+	assert_float(Vector2(lying.x - at.x, lying.z - at.z).length()).is_less(1.2)
+
+
+func test_an_old_corpse_does_not_take_a_new_loot_body() -> void:
+	var corpse := Corpse.from_body(_player, Vector3.ZERO)
+	await _frames(2)
+	corpse.set(&"_age", float(Corpse.config()["link_seconds"]) + 1.0)
+	var loot := auto_free(LootBody.new()) as LootBody
+	add_child(loot)
+	assert_object(corpse.loot_body()).is_null()
+
+
 func test_the_living_body_is_left_alone() -> void:
 	var corpse := Corpse.from_body(_player, Vector3.ZERO)
 	await _frames(5)
 	assert_object(_player.get_node_or_null("Body/AnimationTree")).is_not_null()
 	assert_object(_player.get_node_or_null("Body/Skeleton/WeaponAttachment")).is_not_null()
-	assert_object(corpse.get_node_or_null("PlayerBody/AnimationTree")).is_null()
+	for stripped in ["Body/AnimationTree", "Body/AnimationPlayer", "Body/Skeleton/Aim", "Body/Skeleton/HandIK", "Body/Skeleton/WeaponAttachment"]:
+		assert_object(corpse.get_node_or_null(stripped)).override_failure_message(stripped).is_null()
+	assert_object(corpse.get_node_or_null("Body/Skeleton/Mesh")).is_not_null()
 	assert_int(corpse.simulator.get_child_count()).is_greater(10)
 
 
