@@ -58,8 +58,8 @@ func _process_tick(_delta: float) -> void:
 	_pitch = clampf(_pitch - look.y, -PlayerController.PITCH_LIMIT, PlayerController.PITCH_LIMIT)
 	player.rotation.y = _yaw
 	(player.get_node("Head") as Node3D).rotation.x = _pitch
-	# The client's copy of the controller also ticks (Godot turns physics back on when the
-	# node is ready). Without this it would consume the look itself whenever a physics tick
+	# Your own copy of the controller ticks on a client too (it keeps your eye height and
+	# camera feel). Without this it would consume the look itself whenever a physics tick
 	# falls before this frame's input, and at low frame rates that is nearly every frame,
 	# so the mouse barely turned the view. Marked as owned here, the controller copies the
 	# aim instead of taking it.
