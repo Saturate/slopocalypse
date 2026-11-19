@@ -89,7 +89,6 @@ impl Mesh {
         self.indices.len() / 6
     }
 
-    /// Adds `other`'s faces to this mesh.
     /// Gives back the spare capacity pushing left behind, for meshes that are kept.
     pub fn shrink(&mut self) {
         self.positions.shrink_to_fit();
@@ -99,6 +98,7 @@ impl Mesh {
         self.indices.shrink_to_fit();
     }
 
+    /// Adds `other`'s faces to this mesh.
     pub fn append(&mut self, other: &Mesh) {
         let base = self.positions.len() as u32;
         self.positions.extend_from_slice(&other.positions);
@@ -153,7 +153,8 @@ impl Grid {
     }
 
     /// Draws the model in sections of `chunks` chunks a side (1 to `MAX_SECTION`) from the
-    /// next `remesh_dirty_sections` on; everything is drawn again.
+    /// next `remesh_dirty_sections` on; everything is drawn again. Meant before the first
+    /// draw: section ids change, so a caller must drop what it drew for the old ones.
     pub fn set_section(&mut self, chunks: usize) {
         self.section = chunks.clamp(1, MAX_SECTION);
         self.reset_sections();
@@ -780,7 +781,9 @@ impl Grid {
         self.mesh_region(lo, hi, usize::MAX, true)
     }
 
-    /// Like `remesh_dirty`, with each chunk's see-through mesh beside its normal one.
+    /// Like `remesh_dirty`, with each chunk's see-through mesh beside its normal one. Tests
+    /// only: it marks chunks clean without refreshing kept section meshes.
+    #[cfg(test)]
     pub fn remesh_dirty_layers(&mut self) -> Vec<(usize, Mesh, Mesh)> {
         let ids = self.dirty_chunks();
         let out = ids
@@ -842,8 +845,10 @@ impl Grid {
     /// only the chunks they touch.
     pub fn remesh_dirty_sections(&mut self) -> Vec<(usize, Mesh, Mesh)> {
         let ids = self.dirty_chunks();
+        let mut changed = vec![false; self.dirty.len()];
         let mut touched: Vec<usize> = Vec::new();
         for &id in &ids {
+            changed[id] = true;
             self.dirty[id] = false;
             let section = self.section_of_chunk(id);
             if !touched.contains(&section) {
@@ -869,7 +874,7 @@ impl Grid {
                 let fresh = !self.kept[section];
                 self.kept[section] = true;
                 for &chunk in &chunks {
-                    if fresh || ids.contains(&chunk) {
+                    if fresh || changed[chunk] {
                         let mut kept = (self.mesh_chunk(chunk), self.mesh_chunk_clear(chunk));
                         kept.0.shrink();
                         kept.1.shrink();
@@ -899,6 +904,7 @@ impl Grid {
 
     /// Meshes every changed chunk and marks it clean: `(chunk id, mesh)` per chunk, an empty
     /// mesh where a chunk has nothing left to draw.
+    #[cfg(test)]
     pub fn remesh_dirty(&mut self) -> Vec<(usize, Mesh)> {
         let ids = self.dirty_chunks();
         let out = ids.iter().map(|&id| (id, self.mesh_chunk(id))).collect();

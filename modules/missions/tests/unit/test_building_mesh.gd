@@ -66,8 +66,9 @@ func test_a_hole_rebuilds_only_the_sections_it_touched() -> void:
 	assert_int(rebuilt).is_less(model.section_count())
 	assert_int(model.kept_sections()).is_equal(rebuilt)
 	assert_int(shown.refresh()).is_equal(0)
-	# Drawn as sections, not chunks: far fewer instances than chunks.
-	assert_int(shown.part_count()).is_less(model.chunk_count())
+	# Shot at, so drawn a chunk a section (voxkit.json `sections.editable_chunks`): a hole
+	# remeshes one chunk, as cheap as before sections.
+	assert_int(model.section_count()).is_equal(model.chunk_count())
 
 
 func _fragments_under(node: Node) -> Array:

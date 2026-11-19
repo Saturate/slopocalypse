@@ -47,6 +47,8 @@ func _ready() -> void:
 	if not _visual:
 		return
 	_mesh = VoxelChunkedMesh.new()
+	# Shot full of holes: drawn a chunk at a time so each hole stays cheap.
+	_mesh.editable = true
 	_mesh.name = "Mesh"
 	_mesh.model = _model
 	add_child(_mesh)

@@ -1,10 +1,11 @@
 class_name VoxelChunkedMesh
 extends Node3D
-## Draws a `VoxelModel` as one mesh per section of 4 x 4 x 4 chunks of 16 cells (9.6 m at
-## 0.15 m voxels), so a building is a handful of mesh instances rather than hundreds: each
-## instance is a draw call per pass, and a city of them was fifteen thousand. Models that
-## get shot at (`editable`) use smaller sections (`sections.editable_chunks` in voxkit.json),
-## because an edit re-joins its whole section. Once a section is edited the model keeps its
+## Draws a `VoxelModel` as one mesh per section of chunks of 16 cells, 4 x 4 x 4 chunks
+## (9.6 m at 0.15 m voxels) unless told otherwise, so a building is a handful of mesh
+## instances rather than hundreds: each instance is a draw call per pass, and a city of them
+## was fifteen thousand. Models that get shot at (`editable`, set before the model) use
+## `sections.editable_chunks` from voxkit.json (1: a chunk each, as cheap per bullet hole as
+## meshing one chunk), because an edit re-joins its whole section. Once a section is edited the model keeps its
 ## chunks' meshes, so later edits mesh only the chunks they touch; sections never edited keep
 ## nothing. Call `refresh()` after editing; it replaces just the changed sections. One mesh
 ## instance per section rather than one surface per section, because an `ArrayMesh` surface
@@ -12,7 +13,7 @@ extends Node3D
 
 const CONFIG := "res://modules/voxkit/data/voxkit.json"
 ## Editable section size when the data leaves it out.
-const FALLBACK_EDITABLE_CHUNKS := 2
+const FALLBACK_EDITABLE_CHUNKS := 1
 
 var model: VoxelModel:
 	set(value):
@@ -63,8 +64,9 @@ static func editable_chunks() -> int:
 	if _editable_chunks < 0:
 		_editable_chunks = FALLBACK_EDITABLE_CHUNKS
 		var data: Variant = Data.load_json(CONFIG)
-		if data is Dictionary and (data as Dictionary).get("sections") is Dictionary:
-			_editable_chunks = maxi(1, int((data["sections"] as Dictionary).get("editable_chunks", FALLBACK_EDITABLE_CHUNKS)))
+		var sections: Variant = (data as Dictionary).get("sections") if data is Dictionary else null
+		if sections is Dictionary and Data.require(CONFIG + " sections", sections, {"editable_chunks": TYPE_FLOAT}):
+			_editable_chunks = maxi(1, int((sections as Dictionary)["editable_chunks"]))
 	return _editable_chunks
 
 

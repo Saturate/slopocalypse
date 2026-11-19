@@ -608,7 +608,7 @@ impl VoxelModel {
     }
 
     /// Draws these materials see-through (glass): they leave the normal chunk meshes and come
-    /// back in `remesh_dirty_layers` as each chunk's clear mesh. Every chunk is remeshed.
+    /// back in `remesh_dirty_sections` as each section's clear mesh. Every chunk is remeshed.
     #[func]
     fn set_clear_materials(&mut self, indices: PackedInt32Array) {
         self.with(|g, _| {
@@ -624,8 +624,8 @@ impl VoxelModel {
         self.grid.as_ref().map_or(0, |g| g.section_count() as i64)
     }
 
-    /// Draws the model in sections of `chunks` chunks a side (1 to 8); everything is drawn
-    /// again on the next remesh. Models that get shot at use small ones: an edit re-joins its
+    /// Draws the model in sections of `chunks` chunks a side (1 to 8), before the first remesh:
+    /// section ids change, so what was drawn for the old ones must be dropped. Models that get shot at use small ones: an edit re-joins its
     /// whole section.
     #[func]
     fn set_section_chunks(&mut self, chunks: i64) {
