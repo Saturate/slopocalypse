@@ -75,11 +75,12 @@ func _kill(body: PlayerController) -> Corpse:
 	return corpse
 
 
-## A shot as the weapon replays it: a real rifle (its gun damage high) and what the hit dealt.
-func _shot(body: Node3D, at: Vector3, direction: Vector3, dealt: float) -> void:
+## A shot as the weapon replays it: what the round carried and what the hit dealt (no more
+## than the health that was left).
+func _shot(body: Node3D, at: Vector3, direction: Vector3, round_damage: float, dealt := -1.0) -> void:
 	var rifle: HitscanWeapon = auto_free(HitscanWeapon.new())
-	rifle.stats = {"damage": 100.0}
-	EventBus.publish(&"weapon.fired", {"weapon": rifle, "from": at - direction * 6.0, "to": at, "target": body, "collider": body, "damage": dealt})
+	rifle.stats = {"damage": round_damage}
+	EventBus.publish(&"weapon.fired", {"weapon": rifle, "from": at - direction * 6.0, "to": at, "target": body, "collider": body, "damage": dealt if dealt >= 0.0 else round_damage, "round_damage": round_damage})
 
 
 func _gone(corpse: Corpse, bone_name: String) -> bool:
@@ -146,12 +147,21 @@ func _corpse_for_probe() -> Corpse:
 	return _probe
 
 
-func test_a_weak_finishing_shot_takes_nothing_though_the_gun_is_strong() -> void:
+func test_a_weak_round_takes_nothing() -> void:
 	var at: Vector3 = await _hit_on(_player, 0.3, Vector3.FORWARD)
 	_kill(_player)
 	_shot(_player, at, Vector3.FORWARD, 10.0)
 	await _frames(3)
 	assert_int(_severing.pieces().size()).is_equal(0)
+
+
+func test_a_rifle_round_finishing_a_wounded_body_still_counts() -> void:
+	var at: Vector3 = await _hit_on(_player, 0.3, Vector3.FORWARD)
+	var corpse := _kill(_player)
+	# The rifle's 25, of which only 10 was left to take.
+	_shot(_player, at, Vector3.FORWARD, 25.0, 10.0)
+	await _frames(3)
+	assert_bool(_gone(corpse, "LowerLeg_L") or _gone(corpse, "LowerLeg_R")).is_true()
 
 
 func test_a_shot_on_someone_else_takes_nothing_from_the_dead() -> void:

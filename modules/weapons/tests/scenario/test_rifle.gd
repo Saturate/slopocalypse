@@ -70,6 +70,8 @@ func test_hits_a_dummy_straight_ahead() -> void:
 	assert_int(_shots.size()).is_equal(1)
 	var damage: float = _rifle.stats["damage"]
 	assert_float(_shots[0]["damage"]).is_equal(damage)
+	# What the round carried, beside what it dealt.
+	assert_float(_shots[0]["round_damage"]).is_equal(damage)
 	assert_float(_dummy.health().health).is_equal(_dummy.health().max_health - damage)
 
 

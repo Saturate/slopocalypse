@@ -3,8 +3,8 @@ extends Node
 ## Limbs come off (#387), on each client from what it saw; nothing is synced. A ragdoll that
 ## has just fallen (`player.corpse_fell`) is matched with the killing blow, which may arrive a
 ## moment before or after it: a blast (`explosion`) within `blast_sever_radius` takes the
-## limbs nearest it, and a killing shot (`weapon.fired`) that dealt at least
-## `shot_sever_damage` to an arm or leg cuts at the joint above the hit, `shot_sever_chance` of
+## limbs nearest it, and a killing shot (`weapon.fired`) whose round carried at least
+## `shot_sever_damage` into an arm or leg cuts at the joint above the hit, `shot_sever_chance` of
 ## the time (LimbRules). The ragdoll loses the limb (`Corpse.remove_limb`), a red cap shows at
 ## the stump, and the piece, cut from
 ## the body's own mesh (LimbPieces), flies off as a small rigid body that bleeds and leaves a
@@ -209,9 +209,10 @@ func _on_fired(p: Dictionary) -> void:
 		return
 	var from: Vector3 = p.get("from", Vector3.ZERO)
 	var to: Vector3 = p.get("to", Vector3.ZERO)
-	# What the hit dealt, not the gun's damage: a finishing shot into a nearly dead body
-	# takes nothing off.
-	var damage := float(p.get("damage", 0.0))
+	# What the round carried (after passing through a wall), not what it dealt: a finishing
+	# shot into a wounded body deals only the health that was left. Shots replayed without it
+	# fall back to what was dealt.
+	var damage := float(p.get("round_damage", p.get("damage", 0.0)))
 	_hits[(target as Object).get_instance_id()] = {"point": to, "direction": (to - from).normalized(), "damage": damage, "at": Time.get_ticks_msec()}
 
 
