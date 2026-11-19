@@ -27,6 +27,7 @@
     "factions": true,
     "stats": true,
     "report": true,
-    "gore": true
+    "gore": true,
+    "benchmark": true
   }
 }

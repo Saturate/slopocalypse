@@ -157,7 +157,7 @@ func _game() -> Dictionary:
 		"connected": Net.is_session_connected(),
 		"uptime_seconds": Time.get_ticks_msec() / 1000,
 		"modules": modules,
-		"args": ReportWriter.public_args(OS.get_cmdline_user_args()),
+		"args": ReportWriter.public_args(Net.session_args()),
 		"flags": _flags(),
 	}
 	var player := _local_player()

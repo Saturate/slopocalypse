@@ -35,7 +35,15 @@ export function summariseReport(raw: unknown): string[] {
 		`  settings: ${Object.entries(settings).map(([k, v]) => `${k} ${text(v)}`).join(", ") || "?"}`,
 	];
 	const bench = obj(r["benchmark"]);
-	if (Object.keys(bench).length > 0) lines.push(`  benchmark: ${Object.entries(bench).map(([k, v]) => `${k} ${text(v)}`).join(", ")}`);
+	const numbers = Object.entries(bench).filter(([k]) => k !== "hitches");
+	if (numbers.length > 0) lines.push(`  benchmark: ${numbers.map(([k, v]) => `${k} ${text(v)}`).join(", ")}`);
+	const hitches: unknown[] = Array.isArray(bench["hitches"]) ? bench["hitches"] : [];
+	for (const h of hitches) {
+		const hitch = obj(h);
+		const zones = Object.entries(obj(hitch["zones"])).map(([z, ms]) => `${z} ${text(ms)}`).join(", ");
+		const compiles = Object.keys(obj(hitch["compiles"])).length > 0 ? "; shaders compiled" : "";
+		lines.push(`    hitch ${text(hitch["ms"])} ms at ${text(hitch["t"])} s: ${zones || "no zones"}${compiles}`);
+	}
 	return lines;
 }
 

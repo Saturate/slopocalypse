@@ -13,3 +13,10 @@ export function rangeArgs(root: string): string[] {
 	const flags = rangeFlags(readFileSync(join(root, "modules", "range", "data", "range.json"), "utf8"));
 	return ["--range", "--no-save", "--world=flat", ...(flags === undefined ? [] : [`--flags=${flags}`])];
 }
+
+// The in-game benchmark's session (modules/benchmark): its flag and the `args` in its data.
+export function benchmarkArgs(root: string): string[] {
+	const data: unknown = JSON.parse(readFileSync(join(root, "modules", "benchmark", "data", "benchmark.json"), "utf8"));
+	const args = typeof data === "object" && data !== null && "args" in data && Array.isArray(data.args) ? data.args.filter((a): a is string => typeof a === "string") : [];
+	return ["--benchmark", ...args];
+}
