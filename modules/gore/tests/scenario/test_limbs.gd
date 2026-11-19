@@ -1,9 +1,11 @@
 extends GdUnitTestSuite
-## Limbs come off on clients (#387). A piece is cut from the body's own mesh by bone; a killing
-## shot strong enough on an arm or leg, or a blast close by, takes limbs off the ragdoll: their
-## bones collapse, a piece flies on the debris layer kept clear of blood, and it goes with the
-## corpse. Weak shots, far blasts and blood turned off take nothing; at most `max_limbs` pieces
-## lie about.
+## Limbs come off on clients (#387). A piece is cut from the body's own mesh by bone. A killing
+## shot that dealt enough to a leg or (from the side) an arm, or a blast close by, takes limbs
+## off the ragdoll: they lose their physics and collapse, a piece flies on the debris layer kept
+## clear of blood, and it goes with the corpse. The death arrives first and the blow a frame
+## later, as on a client. Weak shots, shots on someone else, blows outside the window, blasts
+## that killed nobody, chest shots and blood turned off take nothing; at most `max_limbs` pieces
+## lie about. Without its values in gore.json nothing comes off and nothing errors.
 
 const PLAYER := "res://modules/player/scenes/player.tscn"
 const BODY := "res://modules/player/scenes/player_body.tscn"
@@ -15,10 +17,14 @@ var _severing: LimbSevering
 func before_test() -> void:
 	Settings.reset()
 	Corpse.enabled = true
+	# Every qualifying shot severs, so a test can say which.
+	var cfg := (Data.load_json(BloodEffects.CONFIG) as Dictionary).duplicate()
+	cfg["shot_sever_chance"] = 1.0
+	LimbSevering.use_config(cfg)
 	var ground := auto_free(StaticBody3D.new()) as StaticBody3D
 	var shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(40.0, 1.0, 40.0)
+	box.size = Vector3(60.0, 1.0, 60.0)
 	shape.shape = box
 	ground.add_child(shape)
 	add_child(ground)
@@ -26,11 +32,11 @@ func before_test() -> void:
 	_player = _body(Vector3.ZERO)
 	_severing = auto_free(LimbSevering.new())
 	add_child(_severing)
-	_severing.set_process(false)
 
 
 func after_test() -> void:
 	Settings.reset()
+	LimbSevering.use_config(Data.load_json(BloodEffects.CONFIG))
 	Corpse.enabled = DisplayServer.get_name() != "headless"
 	for node in get_tree().get_nodes_in_group(Corpse.GROUP):
 		node.free()
@@ -45,6 +51,23 @@ func _body(at: Vector3) -> PlayerController:
 	return body
 
 
+func _frames(count: int) -> void:
+	for i in count:
+		await get_tree().process_frame
+
+
+## Where a bullet flying along `direction` at `height` above `body`'s feet stops on it, as the
+## server's ray sees it: on the body's capsule.
+func _hit_on(body: Node3D, height: float, direction: Vector3) -> Vector3:
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var start := body.global_position + Vector3(0.0, height, 0.0) - direction * 5.0
+	var query := PhysicsRayQueryParameters3D.create(start, start + direction * 10.0, PhysicsLayers.BULLETS)
+	var hit := body.get_world_3d().direct_space_state.intersect_ray(query)
+	assert_bool(hit.is_empty()).is_false()
+	return hit["position"]
+
+
 func _kill(body: PlayerController) -> Corpse:
 	var corpse := Corpse.from_body(body, Vector3(0.0, 0.5, 1.0))
 	(body.get_node("Body") as Node3D).visible = false
@@ -52,13 +75,15 @@ func _kill(body: PlayerController) -> Corpse:
 	return corpse
 
 
-func _bone_at(body: Node3D, bone_name: String) -> Vector3:
-	var skeleton := body.get_node("Body/Skeleton") as Skeleton3D
-	return (skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone(bone_name))).origin
+## A shot as the weapon replays it: a real rifle (its gun damage high) and what the hit dealt.
+func _shot(body: Node3D, at: Vector3, direction: Vector3, dealt: float) -> void:
+	var rifle: HitscanWeapon = auto_free(HitscanWeapon.new())
+	rifle.stats = {"damage": 100.0}
+	EventBus.publish(&"weapon.fired", {"weapon": rifle, "from": at - direction * 6.0, "to": at, "target": body, "collider": body, "damage": dealt})
 
 
-func _shot(body: Node3D, at: Vector3, damage: float) -> void:
-	EventBus.publish(&"weapon.fired", {"from": at + Vector3(0.0, 0.0, 6.0), "to": at, "target": body, "collider": body, "damage": damage})
+func _gone(corpse: Corpse, bone_name: String) -> bool:
+	return corpse.skeleton.get_bone_pose_scale(corpse.skeleton.find_bone(bone_name)).x < 0.01
 
 
 func test_a_piece_is_cut_from_the_body_mesh_by_bone() -> void:
@@ -78,83 +103,155 @@ func test_a_piece_is_cut_from_the_body_mesh_by_bone() -> void:
 	body.free()
 
 
-func test_a_strong_killing_shot_on_a_forearm_takes_it_off() -> void:
-	var hand := _bone_at(_player, "LowerArm_L").lerp(_bone_at(_player, "Hand_L"), 0.5)
+func test_a_killing_shot_in_the_shin_takes_it_off_a_frame_after_the_death() -> void:
+	var at: Vector3 = await _hit_on(_player, 0.3, Vector3.FORWARD)
 	var corpse := _kill(_player)
-	_shot(_player, hand, 30.0)
-	_severing.resolve(true)
+	await _frames(1)
+	_shot(_player, at, Vector3.FORWARD, 30.0)
+	await _frames(3)
 	var pieces := _severing.pieces()
 	assert_int(pieces.size()).is_equal(1)
+	assert_bool(_gone(corpse, "LowerLeg_L") or _gone(corpse, "LowerLeg_R")).is_true()
 	var piece := pieces[0]
 	assert_int(piece.collision_layer).is_equal(PhysicsLayers.DEBRIS)
 	assert_int(piece.collision_mask).is_equal(PhysicsLayers.SOLID | PhysicsLayers.GLASS)
 	for mesh in piece.find_children("*", "GeometryInstance3D", true, false):
 		assert_int((mesh as GeometryInstance3D).layers & RenderLayers.DEFAULT).is_equal(0)
-	# The ragdoll's forearm is gone: collapsed, with no physics of its own.
-	var skeleton := corpse.skeleton
-	assert_float(skeleton.get_bone_pose_scale(skeleton.find_bone("LowerArm_L")).x).is_less(0.01)
-	assert_float(skeleton.get_bone_pose_scale(skeleton.find_bone("UpperArm_L")).x).is_equal_approx(1.0, 0.001)
-	assert_object(corpse.simulator.get_node_or_null("LowerArm_L")).is_null()
 	# It goes with its corpse.
 	corpse.free()
 	assert_bool(is_instance_valid(piece)).is_false()
 
 
-func test_weak_shots_and_body_shots_take_nothing() -> void:
-	var hand := _bone_at(_player, "LowerArm_L").lerp(_bone_at(_player, "Hand_L"), 0.5)
+func test_a_side_shot_at_shoulder_height_takes_the_arm() -> void:
+	var at: Vector3 = await _hit_on(_player, 1.45, Vector3.RIGHT)
+	var corpse := _kill(_player)
+	_shot(_player, at, Vector3.RIGHT, 30.0)
+	await _frames(3)
+	assert_bool(_gone(corpse, "UpperArm_L")).is_true()
+
+
+func test_chest_shots_from_the_front_never_take_the_arms_held_there() -> void:
+	for height in [1.1, 1.2, 1.3, 1.4, 1.5]:
+		var at: Vector3 = await _hit_on(_player, height, Vector3.FORWARD)
+		assert_str(_severing.shot_limb(_corpse_for_probe(), at, Vector3.FORWARD, 100.0, LimbSevering.config())).is_empty()
+
+
+var _probe: Corpse
+
+
+## One ragdoll standing where the player is, to judge shots against without killing again.
+func _corpse_for_probe() -> Corpse:
+	if not is_instance_valid(_probe):
+		_probe = Corpse.from_body(_player, Vector3.ZERO)
+	return _probe
+
+
+func test_a_weak_finishing_shot_takes_nothing_though_the_gun_is_strong() -> void:
+	var at: Vector3 = await _hit_on(_player, 0.3, Vector3.FORWARD)
 	_kill(_player)
-	_shot(_player, hand, 10.0)
-	_severing.resolve(true)
+	_shot(_player, at, Vector3.FORWARD, 10.0)
+	await _frames(3)
 	assert_int(_severing.pieces().size()).is_equal(0)
-	var other := _body(Vector3(4.0, 0.0, 0.0))
-	var chest := _bone_at(other, "Chest") + Vector3(0.0, 0.05, 0.0)
-	_kill(other)
-	_shot(other, chest, 100.0)
-	_severing.resolve(true)
+
+
+func test_a_shot_on_someone_else_takes_nothing_from_the_dead() -> void:
+	var other := _body(Vector3(5.0, 0.0, 0.0))
+	var at: Vector3 = await _hit_on(other, 0.3, Vector3.FORWARD)
+	_shot(other, at, Vector3.FORWARD, 30.0)
+	_kill(_player)
+	await _frames(3)
+	assert_int(_severing.pieces().size()).is_equal(0)
+
+
+func test_a_blow_outside_the_window_takes_nothing() -> void:
+	var cfg := LimbSevering.config().duplicate()
+	cfg["sever_window_seconds"] = 0.05
+	LimbSevering.use_config(cfg)
+	var at: Vector3 = await _hit_on(_player, 0.3, Vector3.FORWARD)
+	_shot(_player, at, Vector3.FORWARD, 30.0)
+	# By the clock the window is measured on, not the scene's timers.
+	var until := Time.get_ticks_msec() + 150
+	while Time.get_ticks_msec() < until:
+		await get_tree().process_frame
+	_kill(_player)
+	await _frames(3)
+	assert_int(_severing.pieces().size()).is_equal(0)
+	# Old hits are let go of.
+	assert_int(_severing.remembered_hits()).is_equal(0)
+
+
+func test_a_blast_that_killed_nobody_takes_nothing() -> void:
+	EventBus.publish(&"explosion", {"position": Vector3(0.0, 0.3, 0.8), "radius": 3.0})
+	await _frames(3)
 	assert_int(_severing.pieces().size()).is_equal(0)
 
 
 func test_a_close_blast_takes_two_limbs_and_a_far_one_none() -> void:
 	_kill(_player)
 	EventBus.publish(&"explosion", {"position": Vector3(0.0, 0.3, 0.8), "radius": 3.0})
-	_severing.resolve(true)
-	assert_int(_severing.pieces().size()).is_equal(int(BloodEffects.config()["blast_max_limbs"]))
+	await _frames(3)
+	assert_int(_severing.pieces().size()).is_equal(int(LimbSevering.config()["blast_max_limbs"]))
 	var far := _body(Vector3(10.0, 0.0, 0.0))
 	_kill(far)
-	EventBus.publish(&"explosion", {"position": Vector3(10.0, 0.3, 0.0) + Vector3(0.0, 0.0, float(BloodEffects.config()["blast_sever_radius"]) + 1.0), "radius": 6.0})
-	_severing.resolve(true)
-	assert_int(_severing.pieces().size()).is_equal(int(BloodEffects.config()["blast_max_limbs"]))
+	EventBus.publish(&"explosion", {"position": Vector3(10.0, 0.3, float(LimbSevering.config()["blast_sever_radius"]) + 1.0), "radius": 6.0})
+	await _frames(3)
+	assert_int(_severing.pieces().size()).is_equal(int(LimbSevering.config()["blast_max_limbs"]))
 
 
 func test_with_blood_off_nothing_comes_off() -> void:
 	Settings.set_value("blood", false)
 	_kill(_player)
 	EventBus.publish(&"explosion", {"position": Vector3(0.0, 0.3, 0.5), "radius": 3.0})
-	_severing.resolve(true)
+	await _frames(3)
 	assert_int(_severing.pieces().size()).is_equal(0)
 
 
 func test_at_most_max_limbs_pieces_lie_about() -> void:
-	var cfg := BloodEffects.config()
-	var cap := int(cfg["max_limbs"])
+	var cap := int(LimbSevering.config()["max_limbs"])
 	for i in cap + 2:
-		var body := _body(Vector3(float(i) * 3.0, 0.0, 0.0))
-		var forearm := _bone_at(body, "LowerArm_R").lerp(_bone_at(body, "Hand_R"), 0.5)
+		var body := _body(Vector3(-25.0 + float(i) * 3.0, 0.0, 0.0))
 		_kill(body)
-		_shot(body, forearm, 100.0)
-		_severing.resolve(true)
+		EventBus.publish(&"explosion", {"position": body.global_position + Vector3(0.0, 0.3, 0.8), "radius": 3.0})
+		await _frames(2)
 	assert_int(_severing.pieces().size()).is_equal(cap)
 
 
 func test_a_severed_ragdoll_still_settles_cleanly() -> void:
 	var corpse := _kill(_player)
 	EventBus.publish(&"explosion", {"position": Vector3(0.0, 0.3, 0.8), "radius": 3.0})
-	_severing.resolve(true)
 	while not corpse.is_settled():
 		await get_tree().physics_frame
-	var skeleton := corpse.skeleton
 	var gone := 0
 	for limb: String in LimbRules.BLAST_LIMBS:
-		if skeleton.get_bone_pose_scale(skeleton.find_bone(LimbRules.root_bone(limb))).x < 0.01:
+		if _gone(corpse, LimbRules.root_bone(limb)):
 			gone += 1
-	assert_int(gone).is_equal(int(BloodEffects.config()["blast_max_limbs"]))
+	assert_int(gone).is_equal(int(LimbSevering.config()["blast_max_limbs"]))
+
+
+func test_without_its_values_nothing_comes_off_and_nothing_errors() -> void:
+	var partial := {"shot_sever_damage": 25.0}
+	Log.begin_capture()
+	LimbSevering.use_config(partial)
+	var entries := Log.end_capture()
+	assert_str(LogCapture.text(entries)).contains("missing required field")
+	var severing: LimbSevering = auto_free(LimbSevering.new())
+	add_child(severing)
+	_kill(_player)
+	EventBus.publish(&"explosion", {"position": Vector3(0.0, 0.3, 0.8), "radius": 3.0})
+	severing.resolve(true)
+	await _frames(3)
+	assert_int(severing.pieces().size()).is_equal(0)
+
+
+func test_a_shot_still_decides_when_a_blast_nearby_was_too_far_to_take_anything() -> void:
+	var at: Vector3 = await _hit_on(_player, 0.3, Vector3.FORWARD)
+	EventBus.publish(&"explosion", {"position": Vector3(0.0, 0.3, float(LimbSevering.config()["blast_sever_radius"]) + 2.0), "radius": 3.0})
+	var corpse := _kill(_player)
+	_shot(_player, at, Vector3.FORWARD, 30.0)
+	await _frames(3)
+	assert_bool(_gone(corpse, "LowerLeg_L") or _gone(corpse, "LowerLeg_R")).is_true()
+
+
+func test_a_point_off_the_body_is_no_part_of_it() -> void:
+	var corpse := _corpse_for_probe()
+	assert_str(_severing.shot_limb(corpse, Vector3(-3.0, 1.2, 0.0), Vector3.RIGHT, 100.0, LimbSevering.config())).is_empty()

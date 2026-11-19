@@ -16,12 +16,7 @@ const REQUIRED := {
 	"drop_seconds": TYPE_FLOAT, "max_drops": TYPE_FLOAT, "splatter_reach": TYPE_FLOAT, "mark_size": TYPE_FLOAT,
 	"mark_size_jitter": TYPE_FLOAT, "mark_stretch_max": TYPE_FLOAT, "mark_depth": TYPE_FLOAT, "pool_radius": TYPE_FLOAT,
 	"pool_start_share": TYPE_FLOAT, "pool_seconds": TYPE_FLOAT, "mark_seconds": TYPE_FLOAT, "fade_seconds": TYPE_FLOAT,
-	"max_marks": TYPE_FLOAT, "shot_sever_damage": TYPE_FLOAT, "headshot_sever": TYPE_BOOL,
-	"blast_sever_radius": TYPE_FLOAT, "blast_max_limbs": TYPE_FLOAT, "blast_all_limbs_within": TYPE_FLOAT,
-	"sever_window_seconds": TYPE_FLOAT, "limb_fling": TYPE_FLOAT, "limb_fling_up": TYPE_FLOAT, "limb_spin": TYPE_FLOAT,
-	"limb_mass": TYPE_FLOAT, "max_limbs": TYPE_FLOAT, "stump_spray_count": TYPE_FLOAT, "limb_bleed_seconds": TYPE_FLOAT,
-	"limb_bleed_interval": TYPE_FLOAT, "limb_bleed_drops": TYPE_FLOAT, "limb_trail_marks": TYPE_FLOAT,
-	"limb_trail_mark_size": TYPE_FLOAT, "limb_damp": TYPE_FLOAT, "limb_friction": TYPE_FLOAT,
+	"max_marks": TYPE_FLOAT,
 }
 ## Who bleeds: players, soldiers and civilians. Drones and towers take hits too, but are machines.
 const BLEEDS: Array[StringName] = [&"players", &"enemies", &"civilians"]

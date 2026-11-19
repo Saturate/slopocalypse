@@ -3,20 +3,29 @@ extends Node
 ## Limbs come off (#387), on each client from what it saw; nothing is synced. A ragdoll that
 ## has just fallen (`player.corpse_fell`) is matched with the killing blow, which may arrive a
 ## moment before or after it: a blast (`explosion`) within `blast_sever_radius` takes the
-## limbs nearest it, and a shot (`weapon.fired`) on an arm or leg with at least
-## `shot_sever_damage` cuts at the joint above the hit (LimbRules). The ragdoll's bones for the
-## limb collapse and lose their physics, a red cap shows at the stump, and the piece, cut from
+## limbs nearest it, and a killing shot (`weapon.fired`) that dealt at least
+## `shot_sever_damage` to an arm or leg cuts at the joint above the hit, `shot_sever_chance` of
+## the time (LimbRules). The ragdoll loses the limb (`Corpse.remove_limb`), a red cap shows at
+## the stump, and the piece, cut from
 ## the body's own mesh (LimbPieces), flies off as a small rigid body that bleeds and leaves a
 ## few marks where it lands. Pieces go with their corpse; at most `max_limbs` lie about.
 ##
 ## With the "Blood" setting off nothing comes off.
 
+## Its own fields in gore.json, checked apart from blood's: a player's tweaked gore.json from
+## before limbs (tweaks replace the whole file) lacks them, and blood should still work.
+const REQUIRED := {
+	"shot_sever_damage": TYPE_FLOAT, "shot_sever_chance": TYPE_FLOAT, "shot_sever_depth": TYPE_FLOAT,
+	"headshot_sever": TYPE_BOOL, "blast_sever_radius": TYPE_FLOAT, "blast_max_limbs": TYPE_FLOAT,
+	"blast_all_limbs_within": TYPE_FLOAT, "sever_window_seconds": TYPE_FLOAT, "limb_fling": TYPE_FLOAT,
+	"limb_fling_up": TYPE_FLOAT, "limb_spin": TYPE_FLOAT, "limb_mass": TYPE_FLOAT, "limb_damp": TYPE_FLOAT,
+	"limb_friction": TYPE_FLOAT, "max_limbs": TYPE_FLOAT, "stump_spray_count": TYPE_FLOAT,
+	"limb_bleed_seconds": TYPE_FLOAT, "limb_bleed_interval": TYPE_FLOAT, "limb_bleed_drops": TYPE_FLOAT,
+	"limb_trail_marks": TYPE_FLOAT, "limb_trail_mark_size": TYPE_FLOAT,
+}
 const GROUP := &"gore_limbs"
 ## Meta on a corpse once its killing blow has been looked at, so it is cut at most once.
 const SEVERED := &"gore_severed"
-## Scale a severed bone collapses to: the body's mesh for it shrinks into the joint. Not zero,
-## which the ragdoll's pose maths can't invert.
-const COLLAPSED := 0.001
 ## The body every soldier and player wears, cut up while loading so no death builds a mesh.
 const BODY := "res://modules/player/scenes/player_body.tscn"
 const MESHES: Array[String] = ["Mesh", "Arms"]
@@ -30,6 +39,8 @@ const TRAIL_UP := 0.3
 const WARM_FRAMES := 2
 const WARM_AHEAD := 1.0
 const WARM_SCALE := 0.001
+## Bones a shot can take an arm by.
+const ARM_BONES: Array[String] = ["UpperArm_L", "LowerArm_L", "Hand_L", "UpperArm_R", "LowerArm_R", "Hand_R"]
 
 ## Supplies the spray and the marks; without it pieces still come off, unbloodied.
 var blood: BloodEffects
@@ -52,8 +63,30 @@ var _warm: MeshInstance3D
 var _warm_frames := WARM_FRAMES
 var _rng := RandomNumberGenerator.new()
 
+static var _config: Dictionary = {}
+static var _loaded := false
+
+
+## The limb values from gore.json, or empty (after logging what is missing) when they are not
+## all there; then nothing comes off.
+static func config() -> Dictionary:
+	if not _loaded:
+		use_config(Data.load_json(BloodEffects.CONFIG))
+	return _config
+
+
+## Takes `data` as the limb values if it has them all, else none (tests and tweaks).
+static func use_config(data: Variant) -> void:
+	_loaded = true
+	_config = data if data is Dictionary and Data.require(BloodEffects.CONFIG, data, REQUIRED) else {}
+
 
 func _ready() -> void:
+	# A player's own gore.json from before limbs lacks their values: blood still works, limbs
+	# stay on.
+	if config().is_empty() or BloodEffects.config().is_empty():
+		set_process(false)
+		return
 	_rng.randomize()
 	_prepare()
 	EventBus.subscribe(&"player.corpse_fell", _on_corpse_fell)
@@ -76,11 +109,18 @@ func pieces() -> Array[RigidBody3D]:
 
 
 func _process(delta: float) -> void:
+	if config().is_empty() or _warm == null and _fallen.is_empty() and _pieces.is_empty() and _hits.is_empty() and _blasts.is_empty():
+		return
 	var prof := Prof.start()
 	_warm_up()
 	resolve()
 	_bleed(delta)
 	Prof.stop(&"gore/limbs", prof)
+
+
+## Hits still remembered (pruned once older than `sever_window_seconds`).
+func remembered_hits() -> int:
+	return _hits.size()
 
 
 ## Cuts the pieces of every limb of the body every death needs, before any death does.
@@ -132,7 +172,9 @@ func _warm_up() -> void:
 ## Decides for the ragdolls that have fallen since the last frame (all of them when `now`):
 ## by then the killing blow's events, sent alongside the death, have arrived.
 func resolve(now := false) -> void:
-	var cfg := BloodEffects.config()
+	var cfg := config()
+	if cfg.is_empty():
+		return
 	var window := int(float(cfg["sever_window_seconds"]) * 1000.0)
 	var clock := Time.get_ticks_msec()
 	var frame := Engine.get_process_frames()
@@ -146,7 +188,8 @@ func resolve(now := false) -> void:
 		var corpse: Variant = entry["corpse"]
 		if is_instance_valid(corpse) and not (corpse as Corpse).has_meta(SEVERED):
 			_decide(corpse as Corpse, entry, cfg, window, clock)
-	_blasts = _blasts.filter(func(b: Dictionary) -> bool: return clock - int(b["at"]) <= window)
+	if not _blasts.is_empty():
+		_blasts = _blasts.filter(func(b: Dictionary) -> bool: return clock - int(b["at"]) <= window)
 	for id: int in _hits.keys():
 		if clock - int(_hits[id]["at"]) > window:
 			_hits.erase(id)
@@ -154,7 +197,8 @@ func resolve(now := false) -> void:
 
 func _on_corpse_fell(p: Dictionary) -> void:
 	var corpse := p.get("corpse") as Corpse
-	if corpse == null or not BloodEffects.blood_on() or int(BloodEffects.config()["max_limbs"]) <= 0:
+	var cfg := config()
+	if corpse == null or cfg.is_empty() or not BloodEffects.blood_on() or int(cfg["max_limbs"]) <= 0:
 		return
 	_fallen.append({"corpse": corpse, "body": p.get("body"), "velocity": p.get("velocity", Vector3.ZERO), "at": Time.get_ticks_msec(), "frame": Engine.get_process_frames()})
 
@@ -165,11 +209,9 @@ func _on_fired(p: Dictionary) -> void:
 		return
 	var from: Vector3 = p.get("from", Vector3.ZERO)
 	var to: Vector3 = p.get("to", Vector3.ZERO)
-	# The gun's own damage: what the hit dealt is cut short by how much health was left.
+	# What the hit dealt, not the gun's damage: a finishing shot into a nearly dead body
+	# takes nothing off.
 	var damage := float(p.get("damage", 0.0))
-	var weapon: Variant = p.get("weapon")
-	if is_instance_valid(weapon) and (weapon as Object).get("stats") is Dictionary:
-		damage = maxf(damage, float(((weapon as Object).get("stats") as Dictionary).get("damage", 0.0)))
 	_hits[(target as Object).get_instance_id()] = {"point": to, "direction": (to - from).normalized(), "damage": damage, "at": Time.get_ticks_msec()}
 
 
@@ -193,42 +235,69 @@ func _decide(corpse: Corpse, entry: Dictionary, cfg: Dictionary, window: int, cl
 	var fell_at := int(entry["at"])
 	var velocity: Vector3 = entry["velocity"]
 	var hips := _bone_position(corpse, "Hips")
-	# A blast that went off with the death wins over a shot.
+	# A blast that went off with the death wins over a shot; the nearest, if several did.
+	var nearest: Variant = null
 	for blast in _blasts:
 		if absi(int(blast["at"]) - fell_at) > window:
 			continue
-		var centre: Vector3 = blast["position"]
+		if nearest == null or hips.distance_to(blast["position"]) < hips.distance_to((nearest as Dictionary)["position"]):
+			nearest = blast
+	if nearest != null:
+		var centre: Vector3 = (nearest as Dictionary)["position"]
 		var distances := {}
 		for limb: String in LimbRules.BLAST_LIMBS:
 			distances[limb] = _limb_centre(corpse, limb).distance_to(centre)
 		var limbs := LimbRules.blast_limbs(hips.distance_to(centre), distances, cfg)
-		if limbs.is_empty():
-			continue
-		corpse.set_meta(SEVERED, true)
-		for limb in limbs:
-			var away := _limb_centre(corpse, limb) - centre
-			sever(corpse, limb, away.normalized() if away.length() > 0.01 else Vector3.UP, velocity)
-		return
+		# A blast too far off to take anything leaves the shot to decide.
+		if not limbs.is_empty():
+			corpse.set_meta(SEVERED, true)
+			for limb in limbs:
+				var away := _limb_centre(corpse, limb) - centre
+				sever(corpse, limb, away.normalized() if away.length() > 0.01 else Vector3.UP, velocity)
+			return
 	var body: Variant = entry["body"]
 	if not is_instance_valid(body):
 		return
 	var hit: Variant = _hits.get((body as Object).get_instance_id())
 	if not hit is Dictionary or absi(int(hit["at"]) - fell_at) > window or clock - int(hit["at"]) > window:
 		return
-	var sources := _sources(corpse)
-	var bone := LimbPieces.nearest_bone(sources, corpse.skeleton, hit["point"])
-	if bone < 0:
-		return
-	var limb := LimbRules.shot_limb(corpse.skeleton.get_bone_name(bone), float(hit["damage"]), cfg)
 	corpse.set_meta(SEVERED, true)
-	if not limb.is_empty():
+	var limb := shot_limb(corpse, hit["point"], hit["direction"], float(hit["damage"]), cfg)
+	if not limb.is_empty() and _rng.randf() < float(cfg["shot_sever_chance"]):
 		sever(corpse, limb, hit["direction"], velocity)
+
+
+## The limb a shot that hit `corpse` at `point` going along `direction` would take, before the
+## chance: judged a little way into the body (`shot_sever_depth`), since a bullet stops on the
+## body's outline, which the arms held out in front of the chest fill. An arm only when the
+## point is further out to the side of the spine than that arm's shoulder.
+func shot_limb(corpse: Corpse, point: Vector3, direction: Vector3, damage: float, cfg: Dictionary) -> String:
+	var inside := point + direction.normalized() * float(cfg["shot_sever_depth"])
+	var bone := LimbPieces.nearest_bone(_sources(corpse), corpse.skeleton, inside)
+	if bone < 0:
+		return ""
+	var bone_name := corpse.skeleton.get_bone_name(bone)
+	if bone_name in ARM_BONES:
+		var shoulder := _bone_position(corpse, "UpperArm_" + bone_name.right(1))
+		if _from_spine(corpse, inside) < _from_spine(corpse, shoulder):
+			return ""
+	return LimbRules.shot_limb(bone_name, damage, cfg)
+
+
+## How far `point` is out to the side of the spine, along the hips' left-right axis: arms
+## held out in front of the chest are close in by this, however far forward they reach.
+func _from_spine(corpse: Corpse, point: Vector3) -> float:
+	var hips := corpse.skeleton.find_bone("Hips")
+	if hips < 0:
+		return 0.0
+	var pose := corpse.skeleton.global_transform * corpse.skeleton.get_bone_global_pose(hips)
+	return absf((point - pose.origin).dot(pose.basis.x.normalized()))
 
 
 ## Takes `limb` off `corpse`: its bones collapse and lose their physics, a cap shows at the
 ## stump, and the piece flies along `fling` on top of the body's own `velocity`.
 func sever(corpse: Corpse, limb: String, fling: Vector3, velocity: Vector3) -> RigidBody3D:
-	var cfg := BloodEffects.config()
+	var cfg := config()
 	var skeleton := corpse.skeleton
 	var root := skeleton.find_bone(LimbRules.root_bone(limb))
 	if root < 0:
@@ -249,7 +318,7 @@ func sever(corpse: Corpse, limb: String, fling: Vector3, velocity: Vector3) -> R
 	var push := throw.normalized() if throw.length() > 0.01 else Vector3.UP
 	var spin := float(cfg["limb_spin"])
 	piece.angular_velocity = Vector3(_rng.randf_range(-spin, spin), _rng.randf_range(-spin, spin), _rng.randf_range(-spin, spin))
-	_collapse(corpse, limb, root)
+	_collapse(corpse, limb)
 	_cap_stump(corpse, limb, root)
 	if blood != null and blood.spray != null:
 		blood.spray.spray(joint.origin, push, int(cfg["stump_spray_count"]))
@@ -281,10 +350,16 @@ func _piece(corpse: Corpse, limb: String, cfg: Dictionary) -> RigidBody3D:
 	piece.max_contacts_reported = 1
 	var bounds := AABB()
 	var found := false
+	# The cap is sized to the cut bone alone: a whole arm's bounds take in the bent forearm.
+	var cut_bone := AABB()
+	var root := corpse.skeleton.find_bone(LimbRules.root_bone(limb))
 	for source in _sources(corpse):
 		var mesh := LimbPieces.piece(source, corpse.skeleton, limb)
 		if mesh == null:
 			continue
+		var boxes := LimbPieces.bone_boxes(source, corpse.skeleton)
+		if boxes.has(root):
+			cut_bone = boxes[root]
 		var shown := MeshInstance3D.new()
 		shown.mesh = mesh
 		# Soldiers wear their side's colours as an override on the body.
@@ -304,7 +379,7 @@ func _piece(corpse: Corpse, limb: String, cfg: Dictionary) -> RigidBody3D:
 	piece.add_child(shape)
 	var cap := MeshInstance3D.new()
 	cap.name = "Cap"
-	cap.mesh = _cap_mesh(limb, bounds)
+	cap.mesh = _cap_mesh(limb, cut_bone if cut_bone.has_volume() else bounds)
 	BloodEffects.keep_clean(cap)
 	piece.add_child(cap)
 	# Where the cut end faces, from the piece's middle out through the joint.
@@ -315,14 +390,11 @@ func _piece(corpse: Corpse, limb: String, cfg: Dictionary) -> RigidBody3D:
 	return piece
 
 
-func _collapse(corpse: Corpse, limb: String, root: int) -> void:
-	if is_instance_valid(corpse.simulator):
-		for bone_name: String in LimbRules.bones(limb):
-			var physical := corpse.simulator.get_node_or_null(NodePath(bone_name))
-			if physical != null:
-				corpse.simulator.remove_child(physical)
-				physical.queue_free()
-	corpse.skeleton.set_bone_pose_scale(root, Vector3.ONE * COLLAPSED)
+func _collapse(corpse: Corpse, limb: String) -> void:
+	var bones: Array[StringName] = []
+	for bone_name: String in LimbRules.bones(limb):
+		bones.append(StringName(bone_name))
+	corpse.remove_limb(bones, StringName(LimbRules.root_bone(limb)))
 
 
 func _cap_stump(corpse: Corpse, limb: String, root: int) -> void:
@@ -361,7 +433,7 @@ func _cap_mesh(limb: String, bounds: AABB) -> BoxMesh:
 func _bleed(delta: float) -> void:
 	if blood == null or blood.spray == null:
 		return
-	var cfg := BloodEffects.config()
+	var cfg := config()
 	var seconds := float(cfg["limb_bleed_seconds"])
 	var interval := maxf(float(cfg["limb_bleed_interval"]), 0.01)
 	for piece in pieces():
@@ -377,7 +449,7 @@ func _bleed(delta: float) -> void:
 
 ## A mark where a flying piece comes down, a few per piece.
 func _on_piece_landed(_other: Node, piece: RigidBody3D) -> void:
-	var cfg := BloodEffects.config()
+	var cfg := config()
 	if blood == null or blood.marks == null or not is_instance_valid(piece) or int(piece.get_meta(&"marks", 0)) >= int(cfg["limb_trail_marks"]):
 		return
 	piece.set_meta(&"marks", int(piece.get_meta(&"marks", 0)) + 1)

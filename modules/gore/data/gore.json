@@ -43,5 +43,7 @@
   "limb_trail_marks": 3,
   "limb_trail_mark_size": 0.3,
   "limb_damp": 0.6,
-  "limb_friction": 1.0
+  "limb_friction": 1.0,
+  "shot_sever_chance": 0.4,
+  "shot_sever_depth": 0.1
 }

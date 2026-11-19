@@ -6,10 +6,16 @@ extends RefCounted
 ## body stands at rest. Pieces and per-bone boxes are worked out once per mesh and kept, so a
 ## death never builds a mesh.
 
+## Filed by the mesh's instance id, which is only safe while that mesh stays loaded:
+## LimbSevering holds the body scene for as long as it runs, so its meshes (and these ids)
+## live as long as the caches do.
 ## Mesh instance id + limb -> the piece (or null when that mesh has none of the limb).
 static var _pieces: Dictionary = {}
 ## Distances within this many metres of each other count as a tie.
 const TIE := 0.005
+## A point further than this from every part is not on the body (a bullet stops on its
+## capsule, which stands no further off any part than this).
+const REACH := 0.4
 ## Mesh instance id -> {bone index: AABB of its own vertices in its bind space}.
 static var _boxes: Dictionary = {}
 
@@ -47,7 +53,7 @@ static func bone_boxes(source: MeshInstance3D, skeleton: Skeleton3D) -> Dictiona
 
 
 ## The bone of `skeleton` nearest `point` (world space) by the meshes in `sources`, posed as
-## the skeleton stands now; -1 without any.
+## the skeleton stands now; -1 without any, or when the point is off the body.
 static func nearest_bone(sources: Array[MeshInstance3D], skeleton: Skeleton3D, point: Vector3) -> int:
 	var best := -1
 	var best_d := INF
@@ -66,7 +72,7 @@ static func nearest_bone(sources: Array[MeshInstance3D], skeleton: Skeleton3D, p
 				best_d = d
 				best_centre = centre
 				best = bone
-	return best
+	return best if best_d <= REACH else -1
 
 
 static func _cut(source: MeshInstance3D, skeleton: Skeleton3D, limb: String) -> ArrayMesh:

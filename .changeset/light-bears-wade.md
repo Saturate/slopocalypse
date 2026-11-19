@@ -2,4 +2,4 @@
 slopocalypse: minor
 ---
 
-#### Blasts and heavy killing shots can tear an arm, leg or head off the dead, and the piece flies off bleeding (off with Blood in Settings)
+#### Blasts can tear arms, legs or heads off the dead, and a hard killing shot to a leg or arm sometimes does too; the piece flies off bleeding (off with Blood in Settings)

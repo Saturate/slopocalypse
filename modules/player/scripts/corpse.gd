@@ -25,6 +25,8 @@ const GROUP := &"corpses"
 const LINK := &"corpse_link"
 ## When a LootBody arrived (msec), as meta on it: a corpse only takes one that is recent.
 const ARRIVED := &"corpse_arrived"
+## Scale a removed limb's bone collapses to.
+const COLLAPSED := 0.001
 
 ## Off on a dedicated server, which draws nothing; tests turn it on.
 static var enabled := DisplayServer.get_name() != "headless"
@@ -41,6 +43,8 @@ var _age := 0.0
 var _settled := false
 var _velocity := Vector3.ZERO
 var _pushed := false
+## Bones collapsed by `remove_limb`, kept collapsed through settling.
+var _collapsed: Array[int] = []
 
 
 static func config() -> Dictionary:
@@ -156,6 +160,23 @@ func is_settled() -> bool:
 	return _settled
 
 
+## Takes a limb off (gore's severing, #387): the physical bones named in `bones` go, so the
+## ragdoll stops driving them, and `collapse_bone` shrinks to almost nothing, taking the bones
+## below it along, so the body's mesh for the limb folds into the joint. Not to zero: settling
+## inverts parent poses. Stays so once the corpse has settled.
+func remove_limb(bones: Array[StringName], collapse_bone: StringName) -> void:
+	if is_instance_valid(simulator):
+		for bone_name in bones:
+			var physical := simulator.get_node_or_null(NodePath(bone_name))
+			if physical != null:
+				simulator.remove_child(physical)
+				physical.queue_free()
+	var bone := skeleton.find_bone(collapse_bone)
+	if bone >= 0:
+		skeleton.set_bone_pose_scale(bone, Vector3.ONE * COLLAPSED)
+		_collapsed.append(bone)
+
+
 ## The LootBody this corpse stands in for, or null.
 func loot_body() -> Node3D:
 	if not has_meta(LINK):
@@ -257,6 +278,8 @@ func _settle() -> void:
 	for i in poses.size():
 		var parent := skeleton.get_bone_parent(i)
 		skeleton.set_bone_pose(i, poses[i] if parent < 0 else poses[parent].affine_inverse() * poses[i])
+	for bone in _collapsed:
+		skeleton.set_bone_pose_scale(bone, Vector3.ONE * COLLAPSED)
 	simulator.queue_free()
 
 

@@ -7,7 +7,7 @@ var _cfg: Dictionary
 
 
 func before_test() -> void:
-	_cfg = BloodEffects.config().duplicate()
+	_cfg = LimbSevering.config().duplicate()
 	_cfg["shot_sever_damage"] = 25.0
 	_cfg["headshot_sever"] = false
 	_cfg["blast_sever_radius"] = 3.0
