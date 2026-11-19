@@ -1,0 +1,6 @@
+{
+  "id": "report",
+  "depends_on": [],
+  "flag": "report",
+  "entry": "report_module.gd"
+}
