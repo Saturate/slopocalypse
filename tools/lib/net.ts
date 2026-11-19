@@ -56,6 +56,15 @@ function isRunning(pid: number): boolean {
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
+// The last lines a process printed, for a report that never came.
+const lastLines = (output: string, count = 8): string =>
+	output
+		.trim()
+		.split(/\r?\n/)
+		.slice(-count)
+		.map((l) => `    ${l}`)
+		.join("\n");
+
 // Solo is a client of a server process it starts itself. The bot's movement and shots must
 // make the round trip, the server's own log must be clean, and the server must not outlive
 // the game.
@@ -66,7 +75,7 @@ export async function soloSmoke(godot: string, root: string): Promise<StepResult
 	for (const line of scanLog(r.output, GODOT_NOISE)) problems.push(`solo: ${line}`);
 	if (r.timedOut) problems.push("solo: timed out");
 	const rep = parseReport(r.output);
-	if (rep === undefined) problems.push("solo: no NET-REPORT line");
+	if (rep === undefined) problems.push(`solo: no NET-REPORT line; it ended with:\n${lastLines(r.output)}`);
 	else {
 		if (rep.mode !== "SOLO" || rep.peers !== 1 || rep.players !== 1 || rep.localPlayers !== 1) problems.push(`solo: wrong session shape: ${JSON.stringify(rep)}`);
 		if (rep.moved < 3.0) problems.push(`solo: player did not move through the server (moved=${rep.moved})`);
@@ -98,8 +107,10 @@ export async function soloSmoke(godot: string, root: string): Promise<StepResult
 // (movement, shots, the car's new position) reach everyone.
 export async function netSmoke(godot: string, root: string, port = 7791): Promise<StepResult> {
 	const base = ["--headless", "--path", root, "--"];
-	// Clients report at ~900 frames and stay connected; the server reports at 1300 while it
-	// still has both, then quits, which closes the clients.
+	// Clients report 900 physics frames after connecting and stay connected; the server
+	// reports 1300 after its first player joined, while it still has both, then quits, which
+	// closes the clients. Counting from the first peer keeps that 400-frame margin however
+	// long each process takes to load.
 	const saves = mkdtempSync(pathJoin(tmpdir(), "slopocalypse-net-"));
 	const server = run(godot, [...base, `--server=${port}`, "--net-report-after=1300", `--save=${pathJoin(saves, "world.db")}`], { cwd: root, timeoutMs: 150_000 });
 	// Let the server open its port and load the world before clients knock.
@@ -120,7 +131,7 @@ export async function netSmoke(godot: string, root: string, port = 7791): Promis
 	for (const [name, r] of results) {
 		const rep = parseReport(r.output);
 		if (rep === undefined) {
-			problems.push(`${name}: no NET-REPORT line`);
+			problems.push(`${name}: no NET-REPORT line; it ended with:\n${lastLines(r.output)}`);
 			continue;
 		}
 		const want = name === "server" ? { mode: "SERVER", peers: 2, local: 0 } : { mode: "CLIENT", peers: -1, local: 1 };
@@ -171,7 +182,7 @@ export async function saveSmoke(godot: string, root: string, port = 7793): Promi
 		check("returning client", back);
 		if (!secondServer.output.includes("Saver is back")) problems.push("second server: did not recognise Saver from the save");
 		const rep = parseReport(back.output);
-		if (rep === undefined) problems.push("returning client: no NET-REPORT line");
+		if (rep === undefined) problems.push(`returning client: no NET-REPORT line; it ended with:\n${lastLines(back.output)}`);
 		else if (Math.abs(rep.moved - walked) > 1.5) problems.push(`returning client: not put back where it left (moved=${rep.moved}, left at ${walked})`);
 	} finally {
 		rmSync(saves, { recursive: true, force: true });

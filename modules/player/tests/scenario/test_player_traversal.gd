@@ -100,6 +100,35 @@ func test_thick_cover_is_mantled_not_vaulted() -> void:
 	assert_float(_player.global_position.y).is_equal_approx(0.9, 0.15)
 
 
+func test_tapping_crouch_while_sprinting_never_passes_one_slide_boost() -> void:
+	await _frames(10)
+	_sprint_forward()
+	await _frames(120)
+	var cap := float(_player.config["sprint_speed"]) + float(_player.config["slide_boost"]) + 0.1
+	var fastest := 0.0
+	for i in 90:
+		_player.intent().crouch = i % 2 == 0
+		await get_tree().physics_frame
+		fastest = maxf(fastest, _player.horizontal_speed())
+	assert_float(fastest).is_less_equal(cap)
+	# And a slide did start: the boost fired once.
+	assert_float(fastest).is_greater(float(_player.config["sprint_speed"]) + 0.5)
+
+
+func test_chained_slides_cover_no_more_ground_than_sprinting() -> void:
+	await _frames(10)
+	_sprint_forward()
+	await _frames(120)
+	var start := _player.global_position
+	for i in 300:
+		# Held for 13 ticks, let go for 1: the fastest chain without a cooldown.
+		_player.intent().crouch = i % 14 != 13
+		await get_tree().physics_frame
+	var chained := Vector2(_player.global_position.x - start.x, _player.global_position.z - start.z).length()
+	var sprinted := float(_player.config["sprint_speed"]) * 300.0 / 60.0
+	assert_float(chained).is_less_equal(sprinted)
+
+
 func test_crouch_while_sprinting_slides_then_slows() -> void:
 	await _frames(10)
 	_sprint_forward()

@@ -1,6 +1,6 @@
 // Benchmarks: runs fixed scenarios, reads the perf log each writes, and compares with this
 // machine's baseline. Not part of the gate (timings are too noisy on shared machines).
-//   node tools/bench.ts [solo-walk] [solo-drive] [solo-city] [solo-deaths] [range-destroy] [server-bots] [server-crowd] [--save-baseline] [--tolerance 0.15]
+//   node tools/bench.ts [solo-walk] [solo-drive] [solo-city] [solo-deaths] [benchmark] [range-destroy] [server-bots] [server-crowd] [--save-baseline] [--tolerance 0.15]
 //     [--server-flags car:off,enemies:off]  (server-bots: switch modules off to see what costs what)
 //     [--crowd 30]  (server-crowd: how many soldiers)
 //     [--driver vulkan]  (windowed scenarios: another rendering driver; on macOS the Metal driver
@@ -13,8 +13,9 @@ import { argv, exit } from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 import { compare, netCosts, parsePerfLog, summarise, table, worstSpikes, zoneCosts, type Summary } from "./lib/bench.ts";
 import { localGodot } from "./lib/godot.ts";
+import { summariseReport } from "./lib/report.ts";
 import { run } from "./lib/proc.ts";
-import { rangeArgs } from "./lib/range.ts";
+import { benchmarkArgs, rangeArgs } from "./lib/range.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const godot = localGodot(root);
@@ -39,10 +40,13 @@ interface Scenario {
 // A windowed solo game driven by a bot, with the perf module writing to `perfLog`.
 // `--driver vulkan` (or another rendering driver) goes to the engine, for comparing drivers
 // or when the default one cannot time the GPU.
-async function windowed(name: string, userArgs: readonly string[], perfLog: string): Promise<void> {
+// `selfTimed` runs end themselves (the benchmark quits once its results are written), so they
+// get no frame count to stop at.
+async function windowed(name: string, userArgs: readonly string[], perfLog: string, selfTimed = false): Promise<void> {
 	const driver = arg("driver");
 	const engine = driver === undefined ? [] : ["--rendering-driver", driver];
-	const r = await run(godot, [...engine, "--path", root, "--", "--solo", ...userArgs, "--uncapped", "--perf-spike-ms=20", `--net-report-after=${RUN_FRAMES}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: RUN_SECONDS * 1000 });
+	const stop = selfTimed ? [] : [`--net-report-after=${RUN_FRAMES}`];
+	const r = await run(godot, [...engine, "--path", root, "--", "--solo", ...userArgs, "--uncapped", "--perf-spike-ms=20", ...stop, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: RUN_SECONDS * 1000 });
 	if (r.timedOut) console.log(`  ${name}: stopped after ${RUN_SECONDS} s, before ${RUN_FRAMES} frames (under ${(RUN_FRAMES / RUN_SECONDS).toFixed(0)} fps)`);
 }
 
@@ -62,6 +66,15 @@ const SCENARIOS: Record<string, Scenario> = {
 	"solo-deaths": {
 		what: "windowed solo game, squads land in front of the player and are killed one a second (what a soldier appearing and dying costs on screen)",
 		run: (perfLog) => windowed("solo-deaths", ["--bench=deaths", "--no-save"], perfLog),
+	},
+	benchmark: {
+		what: "the in-game benchmark players run from the menu: solo in the city, the city bot walks while squads land and die in front of the player (modules/benchmark); prints its own results too",
+		run: async (perfLog) => {
+			const out = perfLog.replace(/perf\.ndjson$/, "benchmark.json");
+			await windowed("benchmark", [...benchmarkArgs(root), `--benchmark-out=${out}`], perfLog, true);
+			if (!existsSync(out)) throw new Error("benchmark wrote no results (did the run finish?)");
+			for (const line of summariseReport({ kind: "benchmark", benchmark: JSON.parse(readFileSync(out, "utf8")) }).filter((l) => l.startsWith("  benchmark") || l.startsWith("    hitch"))) console.log(line);
+		},
 	},
 	"range-destroy": {
 		what: "windowed solo game on the test range, the range bot shoots and blasts each building in turn (destruction cost: remeshing, debris, collapse)",
