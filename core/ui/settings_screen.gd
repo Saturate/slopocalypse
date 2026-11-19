@@ -29,8 +29,10 @@ func _init() -> void:
 	_slider("volume", "Volume", 0.0, 1.0, 0.05, func(v: float) -> String: return "%d %%" % roundi(v * 100.0))
 	_slider("ui_scale", "Interface size", Settings.UI_MIN, Settings.UI_MAX, 0.05, func(v: float) -> String: return "%d %%" % roundi(v * 100.0))
 	_fullscreen = _toggle("Fullscreen", "fullscreen")
-	# Read by the gore module as blood shows; nothing for the engine to apply.
+	# Read by the gore module as blood shows; nothing for the engine to apply. Without the
+	# module the toggle would do nothing, so it isn't offered.
 	_blood = _toggle("Blood", "blood")
+	_blood.visible = Features.is_enabled(&"gore")
 	var keys_head := Label.new()
 	keys_head.theme_type_variation = &"HeadingLabel"
 	keys_head.text = "KEYS"
@@ -117,6 +119,7 @@ func _slider(key: String, label: String, low: float, high: float, step: float, s
 	row.add_child(value_label)
 	slider.value_changed.connect(func(v: float) -> void:
 		Settings.set_value(key, v)
+		_changed(key)
 		value_label.text = shown.call(v)
 		_apply())
 	var pad := Control.new()
@@ -173,6 +176,7 @@ func _toggle(label: String, key: String) -> Button:
 	button.set_meta(&"setting", key)
 	button.toggled.connect(func(on: bool) -> void:
 		Settings.set_value(key, on)
+		_changed(key)
 		_show_toggle(button)
 		_apply())
 	content.add_child(button)
@@ -187,8 +191,16 @@ func _show_toggle(button: Button) -> void:
 
 func _reset() -> void:
 	Settings.reset()
+	for key: String in Settings.DEFAULTS:
+		_changed(key)
 	_apply()
 	_refresh()
+
+
+## Tells modules that read a setting as they go (blood) that it changed, so they can act on
+## it now rather than at their next use.
+func _changed(key: String) -> void:
+	EventBus.publish(&"settings.changed", {"key": key, "value": Settings.value(key)})
 
 
 func _apply() -> void:

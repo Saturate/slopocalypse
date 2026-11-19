@@ -91,9 +91,16 @@ func test_blood_is_on_by_default_and_the_screen_turns_it_off() -> void:
 	screen.open()
 	var toggle := screen.find_child("Blood", true, false) as Button
 	assert_object(toggle).is_not_null()
+	# Offered only while the gore module, which reads it, is on.
+	assert_bool(toggle.visible).is_equal(Features.is_enabled(&"gore"))
 	assert_bool(toggle.button_pressed).is_true()
+	var heard: Array[Dictionary] = []
+	var listen := func(p: Dictionary) -> void: heard.append(p)
+	EventBus.subscribe(&"settings.changed", listen)
 	toggle.button_pressed = false
+	EventBus.unsubscribe(&"settings.changed", listen)
 	assert_bool(bool(Settings.value("blood"))).is_false()
+	assert_array(heard).is_equal([{"key": "blood", "value": false}])
 	screen.close()
 	Settings.reset()
 	Settings.load_from(PATH)

@@ -5,8 +5,9 @@ extends Node3D
 ## `mark_seconds` over `fade_seconds`, and at most `max_marks` exist at once; a new one past
 ## that takes the oldest away (gore.json).
 
-## Render layer (20) for what blood must not paint: a pool is a box reaching a little above
-## the ground, and the body lying in it would otherwise turn red on its underside.
+## Render layer (20) for what blood must not paint: people. A pool is a box reaching a little
+## above the ground, and a body lying in it or someone walking through it would otherwise turn
+## red; a mark on a wall would paint whoever stands against it.
 const NO_DECALS := 1 << 19
 ## Fades a mark out on faces turned away from it, so a splat on a wall doesn't smear down the
 ## side of a step or a window frame.
@@ -21,11 +22,6 @@ const SPLAT_SEED := 385
 const POOL_SEED := 386
 ## Cells vary a little in brightness, so a mark has some texture under its colour.
 const SHADE_MIN := 0.85
-
-## How far in front of the camera the warm-keeping decals sit, and their size: in view, too
-## small and clear to see.
-const KEEPER_AHEAD := 1.0
-const KEEPER_SIZE := 0.01
 
 static var _splat: ImageTexture
 static var _pool: ImageTexture
@@ -42,7 +38,6 @@ var _depth := 0.0
 var _start_share := 0.0
 var _pool_seconds := 0.0
 var _colour := Color()
-var _keepers: Array[Decal] = []
 
 
 func setup(cfg: Dictionary) -> void:
@@ -57,33 +52,21 @@ func setup(cfg: Dictionary) -> void:
 	_colour = BloodEffects.colour(cfg)
 
 
-## Keeps an invisible decal of each texture in front of `camera`. The renderer draws every
-## surface without decal support while none is in view, and switches all of them over (a
-## pipeline compile per material) the moment the first one shows: with these always in view
-## that happens while loading, not at the first hit, and both textures sit in the decal
-## atlas from the start.
-func keep_warm(camera: Camera3D) -> void:
-	if _keepers.is_empty():
-		for texture in [splat_texture(), pool_texture()]:
-			var keeper := Decal.new()
-			keeper.name = "WarmKeeper"
-			keeper.texture_albedo = texture
-			keeper.modulate = Color(_colour, 0.0)
-			keeper.size = Vector3.ONE * KEEPER_SIZE
-			add_child(keeper)
-			_keepers.append(keeper)
-	var at := camera.global_position - camera.global_basis.z * KEEPER_AHEAD
-	for keeper in _keepers:
-		keeper.global_position = at
+## Takes every mark and pool away at once (blood turned off).
+func clear() -> void:
+	while not _decals.is_empty():
+		_remove(0)
+	set_process(false)
 
 
 ## A splat at `at` on a surface facing `normal`, `length` metres along `along` (the shot's way
-## across the surface) and `width` across it.
+## across the surface) and `width` across it. Null when `max_marks` is 0.
 func add_mark(at: Vector3, normal: Vector3, along: Vector3, width: float, length: float) -> Decal:
 	return _add(at, normal, along, Vector3(length, _depth, width), 0.0, splat_texture())
 
 
 ## A pool at `at` on ground facing `normal` that spreads to `radius` over `pool_seconds`.
+## Null when `max_marks` is 0.
 func add_pool(at: Vector3, normal: Vector3, radius: float) -> Decal:
 	var along := normal.cross(Vector3.RIGHT if absf(normal.x) < 0.9 else Vector3.FORWARD)
 	# Turned at random, so pools side by side don't look stamped from one shape.
@@ -126,7 +109,9 @@ func advance(delta: float) -> void:
 
 
 func _add(at: Vector3, normal: Vector3, along: Vector3, full: Vector3, spread: float, texture: Texture2D) -> Decal:
-	while _max >= 0 and _decals.size() >= _max and not _decals.is_empty():
+	if _max <= 0:
+		return null
+	while _decals.size() >= _max:
 		_remove(0)
 	var y := normal.normalized()
 	var x := (along - y * along.dot(y)).normalized()

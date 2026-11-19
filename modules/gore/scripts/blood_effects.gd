@@ -22,8 +22,8 @@ const REQUIRED := {
 const BLEEDS: Array[StringName] = [&"players", &"enemies", &"civilians"]
 ## Meta on a corpse once it has been given its pool (or passed over with blood off).
 const POOLED := &"gore_pooled"
-## Meta on a body whose meshes have been moved off the layer marks paint.
-const KEPT_CLEAN := &"gore_kept_clean"
+## How far in front of the camera the one warm-up drop is thrown while loading.
+const WARM_AHEAD := 1.0
 ## Seconds between looks for newly settled ragdolls: a pool starting a moment late is not seen,
 ## and a look walks every corpse.
 const CORPSE_CHECK_SECONDS := 0.25
@@ -94,10 +94,20 @@ func _ready() -> void:
 	marks.setup(cfg)
 	add_child(marks)
 	EventBus.subscribe(&"weapon.fired", on_fired)
+	EventBus.subscribe(&"settings.changed", _on_settings_changed)
+	# Bodies, and whatever they are given later (a gun, gear), are kept off the layer blood
+	# paints from the moment they appear.
+	for group in BLEEDS:
+		for body in get_tree().get_nodes_in_group(group):
+			keep_blood_off(body)
+	get_tree().node_added.connect(_on_node_added)
 
 
 func _exit_tree() -> void:
 	EventBus.unsubscribe(&"weapon.fired", on_fired)
+	EventBus.unsubscribe(&"settings.changed", _on_settings_changed)
+	if get_tree().node_added.is_connected(_on_node_added):
+		get_tree().node_added.disconnect(_on_node_added)
 
 
 func _process(delta: float) -> void:
@@ -109,12 +119,11 @@ func _process(delta: float) -> void:
 func _process_tick(delta: float) -> void:
 	if marks == null:
 		return
-	var camera := get_viewport().get_camera_3d()
-	if camera != null:
-		marks.keep_warm(camera)
-		if not _warmed:
+	if not _warmed:
+		var camera := get_viewport().get_camera_3d()
+		if camera != null:
 			_warmed = true
-			spray.warm(camera.global_position - camera.global_basis.z * BloodMarks.KEEPER_AHEAD)
+			spray.warm(camera.global_position - camera.global_basis.z * WARM_AHEAD)
 	_since_check += delta
 	if _since_check < CORPSE_CHECK_SECONDS:
 		return
@@ -136,11 +145,40 @@ func on_fired(p: Dictionary) -> void:
 	var cfg := config()
 	var exit := to + direction * float(cfg["spray_exit_depth"])
 	var headshot := HitscanWeapon.is_headshot(target as Node, to)
-	spray.spray(exit, direction, int(cfg["headshot_spray_count" if headshot else "spray_count"]))
-	if not target.has_meta(KEPT_CLEAN):
-		target.set_meta(KEPT_CLEAN, true)
-		keep_blood_off(target as Node)
+	spray.spray(exit, direction, spray_count(headshot, _is_local(target as Node), cfg))
 	_mark_behind(exit, direction, target as Node3D)
+
+
+## Drops a hit throws: more through the head, none through your own, which would start them
+## at your eyes and fill the screen.
+static func spray_count(headshot: bool, own_body: bool, cfg: Dictionary) -> int:
+	if headshot and own_body:
+		return 0
+	return int(cfg["headshot_spray_count" if headshot else "spray_count"])
+
+
+## Blood off clears what is already shown, not only what comes next.
+func _on_settings_changed(p: Dictionary) -> void:
+	if str(p.get("key", "")) == "blood" and not bool(p.get("value", true)) and marks != null:
+		marks.clear()
+		spray.clear()
+
+
+func _is_local(body: Node) -> bool:
+	return Net.has_local_player() and int(body.get_meta(&"peer_id", 0)) == Net.local_peer_id()
+
+
+func _on_node_added(node: Node) -> void:
+	if not node is VisualInstance3D or node is Decal:
+		return
+	var prof := Prof.start()
+	var up := node.get_parent()
+	while up != null:
+		if _bleeds(up):
+			keep_clean(node as VisualInstance3D)
+			break
+		up = up.get_parent()
+	Prof.stop(&"gore/keep_clean", prof)
 
 
 ## Gives every ragdoll that has settled since the last look its pool.
@@ -195,13 +233,19 @@ func _pool_under(corpse: Corpse) -> void:
 	var hit := corpse.get_world_3d().direct_space_state.intersect_ray(query)
 	if hit.is_empty():
 		return
-	keep_blood_off(corpse)
 	marks.add_pool(hit["position"], hit["normal"], float(config()["pool_radius"]))
 
 
 ## Moves `node`'s meshes onto the render layer marks and pools leave alone: a corpse lies in
-## its pool instead of being painted by it, and someone standing against a wall that is
-## splattered behind them stays clean. Nothing else draws by layer, and cameras see them all.
+## its pool instead of being painted by it (its meshes are copies of the living body's), and
+## someone walking through a pool or standing against a splattered wall stays clean.
 static func keep_blood_off(node: Node) -> void:
 	for child in node.find_children("*", "VisualInstance3D", true, false):
-		(child as VisualInstance3D).layers = BloodMarks.NO_DECALS
+		if not child is Decal:
+			keep_clean(child as VisualInstance3D)
+
+
+## Off the default layer, which marks paint, and onto the one they leave alone. Cameras and
+## lights see every layer, and nothing else in the game draws by layer.
+static func keep_clean(mesh: VisualInstance3D) -> void:
+	mesh.layers = (mesh.layers | BloodMarks.NO_DECALS) & ~1

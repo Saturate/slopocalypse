@@ -61,9 +61,10 @@ func test_a_body_shot_sprays_out_of_the_far_side_and_marks_the_wall_behind() -> 
 	_effects.on_fired(_shot(Vector3(0.0, 1.0, 0.35), _player, _player))
 	var drops := _effects.spray.live_count()
 	assert_int(drops).is_equal(int(BloodEffects.config()["spray_count"]))
-	for i in drops:
-		assert_float(_effects.spray.drop_position(i).z).is_less_equal(0.0)
-		assert_float(_effects.spray.drop_velocity(i).z).is_less(0.0)
+	for at in _effects.spray.live_positions():
+		assert_float(at.z).is_less_equal(0.0)
+	for v in _effects.spray.live_velocities():
+		assert_float(v.z).is_less(0.0)
 	assert_int(_effects.marks.count()).is_equal(1)
 	var mark := _effects.marks.newest()
 	assert_float(mark.global_position.z).is_equal_approx(WALL_Z, 0.01)
@@ -154,3 +155,32 @@ func test_with_blood_off_no_pool_spreads() -> void:
 	await _settle(corpse)
 	_effects.check_corpses()
 	assert_int(_effects.marks.count()).is_equal(0)
+
+
+func test_turning_blood_off_clears_what_is_already_shown() -> void:
+	await _step()
+	_effects.on_fired(_shot(Vector3(0.0, 1.0, 0.35), _player, _player))
+	assert_int(_effects.marks.count()).is_equal(1)
+	assert_int(_effects.spray.live_count()).is_greater(0)
+	Settings.set_value("blood", false)
+	EventBus.publish(&"settings.changed", {"key": "blood", "value": false})
+	assert_int(_effects.marks.count()).is_equal(0)
+	assert_int(_effects.spray.live_count()).is_equal(0)
+
+
+func test_gear_given_to_a_body_later_is_kept_clean_too() -> void:
+	var gun := MeshInstance3D.new()
+	_player.add_child(gun)
+	assert_int(gun.layers & 1).is_equal(0)
+	assert_int(gun.layers & BloodMarks.NO_DECALS).is_equal(BloodMarks.NO_DECALS)
+	# Not a body: the world keeps its layer.
+	var rock: MeshInstance3D = auto_free(MeshInstance3D.new())
+	add_child(rock)
+	assert_int(rock.layers).is_equal(1)
+
+
+func test_a_shot_through_your_own_head_throws_no_drops_at_your_eyes() -> void:
+	var cfg := BloodEffects.config()
+	assert_int(BloodEffects.spray_count(true, true, cfg)).is_equal(0)
+	assert_int(BloodEffects.spray_count(true, false, cfg)).is_equal(int(cfg["headshot_spray_count"]))
+	assert_int(BloodEffects.spray_count(false, true, cfg)).is_equal(int(cfg["spray_count"]))

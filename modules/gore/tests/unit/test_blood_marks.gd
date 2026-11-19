@@ -71,3 +71,20 @@ func test_a_pool_spreads_to_its_radius_over_its_time() -> void:
 	marks.advance(2.5)
 	assert_float(pool.size.x).is_equal_approx(1.6, 0.001)
 	assert_float(pool.size.z).is_equal_approx(1.6, 0.001)
+
+
+func test_no_marks_at_all_when_the_cap_is_zero() -> void:
+	_cfg["max_marks"] = 0.0
+	var marks := _marks()
+	assert_object(marks.add_mark(Vector3.ZERO, Vector3.UP, Vector3.FORWARD, 0.5, 0.5)).is_null()
+	assert_object(marks.add_pool(Vector3.ZERO, Vector3.UP, 0.8)).is_null()
+	assert_int(marks.count()).is_equal(0)
+
+
+func test_clear_takes_every_mark_away() -> void:
+	var marks := _marks()
+	marks.add_mark(Vector3.ZERO, Vector3.UP, Vector3.FORWARD, 0.5, 0.5)
+	marks.add_pool(Vector3.ONE, Vector3.UP, 0.8)
+	marks.clear()
+	assert_int(marks.count()).is_equal(0)
+	assert_int(marks.get_child_count()).is_equal(0)
