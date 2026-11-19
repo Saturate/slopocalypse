@@ -222,13 +222,15 @@ func _step_normal(delta: float) -> void:
 
 	var speed: float = config["walk_speed"]
 	var accel: float = config["acceleration"]
+	# Rate at which speed above what the body already has builds up; 0 builds at `accel`.
+	var build := 0.0
 	if crouching:
 		speed = config["crouch_speed"]
 	elif _wants_sprint():
 		speed = config["sprint_speed"]
 		# Building up to a sprint takes a moment; slowing down stays snappy.
 		if horizontal_speed() >= float(config["walk_speed"]) - 0.1:
-			accel = config["sprint_acceleration"]
+			build = config["sprint_acceleration"]
 	if _intent.aim:
 		speed *= float(config["ads_speed_multiplier"])
 	if swimming:
@@ -237,9 +239,18 @@ func _step_normal(delta: float) -> void:
 		speed *= float(config["wade_speed"])
 	if not is_on_floor() and not swimming:
 		accel *= float(config["air_control"])
+		build *= float(config["air_control"])
 	var wish := transform.basis * Vector3(_intent.move.x, 0.0, -_intent.move.y)
 	var target := wish.limit_length(1.0) * speed
-	var horizontal := Vector2(velocity.x, velocity.z).move_toward(Vector2(target.x, target.z), accel * delta)
+	var goal := Vector2(target.x, target.z)
+	var horizontal := Vector2(velocity.x, velocity.z)
+	if build > 0.0 and goal.length() > 0.0:
+		# Only gaining speed is slow: steering towards the new heading (up to the speed the body
+		# has) runs at full `accel`, or a sprinting player slides sideways after every turn.
+		var keep := goal.normalized() * minf(horizontal.length(), goal.length())
+		horizontal = horizontal.move_toward(keep, accel * delta).move_toward(goal, build * delta)
+	else:
+		horizontal = horizontal.move_toward(goal, accel * delta)
 	velocity.x = horizontal.x
 	velocity.z = horizontal.y
 	_move_with_steps(delta)

@@ -64,6 +64,22 @@ func test_sprint_is_faster_than_walk() -> void:
 	assert_float(_player.horizontal_speed()).is_equal_approx(sprint, sprint * 0.1)
 
 
+func test_turning_while_sprinting_follows_the_new_heading_at_once() -> void:
+	await _landed()
+	_player.intent().move = Vector2(0.0, 1.0)
+	_player.intent().sprint = true
+	await _frames(90)
+	_player.intent().look_delta.x = PI / 2.0
+	# A quarter of a second for the worst case, a 90 degree turn in one tick: speed then sits
+	# about 0.6 m/s over walk speed, so a much lower `acceleration` needs a longer budget.
+	await _frames(15)
+	var heading := -_player.global_transform.basis.z
+	var moving := Vector3(_player.velocity.x, 0.0, _player.velocity.z)
+	assert_float(rad_to_deg(moving.angle_to(heading))).is_less(10.0)
+	var walk: float = _player.config["walk_speed"]
+	assert_float(_player.horizontal_speed()).is_greater(walk)
+
+
 func test_crouch_lowers_the_head_and_slows_down() -> void:
 	await _landed()
 	var head: Node3D = _player.get_node("Head")
