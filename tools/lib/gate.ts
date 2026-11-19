@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { scanLog, stripAnsi, testSummary } from "./log-scan.ts";
+import { failureLines, scanLog, testSummary } from "./log-scan.ts";
 import { run } from "./proc.ts";
 
 // Known harmless lines. gdUnit4 points the remote debugger at port 0 on purpose so a
@@ -103,10 +103,7 @@ export async function runGdUnit(godot: string, root: string, testDirs: readonly 
 	if (r.code !== 0 && summary !== undefined && summary.errors + summary.failures === 0) lines.push(`exit ${r.code}`);
 	if (problems.length > 0) lines.push("unexpected error lines:", ...problems.map((p) => "  " + p));
 	if (lines.length > 0) {
-		const failed = stripAnsi(r.output)
-			.split(/\r?\n/)
-			.filter((l) => /FAILED|Parse Error|at '/.test(l))
-			.slice(0, 20);
+		const failed = failureLines(r.output);
 		return { ok: false, detail: [...lines, ...failed].join("\n") };
 	}
 	return { ok: true, detail: `${summary?.cases ?? 0} test case(s) passed` };
