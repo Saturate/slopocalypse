@@ -29,6 +29,7 @@ player and cars don't opt in, so nothing you steer lags.
 ## Consequences
 Remote things are drawn about 50 ms further in the past than before, on top of the connection's
 own delay, so moving targets need a little more lead until hits are lag compensated. Anything a
-client sets directly on a smoothed property (outside its synchronizer) is overwritten each
-frame; set it on the server instead, or teach `NetSmoothing` about it. Cars and your own
+client sets directly on a smoothed property (outside its synchronizer) is overwritten when the
+smoothed value next changes (a thing standing still is not written again each frame); set it
+on the server instead, or teach `NetSmoothing` about it. Cars and your own
 movement (prediction) are separate work.
