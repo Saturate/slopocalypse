@@ -101,3 +101,18 @@ func test_hosts_without_a_dot_and_long_ipv6_go_too() -> void:
 	assert_str(out).not_contains("db8")
 	assert_str(out).not_contains("]")
 	assert_str(out).contains("Could not reach <address>:7777")
+
+
+func test_long_hex_runs_do_not_stall_or_empty_the_log() -> void:
+	var line := "x ::" + "a".repeat(5000) + "g\n"
+	var began := Time.get_ticks_msec()
+	var out := ReportWriter.scrub(line.repeat(20), [])
+	assert_int(Time.get_ticks_msec() - began).is_less(200)
+	assert_str(out).is_not_empty()
+
+
+func test_full_ipv6_and_bare_source_files() -> void:
+	var out := ReportWriter.scrub("connecting to fd7a:115c:a1e0:ab12:4843:cd96:6258:b240:7777\nnet.gd:12 failed at lib.rs:88:5\nbreach the wall", [])
+	assert_str(out).not_contains("115c")
+	assert_str(out).contains("net.gd:12 failed at lib.rs:88:5")
+	assert_str(out).contains("breach the wall")

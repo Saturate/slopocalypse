@@ -7,18 +7,22 @@ extends RefCounted
 ## Command-line flags safe to share: how the game was started, never where it connected,
 ## what it is called or where files are (those carry addresses and the OS user name).
 const PUBLIC_ARGS: Array[String] = ["--solo", "--flags=", "--all-optional-off", "--world=", "--start=", "--bot=", "--bench=", "--uncapped", "--range", "--crowd=", "--debug-api"]
-## Written over in shared logs: IPv4 addresses, compressed IPv6 ones (`fe80::1`, `2001:db8::1`,
-## in brackets or not), and dotted host names given with a port (`name.example.org:7777`).
+## Written over in shared logs: IPv4 addresses, IPv6 ones (compressed like `fe80::1` or all
+## eight groups, in brackets or not), and dotted host names given with a port.
 ## Hosts with no dot are caught by the phrases the game logs them in (`HOST_PHRASES`).
 ## Source locations must survive: a path's file name (`res://core/net.gd:12`) has a slash or
 ## dot before it and `Node::get` has letters round its `::`, which these patterns refuse.
 const ADDRESSES: Array[String] = [
 	"\\b\\d{1,3}(\\.\\d{1,3}){3}\\b",
-	"(?i)(?<![\\w:])\\[?(?:[0-9a-f]{1,4}:)*(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:?)*(?:[0-9a-f]{1,4})?\\]?(?![\\w])",
-	"(?i)(?<![/\\\\.\\w])[a-z0-9-]+(\\.[a-z0-9-]+)*\\.[a-z]{2,}(?=:\\d)",
+	# One way to split each run of hex digits, so a long run cannot make it backtrack (past
+	# PCRE2's limit `sub` returns nothing at all).
+	"(?i)(?<![\\w:])\\[?(?:[0-9a-f]{1,4}:)*(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4})*)?\\]?(?![\\w])",
+	"(?i)(?<![\\w:])\\[?(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}\\]?(?![\\w])",
+	# Not a source file: `net.gd:12` is where an error came from.
+	"(?i)(?<![/\\\\.\\w])[a-z0-9-]+(\\.[a-z0-9-]+)*\\.(?!(?:gd|rs|cpp|h|mm|tscn|tres|json|ts)\\b)[a-z]{2,}(?=:\\d)",
 ]
 ## The game's own words just before a host it logs (net.gd: joining, failing to).
-const HOST_PHRASES := "(?i)(connecting to|connect to|reach) [^\\s:]+"
+const HOST_PHRASES := "(?i)\\b(connecting to|connect to|reach) [^\\s:,)]+"
 ## An account name shorter than this is too likely to be an ordinary word to write over.
 const MIN_ACCOUNT_NAME := 3
 
@@ -72,6 +76,7 @@ static func public_args(args: PackedStringArray) -> Array[String]:
 ## `account` name becomes `<user>`, and addresses and the host after "connecting to" become
 ## `<address>`.
 static func scrub(text: String, folders: Array[String], account := "") -> String:
+	var original := text
 	for folder in folders:
 		if folder.is_empty():
 			continue
@@ -87,6 +92,9 @@ static func scrub(text: String, folders: Array[String], account := "") -> String
 		var name := RegEx.create_from_string("(?i)(?<![\\w])" + _escape(account) + "(?![\\w])")
 		if name.is_valid():
 			text = name.sub(text, "<user>", true)
+	# A regex that gave up returns "": say so rather than send an empty log as if it were one.
+	if text.is_empty() and not original.is_empty():
+		return "(log left out: it could not be cleaned of addresses)\n"
 	return text
 
 
