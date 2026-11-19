@@ -60,3 +60,13 @@ func test_the_menu_shows_only_for_a_player_who_gave_no_mode() -> void:
 	assert_bool(NetSession.wants_menu(PackedStringArray(), true)).is_false()
 	for args: Array in [["--connect=1.2.3.4"], ["--server"], ["--solo"], ["--bot=walk"], ["--net-report-after=60"]]:
 		assert_bool(NetSession.wants_menu(PackedStringArray(args), false)).override_failure_message(str(args)).is_false()
+
+
+func test_the_server_perf_log_becomes_the_servers_own_perf_log() -> void:
+	var user := PackedStringArray(["--perf-log=/tmp/client.ndjson", "--server-perf-log=/tmp/server.ndjson", "--perf-spike-ms=20"])
+	var args := SoloServer.server_args(7801, user, "", "log.txt")
+	assert_bool(args.has("--perf-log=/tmp/server.ndjson")).is_true()
+	# The client's own log stays the client's: two processes writing one file lose lines.
+	assert_bool(args.has("--perf-log=/tmp/client.ndjson")).is_false()
+	assert_bool(args.has("--server-perf-log=/tmp/server.ndjson")).is_false()
+	assert_bool(args.has("--perf-spike-ms=20")).is_true()

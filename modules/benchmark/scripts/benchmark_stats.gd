@@ -45,3 +45,48 @@ static func worst_hitches(log: String, from: float, to: float, count: int) -> Ar
 		found.append({"t": t, "ms": float(rec["spike_ms"]), "zones": rec.get("zones", {}), "compiles": rec.get("compiles", {})})
 	found.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["ms"]) > float(b["ms"]))
 	return found.slice(0, count)
+
+
+## Numbers the perf module's samples hold, averaged over `samples`: what was drawn and how
+## long it took, the frame budget (PerfBudget) and the visible and shadow passes. `gpu_ms`
+## only from samples that have it (a driver that cannot time the GPU leaves it out); `driver`
+## is the last sample's.
+static func average_samples(samples: Array[Dictionary]) -> Dictionary:
+	var out := {}
+	if samples.is_empty():
+		return out
+	for key: String in ["draw_calls", "objects_drawn", "primitives", "gpu_ms", "render_cpu_ms"]:
+		var values: Array[float] = []
+		for s in samples:
+			if s.has(key):
+				values.append(float(s[key]))
+		if not values.is_empty():
+			out[key] = snappedf(_mean(values), 0.01)
+	for group: String in ["budget", "visible", "shadow"]:
+		var totals: Dictionary[String, Array] = {}
+		for s in samples:
+			var d: Variant = s.get(group)
+			if not d is Dictionary:
+				continue
+			for key: String in d:
+				if not totals.has(key):
+					totals[key] = []
+				totals[key].append(float(d[key]))
+		if totals.is_empty():
+			continue
+		var avg := {}
+		for key: String in totals:
+			var values: Array[float] = []
+			values.assign(totals[key])
+			avg[key] = snappedf(_mean(values), 0.01)
+		out[group] = avg
+	if samples[-1].has("driver"):
+		out["driver"] = str(samples[-1]["driver"])
+	return out
+
+
+static func _mean(values: Array[float]) -> float:
+	var sum := 0.0
+	for v in values:
+		sum += v
+	return sum / maxi(values.size(), 1)
