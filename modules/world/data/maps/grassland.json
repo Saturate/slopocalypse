@@ -1,5 +1,5 @@
 {
-  "_comment": "A map recipe (#331, decision 0010): the land before anything is placed on it. size: the square map's side in metres, centred on the origin. relief: metres from the lowest to the highest the noise reaches. hill_mask: a slow noise (frequency, 1 / metres) whose value between from and to fades hilly country in; outside it lies near-flat lowland. layers: noise summed for the height, each with frequency, amplitude (share of relief), octaves, and masked (only where the hill mask says hilly, and only rising out of the lowland). walkable: max_grade (rise per metre a player still walks easily), min_share (the least share of the map that gentle), flat_grade and min_flat_share (near-flat ground for towns and fields, and how much of it the map needs), hillside_grade and min_hillside_share (real hillsides: the least share of the map that rises at least this much); the tests hold every seed to these. water: ponds where water would collect: the land is surveyed every cell metres, a basin at least min_depth deep and min_area square metres becomes a pond (shrunk to max_area by lowering its level), its level freeboard metres below where it would spill, its bed deepen times deeper than the land. biomes: noise fields for forest, dry grass and rock (frequency 1 / metres, threshold where a field starts), then shaped by the land: rock shows on ground steeper than rock_grade_from, fully past rock_grade_to, in patches rock_patch_frequency (1 / metres) apart; woods grow on the hills (hill_forest of the way) and in a few broad woodland regions (woodland_frequency, at most lowland_forest), the forest field cutting clearings into them; none in water. map_metres_per_texel: the terrain shader's biome map resolution.",
+  "_comment": "A map recipe (#331, decision 0010): the land before anything is placed on it. size: the square map's side in metres, centred on the origin. relief: metres from the lowest to the highest the noise reaches. hill_mask: a slow noise (frequency, 1 / metres) whose value between from and to fades hilly country in; outside it lies near-flat lowland. layers: noise summed for the height, each with frequency, amplitude (share of relief), octaves, and masked (only where the hill mask says hilly, and only rising out of the lowland). walkable: max_grade (rise per metre a player still walks easily), min_share (the least share of the map that gentle), flat_grade and min_flat_share (near-flat ground for towns and fields, and how much of it the map needs), hillside_grade and min_hillside_share (real hillsides: the least share of the map that rises at least this much); the tests hold every seed to these. water: ponds where water would collect: the land is surveyed every cell metres, a basin at least min_depth deep and min_area square metres becomes a pond (shrunk to max_area by lowering its level), its level freeboard metres below where it would spill, its bed deepen times deeper than the land. biomes: noise fields for forest, dry grass and rock (frequency 1 / metres, threshold where a field starts), then shaped by the land: rock shows on ground steeper than rock_grade_from, fully past rock_grade_to, in patches rock_patch_frequency (1 / metres) apart; woods grow on the hills (hill_forest of the way) and in a few broad woodland regions (woodland_frequency, at most lowland_forest), the forest field cutting clearings into them; none in water. map_metres_per_texel: the terrain shader's biome map resolution. zones: the land classified every cell metres into water, wetland (within wet_distance of water), slope (steeper than slope_grade), hilltop (hilltop_rise metres above the ground hilltop_ring metres round it), forest (woods above forest_cutoff), flat (under flat_grade) and open (the rest); touching cells of a kind make a zone. uses: per use, the kinds it may go on and the smallest area (square metres) it needs. spawn_margin and spawn_edge: the player camp's spot, between this many metres from the map's edge.",
   "size": 2048.0,
   "relief": 360.0,
   "layers": [
@@ -56,5 +56,50 @@
     "rock_patch_frequency": 0.018,
     "lowland_forest": 0.8,
     "woodland_frequency": 0.0007
+  },
+  "zones": {
+    "cell": 16.0,
+    "slope_grade": 0.16,
+    "flat_grade": 0.06,
+    "forest_cutoff": 0.5,
+    "wet_distance": 40.0,
+    "hilltop_rise": 4.0,
+    "hilltop_ring": 96.0,
+    "spawn_margin": 40.0,
+    "spawn_edge": 220.0,
+    "uses": {
+      "city": {
+        "kinds": [
+          "flat"
+        ],
+        "min_area": 40000.0
+      },
+      "town": {
+        "kinds": [
+          "flat"
+        ],
+        "min_area": 12000.0
+      },
+      "farm": {
+        "kinds": [
+          "flat",
+          "open"
+        ],
+        "min_area": 6000.0
+      },
+      "camp": {
+        "kinds": [
+          "flat",
+          "open"
+        ],
+        "min_area": 2500.0
+      },
+      "hilltop": {
+        "kinds": [
+          "hilltop"
+        ],
+        "min_area": 500.0
+      }
+    }
   }
 }
