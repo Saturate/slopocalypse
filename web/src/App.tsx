@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { get, isStatus, type Status } from "./api.ts";
+import { MapsView } from "./MapsView.tsx";
 
 type Tab = "status" | "maps" | "live";
 
 const TABS: { id: Tab; label: string; ready: boolean }[] = [
 	{ id: "status", label: "Status", ready: true },
-	{ id: "maps", label: "Map viewer", ready: false },
+	{ id: "maps", label: "Map viewer", ready: true },
 	{ id: "live", label: "Live map", ready: false },
 ];
 
@@ -23,7 +24,7 @@ export function App() {
 					))}
 				</nav>
 			</header>
-			<main>{tab === "status" ? <StatusView /> : <p className="dim">Coming next.</p>}</main>
+			<main>{tab === "status" ? <StatusView /> : tab === "maps" ? <MapsView /> : <p className="dim">Coming next.</p>}</main>
 		</div>
 	);
 }

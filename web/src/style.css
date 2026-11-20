@@ -11,3 +11,19 @@ button.on { border-color: var(--accent); color: var(--accent); }
 button:disabled { opacity: .45; cursor: default; }
 .dim { color: var(--dim); }
 .error { color: var(--bad); }
+.app:has(.maps) { max-width: none; }
+.maps { display: grid; grid-template-columns: 1fr 340px; gap: 16px; margin-top: 12px; height: calc(100vh - 90px); }
+.maps aside { overflow-y: auto; }
+.maps .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.maps input[type="number"] { width: 90px; }
+.maps input, .maps select, .maps textarea { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font: inherit; }
+.maps textarea { width: 100%; height: 280px; font: 12px/1.4 ui-monospace, monospace; }
+.maps table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.maps td { border-bottom: 1px solid var(--line); padding: 2px 4px; }
+.maps td:last-child { text-align: right; }
+.view { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; min-height: 300px; }
+.view canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+.badge { position: absolute; left: 8px; background: #000a; padding: 2px 8px; border-radius: 4px; font-size: 13px; pointer-events: none; }
+.badge.top { top: 8px; }
+.badge.bottom { bottom: 8px; font-family: ui-monospace, monospace; }
+@media (max-width: 800px) { .maps { grid-template-columns: 1fr; height: auto; } .view { height: 70vh; } }

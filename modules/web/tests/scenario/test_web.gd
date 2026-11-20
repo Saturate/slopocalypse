@@ -165,3 +165,16 @@ func test_the_admin_app_is_served_behind_the_password() -> void:
 	for f in ["index.html", "app.js"]:
 		DirAccess.remove_absolute(dir + "/" + f)
 	DirAccess.remove_absolute(dir)
+
+
+func test_a_page_can_answer_a_few_frames_later() -> void:
+	_web.call(&"set_password", "hunter2")
+	var polls := [0]
+	_web.call(&"add_admin_page", "/admin/slow", "", func(_req: Dictionary) -> Variant:
+		return {"wait": func() -> Variant:
+			polls[0] += 1
+			return [200, "text/plain", "done"] if polls[0] >= 3 else null})
+	var reply := await _ask("GET /admin/slow HTTP/1.1\r\n%s\r\n" % _basic("hunter2"))
+	assert_str(reply).starts_with("HTTP/1.1 200")
+	assert_str(reply).ends_with("done")
+	assert_int(polls[0]).is_equal(3)

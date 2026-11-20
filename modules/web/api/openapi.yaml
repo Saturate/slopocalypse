@@ -19,7 +19,77 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+  /admin/api/v1/maps:
+    get:
+      summary: The map recipes on this server (admin).
+      security: [{ basic: [] }]
+      responses:
+        "200":
+          description: Recipe names.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MapList"
+  /admin/api/v1/maps/{name}:
+    get:
+      summary: One map recipe as stored (admin).
+      security: [{ basic: [] }]
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The recipe (its fields are listed in TWEAKING.md).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "404":
+          description: No such recipe.
+  /admin/api/v1/maps/render:
+    post:
+      summary: Render a recipe and seed (admin). Takes seconds; the request waits for it.
+      security: [{ basic: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenderRequest"
+      responses:
+        "200":
+          description: The render.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenderResult"
+        "400":
+          description: Bad input or a recipe that cannot be built.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Still working after a minute; ask again.
+  /admin/api/v1/maps/image/{key}.png:
+    get:
+      summary: A render's image, kept for a while (admin).
+      security: [{ basic: [] }]
+      parameters:
+        - { name: key, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: PNG.
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        "404":
+          description: Not kept any more.
 components:
+  securitySchemes:
+    basic:
+      type: http
+      scheme: basic
   schemas:
     Status:
       type: object
@@ -63,3 +133,65 @@ components:
           type: integer
         pays:
           type: integer
+    MapList:
+      type: object
+      required: [maps]
+      properties:
+        maps:
+          type: array
+          items: { type: string }
+    RenderRequest:
+      type: object
+      required: [map]
+      properties:
+        map: { type: string }
+        seed: { type: integer, minimum: 0 }
+        pixels: { type: integer, minimum: 64, maximum: 1024 }
+        layers:
+          type: array
+          items:
+            type: string
+            enum: [zones, settlements, roads, earthworks]
+        recipe:
+          type: object
+          additionalProperties: true
+          description: An edited recipe to render instead of the stored one (not saved).
+    RenderResult:
+      type: object
+      required: [image, stats]
+      properties:
+        image: { type: string, description: Path of the render's PNG. }
+        stats:
+          type: object
+          required: [summary, grid]
+          properties:
+            summary:
+              type: object
+              additionalProperties:
+                oneOf: [{ type: string }, { type: number }]
+            grid:
+              $ref: "#/components/schemas/Grid"
+    Grid:
+      type: object
+      required: [left, top, size, cells, heights, zones, kinds]
+      description: A coarse grid over the map for the hover readout, row by row from the top left.
+      properties:
+        left: { type: number }
+        top: { type: number }
+        size: { type: number }
+        cells: { type: integer }
+        heights:
+          type: array
+          items: { type: number }
+        zones:
+          type: array
+          description: Index into kinds per cell, -1 for none.
+          items: { type: integer }
+        kinds:
+          type: array
+          items: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }

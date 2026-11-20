@@ -37,6 +37,11 @@ func _ready() -> void:
 	var scene: PackedScene = load(FLAT_SCENE if Net.session_args().has("--world=flat") else SCENE)
 	var world := scene.instantiate()
 	add_child(world)
+	# The map viewer on a dedicated server's admin pages (the web module serves them).
+	if Net.mode == Net.Mode.SERVER:
+		var api := MapApi.new()
+		api.name = "MapApi"
+		add_child(api)
 	_voxels = world.get_node_or_null("Terrain") as VoxelWorld
 	_scenery = world.get_node_or_null("Scenery") as SceneryScatter
 	if _voxels != null and _scenery != null:
