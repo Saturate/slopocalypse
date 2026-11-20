@@ -1,0 +1,14 @@
+{
+  "_comment": "Items on the ground and picking them up (#424). range: metres from the eye an item can be picked up; loot_reach_extra: how much further a crate or body's loot screen stays open. facing: how squarely you must face an item (the cosine of the angle off the crosshair: 0.8 is about 37 degrees either way, so a small item need not be hit precisely). ground_scale: how much bigger than in the hand an item is drawn on the ground, and min_size: the least metres across its longest side, so small things don't vanish in grass. outline: the glow added over the item a press would pick up (colour and strength).",
+  "range": 2.6,
+  "loot_reach_extra": 1.0,
+  "facing": 0.8,
+  "ground_scale": 1.5,
+  "min_size": 0.3,
+  "outline": [
+    1.0,
+    0.75,
+    0.3,
+    0.28
+  ]
+}

@@ -34,6 +34,7 @@ JSON numbers are plain numbers (`2.5`), pairs like `[min, max]` are ranges the g
 | What guns you start with | `modules/weapons/data/parts.json` | `default_build`, `default_secondary`, `builds` |
 | New gun parts or builds | `modules/weapons/data/parts.json` and `modules/inventory/data/items.json` | a part needs an entry in both (stats there, grid size and name here); meshes are code (the bolt-action's parts are voxel models from `modules/voxkit/generators/bolt_rifle.gd`, whose mount points must match `rcv_bolt`'s `mounts`) |
 | Backpack size, starting kit | `modules/inventory/data/items.json` | `grid`, `starting_kit` |
+| Picking things up, items on the ground | `modules/inventory/data/pickup.json` | `range` (metres from the eye), `loot_reach_extra` (how much further a crate or body stays open), `facing` (how squarely to face an item: the cosine of the angle off the crosshair), `ground_scale` (items drawn this much bigger on the ground), `min_size` (metres across at least), `outline` (the glow over the item a press picks up: colour and strength) |
 | Item sizes and names | `modules/inventory/data/items.json` | `items` |
 | Medkit healing | `modules/inventory/data/items.json` | `items.medkit.use`: `heal`, `seconds` |
 | What enemies carry | `modules/inventory/data/items.json` | `npc_loot`: `rolls`, `items` (weights) |

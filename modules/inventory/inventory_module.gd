@@ -15,14 +15,9 @@ const BURIED_DEPTH := 1.0
 const PROBE_ABOVE_GROUND := 3.0
 const PROBE_ABOVE_SELF := 1.5
 const ITEMS := "res://modules/inventory/data/items.json"
-## Reach for picking things up, metres from the eye, and how squarely you must face it.
-const PICKUP_RANGE := 2.6
-const PICKUP_FACING := 0.8
 const DROP_DISTANCE := 1.0
 ## Gear slots whose contents other modules arm the player with.
 const WEAPON_SLOTS: Array[String] = ["primary", "secondary"]
-## How far from a body or crate you may be while its loot screen stays open.
-const LOOT_REACH := PICKUP_RANGE + 1.0
 ## Where the crosshair aims on a crate or a body, above its origin.
 const CRATE_AIM := 0.3
 ## How far from where it died a body's ragdoll may lie: it is matched to a body up to 2 m off
@@ -357,13 +352,19 @@ func _make_loot(data: Variant) -> Node:
 	return loot
 
 
+## How far from a body or crate you may be while its loot screen stays open.
+static func _loot_reach() -> float:
+	return PickupRules.number("range") + PickupRules.number("loot_reach_extra")
+
+
 ## The loot `player` would pick up now: the nearest within reach, roughly in front.
 func loot_in_reach(player: Node3D) -> LootItem:
 	var head := player.get_node_or_null("Head/Camera") as Node3D
 	var eye := head.global_position if head != null else player.global_position + Vector3.UP * 1.6
 	var forward := -head.global_transform.basis.z if head != null else -player.global_transform.basis.z
 	var best: LootItem = null
-	var best_facing := PICKUP_FACING
+	var best_facing := PickupRules.number("facing")
+	var pickup_range := PickupRules.number("range")
 	for node: Node in get_tree().get_nodes_in_group(&"loot"):
 		var loot := node as LootItem
 		if loot == null or loot.is_queued_for_deletion():
@@ -371,7 +372,7 @@ func loot_in_reach(player: Node3D) -> LootItem:
 		var to := loot.global_position - eye
 		var facing := forward.dot(to.normalized())
 		# What the crosshair is closest to wins, not what is nearest.
-		if to.length() < PICKUP_RANGE and facing > best_facing:
+		if to.length() < pickup_range and facing > best_facing:
 			best = loot
 			best_facing = facing
 	if best == null:
@@ -396,7 +397,7 @@ func container_in_reach(player: Node3D) -> Node3D:
 func _container_facing(eye: Vector3, forward: Vector3) -> Array:
 	var best: Node3D = null
 	# Crates and bodies are big; a looser aim still counts.
-	var best_facing := PICKUP_FACING - 0.1
+	var best_facing := PickupRules.number("facing") - 0.1
 	for group: StringName in [&"crates", &"loot_bodies"]:
 		for node: Node in get_tree().get_nodes_in_group(group):
 			var target := node as Node3D
@@ -404,7 +405,7 @@ func _container_facing(eye: Vector3, forward: Vector3) -> Array:
 				continue
 			var to := _aim_point(target) - eye
 			var facing := forward.dot(to.normalized())
-			if to.length() < PICKUP_RANGE + 0.4 and facing > best_facing:
+			if to.length() < PickupRules.number("range") + 0.4 and facing > best_facing:
 				best = target
 				best_facing = facing
 	return [best, best_facing] if best != null else []
@@ -463,11 +464,11 @@ func _on_player_interact(payload: Dictionary) -> void:
 func _refusal(player: Node3D, target: Node3D) -> String:
 	if target == null or not is_instance_valid(target) or target.is_queued_for_deletion():
 		return "gone"
-	var reach := PICKUP_RANGE
+	var reach := PickupRules.number("range")
 	if target is LootBody:
-		reach = LOOT_REACH + BODY_DRIFT
+		reach = _loot_reach() + BODY_DRIFT
 	elif target.is_in_group(&"crates"):
-		reach = LOOT_REACH
+		reach = _loot_reach()
 	elif not target is LootItem:
 		return "not loot, a crate or a body"
 	if player.global_position.distance_to(target.global_position) > reach:
@@ -816,7 +817,7 @@ func _session(peer: int) -> InventoryGear:
 	var player := _player_of(peer)
 	if grid == null or not is_instance_valid(node) or player == null or player.get_meta(&"dead", false):
 		return null
-	var reach := LOOT_REACH + (BODY_DRIFT if node is LootBody else 0.0)
+	var reach := _loot_reach() + (BODY_DRIFT if node is LootBody else 0.0)
 	if player.global_position.distance_to(node.global_position) > reach:
 		return null
 	return grid
