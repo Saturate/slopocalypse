@@ -138,8 +138,23 @@ func _claim(spot: Vector2, kind: String, rule: Dictionary, occupancy: MapOccupan
 	var foot := Rect2(spot - Vector2(float(size[0]), float(size[1])) / 2.0, Vector2(float(size[0]), float(size[1])))
 	if not occupancy.claim(foot):
 		return false
-	_sites.append({"kind": kind, "centre": spot, "footprint": foot, "level": land.height(spot.x, spot.y), "remoteness": remoteness.at(spot.x, spot.y)})
+	var level := land.height(spot.x, spot.y)
+	# Where a track may leave it: the middle of each side.
+	var connectors: Array[Vector3] = [
+		Vector3(spot.x, level, foot.position.y), Vector3(spot.x, level, foot.end.y),
+		Vector3(foot.position.x, level, spot.y), Vector3(foot.end.x, level, spot.y),
+	]
+	_sites.append({"kind": kind, "centre": spot, "footprint": foot, "level": level, "remoteness": remoteness.at(spot.x, spot.y), "connectors": connectors})
 	return true
+
+
+## Whether the straight line from `a` to `b` passes through `rect` (sampled every metre).
+static func segment_hits(rect: Rect2, a: Vector2, b: Vector2) -> bool:
+	var steps := maxi(ceili(a.distance_to(b)), 1)
+	for k in steps + 1:
+		if rect.has_point(a.lerp(b, float(k) / steps)):
+			return true
+	return false
 
 
 ## How far `p` lies outside `rect` (0 inside).
