@@ -254,7 +254,23 @@ func _on_connection_failed() -> void:
 		Log.info(&"net", "solo server not up yet; retrying")
 		_start_client()
 		return
-	_fail("Could not reach %s:%d. Is the host running, and is the address right?" % [host, port])
+	if mode == Mode.SOLO:
+		_fail("Could not reach the local server on port %d." % port)
+		return
+	_fail(join_help(host, port))
+
+
+## What to check when joining `address`:`at` fails (#414). A playtester could not reach a
+## server others joined fine; their network most likely blocked outbound UDP, which nothing
+## in the old message pointed at.
+static func join_help(address: String, at: int) -> String:
+	return "\n".join(PackedStringArray([
+		"Could not reach %s:%d. Things to check:" % [address, at],
+		"- The address and port are right, and the server is running.",
+		"- The server's firewall and router let in UDP port %d (the game uses UDP, not TCP)." % at,
+		"- Your own network allows outgoing UDP; some work, school and public networks block it.",
+		"- A VPN such as Tailscale or ZeroTier gets round a blocked port: join the host's VPN address instead.",
+	]))
 
 
 ## A player goes back to the menu; a tool-run client left without a server would spam
