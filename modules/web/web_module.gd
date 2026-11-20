@@ -42,7 +42,7 @@ const MIN_PASSWORD_LENGTH := 12
 const REALM := "Slopocalypse admin"
 ## On public answers only: any site may read the status (dashboards), never an admin page.
 const PUBLIC := {"Access-Control-Allow-Origin": "*"}
-const REASONS := {200: "OK", 202: "Accepted", 503: "Service Unavailable", 204: "No Content", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden",
+const REASONS := {200: "OK", 202: "Accepted", 302: "Found", 503: "Service Unavailable", 204: "No Content", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden",
 	404: "Not Found", 405: "Method Not Allowed", 413: "Payload Too Large", 415: "Unsupported Media Type",
 	429: "Too Many Requests", 500: "Internal Server Error"}
 
@@ -354,6 +354,12 @@ func _handle_admin(req: Dictionary) -> Variant:
 	req["body"] = bytes.get_string_from_utf8() if not bytes.is_empty() else ""
 	var path := str(req["path"])
 	if path == "/admin" or path == "/admin/":
+		# The app is the admin (decision 0011); the plain list stays at /admin/pages, and is the
+		# front door of a server without the app.
+		if _admin.has(APP_PATH):
+			return [302, "text/plain", "", {"Location": APP_PATH + "/"}]
+		return [200, "text/html; charset=utf-8", _admin_index()]
+	if path == "/admin/pages":
 		return [200, "text/html; charset=utf-8", _admin_index()]
 	# The longest registered path that the request is at or under.
 	var best := ""

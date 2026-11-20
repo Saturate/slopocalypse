@@ -150,11 +150,18 @@ static func _check_fields(data: Dictionary, wanted: Dictionary, at: String) -> S
 
 
 ## Everything for one view: {image (Image), stats (Dictionary)}. `layers` names what to draw
-## over the land (ALL_LAYERS when empty).
-static func make(recipe: Dictionary, seed_value: int, pixels: int, layers: PackedStringArray) -> Dictionary:
+## over the land (ALL_LAYERS when empty); `region` the square of the map to draw (all of it
+## when empty).
+static func make(recipe: Dictionary, seed_value: int, pixels: int, layers: PackedStringArray, region := Rect2()) -> Dictionary:
+	var world := build(recipe, seed_value)
+	return {"image": draw(world, pixels, layers, region), "stats": world_stats(world, layers)}
+
+
+## The map's stages built once: {land, zones, places, net, works (each null when its recipe
+## section is left out), built_ms, low, high (the land's height range, so a close-up is
+## coloured like the whole map)}. Drawing it again, or a part of it, needs no rebuild.
+static func build(recipe: Dictionary, seed_value: int) -> Dictionary:
 	var started := Time.get_ticks_msec()
-	if layers.is_empty():
-		layers = ALL_LAYERS.split(",")
 	var land := WorldLand.new(recipe, seed_value)
 	var zones: LandZones = null
 	var places: Settlements = null
@@ -172,24 +179,52 @@ static func make(recipe: Dictionary, seed_value: int, pixels: int, layers: Packe
 	var works_cfg: Variant = recipe.get("earthworks")
 	if works_cfg is Dictionary and places != null:
 		works = Earthworks.new(land, places, net, works_cfg)
-	var built := Time.get_ticks_msec() - started
+	var world := {"land": land, "zones": zones, "places": places, "net": net, "works": works}
+	var b := land.bounds()
+	var low := INF
+	var high := -INF
+	for j in GRID_CELLS:
+		for i in GRID_CELLS:
+			var h := land.height(b.position.x + (i + 0.5) * b.size.x / GRID_CELLS, b.position.y + (j + 0.5) * b.size.y / GRID_CELLS)
+			low = minf(low, h)
+			high = maxf(high, h)
+	world["low"] = low
+	world["high"] = high
+	world["built_ms"] = Time.get_ticks_msec() - started
+	return world
+
+
+## A built map drawn `pixels` square: `region` of it (all of it when empty) with `layers`.
+static func draw(world: Dictionary, pixels: int, layers: PackedStringArray, region := Rect2()) -> Image:
+	if layers.is_empty():
+		layers = ALL_LAYERS.split(",")
+	var land: WorldLand = world["land"]
+	if region.size.x <= 0.0:
+		region = land.bounds()
 	# Without the earthworks layer the land is drawn as it was before anything shaped it.
-	var shaped := works if layers.has("earthworks") else null
-	var image := render(land, maxi(pixels, 16), shaped)
-	if zones != null and layers.has("zones"):
-		draw_zones(image, zones)
-	if net != null and layers.has("roads"):
-		draw_roads(image, net, layers.has("earthworks"))
-	if places != null and layers.has("settlements"):
-		draw_settlements(image, places)
-	return {"image": image, "stats": stats(land, zones, places, net, shaped, built)}
+	var shaped: Earthworks = world["works"] if layers.has("earthworks") else null
+	var image := render(land, maxi(pixels, 16), shaped, region, Vector2(float(world["low"]), float(world["high"])))
+	if world["zones"] != null and layers.has("zones"):
+		draw_zones(image, world["zones"], region)
+	if world["net"] != null and layers.has("roads"):
+		draw_roads(image, world["net"], layers.has("earthworks"), region)
+	if world["places"] != null and layers.has("settlements"):
+		draw_settlements(image, world["places"], region)
+	return image
+
+
+## The summary and hover grid for a built map, as `stats` gives them.
+static func world_stats(world: Dictionary, layers: PackedStringArray) -> Dictionary:
+	var shaped: Earthworks = world["works"] if layers.is_empty() or layers.has("earthworks") else null
+	return stats(world["land"], world["zones"], world["places"], world["net"], shaped, int(world["built_ms"]))
 
 
 ## The land seen from above, north (-z) up: hill shading over green lowland turning brown
 ## up high, tinted by biome (dark green woods, yellowed dry grass, grey rock), water blue by
-## depth.
-static func render(land: WorldLand, pixels: int, works: Earthworks = null) -> Image:
-	var b := land.bounds()
+## depth. `region` is the square drawn (all of the map when empty); `heights` the range the
+## colours run over (the drawn part's own when zero).
+static func render(land: WorldLand, pixels: int, works: Earthworks = null, region := Rect2(), heights_range := Vector2.ZERO) -> Image:
+	var b := region if region.size.x > 0.0 else land.bounds()
 	var step := b.size.x / pixels
 	var heights := PackedFloat32Array()
 	heights.resize(pixels * pixels)
@@ -203,6 +238,9 @@ static func render(land: WorldLand, pixels: int, works: Earthworks = null) -> Im
 			heights[j * pixels + i] = h
 			low = minf(low, h)
 			high = maxf(high, h)
+	if heights_range != Vector2.ZERO:
+		low = heights_range.x
+		high = heights_range.y
 	var image := Image.create(pixels, pixels, false, Image.FORMAT_RGB8)
 	var light := LIGHT.normalized()
 	for j in pixels:
@@ -219,19 +257,26 @@ static func render(land: WorldLand, pixels: int, works: Earthworks = null) -> Im
 			if not is_nan(level) and level > h:
 				image.set_pixel(i, j, SHALLOW.lerp(DEEP, clampf((level - h) / DEEP_AT, 0.0, 1.0)))
 				continue
-			var t := (h - low) / maxf(high - low, 0.001)
+			var t := clampf((h - low) / maxf(high - low, 0.001), 0.0, 1.0)
 			var ground := LOW.lerp(HIGH, t)
-			ground = ground.lerp(DRY, land.dry(x, z) * 0.5)
-			ground = ground.lerp(FOREST, land.forest(x, z) * 0.85)
-			ground = ground.lerp(ROCK, land.rock(x, z) * 0.8)
+			# The slope and the woods from what this pass already has: each would cost several
+			# more noise samples a pixel. The slope spans about WorldLand.GRADE_STEP either side
+			# whatever the zoom, so rock does not shift when a close-up replaces the overview.
+			var reach := maxi(roundi(WorldLand.GRADE_STEP / step), 1)
+			var dx := heights[j * pixels + mini(i + reach, pixels - 1)] - heights[j * pixels + maxi(i - reach, 0)]
+			var dz := heights[mini(j + reach, pixels - 1) * pixels + i] - heights[maxi(j - reach, 0) * pixels + i]
+			var slope := Vector2(dx, dz).length() / (2.0 * reach * step)
+			var woods := land.forest(x, z)
+			ground = ground.lerp(DRY, land.dry(x, z, woods) * 0.5)
+			ground = ground.lerp(FOREST, woods * 0.85)
+			ground = ground.lerp(ROCK, land.rock(x, z, slope) * 0.8)
 			image.set_pixel(i, j, ground * shade)
 	return image
 
 
 ## Thin dark lines where one zone meets another.
-static func draw_zones(image: Image, zones: LandZones) -> void:
-	var land := zones.land
-	var b := land.bounds()
+static func draw_zones(image: Image, zones: LandZones, region := Rect2()) -> void:
+	var b := region if region.size.x > 0.0 else zones.land.bounds()
 	var pixels := image.get_width()
 	var step := b.size.x / pixels
 	var ids := PackedInt32Array()
@@ -247,11 +292,10 @@ static func draw_zones(image: Image, zones: LandZones) -> void:
 			image.set_pixel(i, j, image.get_pixel(i, j).lerp(ZONE_EDGE, 0.35))
 
 
-
 ## The city's square in red, towns' in orange (drawn twice as thick as zone lines), the
 ## camp as a white dot.
-static func draw_settlements(image: Image, places: Settlements) -> void:
-	var b := places.zones.land.bounds()
+static func draw_settlements(image: Image, places: Settlements, region := Rect2()) -> void:
+	var b := region if region.size.x > 0.0 else places.zones.land.bounds()
 	var pixels := image.get_width()
 	var step := b.size.x / pixels
 	var squares: Array = []
@@ -262,33 +306,35 @@ static func draw_settlements(image: Image, places: Settlements) -> void:
 	for entry: Array in squares:
 		var foot: Rect2 = entry[0]
 		var colour: Color = entry[1]
-		var x0 := int((foot.position.x - b.position.x) / step)
-		var y0 := int((foot.position.y - b.position.y) / step)
-		var x1 := int((foot.end.x - b.position.x) / step)
-		var y1 := int((foot.end.y - b.position.y) / step)
+		var x0 := floori((foot.position.x - b.position.x) / step)
+		var y0 := floori((foot.position.y - b.position.y) / step)
+		var x1 := floori((foot.end.x - b.position.x) / step)
+		var y1 := floori((foot.end.y - b.position.y) / step)
 		for t in 2:
-			for x in range(x0, x1 + 1):
+			for x in range(maxi(x0, 0), mini(x1, pixels - 1) + 1):
 				for y: int in [y0 + t, y1 - t]:
-					if x >= 0 and y >= 0 and x < pixels and y < pixels:
+					if y >= 0 and y < pixels:
 						image.set_pixel(x, y, colour)
-			for y in range(y0, y1 + 1):
+			for y in range(maxi(y0, 0), mini(y1, pixels - 1) + 1):
 				for x: int in [x0 + t, x1 - t]:
-					if x >= 0 and y >= 0 and x < pixels and y < pixels:
+					if x >= 0 and x < pixels:
 						image.set_pixel(x, y, colour)
 	var camp := places.camp()
-	var ci := int((camp.x - b.position.x) / step)
-	var cj := int((camp.y - b.position.y) / step)
+	var ci := floori((camp.x - b.position.x) / step)
+	var cj := floori((camp.y - b.position.y) / step)
 	for dj in range(-4, 5):
 		for di in range(-4, 5):
 			if di * di + dj * dj <= 16 and ci + di >= 0 and cj + dj >= 0 and ci + di < pixels and cj + dj < pixels:
 				image.set_pixel(ci + di, cj + dj, SPAWN)
 
 
-## Each road as a dark line as wide as the road (at least a pixel).
-static func draw_roads(image: Image, net: RoadNetwork, earthworks: bool) -> void:
-	var b := net.settlements.zones.land.bounds()
+## Each road as a dark line as wide as the road (at least a pixel). Up close the points are
+## further apart than the road is wide, so each step between them is filled in.
+static func draw_roads(image: Image, net: RoadNetwork, earthworks: bool, region := Rect2()) -> void:
+	var b := region if region.size.x > 0.0 else net.settlements.zones.land.bounds()
 	var pixels := image.get_width()
 	var step := b.size.x / pixels
+	var view := Rect2i(0, 0, pixels, pixels)
 	for road: Dictionary in net.roads():
 		var half := maxi(int(float(road["width"]) / step / 2.0), 0)
 		var points: PackedVector2Array = road["points"]
@@ -303,13 +349,14 @@ static func draw_roads(image: Image, net: RoadNetwork, earthworks: bool) -> void
 				for i in range(span.x, span.y + 1):
 					colours[i] = BRIDGE
 		for k in points.size():
-			var p := points[k]
-			var ci := int((p.x - b.position.x) / step)
-			var cj := int((p.y - b.position.y) / step)
-			for dj in range(-half, half + 1):
-				for di in range(-half, half + 1):
-					if ci + di >= 0 and cj + dj >= 0 and ci + di < pixels and cj + dj < pixels:
-						image.set_pixel(ci + di, cj + dj, colours[k])
+			var from := (points[k] - b.position) / step
+			var to := (points[mini(k + 1, points.size() - 1)] - b.position) / step
+			var steps := maxi(ceili(from.distance_to(to) / maxf(half, 1.0)), 1)
+			for s in steps:
+				var c := Vector2i(from.lerp(to, float(s) / steps).floor())
+				var dot := Rect2i(c - Vector2i(half, half), Vector2i(half * 2 + 1, half * 2 + 1)).intersection(view)
+				if dot.size.x > 0 and dot.size.y > 0:
+					image.fill_rect(dot, colours[k])
 
 
 ## What the viewer shows beside the map: a summary of the land, settlements and roads, and

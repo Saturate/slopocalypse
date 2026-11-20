@@ -87,3 +87,24 @@ func test_values_that_would_keep_a_render_busy_for_good_are_refused() -> void:
 		var recipe := stored.duplicate(true)
 		(cases[name] as Callable).call(recipe)
 		assert_str(MapRender.check(recipe)).override_failure_message(name).contains(name)
+
+
+func test_a_close_up_of_a_region_reuses_the_built_map() -> void:
+	var whole := JSON.stringify({"map": "grassland", "seed": 4, "pixels": 64, "layers": ["roads"]})
+	assert_int(int((await _wait(_ask("POST", "/admin/api/v1/maps/render", whole)))[0])).is_equal(200)
+	var close := JSON.stringify({"map": "grassland", "seed": 4, "pixels": 64, "layers": ["roads"], "region": {"left": -100, "top": -100, "size": 200}})
+	var started := Time.get_ticks_msec()
+	var reply := await _wait(_ask("POST", "/admin/api/v1/maps/render", close))
+	var took := Time.get_ticks_msec() - started
+	assert_int(int(reply[0])).is_equal(200)
+	assert_float(float((_json(reply)["region"] as Dictionary)["size"])).is_equal(200.0)
+	# Drawing 64 pixels of a kept map takes a fraction of building it again.
+	assert_int(took).is_less(int(_json(reply)["stats"]["summary"]["built in"].to_int()))
+
+
+func test_a_region_outside_the_map_or_too_small_is_refused() -> void:
+	for region: Dictionary in [{"left": 5000, "top": 0, "size": 200}, {"left": 0, "top": 0, "size": 4}, {"left": 0, "top": 0}]:
+		var body := JSON.stringify({"map": "grassland", "seed": 1, "pixels": 64, "region": region})
+		var reply: Variant = _ask("POST", "/admin/api/v1/maps/render", body)
+		assert_bool(reply is Array).override_failure_message(str(region)).is_true()
+		assert_int(int((reply as Array)[0])).override_failure_message(str(region)).is_equal(400)

@@ -156,11 +156,23 @@ components:
           type: object
           additionalProperties: true
           description: An edited recipe to render instead of the stored one (not saved).
+        region:
+          $ref: "#/components/schemas/Region"
+    Region:
+      type: object
+      required: [left, top, size]
+      description: A square of the map in metres (x from left, z from top), at least 32 m a side; the whole map when left out of a request.
+      properties:
+        left: { type: number }
+        top: { type: number }
+        size: { type: number }
     RenderResult:
       type: object
-      required: [image, stats]
+      required: [image, stats, region]
       properties:
         image: { type: string, description: Path of the render's PNG. }
+        region:
+          $ref: "#/components/schemas/Region"
         stats:
           type: object
           required: [summary, grid]

@@ -76,7 +76,9 @@ func test_the_admin_pages_ask_for_the_password_and_the_status_does_not() -> void
 	assert_str(asked).starts_with("HTTP/1.1 401")
 	assert_str(asked).contains("WWW-Authenticate: Basic")
 	assert_str(await _ask("GET /admin HTTP/1.1\r\n%s\r\n" % _basic("wrong"))).starts_with("HTTP/1.1 401")
-	assert_str(await _ask("GET /admin HTTP/1.1\r\n%s\r\n" % _basic("hunter2"))).starts_with("HTTP/1.1 200")
+	# In: the admin list, or the app's front door where the app is built.
+	var inside := await _ask("GET /admin HTTP/1.1\r\n%s\r\n" % _basic("hunter2"))
+	assert_bool(inside.begins_with("HTTP/1.1 200") or inside.begins_with("HTTP/1.1 302")).override_failure_message(inside.left(40)).is_true()
 	assert_str(await _ask("GET / HTTP/1.1\r\n\r\n")).starts_with("HTTP/1.1 200")
 
 
@@ -96,8 +98,8 @@ func test_an_admin_page_can_be_added_by_another_module() -> void:
 	var reply := await _ask("GET /admin/hello HTTP/1.1\r\n%s\r\n" % _basic("hunter2"))
 	assert_str(reply).starts_with("HTTP/1.1 200")
 	assert_str(reply).ends_with("hi")
-	# Listed on the admin page.
-	assert_str(await _ask("GET /admin HTTP/1.1\r\n%s\r\n" % _basic("hunter2"))).contains("/admin/hello")
+	# Listed on the admin pages list.
+	assert_str(await _ask("GET /admin/pages HTTP/1.1\r\n%s\r\n" % _basic("hunter2"))).contains("/admin/hello")
 
 
 func test_a_post_body_reaches_its_page() -> void:
@@ -124,7 +126,7 @@ func test_one_clients_guesses_do_not_lock_out_another_behind_a_trusted_proxy() -
 	for i in limit:
 		await _ask("GET /admin HTTP/1.1\r\nX-Real-IP: 203.0.113.9\r\n%s\r\n" % _basic("guess%d" % i))
 	assert_str(await _ask("GET /admin HTTP/1.1\r\nX-Real-IP: 203.0.113.9\r\n%s\r\n" % _basic("hunter2"))).starts_with("HTTP/1.1 429")
-	assert_str(await _ask("GET /admin HTTP/1.1\r\nX-Real-IP: 198.51.100.7\r\n%s\r\n" % _basic("hunter2"))).starts_with("HTTP/1.1 200")
+	assert_str(await _ask("GET /admin/pages HTTP/1.1\r\nX-Real-IP: 198.51.100.7\r\n%s\r\n" % _basic("hunter2"))).starts_with("HTTP/1.1 200")
 
 
 func test_odd_requests_get_a_plain_refusal() -> void:
@@ -160,8 +162,10 @@ func test_the_admin_app_is_served_behind_the_password() -> void:
 	# Only files that were there at start: no way out of the folder.
 	assert_str(await _ask("GET /admin/app/../../project.godot HTTP/1.1\r\n%s\r\n" % _basic("hunter2"))).starts_with("HTTP/1.1 404")
 	assert_str(await _ask("GET /admin/app/nope.js HTTP/1.1\r\n%s\r\n" % _basic("hunter2"))).starts_with("HTTP/1.1 404")
-	# Listed on the admin page.
-	assert_str(await _ask("GET /admin HTTP/1.1\r\n%s\r\n" % _basic("hunter2"))).contains("/admin/app/")
+	# The admin's front door goes straight to the app.
+	var front := await _ask("GET /admin HTTP/1.1\r\n%s\r\n" % _basic("hunter2"))
+	assert_str(front).starts_with("HTTP/1.1 302")
+	assert_str(front).contains("Location: /admin/app/")
 	for f in ["index.html", "app.js"]:
 		DirAccess.remove_absolute(dir + "/" + f)
 	DirAccess.remove_absolute(dir)

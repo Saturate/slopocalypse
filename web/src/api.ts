@@ -8,6 +8,7 @@ export type MapList = components["schemas"]["MapList"];
 export type RenderRequest = components["schemas"]["RenderRequest"];
 export type RenderResult = components["schemas"]["RenderResult"];
 export type Grid = components["schemas"]["Grid"];
+export type Region = components["schemas"]["Region"];
 export type Layer = NonNullable<RenderRequest["layers"]>[number];
 export const LAYERS: readonly Layer[] = ["zones", "settlements", "roads", "earthworks"];
 
@@ -59,8 +60,12 @@ function isGrid(v: unknown): v is Grid {
 	);
 }
 
+function isRegion(v: unknown): v is Region {
+	return isRecord(v) && typeof v["left"] === "number" && typeof v["top"] === "number" && typeof v["size"] === "number";
+}
+
 export function isRenderResult(v: unknown): v is RenderResult {
-	if (!isRecord(v) || typeof v["image"] !== "string") return false;
+	if (!isRecord(v) || typeof v["image"] !== "string" || !isRegion(v["region"])) return false;
 	const stats = v["stats"];
 	if (!isRecord(stats) || !isGrid(stats["grid"])) return false;
 	const summary = stats["summary"];
