@@ -177,6 +177,24 @@ func remove_limb(bones: Array[StringName], collapse_bone: StringName) -> void:
 		_collapsed.append(bone)
 
 
+## Where the body lies now: the middle of its bones, wherever it has rolled. Read from the
+## physics bodies while they simulate (the skeleton never sees them), from the skeleton once
+## settled (the bodies are gone then).
+func lying_at() -> Vector3:
+	var total := Vector3.ZERO
+	var count := 0
+	if not _settled and is_instance_valid(simulator):
+		for bone in simulator.get_children():
+			if bone is PhysicalBone3D:
+				total += (bone as PhysicalBone3D).global_position
+				count += 1
+	elif is_instance_valid(skeleton):
+		for i in skeleton.get_bone_count():
+			total += skeleton.global_transform * skeleton.get_bone_global_pose(i).origin
+			count += 1
+	return total / float(count) if count > 0 else global_position
+
+
 ## The LootBody this corpse stands in for, or null.
 func loot_body() -> Node3D:
 	if not has_meta(LINK):

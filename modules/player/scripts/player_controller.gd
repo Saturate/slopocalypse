@@ -164,8 +164,11 @@ func _physics_process(delta: float) -> void:
 
 func _physics_tick(delta: float) -> void:
 	if _intent.consume_interact():
-		# Whoever owns the thing in front of us (car, later loot) decides what happens.
-		EventBus.publish(&"player.interact", {"player": self})
+		# Whoever owns the thing in front of us (car, loot) decides what happens; `target` is
+		# what this player's own screen offered, if anything.
+		var aimed := _intent.consume_interact_target()
+		var target := get_node_or_null(aimed) if not aimed.is_empty() else null
+		EventBus.publish(&"player.interact", {"player": self, "target": target, "named": not aimed.is_empty()})
 		# Entering a car parks this player mid-step, which takes the body out of the physics
 		# space; moving it now makes Jolt log "Parameter space is null".
 		if not can_process():

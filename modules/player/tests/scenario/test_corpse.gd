@@ -163,3 +163,18 @@ func test_a_removed_limb_loses_its_physics_and_stays_collapsed_once_settled() ->
 	assert_bool(corpse.is_settled()).is_true()
 	assert_float(corpse.skeleton.get_bone_pose_scale(bone).x).is_less(0.01)
 	assert_float(corpse.skeleton.get_bone_pose_scale(corpse.skeleton.find_bone("UpperArm_R")).x).is_equal_approx(1.0, 0.01)
+
+
+func test_it_says_where_it_lies_while_falling_and_once_settled() -> void:
+	var corpse := Corpse.from_body(_player, Vector3(2.0, 1.0, 0.0))
+	await _frames(30)
+	var falling := corpse.lying_at()
+	assert_float(falling.y).is_greater(-0.1)
+	await _frames(int(Corpse.config()["settle_seconds"] * 60.0) + 10)
+	assert_bool(corpse.is_settled()).is_true()
+	var hips := corpse.skeleton.find_bone("Hips")
+	var hips_at := corpse.skeleton.global_transform * corpse.skeleton.get_bone_global_pose(hips).origin
+	var lying := corpse.lying_at()
+	# Near the ground where the bones lie, not the spot it fell from.
+	assert_float(lying.y).is_less(0.6)
+	assert_float(Vector2(lying.x - hips_at.x, lying.z - hips_at.z).length()).is_less(1.0)

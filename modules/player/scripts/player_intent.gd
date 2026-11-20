@@ -25,6 +25,9 @@ var lean: int = 0
 var jump: bool = false
 ## One-shot: use whatever is in front of the player (enter a car, later loot and doors).
 var interact: bool = false
+## What the player's own screen offered to use when interact was pressed (loot, a crate, a
+## body where its ragdoll lies on that screen), or empty; the server checks it before use.
+var interact_target := NodePath()
 ## Held while the trigger is down; whatever weapon the player carries reads it.
 var fire: bool = false
 ## Held while aiming down sights: slower movement, no sprint, tighter spread.
@@ -67,6 +70,13 @@ func consume_jump() -> bool:
 func consume_interact() -> bool:
 	var out := interact
 	interact = false
+	return out
+
+
+## The target sent with the last interact press, cleared as it is read.
+func consume_interact_target() -> NodePath:
+	var out := interact_target
+	interact_target = NodePath()
 	return out
 
 
@@ -114,6 +124,15 @@ func submit(new_move: Vector2, yaw: float, pitch: float, new_sprint: bool, new_c
 	fire = new_fire
 	aim = new_aim
 	lean = clampi(new_lean, -1, 1)
+
+
+## Client -> server: an interact press with what the client's screen offered to use.
+@rpc("any_peer", "call_remote", "reliable")
+func submit_interact(target: NodePath) -> void:
+	if not _from_owner():
+		return
+	interact = true
+	interact_target = target
 
 
 ## Client -> server, once per press.
