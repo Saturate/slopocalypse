@@ -75,3 +75,26 @@ func test_a_full_backpack_refuses_more() -> void:
 		given += 1
 	assert_int(given).is_less(100)
 	assert_bool(_module.call(&"server_give", 8, "hg_ar_long")).is_false()
+
+
+func test_both_rifles_fit_the_small_backpack() -> void:
+	var data: Dictionary = Data.load_json("res://modules/inventory/data/items.json")
+	var items: Dictionary = data["items"]
+	var grid: Array = items["bag_small"]["grid"]
+	for gun: String in ["gun_rifle", "gun_bolt"]:
+		var size: Array = items[gun]["size"]
+		var fits: bool = (size[0] <= grid[0] and size[1] <= grid[1]) or (size[1] <= grid[0] and size[0] <= grid[1])
+		assert_bool(fits).override_failure_message("%s (%s) does not fit a %s backpack" % [gun, size, grid]).is_true()
+
+
+func test_a_bolt_action_goes_into_an_empty_pack_and_comes_back_out() -> void:
+	_spawn(11)
+	var gear: InventoryGear = _module.call(&"grid_of", 11)
+	for placed: Dictionary in gear.items("backpack"):
+		assert_bool(_module.call(&"server_take", 11, str(placed["item"]))).is_true()
+	# The hands already hold the kit's rifle, so it goes in the pack (two of them, even).
+	assert_bool(_module.call(&"server_give", 11, "gun_bolt")).is_true()
+	assert_bool(_module.call(&"server_give", 11, "gun_bolt")).is_true()
+	assert_int(gear.items("backpack").filter(func(i: Dictionary) -> bool: return i["item"] == "gun_bolt").size()).is_equal(2)
+	assert_bool(_module.call(&"server_take", 11, "gun_bolt")).is_true()
+	assert_int(_module.call(&"count", 11, "gun_bolt")).is_equal(1)
