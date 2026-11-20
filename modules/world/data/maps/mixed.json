@@ -123,12 +123,16 @@
       "highway": {
         "width": 8.0,
         "max_grade": 0.08,
-        "min_radius": 90.0
+        "min_radius": 90.0,
+        "max_cut": 8.0,
+        "max_fill": 6.0
       },
       "two_lane": {
         "width": 7.0,
         "max_grade": 0.1,
-        "min_radius": 50.0
+        "min_radius": 50.0,
+        "max_cut": 6.0,
+        "max_fill": 5.0
       }
     },
     "cost": {
@@ -139,6 +143,7 @@
       "over_grade": 8.0,
       "settlement": 40.0
     },
-    "sample": 4.0
+    "sample": 4.0,
+    "profile_window": 48.0
   }
 }
