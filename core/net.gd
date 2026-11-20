@@ -506,7 +506,7 @@ func _waited_too_long(delta: float) -> bool:
 
 
 ## One line describing the session, for tools and tests. `moved` is the furthest any player
-## stands from the world origin (the spawn), `shots` the weapon.fired events seen here,
+## stands from the spawn (group `spawn_point`; the origin without one), `shots` the weapon.fired events seen here,
 ## `driven` the furthest any vehicle is from where it spawned, `ammo` the local player's
 ## rounds (group `held_weapons`, method `ammo()`).
 func report() -> String:
@@ -515,8 +515,11 @@ func report() -> String:
 	var me := multiplayer.get_unique_id()
 	var local := players.filter(func(p: Node) -> bool: return mode != Mode.SERVER and int(p.get_meta(&"peer_id", 0)) == me)
 	var moved := 0.0
+	# From the spawn, not the origin: a generated map's camp is far from it (#472).
+	var spawn_node := get_tree().get_first_node_in_group(&"spawn_point") as Node3D
+	var spawn := spawn_node.global_position if spawn_node != null else Vector3.ZERO
 	for p: Node in players:
-		var at := (p as Node3D).global_position
+		var at := (p as Node3D).global_position - spawn
 		moved = maxf(moved, Vector2(at.x, at.z).length())
 	# Group and meta names, not a module dependency: whoever spawns vehicles tags them.
 	var driven := 0.0

@@ -70,6 +70,14 @@
     "road_wear": [0.1, 0.55],
     "road_potholes": [0.0, 6.0]
   },
+  "map": {
+    "_comment": "The generated map played with --world=map (#472, decision 0012): recipe (modules/world/data/maps/<recipe>.json) and seed, each overridden by --map= and --seed=; anything that falls kill_depth metres below the map's lowest ground is lost; the car waits car_ahead metres from the camp toward the highway and car_side metres to its right.",
+    "recipe": "grassland",
+    "seed": 1.0,
+    "kill_depth": 40.0,
+    "car_ahead": 8.0,
+    "car_side": 4.0
+  },
   "scatter": {
     "seed": 2024.0,
     "trees_per_hectare": 80.0,

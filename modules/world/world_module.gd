@@ -11,11 +11,75 @@ const CONFIG := "res://modules/world/data/world.json"
 const READY_TIMEOUT_SECONDS := 30.0
 const BULLET_CRATER_RADIUS := 0.35
 const SPAWN_AREA_RADIUS := 16.0
+## Metres the map's boundary walls reach past its lowest and highest ground, so nothing
+## slips under or over them.
+const WALL_MARGIN := 100.0
+const MAP_REQUIRED := {"recipe": TYPE_STRING, "seed": TYPE_FLOAT, "kill_depth": TYPE_FLOAT, "car_ahead": TYPE_FLOAT, "car_side": TYPE_FLOAT}
 
 var _voxels: VoxelWorld
 var _scenery: SceneryScatter
 var _announcement: Dictionary = {}
 var _waited := 0.0
+
+
+## The generated map is played with `--world=map` (#472): its recipe and seed from
+## `world.json` `map`, overridden by `--map=` and `--seed=`. Anything else plays the strip.
+static func _select_map(args: PackedStringArray, data: Dictionary) -> void:
+	WorldMaps.clear()
+	if not args.has("--world=map"):
+		return
+	if not (data.get("map") is Dictionary and Data.require(CONFIG + " map", data["map"], MAP_REQUIRED)):
+		return
+	var cfg: Dictionary = data["map"]
+	var recipe := str(cfg["recipe"])
+	var seed_value := int(cfg["seed"])
+	for arg in args:
+		if arg.begins_with("--map="):
+			recipe = arg.trim_prefix("--map=")
+		elif arg.begins_with("--seed=") and arg.trim_prefix("--seed=").is_valid_int():
+			seed_value = int(arg.trim_prefix("--seed="))
+	# A recipe name only, never a path.
+	if not recipe.is_valid_filename() or recipe.contains("."):
+		Log.warn(&"world", "--map=%s is not a recipe name; playing %s" % [recipe, cfg["recipe"]])
+		recipe = str(cfg["recipe"])
+	WorldMaps.select(recipe, seed_value)
+	# A recipe that is missing or broken: the strip, whole (with its tunnel), not half a map.
+	if WorldMaps.shape() == null:
+		Log.warn(&"world", "no playable map %s; playing the strip" % recipe)
+		WorldMaps.clear()
+		return
+	Log.info(&"world", "playing map %s, seed %d" % [recipe, seed_value])
+
+
+## Puts the spawn at the map's camp and the car beside it facing down the highway, and fits
+## the boundary walls to the map; returns which way the highway leaves the camp.
+static func _place_on_map(world: Node, map: MapShape, spawn: Marker3D, car: Marker3D, cfg: Dictionary) -> Vector3:
+	var camp := map.camp()
+	var forward := map.forward()
+	spawn.global_position = camp + Vector3.UP
+	var side := forward.cross(Vector3.UP).normalized()
+	var at := camp + forward * float(cfg["car_ahead"]) + side * float(cfg["car_side"])
+	at.y = map.height_at(at.x, at.z) + 1.0
+	# Cars drive along their +Z: the nose points down the highway.
+	car.global_transform = Transform3D(Basis.looking_at(-forward, Vector3.UP), at)
+	var boundary := world.get_node_or_null("Boundary")
+	if boundary != null:
+		var area := map.extent()
+		var mid_y := (map.low() + map.high()) / 2.0
+		var height := map.high() - map.low() + WALL_MARGIN * 2.0
+		var walls := {"North": [Vector3(area.get_center().x, mid_y, area.position.y + 1.0), Vector3(area.size.x, height, 2.0)],
+			"South": [Vector3(area.get_center().x, mid_y, area.end.y - 1.0), Vector3(area.size.x, height, 2.0)],
+			"West": [Vector3(area.position.x + 1.0, mid_y, area.get_center().y), Vector3(2.0, height, area.size.y)],
+			"East": [Vector3(area.end.x - 1.0, mid_y, area.get_center().y), Vector3(2.0, height, area.size.y)]}
+		for name: String in walls:
+			var shape := boundary.get_node_or_null(name) as CollisionShape3D
+			if shape == null:
+				continue
+			var box := BoxShape3D.new()
+			box.size = walls[name][1]
+			shape.shape = box
+			shape.position = walls[name][0]
+	return forward
 
 
 ## Performance custom monitors this module publishes, and the method each one reads.
@@ -34,7 +98,9 @@ func _ready() -> void:
 	var data: Variant = Data.load_json(CONFIG)
 	if not data is Dictionary or not Data.require(CONFIG, data, {"kill_y": TYPE_FLOAT, "rescue_depth": TYPE_FLOAT}):
 		return
-	var scene: PackedScene = load(FLAT_SCENE if Net.session_args().has("--world=flat") else SCENE)
+	var args := Net.session_args()
+	_select_map(args, data)
+	var scene: PackedScene = load(FLAT_SCENE if args.has("--world=flat") else SCENE)
 	var world := scene.instantiate()
 	add_child(world)
 	# The map viewer on a dedicated server's admin pages (the web module serves them).
@@ -50,12 +116,18 @@ func _ready() -> void:
 	var car: Marker3D = world.get_node("CarSpawn")
 	# `front` and `forward`: players start inside the tunnel, so things spread "around the
 	# spawn" (crates, enemies) go around the road just outside it, on the open side.
+	var forward := Vector3.FORWARD
+	var kill_y := float(data["kill_y"])
+	var map := WorldMaps.shape() if WorldMaps.is_selected() else null
+	if map != null:
+		forward = _place_on_map(world, map, spawn, car, data["map"])
+		kill_y = map.low() - float((data["map"] as Dictionary)["kill_depth"])
 	_announcement = {
 		"spawn": spawn.global_position,
 		"car": car.global_transform,
 		"front": Vector3(car.global_position.x, spawn.global_position.y, car.global_position.z),
-		"forward": Vector3.FORWARD,
-		"kill_y": data["kill_y"],
+		"forward": forward,
+		"kill_y": kill_y,
 		"rescue_depth": data["rescue_depth"],
 	}
 	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)

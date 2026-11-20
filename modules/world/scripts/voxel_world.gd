@@ -38,14 +38,17 @@ signal flooded(puddle: Vector4)
 
 @export_file("*.json") var config_path: String = "res://modules/world/data/world.json"
 
-var heights: TerrainHeights
+var heights: GroundShape
+## Where players start: always kept built (the strip's spawn is the origin; a generated
+## map's is its camp).
+var home := Vector3.ZERO
 var max_dig_depth := 3.0
 ## A crater's depth as a share of its radius. Its wall is steepest at the rim, a slope of
 ## twice this share: 0.35 gives about 35 degrees, under the 45 a player can walk up, with
 ## room for a hillside's own slope on the uphill wall.
 var crater_depth_share := 0.35
 
-var _biomes: Biomes
+var _biomes: GroundBiomes
 var _cfg: Dictionary
 ## [[distance, voxel size], ...] nearest first.
 var _lods: Array = []
@@ -88,9 +91,16 @@ func _ready() -> void:
 	crater_depth_share = _cfg["crater_depth_share"]
 	max_dig_log = int(_cfg.get("max_saved_digs", 4000))
 	_lods = _cfg["lods"]
-	heights = TerrainHeights.new(world)
-	if world.get("biomes") is Dictionary:
-		_biomes = Biomes.new(world["biomes"], heights.stages)
+	# A generated map when one is selected (#472), else the strip.
+	var map := WorldMaps.shape() if WorldMaps.is_selected() else null
+	if map != null:
+		heights = map
+		_biomes = map.biomes()
+		home = map.camp()
+	else:
+		heights = TerrainHeights.new(world)
+		if world.get("biomes") is Dictionary:
+			_biomes = Biomes.new(world["biomes"], heights.stages)
 	# Other modules place things on the ground where no tile is built (the server only builds
 	# near players): `ground_height` answers anywhere.
 	add_to_group(&"ground")
@@ -105,7 +115,7 @@ func _ready() -> void:
 		add_child(view)
 		flooded.connect(view.add_puddle)
 	# The spawn is solid before anyone arrives.
-	update_around([Vector3.ZERO], INF)
+	update_around([home], INF)
 
 
 func _process(_delta: float) -> void:
@@ -136,7 +146,7 @@ static func add_and_wait(parent: Node, scene_path: String, max_frames: int = 900
 	parent.add_child(world)
 	var voxels: VoxelWorld = world.get_node("Terrain")
 	for i in max_frames:
-		if voxels.is_ready_at(Vector3.ZERO):
+		if voxels.is_ready_at(voxels.home):
 			break
 		await parent.get_tree().physics_frame
 	return world
@@ -180,6 +190,9 @@ func ground_height(x: float, z: float) -> float:
 ## A point on the road `metres` out from the start (past the tunnel portal, if there is
 ## one), on the untouched ground; the far end of the road if it is shorter than that.
 func road_point(metres: float) -> Vector3:
+	# On a generated map: along the highway from the camp.
+	if heights is MapShape:
+		return (heights as MapShape).road_point(metres)
 	if heights == null or heights.road == null:
 		return Vector3(0.0, 0.0, -metres)
 	var start := float(heights.start["portal_z"]) if heights.has_tunnel() else heights.z_max()
@@ -554,7 +567,7 @@ func _focus_points() -> Array[Vector3]:
 			if n is Node3D:
 				out.append((n as Node3D).global_position)
 	# The spawn stays solid for whoever arrives next.
-	out.append(Vector3.ZERO)
+	out.append(home)
 	return out
 
 
