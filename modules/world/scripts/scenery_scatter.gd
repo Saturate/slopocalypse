@@ -90,6 +90,8 @@ var _damage: TreeDamage
 var _pending: Dictionary[int, Dictionary] = {}
 ## Bumped whenever the clearings change, so plans made with the old ones are thrown away.
 var _clearings_gen := 0
+## How far each place is from people (#419), or null when the world's data has none.
+var remoteness: Remoteness
 
 
 func _ready() -> void:
@@ -110,6 +112,8 @@ func _ready() -> void:
 	add_child(_damage)
 	_seed = int(_cfg["seed"])
 	_heights = TerrainHeights.new(world)
+	if world.has("remoteness") and Data.require(config_path + " remoteness", world["remoteness"], Remoteness.REQUIRED):
+		remoteness = Remoteness.new(world["remoteness"])
 	_biomes = Biomes.new(world["biomes"], _heights.stages)
 	_make_variants()
 	# Other modules ask for clearings through this group (`set_clearings`).
@@ -666,7 +670,12 @@ func _add_road(node: Node3D, i: int, span: Vector2) -> void:
 	var length := (span.y - span.x) / pieces
 	for p in pieces:
 		var mid := span.x + length * (p + 0.5)
-		var model := VoxRoad.new().build({"seed": hash([_seed, i, p]), "length": length, "voxel": ROAD_VOXEL, "z_phase": mid})
+		var look := {"seed": hash([_seed, i, p]), "length": length, "voxel": ROAD_VOXEL, "z_phase": mid}
+		if remoteness != null:
+			# The road runs down -z: the city's stretch is kept, the far end worn out.
+			look["wear"] = remoteness.road_wear(-mid)
+			look["potholes"] = remoteness.road_potholes(-mid)
+		var model := VoxRoad.new().build(look)
 		var inst := MeshInstance3D.new()
 		var entry := {"model": model, "mid": mid, "cx": road.x_at(mid), "half_length": length / 2.0, "mesh": inst}
 		inst.position = Vector3(entry["cx"], 0.0, mid)

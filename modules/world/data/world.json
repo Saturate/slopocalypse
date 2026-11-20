@@ -59,6 +59,17 @@
     "rock_threshold": 0.66,
     "map_metres_per_texel": 4.0
   },
+  "remoteness": {
+    "_comment": "How far a place is from people, 0 to 1 (#419): 0 within radius metres of a settlement along the road (along: metres down the road from the start; the camp at the spawn, the city at modules/city/data/city.json at + size / 2, kept in step by a test), rising to 1 over reach metres further along it, and off_road times faster away from the road beside it. Readers: the road's wear and potholes go from road_wear[0] and road_potholes[0] at 0 to [1] at 1 (what generation starts with; damage players do stays).",
+    "settlements": [
+      { "name": "camp", "along": 0.0, "radius": 40.0 },
+      { "name": "city", "along": 335.0, "radius": 95.0 }
+    ],
+    "reach": 2500.0,
+    "off_road": 3.0,
+    "road_wear": [0.1, 0.55],
+    "road_potholes": [0.0, 6.0]
+  },
   "scatter": {
     "seed": 2024.0,
     "trees_per_hectare": 80.0,
