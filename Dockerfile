@@ -7,6 +7,16 @@
 #   docker build --build-arg EXPORT=prebuilt --build-context linux-export=<unzipped linux build> .
 ARG EXPORT=build
 
+# The admin web app (web/) built on its own: the export stage only needs its files.
+FROM node:24.11.1-bookworm-slim AS web
+WORKDIR /src
+COPY package.json package-lock.json ./
+COPY web/package.json web/
+RUN npm ci --workspace web --include-workspace-root=false
+COPY web/ web/
+COPY modules/web/api/ modules/web/api/
+RUN npm run build -w web
+
 FROM rust:1.95.0-bookworm AS build
 COPY --from=node:24.11.1-bookworm-slim /usr/local/bin/node /usr/local/bin/node
 RUN apt-get update && apt-get install -y --no-install-recommends unzip zip && rm -rf /var/lib/apt/lists/*
@@ -15,6 +25,7 @@ WORKDIR /src
 COPY tools/ tools/
 RUN node tools/get-godot.ts && node tools/get-addons.ts
 COPY . .
+COPY --from=web /src/modules/web/static/ modules/web/static/
 # The 1 GB export templates and the Rust build are cached between image builds.
 RUN --mount=type=cache,target=/src/tools/godot/editor_data/export_templates \
     --mount=type=cache,target=/src/target \

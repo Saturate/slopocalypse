@@ -1,0 +1,13 @@
+:root { --bg: #151714; --panel: #1e211d; --line: #33372f; --text: #e2e1da; --dim: #9a9b95; --accent: #d19e4c; --bad: #e07a5f; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+.app { max-width: 1100px; margin: 0 auto; padding: 16px; }
+header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+h1 { margin: 0; font-size: 20px; color: var(--accent); }
+h2 { font-size: 16px; color: var(--accent); margin: 1em 0 .3em; }
+nav { display: flex; gap: 6px; }
+button { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 5px 10px; font: inherit; cursor: pointer; }
+button.on { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+.dim { color: var(--dim); }
+.error { color: var(--bad); }

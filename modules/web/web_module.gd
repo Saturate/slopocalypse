@@ -30,6 +30,11 @@ const SEND_CHUNK := 65536
 ## Wrong passwords one client may try per FAILED_LOGIN_WINDOW_MS; then it waits that out.
 const MAX_FAILED_LOGINS := 10
 const FAILED_LOGIN_WINDOW_MS := 60000
+## The admin web app's built files (web/, `npm run build -w web`), served under APP_PATH.
+const STATIC_DIR := "res://modules/web/static"
+const APP_PATH := "/admin/app"
+const CONTENT_TYPES := {"html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8", "css": "text/css; charset=utf-8",
+	"json": "application/json", "svg": "image/svg+xml", "png": "image/png", "ico": "image/x-icon", "woff2": "font/woff2"}
 ## Shorter passwords work, with a warning in the log.
 const MIN_PASSWORD_LENGTH := 12
 const REALM := "Slopocalypse admin"
@@ -50,6 +55,8 @@ var _admin: Dictionary[String, Dictionary] = {}
 var _failed_logins: Dictionary[String, Array] = {}
 ## [network, mask] per trusted proxy range, as 32-bit numbers.
 var _trusted: Array[PackedInt64Array] = []
+## The web app's files by name, read once: only these can be asked for.
+var _static: Dictionary[String, PackedByteArray] = {}
 
 
 func _ready() -> void:
@@ -57,6 +64,7 @@ func _ready() -> void:
 	add_to_group(&"web_api")
 	set_password(OS.get_environment(PASSWORD_ENV))
 	set_trusted_proxies(OS.get_environment(TRUSTED_PROXY_ENV))
+	load_static(STATIC_DIR)
 	var args := OS.get_cmdline_user_args()
 	if not args.has(FLAG) or Net.mode != Net.Mode.SERVER:
 		return
@@ -95,6 +103,30 @@ func set_trusted_proxies(value: String) -> void:
 			Log.warn(&"web", "%s: not an IPv4 range like 10.0.0.0/8; ignored" % part.strip_edges())
 		else:
 			_trusted.append(cidr)
+
+
+## Reads the web app's files from `dir` (flat, as Vite builds it) and serves them under
+## APP_PATH; the app's page is listed on /admin. Nothing there (not built): no app page.
+func load_static(dir: String) -> void:
+	_static.clear()
+	var files := DirAccess.get_files_at(dir)
+	for f in files:
+		var bytes := FileAccess.get_file_as_bytes(dir.path_join(f))
+		if not bytes.is_empty():
+			_static[f] = bytes
+	if _static.has("index.html"):
+		add_admin_page(APP_PATH, "Admin app", _serve_static)
+	else:
+		_admin.erase(APP_PATH)
+
+
+## A file of the web app by its name; anything else (or a path below it) is not found.
+func _serve_static(req: Dictionary) -> Array:
+	var rest := str(req["path"]).trim_prefix(APP_PATH).trim_prefix("/")
+	var name := "index.html" if rest.is_empty() else rest
+	if not _static.has(name):
+		return [404, "text/plain", "not found"]
+	return [200, CONTENT_TYPES.get(name.get_extension(), "application/octet-stream"), _static[name]]
 
 
 ## Adds an admin page at `path` (and everything under it), listed as `title` on /admin (not
@@ -252,7 +284,7 @@ func handle(req: Dictionary) -> Array:
 	match path:
 		"/", "/index.html":
 			return [200, "text/html; charset=utf-8", WebStatus.html(WebStatus.build(get_tree(), _started)), PUBLIC]
-		"/status.json":
+		"/status.json", "/api/v1/status":
 			return [200, "application/json", JSON.stringify(WebStatus.build(get_tree(), _started)), PUBLIC]
 		"/favicon.ico":
 			return [204, "text/plain", ""]
@@ -397,7 +429,8 @@ func _admin_index() -> String:
 	for page: String in _admin:
 		var title := str(_admin[page]["title"])
 		if not title.is_empty():
-			rows.append("<li><a href=\"%s\">%s</a></li>" % [page, title.xml_escape()])
+			# The app's pages load relative to its folder: link it with the trailing slash.
+			rows.append("<li><a href=\"%s\">%s</a></li>" % [page + "/" if page == APP_PATH else page, title.xml_escape()])
 	rows.append("</ul>")
 	if _admin.is_empty():
 		rows.append("<p class=dim>No admin pages on this server.</p>")

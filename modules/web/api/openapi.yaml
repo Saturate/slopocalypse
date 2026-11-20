@@ -1,0 +1,65 @@
+openapi: 3.1.0
+info:
+  title: Slopocalypse server API
+  version: "1"
+  description: >
+    What the game server answers on its web port (modules/web). Public routes need nothing;
+    admin routes need the server's WEB_PASSWORD (HTTP basic auth, any user name). The admin
+    web app (web/) generates its types from this file: `npm run api-types -w web`.
+servers:
+  - url: /
+paths:
+  /api/v1/status:
+    get:
+      summary: The server at a glance (public).
+      responses:
+        "200":
+          description: Status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+components:
+  schemas:
+    Status:
+      type: object
+      required: [name, version, uptime_seconds, players, soldiers_alive]
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        uptime_seconds:
+          type: integer
+        players:
+          type: array
+          description: Names of the players online.
+          items:
+            type: string
+        soldiers_alive:
+          type: integer
+        mission_state:
+          type: string
+          description: Where the crew is in a mission run, e.g. home or in_mission.
+        mission:
+          oneOf:
+            - $ref: "#/components/schemas/Mission"
+            - type: "null"
+        board:
+          type: array
+          items:
+            $ref: "#/components/schemas/Mission"
+    Mission:
+      type: object
+      required: [codename, kind, place, pays]
+      properties:
+        codename:
+          type: string
+        kind:
+          type: string
+        place:
+          type: string
+        distance_m:
+          type: integer
+        pays:
+          type: integer

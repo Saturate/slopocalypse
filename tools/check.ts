@@ -60,6 +60,9 @@ const rustSteps: Step[] = hasRustCrates(root)
 const steps: Step[] = [
 	["typescript", () => commandStep(execPath, [join(root, "node_modules/typescript/bin/tsc"), "--noEmit", "-p", root], 300_000)],
 	["tool tests", () => commandStep(execPath, ["--test", "tools/**/*.test.ts"], 300_000)],
+	// The admin web app (web/): strict types, and a build the server can serve.
+	["web typecheck", () => commandStep(execPath, [join(root, "node_modules/typescript/bin/tsc"), "--noEmit", "-p", join(root, "web")], 300_000)],
+	["web build", () => commandStep(execPath, [join(root, "node_modules/vite/bin/vite.js"), "build", join(root, "web")], 300_000)],
 	...rustSteps,
 	["godot import", () => godotImport(godot, root)],
 	["gdscript parse", () => checkScripts(godot, root, gdScripts().map((f) => join(root, f)))],
