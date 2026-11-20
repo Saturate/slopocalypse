@@ -16,6 +16,8 @@ test("windows preset embeds the pack, keeps data files and drops dev-only folder
 	// The title screen reads these two at runtime.
 	assert.match(text, /include_filter="[^"]*CHANGELOG\.md/);
 	assert.match(text, /include_filter="[^"]*assets\/LICENSES\.md/);
+	// The server sends the admin web app's files.
+	assert.match(text, /include_filter="[^"]*modules\/web\/static\/\*/);
 	for (const dev of ["tests/*", "tools/*", "addons/gdUnit4/*", "modules/*/tests/*", "modules/*/builders/*", "modules/*/capture/*", "modules/*/rust/*"]) {
 		assert.ok(text.includes(dev), `exclude filter misses ${dev}`);
 	}

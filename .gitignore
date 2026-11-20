@@ -35,3 +35,6 @@ Thumbs.db
 /bench/
 # Pinned ffmpeg for the trailer pipeline (fetch with tools/get-ffmpeg.ts)
 /tools/ffmpeg/
+
+# The admin web app's build (npm run build -w web); the release and Docker build make it.
+modules/web/static/

@@ -77,6 +77,17 @@ const README = (host: string | undefined, port: number, os: TargetOs): string =>
 	return lines.join(os === "windows" ? "\r\n" : "\n");
 };
 
+// The admin web app ships as built files: build it when its packages are installed (npm ci),
+// else it must already be built (the Docker image builds it in a stage of its own).
+async function ensureWebApp(): Promise<void> {
+	const built = join(root, "modules", "web", "static", "index.html");
+	if (existsSync(join(root, "node_modules", "vite"))) {
+		const r = await run(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build", "-w", "web"], { cwd: root, timeoutMs: 300_000 });
+		if (r.code !== 0 || r.timedOut) throw new Error(`web app build failed:\n${r.output.slice(-2000)}`);
+	}
+	if (!existsSync(built)) throw new Error("the admin web app is not built: run npm ci, then npm run build -w web");
+}
+
 async function main(): Promise<void> {
 	const os = parseOs(arg("os"));
 	if (os === "macos" && hostOs() !== "macos") throw new Error("macOS exports need a Mac (the release workflow builds it on a macOS runner)");
@@ -86,6 +97,7 @@ async function main(): Promise<void> {
 	if (!existsSync(godot)) throw new Error("Godot missing: run node tools/get-godot.ts");
 
 	await ensureTemplates();
+	await ensureWebApp();
 
 	// The editor that runs the import and export is a debug build and loads the debug
 	// libraries; the exported game loads the release ones. A fresh checkout (CI) has neither.

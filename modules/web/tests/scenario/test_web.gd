@@ -134,3 +134,34 @@ func test_odd_requests_get_a_plain_refusal() -> void:
 	var head := await _ask("HEAD / HTTP/1.1\r\n\r\n")
 	assert_str(head).starts_with("HTTP/1.1 200")
 	assert_str(head.substr(head.find("\r\n\r\n") + 4)).is_empty()
+
+
+func test_the_status_is_public_on_the_api_too() -> void:
+	var text := await _ask("GET /api/v1/status HTTP/1.1\r\n\r\n")
+	assert_str(text).starts_with("HTTP/1.1 200")
+	var json: Variant = JSON.parse_string(text.substr(text.find("\r\n\r\n") + 4))
+	assert_bool(json is Dictionary and (json as Dictionary).has("players")).is_true()
+
+
+func test_the_admin_app_is_served_behind_the_password() -> void:
+	var dir := "user://test_web_static"
+	DirAccess.make_dir_recursive_absolute(dir)
+	FileAccess.open(dir + "/index.html", FileAccess.WRITE).store_string("<html>app</html>")
+	FileAccess.open(dir + "/app.js", FileAccess.WRITE).store_string("console.log(1)")
+	_web.call(&"load_static", dir)
+	_web.call(&"set_password", "hunter2")
+	assert_str(await _ask("GET /admin/app/ HTTP/1.1\r\n\r\n")).starts_with("HTTP/1.1 401")
+	var page := await _ask("GET /admin/app/ HTTP/1.1\r\n%s\r\n" % _basic("hunter2"))
+	assert_str(page).starts_with("HTTP/1.1 200")
+	assert_str(page).contains("text/html")
+	assert_str(page).ends_with("<html>app</html>")
+	var script := await _ask("GET /admin/app/app.js HTTP/1.1\r\n%s\r\n" % _basic("hunter2"))
+	assert_str(script).contains("text/javascript")
+	# Only files that were there at start: no way out of the folder.
+	assert_str(await _ask("GET /admin/app/../../project.godot HTTP/1.1\r\n%s\r\n" % _basic("hunter2"))).starts_with("HTTP/1.1 404")
+	assert_str(await _ask("GET /admin/app/nope.js HTTP/1.1\r\n%s\r\n" % _basic("hunter2"))).starts_with("HTTP/1.1 404")
+	# Listed on the admin page.
+	assert_str(await _ask("GET /admin HTTP/1.1\r\n%s\r\n" % _basic("hunter2"))).contains("/admin/app/")
+	for f in ["index.html", "app.js"]:
+		DirAccess.remove_absolute(dir + "/" + f)
+	DirAccess.remove_absolute(dir)
