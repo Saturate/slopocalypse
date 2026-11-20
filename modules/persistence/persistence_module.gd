@@ -18,11 +18,16 @@ const CONFIG := "res://modules/persistence/data/persistence.json"
 const FIELDS := {"file": TYPE_STRING, "autosave_seconds": TYPE_FLOAT, "hold_seconds": TYPE_FLOAT}
 ## A save that lives only as long as the server (tests).
 const MEMORY := ":memory:"
+## The part that says which world the save belongs to (see `_check_map`).
+const MAP_PART := "map"
+const MAP_PART_VERSION := 1
 
 ## Only a real server saves; scenes run without Boot (tests) switch it on by hand.
 var enabled := Net.mode == NetSession.Mode.SERVER
 var store: SaveStore
 var config: Dictionary = {}
+## The save's file as opened (`user://...`, an OS path, or MEMORY).
+var _path := ""
 
 ## Peer -> the name their progress is saved under.
 var _names: Dictionary = {}
@@ -87,6 +92,7 @@ static func save_path(args: PackedStringArray, configured: String) -> String:
 
 ## Opens the save file (`user://` or an OS path, or MEMORY).
 func open(path: String) -> bool:
+	_path = path
 	store = SaveStore.new()
 	var os_path := ProjectSettings.globalize_path(path) if path != MEMORY else ""
 	if not os_path.is_empty():
@@ -121,6 +127,7 @@ func _on_world_ready(_p: Dictionary) -> void:
 
 
 func server_load_world() -> void:
+	_check_map()
 	server_load_parts()
 	var inventory := _inventory()
 	if inventory == null:
@@ -131,6 +138,36 @@ func server_load_world() -> void:
 		return
 	inventory.call(&"server_restore_world", world)
 	Log.info(&"persistence", "world loaded: %d loot on the ground, %d crates" % [(world["loot"] as Array).size(), (world["crates"] as Array).size()])
+
+
+## A save belongs to one world (#472): the strip, the test range, or a generated map's recipe
+## and seed (the world module's `map_key`). A save for another world, or from before saves
+## knew their world, would put craters, trees, loot and players where that world had them:
+## it is moved aside (`<file>.old-<time>`) and a fresh one starts.
+func _check_map() -> void:
+	var world := get_tree().get_first_node_in_group(&"world_map")
+	if world == null or not world.has_method(&"map_key"):
+		return
+	var key := str(world.call(&"map_key"))
+	var part := store.load_part(MAP_PART)
+	var saved := ""
+	if not part.is_empty():
+		saved = str(bytes_to_var(part["data"]))
+	if saved == key:
+		return
+	var used := not store.load_world().is_empty() or not part.is_empty()
+	if used and _path != MEMORY:
+		var os_path := ProjectSettings.globalize_path(_path)
+		var aside := "%s.old-%d" % [os_path, int(Time.get_unix_time_from_system())]
+		store = null
+		if DirAccess.rename_absolute(os_path, aside) == OK:
+			Log.warn(&"persistence", "the save was for %s, this server plays %s: moved it to %s and started fresh" % [saved if not saved.is_empty() else "an older world", key, aside])
+		else:
+			Log.error(&"persistence", "could not move the save for another world out of the way (%s)" % os_path)
+		if not open(_path):
+			enabled = false
+			return
+	store.save_part(MAP_PART, MAP_PART_VERSION, var_to_bytes(key))
 
 
 func _on_player_spawned(p: Dictionary) -> void:
