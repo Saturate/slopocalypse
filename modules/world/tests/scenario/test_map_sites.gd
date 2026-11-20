@@ -42,9 +42,12 @@ func test_no_site_overlaps_another_a_road_a_settlement_or_water() -> void:
 			for place in all:
 				assert_bool(foot.intersects(place["footprint"])).override_failure_message(what + " is in a settlement").is_false()
 			for road: Dictionary in net.roads():
+				# Its own track starts at its edge; every other road and track keeps off it.
+				if road["from"] == "%s %d" % [placed[a]["kind"], a]:
+					continue
 				var half := float(road["width"]) / 2.0
 				for p: Vector2 in road["points"]:
-					assert_bool(foot.grow(half).has_point(p)).override_failure_message(what + " is on a road").is_false()
+					assert_bool(foot.grow(half).has_point(p)).override_failure_message(what + " is on a road (%s)" % road["from"]).is_false()
 			for corner: Vector2 in [foot.position, foot.end, Vector2(foot.position.x, foot.end.y), Vector2(foot.end.x, foot.position.y), foot.get_center()]:
 				assert_str(str(zones.zone_at(corner.x, corner.y).get("kind", ""))).override_failure_message(what + " is in water").is_not_equal("water")
 
@@ -89,3 +92,41 @@ func test_remoteness_is_zero_with_people_and_rises_away_from_them() -> void:
 		for corner: Vector2 in [b.position + Vector2(20, 20), b.end - Vector2(20, 20), Vector2(b.position.x + 20, b.end.y - 20), Vector2(b.end.x - 20, b.position.y + 20)]:
 			furthest = maxf(furthest, far.at(corner.x, corner.y))
 		assert_float(furthest).override_failure_message(world["name"]).is_greater(0.5)
+
+
+func test_every_site_has_a_track_from_its_edge_to_a_road() -> void:
+	for world in _worlds:
+		var net: RoadNetwork = world["net"]
+		var tracks: Dictionary[String, Dictionary] = {}
+		for road in net.roads():
+			if road["kind"] == "track":
+				tracks[str(road["from"])] = road
+		var placed: Array[Dictionary] = (world["sites"] as MapSites).sites()
+		for i in placed.size():
+			var name := "%s %d" % [placed[i]["kind"], i]
+			var what := "%s: %s" % [world["name"], name]
+			assert_bool(tracks.has(name)).override_failure_message(what + " has no track").is_true()
+			if not tracks.has(name):
+				continue
+			var points: PackedVector2Array = tracks[name]["points"]
+			assert_bool((placed[i]["footprint"] as Rect2).grow(1.0).has_point(points[0])).override_failure_message(what + " track does not start at it").is_true()
+			# It ends on a road or on a track built before it, which leads on to a road.
+			var end := points[points.size() - 1]
+			var on_road := net.roads().any(func(r: Dictionary) -> bool: return r["from"] != name and (r["points"] as PackedVector2Array).has(end))
+			assert_bool(on_road).override_failure_message(what + " track does not reach a road").is_true()
+
+
+func test_tracks_are_cut_and_filled_never_bridged_or_tunnelled() -> void:
+	for world in _worlds:
+		for road: Dictionary in (world["net"] as RoadNetwork).roads():
+			if road["kind"] == "track":
+				assert_int((road["tunnels"] as Array).size() + (road["bridges"] as Array).size()).override_failure_message("%s: %s" % [world["name"], road["from"]]).is_equal(0)
+
+
+func test_every_site_stands_on_a_level_pad() -> void:
+	for world in _worlds:
+		var works: Earthworks = world["works"]
+		for site: Dictionary in (world["sites"] as MapSites).sites():
+			var foot: Rect2 = site["footprint"]
+			for corner: Vector2 in [foot.position + Vector2.ONE, foot.end - Vector2.ONE, foot.get_center()]:
+				assert_float(works.height(corner.x, corner.y)).override_failure_message("%s: %s" % [world["name"], site["kind"]]).is_equal_approx(float(site["level"]), 0.05)

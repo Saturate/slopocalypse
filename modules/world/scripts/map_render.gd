@@ -21,6 +21,7 @@ const CITY := Color(0.85, 0.15, 0.1)
 const SPAWN := Color(1, 1, 1)
 const TOWN := Color(0.95, 0.55, 0.1)
 const ROAD := Color(0.18, 0.18, 0.2)
+const TRACK := Color(0.45, 0.36, 0.25)
 const TUNNEL := Color(0.62, 0.3, 0.75)
 const BRIDGE := Color(0.55, 0.85, 1.0)
 const ALL_LAYERS := "zones,settlements,roads,earthworks,sites"
@@ -205,10 +206,6 @@ static func build(recipe: Dictionary, seed_value: int) -> Dictionary:
 			var roads_cfg: Variant = recipe.get("roads")
 			if roads_cfg is Dictionary:
 				net = RoadNetwork.new(places, roads_cfg)
-	var works: Earthworks = null
-	var works_cfg: Variant = recipe.get("earthworks")
-	if works_cfg is Dictionary and places != null:
-		works = Earthworks.new(land, places, net, works_cfg)
 	var far: MapRemoteness = null
 	var far_cfg: Variant = recipe.get("remoteness")
 	if far_cfg is Dictionary and zones != null:
@@ -217,6 +214,21 @@ static func build(recipe: Dictionary, seed_value: int) -> Dictionary:
 	var sites_cfg: Variant = recipe.get("sites")
 	if sites_cfg is Dictionary and far != null:
 		sites = MapSites.new(zones, places, net, far, sites_cfg, seed_value)
+		# Each site's track to the nearest road, around the other sites.
+		if net != null:
+			var feet: Array[Rect2] = []
+			for site in sites.sites():
+				feet.append(site["footprint"])
+			for i in sites.sites().size():
+				var others := feet.duplicate()
+				others.remove_at(i)
+				var site: Dictionary = sites.sites()[i]
+				net.add_track(site, "%s %d" % [site["kind"], i], others)
+	# Earthworks last: they shape the land under every road, track, settlement and site.
+	var works: Earthworks = null
+	var works_cfg: Variant = recipe.get("earthworks")
+	if works_cfg is Dictionary and places != null:
+		works = Earthworks.new(land, places, net, works_cfg, sites)
 	var world := {"land": land, "zones": zones, "places": places, "net": net, "works": works, "remoteness": far, "sites": sites}
 	var b := land.bounds()
 	var low := INF
@@ -426,7 +438,7 @@ static func draw_roads(image: Image, net: RoadNetwork, earthworks: bool, region 
 		var points: PackedVector2Array = road["points"]
 		var colours: Array[Color] = []
 		colours.resize(points.size())
-		colours.fill(ROAD)
+		colours.fill(TRACK if road["kind"] == "track" else ROAD)
 		if earthworks:
 			for span: Vector2i in road["tunnels"]:
 				for i in range(span.x, span.y + 1):

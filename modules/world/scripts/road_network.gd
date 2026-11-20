@@ -29,6 +29,11 @@ var settlements: Settlements
 var _cfg: Dictionary
 ## Each {kind, from, to, points (x, z every `sample` metres), width, max_grade}.
 var _roads: Array[Dictionary] = []
+## The routing grid, built once: each cell's height, and its extra cost (-1: impassable).
+var _heights := PackedFloat32Array()
+var _extra := PackedFloat32Array()
+## Footprints a route may not cross besides water and settlements (other sites, for a track).
+var _avoid: Array[Rect2] = []
 
 
 func _init(places: Settlements, config: Dictionary) -> void:
@@ -46,6 +51,98 @@ func _init(places: Settlements, config: Dictionary) -> void:
 
 func roads() -> Array[Dictionary]:
 	return _roads
+
+
+## Half a track's width: room kept between a track and a site it passes.
+func _track_half() -> float:
+	var kinds: Dictionary = _cfg["kinds"]
+	return float((kinds["track"] as Dictionary)["width"]) / 2.0 if kinds.has("track") else 0.0
+
+
+## A track from `site` ({footprint, level, connectors}) to the nearest point on a main road
+## (#429), of the recipe's `track` kind, routed like the roads but around `avoid` (other
+## sites). Nothing when the recipe has no track kind or no way is found.
+func add_track(site: Dictionary, name: String, avoid: Array[Rect2]) -> void:
+	if not (_cfg["kinds"] as Dictionary).has("track"):
+		return
+	var centre: Vector2 = (site["footprint"] as Rect2).get_center()
+	# The nearest point on each road, and on each track built before (sites share tracks
+	# rather than running side by side); the one with the shortest way there wins, so a road
+	# just across a lake does not pull a track all the way round it.
+	var targets: Array[Vector3] = []
+	for road in _roads:
+		var points: PackedVector2Array = road["points"]
+		var heights: PackedFloat32Array = road["heights"]
+		var nearest := -1
+		var nearest_d := INF
+		for k in points.size():
+			var d := points[k].distance_to(centre)
+			# Not where a track leaves another site: joining there would end against it.
+			if d < nearest_d and avoid.all(func(r: Rect2) -> bool: return not r.grow(_track_half() + 2.0).has_point(points[k])):
+				nearest_d = d
+				nearest = k
+		if nearest >= 0:
+			targets.append(Vector3(points[nearest].x, heights[nearest], points[nearest].y))
+	if targets.is_empty():
+		return
+	_avoid = avoid
+	var kind_cfg: Dictionary = (_cfg["kinds"] as Dictionary)["track"]
+	# Each target's way there, shortest first.
+	var ways: Array[Vector4] = []
+	for t in targets:
+		var way := _route(centre, Vector2(t.x, t.z), float(kind_cfg["max_grade"]))
+		if way.is_empty():
+			continue
+		var length := 0.0
+		for k in range(1, way.size()):
+			length += way[k].distance_to(way[k - 1])
+		ways.append(Vector4(t.x, t.y, t.z, length))
+	ways.sort_custom(func(a: Vector4, b: Vector4) -> bool: return a.w < b.w)
+	var cell := settlements.zones.cell_size()
+	var sides: Array[Vector2] = []
+	for c: Vector3 in site["connectors"]:
+		sides.append(Vector2(c.x, c.z))
+	for w in ways:
+		var to := Vector2(w.x, w.z)
+		# The road end of a track: a point on the road, met square from the side it comes from.
+		var on_road := {"footprint": Rect2(to - Vector2.ONE, Vector2.ONE * 2.0), "level": w.y, "connectors": [Vector3(to.x, w.y, to.y)]}
+		# Out of the side nearest the road whose straight lead-in (three cells, see `_join`)
+		# is clear of the sites beside it: a water tower stands right by its farm.
+		sides.sort_custom(func(p: Vector2, q: Vector2) -> bool: return p.distance_to(to) < q.distance_to(to))
+		var start := Vector2.INF
+		for side in sides:
+			var lead := side + _outward(site, side) * cell * 3.0
+			if avoid.all(func(r: Rect2) -> bool: return not MapSites.segment_hits(r.grow(_track_half()), side, lead)):
+				start = side
+				break
+		if start == Vector2.INF:
+			continue
+		# Pinned at the road only; the site's pad is then levelled to where the track
+		# arrives, so a site well above or below the road still gets a track within its grade.
+		var free := site.duplicate()
+		free["level"] = NAN
+		_join(&"track", name, start, free, "road", on_road)
+		if _roads.is_empty() or _roads.back()["from"] != name:
+			continue
+		# Rounding corners and the square approach can still shift a track onto a site
+		# beside it: then the next way is tried.
+		var track: Dictionary = _roads.back()
+		var crosses := false
+		for p: Vector2 in track["points"]:
+			if avoid.any(func(r: Rect2) -> bool: return r.grow(_track_half()).has_point(p)):
+				crosses = true
+				break
+		if crosses:
+			_roads.pop_back()
+			continue
+		var level := float((track["heights"] as PackedFloat32Array)[0])
+		site["level"] = level
+		var moved: Array[Vector3] = []
+		for c: Vector3 in site["connectors"]:
+			moved.append(Vector3(c.x, level, c.z))
+		site["connectors"] = moved
+		break
+	_avoid = []
 
 
 func _nearest_connector(place: Dictionary, to: Vector2) -> Vector2:
@@ -72,7 +169,10 @@ func _join(kind: StringName, from_name: String, start: Vector2, from_place: Dict
 	var path := _route(start + out_from * cell * 3.0, end + out_to * cell * 3.0, max_grade)
 	if path.is_empty():
 		return
-	path = _straighten(path, max_grade)
+	# A track winds over the land; pulling a long one straight also costs seconds, testing a
+	# line from each point to every later one.
+	if kind != &"track":
+		path = _straighten(path, max_grade)
 	path.append(end + out_to * cell)
 	if out_from != Vector2.ZERO:
 		path.insert(0, start + out_from * cell)
@@ -83,12 +183,16 @@ func _join(kind: StringName, from_name: String, start: Vector2, from_place: Dict
 	var points := _resample(_ease(_resample(curve, float(_cfg["sample"])), EASE_PASSES), float(_cfg["sample"]))
 	var land := settlements.zones.land
 	var start_level := float(from_place["level"]) if not from_place.is_empty() else land.height(start.x, start.y)
-	var heights := _profile(points, start_level, float(place["level"]), max_grade)
+	# A kind may follow the land more closely than the main roads (a dirt track, 8 m).
+	var window := float(kind_cfg.get("profile_window", _cfg["profile_window"]))
+	var heights := _profile(points, start_level, float(place["level"]), max_grade, window)
 	var road := {"kind": String(kind), "from": from_name, "to": to_name, "points": points, "heights": heights,
 		"width": float(kind_cfg["width"]), "max_grade": max_grade,
 		"max_cut": float(kind_cfg["max_cut"]), "max_fill": float(kind_cfg["max_fill"])}
-	road["tunnels"] = _spans(points, heights, func(ground: float, h: float) -> bool: return ground - h > float(kind_cfg["max_cut"]))
-	road["bridges"] = _spans(points, heights, func(ground: float, h: float) -> bool: return h - ground > float(kind_cfg["max_fill"]))
+	# A track is always cut and filled: nobody builds a bridge or tunnel for a dirt track.
+	var spans := kind != &"track"
+	road["tunnels"] = _spans(points, heights, func(ground: float, h: float) -> bool: return ground - h > float(kind_cfg["max_cut"])) if spans else ([] as Array[Vector2i])
+	road["bridges"] = _spans(points, heights, func(ground: float, h: float) -> bool: return h - ground > float(kind_cfg["max_fill"])) if spans else ([] as Array[Vector2i])
 	_roads.append(road)
 
 
@@ -96,14 +200,14 @@ func _join(kind: StringName, from_name: String, start: Vector2, from_place: Dict
 ## metres, pinned to `from` and `to` at its ends, then held to `max_grade` between samples by
 ## passes forwards and backwards until nothing moves (it always settles when the ends are
 ## reachable at that grade).
-func _profile(points: PackedVector2Array, from: float, to: float, max_grade: float) -> PackedFloat32Array:
+func _profile(points: PackedVector2Array, from: float, to: float, max_grade: float, window: float) -> PackedFloat32Array:
 	var land := settlements.zones.land
 	var n := points.size()
 	var ground := PackedFloat32Array()
 	ground.resize(n)
 	for i in n:
 		ground[i] = land.height(points[i].x, points[i].y)
-	var half := maxi(int(float(_cfg["profile_window"]) / float(_cfg["sample"]) / 2.0), 0)
+	var half := maxi(int(window / float(_cfg["sample"]) / 2.0), 0)
 	var h := PackedFloat32Array()
 	h.resize(n)
 	for i in n:
@@ -113,8 +217,13 @@ func _profile(points: PackedVector2Array, from: float, to: float, max_grade: flo
 			total += ground[k]
 			count += 1
 		h[i] = total / count
-	h[0] = from
+	# A NAN start is free (a track's site end): it follows the land, held to the grade from
+	# the pinned end, so the profile always settles.
+	var free_start := is_nan(from)
+	if not free_start:
+		h[0] = from
 	h[n - 1] = to
+	var first := 0 if free_start else 1
 	for pass_index in PROFILE_PASSES:
 		var moved := false
 		for i in range(1, n - 1):
@@ -122,7 +231,7 @@ func _profile(points: PackedVector2Array, from: float, to: float, max_grade: flo
 			var held := clampf(h[i], h[i - 1] - step, h[i - 1] + step)
 			moved = moved or held != h[i]
 			h[i] = held
-		for i in range(n - 2, 0, -1):
+		for i in range(n - 2, first - 1, -1):
 			var step := max_grade * points[i].distance_to(points[i + 1])
 			var held := clampf(h[i], h[i + 1] - step, h[i + 1] + step)
 			moved = moved or held != h[i]
@@ -166,26 +275,38 @@ func _route(a: Vector2, b: Vector2, max_grade: float) -> PackedVector2Array:
 		return Vector2i(clampi(floori((p.x - origin.x) / cell), 0, n - 1), clampi(floori((p.y - origin.y) / cell), 0, n - 1))
 	var start: Vector2i = to_cell.call(a)
 	var goal: Vector2i = to_cell.call(b)
-	var heights := PackedFloat32Array()
-	heights.resize(n * n)
-	var extra := PackedFloat32Array()
-	extra.resize(n * n)
 	var cost: Dictionary = _cfg["cost"]
-	var places: Array[Dictionary] = [settlements.city()]
-	places.append_array(settlements.towns())
-	for j in n:
-		for i in n:
-			var c := zones.cell_centre(i, j)
-			var k := j * n + i
-			heights[k] = land.height(c.x, c.y)
-			var kind := str(zones.zone_at(c.x, c.y)["kind"])
-			if kind == "water":
-				extra[k] = -1.0
-				continue
-			extra[k] = float(cost.get(kind, 0.0))
-			for place in places:
-				if (place["footprint"] as Rect2).grow(-cell * 0.5).has_point(c):
-					extra[k] = -1.0
+	# The grid's heights and costs are the same for every route: worked out once.
+	if _heights.is_empty():
+		_heights.resize(n * n)
+		_extra.resize(n * n)
+		var places: Array[Dictionary] = [settlements.city()]
+		places.append_array(settlements.towns())
+		for j in n:
+			for i in n:
+				var c := zones.cell_centre(i, j)
+				var k := j * n + i
+				_heights[k] = land.height(c.x, c.y)
+				var kind := str(zones.zone_at(c.x, c.y)["kind"])
+				if kind == "water":
+					_extra[k] = -1.0
+					continue
+				_extra[k] = float(cost.get(kind, 0.0))
+				for place in places:
+					if (place["footprint"] as Rect2).grow(-cell * 0.5).has_point(c):
+						_extra[k] = -1.0
+	var heights := _heights
+	var extra := _extra
+	if not _avoid.is_empty():
+		extra = _extra.duplicate()
+		# Every cell a footprint (with room for the track beside it) touches, however small.
+		for rect in _avoid:
+			var grown := rect.grow(_track_half())
+			var from := Vector2i(clampi(floori((grown.position.x - origin.x) / cell), 0, n - 1), clampi(floori((grown.position.y - origin.y) / cell), 0, n - 1))
+			var to := Vector2i(clampi(floori((grown.end.x - origin.x) / cell), 0, n - 1), clampi(floori((grown.end.y - origin.y) / cell), 0, n - 1))
+			for j in range(from.y, to.y + 1):
+				for i in range(from.x, to.x + 1):
+					extra[j * n + i] = -1.0
 	var best := PackedFloat32Array()
 	best.resize(n * n)
 	best.fill(INF)
@@ -198,10 +319,17 @@ func _route(a: Vector2, b: Vector2, max_grade: float) -> PackedVector2Array:
 	best[s] = 0.0
 	heap.push(0.0, s)
 	var over := float(cost["over_grade"])
+	# Each cell expanded once: an older, dearer entry for it may still be in the heap, and
+	# expanding it again multiplies the work on rough ground (seconds for one long track).
+	var done := PackedByteArray()
+	done.resize(n * n)
 	while not heap.is_empty():
 		var k := heap.pop()
 		if k == g:
 			break
+		if done[k] == 1:
+			continue
+		done[k] = 1
 		var i := k % n
 		var j := k / n
 		for step: Vector2i in STEPS:
@@ -271,6 +399,9 @@ func _clear_run(a: Vector2, b: Vector2, max_grade: float) -> bool:
 			return false
 		for place in places:
 			if (place["footprint"] as Rect2).grow(-1.0).has_point(p):
+				return false
+		for rect in _avoid:
+			if rect.grow(_track_half()).has_point(p):
 				return false
 		var h := land.height(p.x, p.y)
 		if absf(h - last) / (a.distance_to(b) / steps) > max_grade:

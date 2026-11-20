@@ -15,6 +15,10 @@ var land: WorldLand
 var _bank: float
 var _shoulder: float
 var _reach: float
+## A dirt track's banks: steeper and shorter than a road's, so on a hillside it is a notch
+## in the slope, not a cut fanning out tens of metres.
+var _track_bank: float
+var _track_reach: float
 ## Tile key -> features near it: {road (index), segment (first point index)} or {pad (index)}.
 var _tiles: Dictionary[Vector2i, Array] = {}
 var _roads: Array[Dictionary] = []
@@ -22,17 +26,23 @@ var _pads: Array[Dictionary] = []
 
 
 ## `net` may be null (no roads); `config` is the recipe's "earthworks" section.
-func _init(ground: WorldLand, places: Settlements, net: RoadNetwork, config: Dictionary) -> void:
+func _init(ground: WorldLand, places: Settlements, net: RoadNetwork, config: Dictionary, placed: MapSites = null) -> void:
 	land = ground
 	_bank = float(config["bank_grade"])
 	_shoulder = float(config["shoulder"])
 	_reach = float(config["reach"])
+	_track_bank = float(config.get("track_bank_grade", _bank))
+	_track_reach = float(config.get("track_reach", _reach))
 	if places != null:
 		var all: Array[Dictionary] = places.towns().duplicate()
 		if not places.city().is_empty():
 			all.append(places.city())
 		for place in all:
 			_add_pad(place["footprint"], float(place["level"]))
+	# Sites stand on level pads of their own, as settlements do (#429).
+	if placed != null:
+		for site in placed.sites():
+			_add_pad(site["footprint"], float(site["level"]))
 	if net != null:
 		for road in net.roads():
 			_add_road(road)
@@ -45,7 +55,8 @@ func height(x: float, z: float) -> float:
 	if near == null:
 		return ground
 	var p := Vector2(x, z)
-	var limits: Array[Vector2] = []
+	# Each work's (level, metres outside it, bank grade, reach).
+	var limits: Array[Vector4] = []
 	# Each stretch of a road counts once, by its nearest segment: neighbouring segments of one
 	# bend must not fight over the height. Segments of a road come in order, so a gap in the
 	# indices starts another stretch (the far leg of a hairpin), which counts on its own.
@@ -56,8 +67,12 @@ func height(x: float, z: float) -> float:
 		if f.has("pad"):
 			var pad: Dictionary = _pads[int(f["pad"])]
 			var e := _outside(pad["rect"], p)
+			# On a pad it is level, whatever banks of other works reach in: roads only meet
+			# pads at their edges.
+			if e == 0.0:
+				return float(pad["level"])
 			if e <= _reach:
-				limits.append(Vector2(float(pad["level"]), e))
+				limits.append(Vector4(float(pad["level"]), e, _bank, _reach))
 			continue
 		var road: Dictionary = _roads[int(f["road"])]
 		if _in_span(road, p):
@@ -67,11 +82,11 @@ func height(x: float, z: float) -> float:
 		if is_nan(at.x):
 			continue
 		var e := maxf(at.x - float(road["half"]), 0.0)
-		if e > _reach:
+		if e > float(road["reach"]):
 			continue
 		if int(f["road"]) != road_at or k > last_segment + 2:
 			if best.z < INF:
-				limits.append(Vector2(best.x, best.y))
+				limits.append(Vector4(best.x, best.y, float(_roads[road_at]["bank"]), float(_roads[road_at]["reach"])))
 			best = Vector3(0.0, 0.0, INF)
 			road_at = int(f["road"])
 		last_segment = k
@@ -80,22 +95,22 @@ func height(x: float, z: float) -> float:
 		if at.x < best.z:
 			best = Vector3(at.y, e, at.x)
 	if best.z < INF:
-		limits.append(Vector2(best.x, best.y))
+		limits.append(Vector4(best.x, best.y, float(_roads[road_at]["bank"]), float(_roads[road_at]["reach"])))
 	if limits.is_empty():
 		return ground
 	var lo := -INF
 	var hi := INF
-	var nearest := INF
+	var hold := 0.0
 	for limit in limits:
-		lo = maxf(lo, limit.x - _bank * limit.y)
-		hi = minf(hi, limit.x + _bank * limit.y)
-		nearest = minf(nearest, limit.y)
+		lo = maxf(lo, limit.x - limit.z * limit.y)
+		hi = minf(hi, limit.x + limit.z * limit.y)
+		# A bank that has not met the land by its reach (a hillside steeper than the bank)
+		# eases into it over the last quarter instead of ending in a cliff.
+		hold = maxf(hold, 1.0 - smoothstep(limit.w * 0.75, limit.w, limit.y))
 	# Where two works disagree (a road climbing past a pad) the ground runs between them;
 	# the middle is continuous with the clamp on both sides, so it never steps.
 	var shaped := clampf(ground, lo, hi) if lo <= hi else (lo + hi) / 2.0
-	# A bank that has not met the land by `reach` (a hillside steeper than the bank) eases
-	# into it over the last quarter instead of ending in a cliff.
-	return lerpf(shaped, ground, smoothstep(_reach * 0.75, _reach, nearest))
+	return lerpf(ground, shaped, hold)
 
 
 ## Rise per metre of the shaped ground at (x, z).
@@ -119,6 +134,8 @@ func _add_road(road: Dictionary) -> void:
 			skip[i] = 1
 	var index := _roads.size()
 	var half := float(road["width"]) / 2.0 + _shoulder
+	var track: bool = road["kind"] == "track"
+	var reach := _track_reach if track else _reach
 	# Between a tunnel's or bridge's two mouths the road shapes nothing, not even with the
 	# banks of the cuts leading up to them: each span is kept as the slab between the planes
 	# across its mouths, facing into it.
@@ -130,7 +147,8 @@ func _add_road(road: Dictionary) -> void:
 		var into_a := (points[mini(span.x, last)] - a).normalized()
 		var into_b := (points[maxi(span.y, 0)] - b).normalized()
 		slabs.append(PackedVector2Array([a, into_a, b, into_b]))
-	_roads.append({"points": points, "heights": road["heights"], "half": half, "slabs": slabs})
+	_roads.append({"points": points, "heights": road["heights"], "half": half, "slabs": slabs,
+		"bank": _track_bank if track else _bank, "reach": reach})
 	for k in points.size() - 1:
 		# A segment touching a tunnel or bridge sample is left out: the land stays as it is
 		# over a tunnel and under a bridge.
@@ -142,7 +160,7 @@ func _add_road(road: Dictionary) -> void:
 		var open_start := k == 0 or skip[k - 1] == 0
 		var open_end := k + 2 >= points.size() or skip[k + 2] == 0
 		var box := Rect2(points[k], Vector2.ZERO).expand(points[k + 1])
-		_index(box.grow(half + _reach), {"road": index, "segment": k, "open_start": open_start, "open_end": open_end})
+		_index(box.grow(half + reach), {"road": index, "segment": k, "open_start": open_start, "open_end": open_end})
 
 
 func _index(box: Rect2, feature: Dictionary) -> void:
