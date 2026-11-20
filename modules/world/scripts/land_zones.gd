@@ -63,6 +63,32 @@ func best(use: StringName) -> Dictionary:
 	return found
 
 
+## The `zones` block of the recipe this was built from.
+func config() -> Dictionary:
+	return _cfg
+
+
+## Metres a zone cell covers, and cells along a side.
+func cell_size() -> float:
+	return _cell
+
+
+func side() -> int:
+	return _side
+
+
+## The zone id of cell (i, j), or -1 off the map.
+func zone_id_at_cell(i: int, j: int) -> int:
+	if i < 0 or j < 0 or i >= _side or j >= _side:
+		return -1
+	return _zone_of[j * _side + i]
+
+
+## The middle of cell (i, j) on the ground (x, z).
+func cell_centre(i: int, j: int) -> Vector2:
+	return _cell_centre(j * _side + i)
+
+
 ## Where the players' camp goes: flat dry ground between `spawn_margin` and `spawn_edge`
 ## metres in from the map's edge.
 func spawn() -> Vector2:

@@ -17,6 +17,7 @@ const DEEP_AT := 3.0
 const ZONE_EDGE := Color(0.1, 0.1, 0.1)
 const CITY := Color(0.85, 0.15, 0.1)
 const SPAWN := Color(1, 1, 1)
+const TOWN := Color(0.95, 0.55, 0.1)
 
 
 func _initialize() -> void:
@@ -40,7 +41,11 @@ func _initialize() -> void:
 	var image := render(land, pixels)
 	var zones_cfg: Variant = (recipe as Dictionary).get("zones")
 	if zones_cfg is Dictionary:
-		draw_zones(image, LandZones.new(land, zones_cfg))
+		var zones := LandZones.new(land, zones_cfg)
+		draw_zones(image, zones)
+		var places_cfg: Variant = (recipe as Dictionary).get("settlements")
+		if places_cfg is Dictionary:
+			draw_settlements(image, Settlements.new(zones, places_cfg))
 	var err := image.save_png(args[2])
 	if err != OK:
 		push_error("map_preview: could not write %s (%d)" % [args[2], err])
@@ -90,14 +95,12 @@ static func render(land: WorldLand, pixels: int) -> Image:
 	return image
 
 
-## Thin dark lines where one zone meets another, the city's zone outlined in red, and the
-## spawn as a white dot.
+## Thin dark lines where one zone meets another.
 static func draw_zones(image: Image, zones: LandZones) -> void:
 	var land := zones.land
 	var b := land.bounds()
 	var pixels := image.get_width()
 	var step := b.size.x / pixels
-	var city := zones.best(&"city")
 	var ids := PackedInt32Array()
 	ids.resize(pixels * pixels)
 	for j in pixels:
@@ -108,12 +111,41 @@ static func draw_zones(image: Image, zones: LandZones) -> void:
 			var id := ids[j * pixels + i]
 			if id == ids[j * pixels + i - 1] and id == ids[(j - 1) * pixels + i]:
 				continue
-			var in_city := not city.is_empty() and (id == int(city["id"]) or ids[j * pixels + i - 1] == int(city["id"]) or ids[(j - 1) * pixels + i] == int(city["id"]))
-			image.set_pixel(i, j, CITY if in_city else image.get_pixel(i, j).lerp(ZONE_EDGE, 0.35))
-	var spawn := zones.spawn()
-	var si := int((spawn.x - b.position.x) / step)
-	var sj := int((spawn.y - b.position.y) / step)
-	for dj in range(-3, 4):
-		for di in range(-3, 4):
-			if di * di + dj * dj <= 9 and si + di >= 0 and sj + dj >= 0 and si + di < pixels and sj + dj < pixels:
-				image.set_pixel(si + di, sj + dj, SPAWN)
+			image.set_pixel(i, j, image.get_pixel(i, j).lerp(ZONE_EDGE, 0.35))
+
+
+
+## The city's square in red, towns' in orange (drawn twice as thick as zone lines), the
+## camp as a white dot.
+static func draw_settlements(image: Image, places: Settlements) -> void:
+	var b := places.zones.land.bounds()
+	var pixels := image.get_width()
+	var step := b.size.x / pixels
+	var squares: Array = []
+	if not places.city().is_empty():
+		squares.append([places.city()["footprint"], CITY])
+	for t: Dictionary in places.towns():
+		squares.append([t["footprint"], TOWN])
+	for entry: Array in squares:
+		var foot: Rect2 = entry[0]
+		var colour: Color = entry[1]
+		var x0 := int((foot.position.x - b.position.x) / step)
+		var y0 := int((foot.position.y - b.position.y) / step)
+		var x1 := int((foot.end.x - b.position.x) / step)
+		var y1 := int((foot.end.y - b.position.y) / step)
+		for t in 2:
+			for x in range(x0, x1 + 1):
+				for y: int in [y0 + t, y1 - t]:
+					if x >= 0 and y >= 0 and x < pixels and y < pixels:
+						image.set_pixel(x, y, colour)
+			for y in range(y0, y1 + 1):
+				for x: int in [x0 + t, x1 - t]:
+					if x >= 0 and y >= 0 and x < pixels and y < pixels:
+						image.set_pixel(x, y, colour)
+	var camp := places.camp()
+	var ci := int((camp.x - b.position.x) / step)
+	var cj := int((camp.y - b.position.y) / step)
+	for dj in range(-4, 5):
+		for di in range(-4, 5):
+			if di * di + dj * dj <= 16 and ci + di >= 0 and cj + dj >= 0 and ci + di < pixels and cj + dj < pixels:
+				image.set_pixel(ci + di, cj + dj, SPAWN)
