@@ -1,8 +1,10 @@
 extends SceneTree
-## Renders a map recipe's land top-down to a PNG (#427): height as hill shading over a
-## colour by height. Run by tools/map-preview.ts:
-##   godot --headless --path . -s res://tools/gd/map_preview.gd -- <recipe res path> <seed> <out png> <pixels>
-## No rendering server needed: it samples WorldLand and writes the image itself.
+## Renders a map recipe's land top-down to a PNG (#427, #428): hill shading over colour by
+## height, biomes and water, then the layers asked for (zones, settlements, roads,
+## earthworks). Run by tools/map-preview.ts and tools/map-viewer.ts:
+##   godot --headless --path . -s res://tools/gd/map_preview.gd -- <recipe path> <seed> <out png> <pixels> [layers] [stats json]
+## `layers` is comma separated (all when left out); `stats json` gets a summary and a coarse
+## height and zone grid for the viewer's hover. No rendering server needed.
 
 const LIGHT := Vector3(-0.6, 0.7, -0.4)
 const LOW := Color(0.36, 0.52, 0.27)
@@ -19,6 +21,11 @@ const CITY := Color(0.85, 0.15, 0.1)
 const SPAWN := Color(1, 1, 1)
 const TOWN := Color(0.95, 0.55, 0.1)
 const ROAD := Color(0.18, 0.18, 0.2)
+const TUNNEL := Color(0.62, 0.3, 0.75)
+const BRIDGE := Color(0.55, 0.85, 1.0)
+const ALL_LAYERS := "zones,settlements,roads,earthworks"
+## Cells a side of the stats grid the viewer reads heights and zones from on hover.
+const GRID_CELLS := 128
 
 
 func _initialize() -> void:
@@ -37,20 +44,38 @@ func _initialize() -> void:
 		push_error("map_preview: %s is not a JSON object" % args[0])
 		quit(2)
 		return
+	var started := Time.get_ticks_msec()
 	var land := WorldLand.new(recipe, int(args[1]))
 	var pixels := maxi(int(args[3]), 16)
+	var layers := (args[4] if args.size() > 4 else ALL_LAYERS).split(",", false)
 	var image := render(land, pixels)
+	var zones: LandZones = null
+	var places: Settlements = null
+	var net: RoadNetwork = null
 	var zones_cfg: Variant = (recipe as Dictionary).get("zones")
 	if zones_cfg is Dictionary:
-		var zones := LandZones.new(land, zones_cfg)
-		draw_zones(image, zones)
+		zones = LandZones.new(land, zones_cfg)
 		var places_cfg: Variant = (recipe as Dictionary).get("settlements")
 		if places_cfg is Dictionary:
-			var places := Settlements.new(zones, places_cfg)
+			places = Settlements.new(zones, places_cfg)
 			var roads_cfg: Variant = (recipe as Dictionary).get("roads")
 			if roads_cfg is Dictionary:
-				draw_roads(image, RoadNetwork.new(places, roads_cfg))
-			draw_settlements(image, places)
+				net = RoadNetwork.new(places, roads_cfg)
+	var built := Time.get_ticks_msec() - started
+	if zones != null and layers.has("zones"):
+		draw_zones(image, zones)
+	if net != null and layers.has("roads"):
+		draw_roads(image, net, layers.has("earthworks"))
+	if places != null and layers.has("settlements"):
+		draw_settlements(image, places)
+	if args.size() > 5:
+		var out := FileAccess.open(args[5], FileAccess.WRITE)
+		if out == null:
+			push_error("map_preview: could not write %s" % args[5])
+			quit(1)
+			return
+		# Keys in the order written: the summary reads top to bottom as it was built.
+		out.store_string(JSON.stringify(stats(land, zones, places, net, built), "", false))
 	var err := image.save_png(args[2])
 	if err != OK:
 		push_error("map_preview: could not write %s (%d)" % [args[2], err])
@@ -157,16 +182,73 @@ static func draw_settlements(image: Image, places: Settlements) -> void:
 
 
 ## Each road as a dark line as wide as the road (at least a pixel).
-static func draw_roads(image: Image, net: RoadNetwork) -> void:
+static func draw_roads(image: Image, net: RoadNetwork, earthworks: bool) -> void:
 	var b := net.settlements.zones.land.bounds()
 	var pixels := image.get_width()
 	var step := b.size.x / pixels
 	for road: Dictionary in net.roads():
 		var half := maxi(int(float(road["width"]) / step / 2.0), 0)
-		for p: Vector2 in road["points"]:
+		var points: PackedVector2Array = road["points"]
+		var colours: Array[Color] = []
+		colours.resize(points.size())
+		colours.fill(ROAD)
+		if earthworks:
+			for span: Vector2i in road["tunnels"]:
+				for i in range(span.x, span.y + 1):
+					colours[i] = TUNNEL
+			for span: Vector2i in road["bridges"]:
+				for i in range(span.x, span.y + 1):
+					colours[i] = BRIDGE
+		for k in points.size():
+			var p := points[k]
 			var ci := int((p.x - b.position.x) / step)
 			var cj := int((p.y - b.position.y) / step)
 			for dj in range(-half, half + 1):
 				for di in range(-half, half + 1):
 					if ci + di >= 0 and cj + dj >= 0 and ci + di < pixels and cj + dj < pixels:
-						image.set_pixel(ci + di, cj + dj, ROAD)
+						image.set_pixel(ci + di, cj + dj, colours[k])
+
+
+## What the viewer shows beside the map: a summary of the land, settlements and roads, and
+## a coarse grid of heights and zone kinds for the hover readout.
+static func stats(land: WorldLand, zones: LandZones, places: Settlements, net: RoadNetwork, built_ms: int) -> Dictionary:
+	var summary := {
+		"map": "%d m square" % int(land.size),
+		"built in": "%d ms" % built_ms,
+		"walkable (<0.35)": "%d %%" % roundi(land.walkable_share(16.0, 0.35) * 100.0),
+		"near flat (<0.08)": "%d %%" % roundi(land.walkable_share(16.0, 0.08) * 100.0),
+		"hillside (>0.2)": "%d %%" % roundi((1.0 - land.walkable_share(16.0, 0.2)) * 100.0),
+		"ponds": land.ponds().size(),
+	}
+	if places != null:
+		var city := places.city()
+		summary["city"] = "%d m" % int((city["footprint"] as Rect2).size.x) if not city.is_empty() else "none"
+		summary["towns"] = ", ".join(places.towns().map(func(t: Dictionary) -> String: return "%d m" % int((t["footprint"] as Rect2).size.x))) if not places.towns().is_empty() else "none"
+	if net != null:
+		var length := 0.0
+		var tunnels := 0
+		var bridges := 0
+		var steepest := 0.0
+		for road: Dictionary in net.roads():
+			var points: PackedVector2Array = road["points"]
+			var heights: PackedFloat32Array = road["heights"]
+			for i in range(1, points.size()):
+				var run := points[i].distance_to(points[i - 1])
+				length += run
+				steepest = maxf(steepest, absf(heights[i] - heights[i - 1]) / run)
+			tunnels += (road["tunnels"] as Array).size()
+			bridges += (road["bridges"] as Array).size()
+		summary["roads"] = "%d, %.2f km" % [net.roads().size(), length / 1000.0]
+		summary["steepest road"] = "%.3f" % steepest
+		summary["tunnels / bridges"] = "%d / %d" % [tunnels, bridges]
+	var b := land.bounds()
+	var heights: Array[float] = []
+	var kinds: Array[int] = []
+	var cell := b.size.x / GRID_CELLS
+	for j in GRID_CELLS:
+		for i in GRID_CELLS:
+			var x := b.position.x + (i + 0.5) * cell
+			var z := b.position.y + (j + 0.5) * cell
+			heights.append(snappedf(land.height(x, z), 0.1))
+			kinds.append(LandZones.KINDS.find(str(zones.zone_at(x, z).get("kind", ""))) if zones != null else -1)
+	return {"summary": summary, "grid": {"left": b.position.x, "top": b.position.y, "size": b.size.x, "cells": GRID_CELLS, "heights": heights, "zones": kinds, "kinds": LandZones.KINDS}}
