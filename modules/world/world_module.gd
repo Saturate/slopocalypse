@@ -148,8 +148,9 @@ func world_state_owner() -> String:
 	return "world"
 
 
+## 2: trees by square chunk ids (#472); a version-1 save's tree ids point elsewhere.
 func world_state_version() -> int:
-	return 1
+	return 2
 
 
 func server_world_state() -> Dictionary:
@@ -157,8 +158,8 @@ func server_world_state() -> Dictionary:
 
 
 func server_restore_world_state(version: int, data: Variant) -> void:
-	if version != 1 or not data is Dictionary:
-		Log.warn(&"world", "saved world damage is version %d; this game reads 1, so it starts undamaged" % version)
+	if version != 2 or not data is Dictionary:
+		Log.warn(&"world", "saved world damage is version %d; this game reads 2, so it starts undamaged" % version)
 		return
 	var d: Dictionary = data
 	if _voxels != null:

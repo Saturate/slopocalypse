@@ -22,7 +22,7 @@ func test_a_crater_is_listed_and_dug_again_from_the_saved_state() -> void:
 	var at := Vector3(6.0, voxels.ground_height(6.0, -30.0), -30.0)
 	var before := voxels.surface_height(at.x, at.z)
 	var saved := {"digs": [[at.x, at.y, at.z, 2.0]], "felled": []}
-	_world.call(&"server_restore_world_state", 1, saved)
+	_world.call(&"server_restore_world_state", 2, saved)
 	assert_float(voxels.surface_height(at.x, at.z)).is_less(before - 0.5)
 	var state: Dictionary = _world.call(&"server_world_state")
 	assert_int((state["digs"] as Array).size()).is_equal(1)
