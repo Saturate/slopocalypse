@@ -138,8 +138,7 @@ func _update_streams() -> void:
 			if stream != null:
 				stream.emitting = false
 			continue
-		# Water leaves a hole at about sqrt(2 g depth); a little less reads better at this size.
-		var speed := sqrt(2.0 * 9.8 * depth) * 0.8
+		var speed := stream_speed(depth, float(config.get("stream_speed_share", 0.2)))
 		if stream == null:
 			stream = _stream(hole["point"], hole["normal"])
 			hole["stream"] = stream
@@ -153,9 +152,21 @@ func _update_streams() -> void:
 			view.call(&"add_ripple", Vector3(from.x + out.x, global_position.y, from.z + out.z), 0.35)
 
 
+## How fast water leaves a hole `depth` metres under the surface: about sqrt(2 g depth), times
+## `share`. The full speed throws a jet metres out from a tank this small and reads as a fire
+## hose (playtest 2, #410); a share of it reads as a leak.
+static func stream_speed(depth: float, share: float) -> float:
+	return sqrt(2.0 * 9.8 * maxf(depth, 0.0)) * share
+
+
+## Where a jet from a hole `height` metres up, leaving level at `speed`, lands: metres out.
+static func throw_distance(height: float, speed: float) -> float:
+	return speed * sqrt(2.0 * maxf(height, 0.0) / 9.8)
+
+
 func _stream(point: Vector3, normal: Vector3) -> CPUParticles3D:
 	var s := CPUParticles3D.new()
-	s.amount = 260
+	s.amount = int(config.get("stream_drops", 90))
 	# Gone as they reach the ground (particles here don't collide): the time to fall that far.
 	s.lifetime = sqrt(2.0 * maxf(point.y, 0.5) / 9.8)
 	s.direction = normal
@@ -163,7 +174,7 @@ func _stream(point: Vector3, normal: Vector3) -> CPUParticles3D:
 	s.gravity = Vector3(0, -9.8, 0)
 	s.local_coords = false
 	var drop := BoxMesh.new()
-	drop.size = Vector3(0.1, 0.24, 0.1)
+	drop.size = Vector3(0.07, 0.18, 0.07)
 	var material := StandardMaterial3D.new()
 	material.albedo_color = Color(0.7, 0.85, 0.9)
 	material.emission_enabled = true
