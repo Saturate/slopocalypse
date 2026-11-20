@@ -6,6 +6,10 @@ extends VehicleBody3D
 ## A car left on its roof or side rights itself after a moment.
 
 const CONFIG := "res://modules/car/data/car.json"
+## People a car shoves (anyone walking about).
+const PEOPLE: Array[StringName] = [&"players", &"enemies", &"civilians"]
+## Most bodies a car's shape query reports: enough for walls, props and a crowd in the city.
+const QUERY_RESULTS := 32
 const REQUIRED := {
 	"mass": TYPE_FLOAT,
 	"engine_force": TYPE_FLOAT,
@@ -17,6 +21,9 @@ const REQUIRED := {
 	"enter_distance": TYPE_FLOAT,
 	"high_speed_steer_share": TYPE_FLOAT,
 	"downforce": TYPE_FLOAT,
+	"push_min_speed": TYPE_FLOAT, "push_share": TYPE_FLOAT, "push_side": TYPE_FLOAT,
+	"run_over_speed": TYPE_FLOAT, "run_over_damage": TYPE_FLOAT, "pass_seconds": TYPE_FLOAT,
+	"push_lookahead": TYPE_FLOAT, "push_side_share": TYPE_FLOAT, "run_over_players": TYPE_BOOL,
 	"flip_seconds": TYPE_FLOAT,
 	"stall_depth": TYPE_FLOAT,
 	"water_drag": TYPE_FLOAT,
@@ -50,6 +57,9 @@ var _intent: CarIntent
 var _exit_point: Marker3D
 var _passenger_exit: Marker3D
 var _stuck_for := 0.0
+## People the car is passing through after shoving them: seconds left before it collides
+## with them again.
+var _passing: Dictionary[Node, float] = {}
 ## The engine is under water (`stall_depth` at the front axle): no power until it is out.
 var stalled := false
 ## The node answering `water_depth_at` (the voxel world), found once.
@@ -210,6 +220,7 @@ func _physics_tick(delta: float) -> void:
 	# Grip that grows with speed keeps it planted over crests.
 	apply_central_force(-global_transform.basis.y * float(config["downforce"]) * linear_velocity.length_squared())
 	_right_when_stuck(delta)
+	_shove_people(delta)
 
 
 ## How deep the water is at `at` (0 on land, or with no world that knows).
@@ -239,3 +250,87 @@ func _right_when_stuck(delta: float) -> void:
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	Log.info(&"car", "%s was stuck on its side; put it back on its wheels" % name)
+
+
+## Server: people in the way of the moving car are shoved aside instead of stopping it dead
+## (a body moved only by its own step would hold a car like a wall, #409), and hurt by a hit
+## above `run_over_speed`. The car passes through each until they are clear of it.
+func _shove_people(delta: float) -> void:
+	var inside := _people_in(0.0)
+	for person: Node in _passing.keys():
+		if not is_instance_valid(person):
+			_passing.erase(person)
+			continue
+		_passing[person] = float(_passing[person]) - delta
+		# Still overlapping (pinned against a wall, say): keep passing through and push them
+		# out the side, or they would end up inside the car.
+		if inside.has(person):
+			_passing[person] = maxf(float(_passing[person]), delta)
+			if person.has_method(&"shove"):
+				person.call(&"shove", _out_to_side(person) * float(config["push_side"]))
+		elif float(_passing[person]) <= 0.0:
+			remove_collision_exception_with(person)
+			(person as PhysicsBody3D).remove_collision_exception_with(self)
+			_passing.erase(person)
+	var speed := linear_velocity.length()
+	if speed < float(config["push_min_speed"]) or not is_inside_tree():
+		return
+	for person: PhysicsBody3D in _people_in(float(config["push_lookahead"])):
+		if not _passing.has(person):
+			add_collision_exception_with(person)
+			person.add_collision_exception_with(self)
+			_run_over(person, speed)
+		_passing[person] = float(config["pass_seconds"])
+		var heading := linear_velocity.normalized()
+		if person.has_method(&"shove"):
+			person.call(&"shove", heading * speed * float(config["push_share"]) + _out_to_side(person) * maxf(float(config["push_side"]), speed * float(config["push_side_share"])))
+
+
+## The hit hurts above `run_over_speed`. The car is the source: the driver's body is parked
+## where they got in. A player's car spares other players unless `run_over_players` is on.
+func _run_over(person: PhysicsBody3D, speed: float) -> void:
+	if speed <= float(config["run_over_speed"]):
+		return
+	if not bool(config["run_over_players"]) and person.is_in_group(&"players") and driver != null and driver.is_in_group(&"players"):
+		return
+	var health := HealthComponent.find_on(person)
+	if health != null:
+		health.server_apply_damage((speed - float(config["run_over_speed"])) * float(config["run_over_damage"]), self)
+
+
+## Flat, sideways from the car's path to `person`.
+func _out_to_side(person: Node3D) -> Vector3:
+	var heading := linear_velocity.normalized() if linear_velocity.length() > 0.1 else global_transform.basis.z
+	var off := person.global_position - global_position
+	var side := off - heading * off.dot(heading)
+	side.y = 0.0
+	return side.normalized() if side.length() > 0.01 else global_transform.basis.x
+
+
+## People the car's body will be in `ahead` seconds from now at its speed (0: now).
+func _people_in(ahead: float) -> Array[PhysicsBody3D]:
+	var out: Array[PhysicsBody3D] = []
+	if not is_inside_tree():
+		return out
+	var space := get_world_3d().direct_space_state
+	for shape_node: CollisionShape3D in [get_node_or_null("Shape"), get_node_or_null("CabShape")]:
+		if shape_node == null or shape_node.shape == null:
+			continue
+		var query := PhysicsShapeQueryParameters3D.new()
+		query.shape = shape_node.shape
+		query.transform = shape_node.global_transform.translated(linear_velocity * ahead)
+		query.collision_mask = PhysicsLayers.SOLID
+		# Bodies it already passes through are excepted from collisions, not from queries.
+		query.exclude = [get_rid()]
+		for hit: Dictionary in space.intersect_shape(query, QUERY_RESULTS):
+			var body := hit.get("collider") as PhysicsBody3D
+			if body != null and not out.has(body) and _is_person(body):
+				out.append(body)
+	return out
+
+
+func _is_person(body: Node) -> bool:
+	for group: StringName in PEOPLE:
+		if body.is_in_group(group):
+			return true
+	return false

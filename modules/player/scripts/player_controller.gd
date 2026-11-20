@@ -18,6 +18,7 @@ const REQUIRED := {
 	"swim_depth": TYPE_FLOAT,
 	"swim_speed": TYPE_FLOAT,
 	"step_height": TYPE_FLOAT,
+	"shove_fade": TYPE_FLOAT,
 	"acceleration": TYPE_FLOAT,
 	"sprint_acceleration": TYPE_FLOAT,
 	"ads_speed_multiplier": TYPE_FLOAT,
@@ -95,6 +96,9 @@ var _slide_left := 0.0
 ## Seconds until another slide may start: chained short slides, each starting fast, would
 ## otherwise outrun sprinting.
 var _slide_cooldown := 0.0
+## A push from outside (a car driving through, #409), on top of the body's own walking; it
+## fades at player.json's `shove_fade` metres a second per second, whatever the body does.
+var _shove := Vector3.ZERO
 
 
 ## A copy of someone else's body on a client: it shows what the server sends and runs no
@@ -163,6 +167,9 @@ func _physics_process(delta: float) -> void:
 
 
 func _physics_tick(delta: float) -> void:
+	# Fades however the body moves this step (walking, sliding, vaulting), so none is left over.
+	if _shove != Vector3.ZERO:
+		_shove = _shove.move_toward(Vector3.ZERO, float(config["shove_fade"]) * delta)
 	if _intent.consume_interact():
 		# Whoever owns the thing in front of us (car, loot) decides what happens; `target` is
 		# what this player's own screen offered, if anything.
@@ -289,6 +296,32 @@ func _step_normal(delta: float) -> void:
 	velocity.x = horizontal.x
 	velocity.z = horizontal.y
 	_move_with_steps(delta)
+	_be_shoved(delta)
+
+
+## Carried along by the push, apart from its own velocity so walking, sliding and swimming
+## stay as they are; it slides along walls like any move.
+func _be_shoved(delta: float) -> void:
+	if _shove == Vector3.ZERO:
+		return
+	var step := Vector3(_shove.x, 0.0, _shove.z) * delta
+	var hit := move_and_collide(step)
+	if hit != null:
+		move_and_collide(hit.get_remainder().slide(hit.get_normal()))
+
+
+## Server: something pushes this body along `push` (metres a second): it is carried that way
+## for a moment. The strongest push in a moment wins; they don't stack. The dead aren't.
+func shove(push: Vector3) -> void:
+	if get_meta(&"dead", false):
+		return
+	if push.length() > _shove.length():
+		_shove = push
+
+
+## Server: drops any push still carrying the body (it was stopped, moved or respawned).
+func clear_shove() -> void:
+	_shove = Vector3.ZERO
 
 
 ## `move_and_slide`, but a step no higher than `step_height` in the way (a stair, a kerb, a
