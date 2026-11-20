@@ -1,30 +1,38 @@
 {
-  "_comment": "A map recipe (#331, decision 0010): the land before anything is placed on it. size: the square map's side in metres, centred on the origin. relief: metres from the lowest to the highest the noise reaches. flatness: 0 leaves the noise as it is; towards 1 the middle heights flatten into broad gentle land and only the extremes rise into hills. layers: noise summed for the height, each with frequency (1 / metres), amplitude (share of relief), type (smooth or ridged) and octaves. walkable: max_grade (rise per metre a player still walks easily) and min_share (the least share of the map that should be that gentle; the tests hold every seed to it).",
+  "_comment": "A map recipe (#331, decision 0010): the land before anything is placed on it. size: the square map's side in metres, centred on the origin. relief: metres from the lowest to the highest the noise reaches. hill_mask: a slow noise (frequency, 1 / metres) whose value between from and to fades hilly country in; outside it lies near-flat lowland. layers: noise summed for the height, each with frequency, amplitude (share of relief), octaves, and masked (only where the hill mask says hilly, and only rising out of the lowland). walkable: max_grade (rise per metre a player still walks easily), min_share (the least share of the map that gentle), flat_grade and min_flat_share (near-flat ground for towns and fields, and how much of it the map needs), hillside_grade and min_hillside_share (real hillsides: the least share of the map that rises at least this much); the tests hold every seed to these.",
   "size": 2048.0,
-  "relief": 200.0,
-  "flatness": 0.5,
+  "relief": 360.0,
   "layers": [
     {
-      "frequency": 0.0011,
-      "amplitude": 1.0,
-      "type": "smooth",
-      "octaves": 3
+      "frequency": 0.0005,
+      "amplitude": 0.3,
+      "octaves": 2,
+      "masked": false
     },
     {
-      "frequency": 0.0035,
-      "amplitude": 0.22,
-      "type": "ridged",
-      "octaves": 2
+      "frequency": 0.0009,
+      "amplitude": 0.7,
+      "octaves": 1,
+      "masked": true
     },
     {
-      "frequency": 0.02,
-      "amplitude": 0.02,
-      "type": "smooth",
-      "octaves": 1
+      "frequency": 0.0024,
+      "amplitude": 0.2,
+      "octaves": 1,
+      "masked": true
     }
   ],
   "walkable": {
     "max_grade": 0.35,
-    "min_share": 0.85
+    "min_share": 0.85,
+    "flat_grade": 0.08,
+    "min_flat_share": 0.35,
+    "hillside_grade": 0.2,
+    "min_hillside_share": 0.04
+  },
+  "hill_mask": {
+    "frequency": 0.0005,
+    "from": -0.1,
+    "to": 0.5
   }
 }
