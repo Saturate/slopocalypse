@@ -151,7 +151,7 @@ components:
           type: array
           items:
             type: string
-            enum: [zones, settlements, roads, earthworks]
+            enum: [zones, settlements, roads, earthworks, sites, remoteness]
         recipe:
           type: object
           additionalProperties: true

@@ -23,7 +23,14 @@ const TOWN := Color(0.95, 0.55, 0.1)
 const ROAD := Color(0.18, 0.18, 0.2)
 const TUNNEL := Color(0.62, 0.3, 0.75)
 const BRIDGE := Color(0.55, 0.85, 1.0)
-const ALL_LAYERS := "zones,settlements,roads,earthworks"
+const ALL_LAYERS := "zones,settlements,roads,earthworks,sites"
+## Each site kind's colour on the map; kinds not listed are drawn white.
+const SITE_COLOURS := {"farm": Color(0.55, 0.36, 0.18), "water_tower": Color(0.95, 0.85, 0.2), "town_tower": Color(0.95, 0.85, 0.2),
+	"antenna": Color(0.85, 0.85, 0.9), "lookout": Color(0.75, 0.45, 0.85), "cabin": Color(0.6, 0.12, 0.12)}
+## The remoteness tint: near people to far out, laid over the land at this strength.
+const NEAR := Color(0.2, 0.45, 1.0)
+const FAR := Color(1.0, 0.25, 0.15)
+const TINT := 0.45
 ## Cells a side of the stats grid the viewer reads heights and zones from on hover.
 const GRID_CELLS := 128
 
@@ -44,6 +51,8 @@ const SECTIONS := {
 	"roads": {"kinds": "d", "cost": {"forest": "n", "slope": "n", "wetland": "n", "hilltop": "n", "over_grade": "n"},
 		"sample": "n", "profile_window": "n"},
 	"earthworks": {"bank_grade": "n", "shoulder": "n", "reach": "n"},
+	"remoteness": {"reach": "n", "off_road": "n"},
+	"sites": MapSites.SECTION,
 }
 const ROAD_KIND := {"width": "n", "max_grade": "n", "min_radius": "n", "max_cut": "n", "max_fill": "n"}
 ## Kinds the road network builds; an edited recipe must still have them.
@@ -64,7 +73,15 @@ const LIMITS := {
 	"earthworks.bank_grade": Vector2(0.1, 3),
 	"earthworks.shoulder": Vector2(0, 20),
 	"earthworks.reach": Vector2(0, 200),
+	"remoteness.reach": Vector2(100, 20000),
+	"remoteness.off_road": Vector2(1, 20),
+	"sites.clearance": Vector2(0, 50),
+	"sites.settlement_clearance": Vector2(0, 300),
+	"sites.edge_margin": Vector2(0, 500),
 }
+## Most site kinds, and most of one kind, a recipe may ask for.
+const MAX_SITE_KINDS := 24
+const MAX_SITES := 64
 const MAX_LAYERS := 8
 const MAX_OCTAVES := 8
 const MAX_ROAD_RADIUS := 500.0
@@ -107,6 +124,19 @@ static func check(recipe: Dictionary) -> String:
 			var radius := float((spec as Dictionary)["min_radius"])
 			if radius < 0.0 or radius > MAX_ROAD_RADIUS:
 				return "roads.kinds.%s.min_radius: 0 to %d" % [kind, MAX_ROAD_RADIUS]
+	if recipe.has("sites"):
+		var kinds: Dictionary = recipe["sites"]["kinds"]
+		if kinds.size() > MAX_SITE_KINDS:
+			return "sites.kinds: at most %d" % MAX_SITE_KINDS
+		for kind: String in kinds:
+			if not kinds[kind] is Dictionary:
+				return "sites.kinds.%s: not an object" % kind
+			problem = _check_fields(kinds[kind], MapSites.KIND, "sites.kinds.%s." % kind)
+			if not problem.is_empty():
+				return problem
+			var count: Array = kinds[kind]["count"]
+			if count.size() != 2 or not (count[1] is float or count[1] is int) or float(count[1]) > MAX_SITES:
+				return "sites.kinds.%s.count: [least, most], most at most %d" % [kind, MAX_SITES]
 	for path: String in LIMITS:
 		var value: Variant = _at(recipe, path)
 		var limit: Vector2 = LIMITS[path]
@@ -179,7 +209,15 @@ static func build(recipe: Dictionary, seed_value: int) -> Dictionary:
 	var works_cfg: Variant = recipe.get("earthworks")
 	if works_cfg is Dictionary and places != null:
 		works = Earthworks.new(land, places, net, works_cfg)
-	var world := {"land": land, "zones": zones, "places": places, "net": net, "works": works}
+	var far: MapRemoteness = null
+	var far_cfg: Variant = recipe.get("remoteness")
+	if far_cfg is Dictionary and zones != null:
+		far = MapRemoteness.new(zones, places, net, far_cfg)
+	var sites: MapSites = null
+	var sites_cfg: Variant = recipe.get("sites")
+	if sites_cfg is Dictionary and far != null:
+		sites = MapSites.new(zones, places, net, far, sites_cfg, seed_value)
+	var world := {"land": land, "zones": zones, "places": places, "net": net, "works": works, "remoteness": far, "sites": sites}
 	var b := land.bounds()
 	var low := INF
 	var high := -INF
@@ -204,10 +242,14 @@ static func draw(world: Dictionary, pixels: int, layers: PackedStringArray, regi
 	# Without the earthworks layer the land is drawn as it was before anything shaped it.
 	var shaped: Earthworks = world["works"] if layers.has("earthworks") else null
 	var image := render(land, maxi(pixels, 16), shaped, region, Vector2(float(world["low"]), float(world["high"])))
+	if world["remoteness"] != null and layers.has("remoteness"):
+		draw_remoteness(image, world["remoteness"], region)
 	if world["zones"] != null and layers.has("zones"):
 		draw_zones(image, world["zones"], region)
 	if world["net"] != null and layers.has("roads"):
 		draw_roads(image, world["net"], layers.has("earthworks"), region)
+	if world["sites"] != null and layers.has("sites"):
+		draw_sites(image, world["sites"], region)
 	if world["places"] != null and layers.has("settlements"):
 		draw_settlements(image, world["places"], region)
 	return image
@@ -216,7 +258,16 @@ static func draw(world: Dictionary, pixels: int, layers: PackedStringArray, regi
 ## The summary and hover grid for a built map, as `stats` gives them.
 static func world_stats(world: Dictionary, layers: PackedStringArray) -> Dictionary:
 	var shaped: Earthworks = world["works"] if layers.is_empty() or layers.has("earthworks") else null
-	return stats(world["land"], world["zones"], world["places"], world["net"], shaped, int(world["built_ms"]))
+	var out := stats(world["land"], world["zones"], world["places"], world["net"], shaped, int(world["built_ms"]))
+	if world["sites"] != null:
+		var placed: MapSites = world["sites"]
+		var parts: Array[String] = []
+		var counts := placed.counts()
+		for kind: String in counts:
+			var c: Vector2i = counts[kind]
+			parts.append("%s %d%s" % [kind.replace("_", " "), c.x, "" if c.x >= c.y else " (<%d)" % c.y])
+		(out["summary"] as Dictionary)["sites"] = ", ".join(parts)
+	return out
 
 
 ## The land seen from above, north (-z) up: hill shading over green lowland turning brown
@@ -272,6 +323,41 @@ static func render(land: WorldLand, pixels: int, works: Earthworks = null, regio
 			ground = ground.lerp(ROCK, land.rock(x, z, slope) * 0.8)
 			image.set_pixel(i, j, ground * shade)
 	return image
+
+
+## The land tinted by how far it is from people: blue near, red far out.
+static func draw_remoteness(image: Image, far: MapRemoteness, region := Rect2()) -> void:
+	var b := region if region.size.x > 0.0 else far.zones.land.bounds()
+	var pixels := image.get_width()
+	var step := b.size.x / pixels
+	for j in pixels:
+		for i in pixels:
+			var x := b.position.x + (i + 0.5) * step
+			var z := b.position.y + (j + 0.5) * step
+			# Water has no way to it; left as water rather than tinted as remote.
+			if str(far.zones.zone_at(x, z).get("kind", "")) == "water":
+				continue
+			image.set_pixel(i, j, image.get_pixel(i, j).lerp(NEAR.lerp(FAR, far.at(x, z)), TINT))
+
+
+## Each site's footprint filled in its kind's colour with a dark edge, at least 3 pixels so
+## a small one still shows on the whole map.
+static func draw_sites(image: Image, placed: MapSites, region := Rect2()) -> void:
+	var b := region if region.size.x > 0.0 else placed.remoteness.zones.land.bounds()
+	var pixels := image.get_width()
+	var step := b.size.x / pixels
+	var view := Rect2i(0, 0, pixels, pixels)
+	for site: Dictionary in placed.sites():
+		var foot: Rect2 = site["footprint"]
+		var from := Vector2i(((foot.position - b.position) / step).floor())
+		var size := Vector2i(maxi(ceili(foot.size.x / step), 3), maxi(ceili(foot.size.y / step), 3))
+		var box := Rect2i(from, size)
+		var edge := box.grow(1).intersection(view)
+		if edge.size.x > 0 and edge.size.y > 0:
+			image.fill_rect(edge, ZONE_EDGE)
+		var inside := box.intersection(view)
+		if inside.size.x > 0 and inside.size.y > 0:
+			image.fill_rect(inside, SITE_COLOURS.get(str(site["kind"]), Color.WHITE))
 
 
 ## Thin dark lines where one zone meets another.

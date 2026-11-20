@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { get, isMapList, isRecipe, isRenderResult, LAYERS, post, type Layer, type Region, type RenderResult } from "./api.ts";
+import { DEFAULT_LAYERS, get, isMapList, isRecipe, isRenderResult, LAYERS, post, type Layer, type Region, type RenderResult } from "./api.ts";
 
 // The world-generation viewer (#448): a recipe and seed rendered on the server, its layers,
 // stats and a hover readout, and an editor to render changed numbers. The map fills the
@@ -32,7 +32,7 @@ export function MapsView() {
 	const [maps, setMaps] = useState<string[]>([]);
 	const [map, setMap] = useState("");
 	const [seed, setSeed] = useState(1);
-	const [layers, setLayers] = useState<Layer[]>([...LAYERS]);
+	const [layers, setLayers] = useState<Layer[]>([...DEFAULT_LAYERS]);
 	const [stored, setStored] = useState("");
 	const [recipeText, setRecipeText] = useState("");
 	// An edited recipe belongs to the map it was edited on; switching maps drops it.
@@ -230,6 +230,11 @@ const LEGEND: { label: string; colour: string; dot?: boolean }[] = [
 	{ label: "Tunnel", colour: "rgb(158, 77, 191)" },
 	{ label: "Bridge", colour: "rgb(140, 217, 255)" },
 	{ label: "Water", colour: "rgb(61, 115, 148)" },
+	{ label: "Farm", colour: "rgb(140, 92, 46)" },
+	{ label: "Water tower", colour: "rgb(242, 217, 51)" },
+	{ label: "Antenna", colour: "rgb(217, 217, 230)" },
+	{ label: "Lookout", colour: "rgb(191, 115, 217)" },
+	{ label: "Cabin", colour: "rgb(153, 31, 31)" },
 ];
 
 function loadImage(path: string): Promise<HTMLImageElement> {

@@ -71,7 +71,7 @@
 </aside>
 <script>
 "use strict";
-const LAYERS = ["zones", "settlements", "roads", "earthworks"];
+const LAYERS = ["zones", "settlements", "roads", "earthworks", "sites", "remoteness"];
 const $ = (id) => document.getElementById(id);
 const canvas = $("map");
 const ctx = canvas.getContext("2d");
@@ -82,7 +82,7 @@ let edited = null;
 
 for (const l of LAYERS) {
   const box = document.createElement("label");
-  box.innerHTML = `<input type="checkbox" value="${l}" checked> ${l}`;
+  box.innerHTML = `<input type="checkbox" value="${l}"${l === "remoteness" ? "" : " checked"}> ${l}`;
   $("layers").append(box);
 }
 

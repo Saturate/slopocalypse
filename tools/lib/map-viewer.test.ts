@@ -2,8 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cacheKey, parseRender, recipeFile } from "./map-viewer.ts";
 
-test("a render request defaults to grassland seed 1 at 512 pixels with every layer", () => {
-	assert.deepEqual(parseRender(new URLSearchParams()), { map: "grassland", seed: 1, pixels: 512, layers: ["zones", "settlements", "roads", "earthworks"] });
+test("a render request defaults to grassland seed 1 at 512 pixels with every layer but the remoteness tint", () => {
+	assert.deepEqual(parseRender(new URLSearchParams()), { map: "grassland", seed: 1, pixels: 512, layers: ["zones", "settlements", "roads", "earthworks", "sites"] });
 });
 
 test("a render request reads its parameters and drops repeated layers", () => {
