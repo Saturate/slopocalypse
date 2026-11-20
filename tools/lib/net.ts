@@ -176,8 +176,14 @@ export async function saveSmoke(godot: string, root: string, port = 7793): Promi
 
 		const second = run(godot, [...base, `--server=${port}`, "--net-report-after=700", save], { cwd: root, timeoutMs: 150_000 });
 		await delay(4000);
+		// A client claiming another build alongside: the server must turn it away with a reason.
+		const stale = run(godot, [...base, address, "--claim-version=0.0.0-old", "--name=Stale"], { cwd: root, timeoutMs: 60_000 });
 		const back = await run(godot, [...base, address, "--net-report-after=400", "--name=Saver"], { cwd: root, timeoutMs: 150_000 });
+		const staleClient = await stale;
 		const secondServer = await second;
+		check("stale client", staleClient);
+		if (!staleClient.output.includes("Update to join")) problems.push(`stale client: not told to update; it ended with:\n${lastLines(staleClient.output)}`);
+		if (secondServer.output.includes("Stale is back") || secondServer.output.includes("is Stale")) problems.push("second server: let a client on another build join");
 		check("second server", secondServer);
 		check("returning client", back);
 		if (!secondServer.output.includes("Saver is back")) problems.push("second server: did not recognise Saver from the save");
@@ -189,5 +195,5 @@ export async function saveSmoke(godot: string, root: string, port = 7793): Promi
 	}
 	return problems.length > 0
 		? { ok: false, detail: problems.slice(0, 20).join("\n") }
-		: { ok: true, detail: "a named player's spot survives a server restart" };
+		: { ok: true, detail: "a named player's spot survives a server restart; a client on another build is turned away" };
 }

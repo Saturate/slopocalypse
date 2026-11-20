@@ -49,6 +49,14 @@ const HELLO_SECONDS := 10.0
 const KICK_SECONDS := 0.5
 const MAX_NAME_LENGTH := 32
 const MAX_KEY_LENGTH := 64
+## Goes up whenever an RPC's arguments change anywhere in the game, or a new RPC is added: the
+## version alone does not catch two builds of one version. A client and server must run the
+## same version and protocol, or an older client would join and silently lose every effect
+## whose replay it can no longer decode (#397). `_hello`, `_kicked` and `_version` must never
+## change their arguments: they are how an older client is told to update.
+const PROTOCOL := 1
+## Versions are compared up to this many characters, on both sides alike.
+const MAX_VERSION_LENGTH := 64
 
 var mode: Mode = Mode.SOLO
 var port := DEFAULT_PORT
@@ -72,6 +80,8 @@ var _frames := 0
 ## Server: peer -> {name, key} once they said hello; peer -> seconds waited until then.
 var _identities: Dictionary = {}
 var _unnamed: Dictionary = {}
+## Server: peers whose build was checked, peer -> "" when it matches, else why it does not.
+var _builds: Dictionary = {}
 ## Client: why the server sent us away, shown when the connection drops.
 var _kick_reason := ""
 
@@ -198,6 +208,7 @@ func leave(reason: String = "") -> void:
 	_connect_tries = 0
 	_identities.clear()
 	_unnamed.clear()
+	_builds.clear()
 	_kick_reason = ""
 	forget_menu_choice()
 	menu_message = reason
@@ -223,6 +234,7 @@ func _fail(reason: String) -> void:
 
 func _on_peer_left(id: int) -> void:
 	_unnamed.erase(id)
+	_builds.erase(id)
 	if not _identities.has(id):
 		Log.info(&"net", "peer %d left before saying who they are" % id)
 	else:
@@ -307,6 +319,8 @@ func _stop() -> void:
 ## Client: tells the server who this is. Tool runs without `--name=` join as a guest so
 ## two of them on one machine do not share a name.
 func _say_hello() -> void:
+	# Before the hello, on the same reliable channel, so the server has it when the hello comes.
+	_version.rpc_id(1, _claimed_version(), PROTOCOL)
 	var profile := PlayerProfile.load_from()
 	var fallback := profile.name if interactive else "Guest%d" % (multiplayer.get_unique_id() % 100000)
 	_hello.rpc_id(1, PlayerProfile.name_from_args(OS.get_cmdline_user_args(), fallback), profile.key)
@@ -318,6 +332,13 @@ func _hello(player_name: String, key: String) -> void:
 	if not multiplayer.is_server() or not _unnamed.has(peer):
 		return
 	_unnamed.erase(peer)
+	# A client from before this check never sends its build: it is older than this server.
+	var refused := str(_builds.get(peer, "This server runs %s; your game is older. Update to join." % _own_version()))
+	_builds.erase(peer)
+	if not refused.is_empty():
+		Log.info(&"net", "refusing peer %d (%s): %s" % [peer, player_name.left(MAX_NAME_LENGTH), refused])
+		server_kick(peer, refused)
+		return
 	_identities[peer] = {"name": player_name.strip_edges().left(MAX_NAME_LENGTH), "key": key.left(MAX_KEY_LENGTH)}
 	Log.info(&"net", "peer %d is %s" % [peer, _identities[peer]["name"]])
 	peer_joined.emit(peer)
@@ -343,6 +364,52 @@ func server_kick(peer: int, reason: String) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _kicked(reason: String) -> void:
 	_kick_reason = reason
+	# Hanging up ourselves lets the server see an ordinary disconnect; when the server cuts
+	# the line instead it keeps sending to the half-closed peer and logs errors for a while.
+	_hang_up.call_deferred()
+
+
+func _hang_up() -> void:
+	var peer := multiplayer.multiplayer_peer
+	if peer == null or peer is OfflineMultiplayerPeer:
+		return
+	# Detached first, so closing it cannot also fire `server_disconnected` and leave twice.
+	multiplayer.multiplayer_peer = null
+	peer.close()
+	_on_server_gone()
+
+
+## Client to server, just before the hello: which build this client runs. Its name sorts
+## after every other RPC here on purpose: Godot numbers a node's RPCs in name order, so a new
+## one sorting first would shift `_hello` and `_kicked` and older clients could not even be
+## told to update.
+@rpc("any_peer", "call_remote", "reliable")
+func _version(version: String, protocol: int) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	if multiplayer.is_server() and _unnamed.has(peer):
+		_builds[peer] = build_mismatch(_own_version().left(MAX_VERSION_LENGTH), PROTOCOL, version.left(MAX_VERSION_LENGTH), protocol)
+
+
+## Why a client on `version`/`protocol` may not join a server on its own, or "" when it may.
+static func build_mismatch(server_version: String, server_protocol: int, version: String, protocol: int) -> String:
+	if version == server_version and protocol == server_protocol:
+		return ""
+	if version == server_version:
+		return "This server runs %s with a different network protocol (%d, yours is %d). Update both to the same build." % [server_version, server_protocol, protocol]
+	return "This server runs %s; you have %s. Update to join." % [server_version, version]
+
+
+static func _own_version() -> String:
+	return str(ProjectSettings.get_setting("application/config/version", ""))
+
+
+## The version this client says it runs: its own, unless a test claims another
+## (`--claim-version=`) to check that the server turns it away.
+static func _claimed_version() -> String:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--claim-version="):
+			return arg.trim_prefix("--claim-version=")
+	return _own_version()
 
 
 func _drop_silent(delta: float) -> void:
