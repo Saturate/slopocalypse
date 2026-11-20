@@ -20,7 +20,7 @@ const CELL := 64.0
 const GRASS_CELL := 32.0
 ## Longest road face before it is bent, in metres.
 const ROAD_BEND_STEP := 1.0
-## The smoothed terrain sags a little past a dug sphere's edge, and the shader shows that
+## The smoothed terrain sags a little past a crater's rim, and the shader shows that
 ## fringe as dirt, so grass clears slightly wider than the hole.
 const GRASS_CLEAR_MARGIN := 0.4
 ## Chunks built per frame at most, so walking into new ground never stalls a frame for long.
@@ -626,7 +626,7 @@ func _in_old_dig(at: Vector3) -> bool:
 	return false
 
 
-## Removes the grass a dug sphere took the ground out from under, so it doesn't float.
+## Removes the grass a crater took the ground out from under, so it doesn't float.
 func clear_grass(center: Vector3, radius: float) -> void:
 	var dig := Vector4(center.x, center.y, center.z, radius)
 	_digs.append(dig)

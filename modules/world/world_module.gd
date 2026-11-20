@@ -117,7 +117,7 @@ func _on_peer_joined(peer: int) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _receive_digs(list: Array) -> void:
 	for d: Array in list:
-		_voxels.server_dig(Vector3(float(d[0]), float(d[1]), float(d[2])), float(d[3]))
+		_voxels.replay_dig(Vector4(float(d[0]), float(d[1]), float(d[2]), float(d[3])))
 
 
 func _digs_as_list() -> Array:

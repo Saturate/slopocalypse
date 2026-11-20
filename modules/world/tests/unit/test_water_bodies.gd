@@ -51,8 +51,8 @@ func test_the_surface_mesh_covers_the_outline_facing_up() -> void:
 func test_a_crater_beside_a_pond_that_dips_below_it_floods() -> void:
 	var w := _water(func(_x: float, _z: float) -> float: return 1.0)
 	var level := w.level_of(0)
-	# 3 m off the edge, a 2.5 m crater centred at ground level reaches 1.5 m under the water.
-	var puddle := w.flood(Vector3(23.0, 1.0, 10.0), 2.5)
+	# 3 m off the edge, a 2.5 m crater 2.5 m deep at ground level reaches 1.5 m under the water.
+	var puddle := w.flood(Vector3(23.0, 1.0, 10.0), 2.5, 2.5)
 	assert_float(puddle.w).is_equal_approx(level, 0.0001)
 	assert_float(puddle.z).is_greater(0.0)
 	assert_float(puddle.z).is_less(2.5)
@@ -63,11 +63,11 @@ func test_a_crater_beside_a_pond_that_dips_below_it_floods() -> void:
 func test_a_crater_stays_dry_when_shallow_far_away_or_already_in_the_pond() -> void:
 	var w := _water(func(_x: float, _z: float) -> float: return 1.0)
 	# Its floor stays above the water.
-	assert_that(w.flood(Vector3(23.0, 3.0, 10.0), 1.0)).is_equal(Vector4.ZERO)
+	assert_that(w.flood(Vector3(23.0, 3.0, 10.0), 1.0, 1.0)).is_equal(Vector4.ZERO)
 	# Too far from the pond.
-	assert_that(w.flood(Vector3(60.0, 1.0, 10.0), 2.5)).is_equal(Vector4.ZERO)
+	assert_that(w.flood(Vector3(60.0, 1.0, 10.0), 2.5, 2.5)).is_equal(Vector4.ZERO)
 	# In the pond: its own surface covers it.
-	assert_that(w.flood(Vector3(10.0, 0.0, 10.0), 2.5)).is_equal(Vector4.ZERO)
+	assert_that(w.flood(Vector3(10.0, 0.0, 10.0), 2.5, 2.5)).is_equal(Vector4.ZERO)
 	assert_array(w.puddles).is_empty()
 
 
