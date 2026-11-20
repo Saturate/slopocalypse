@@ -1,0 +1,30 @@
+{
+  "_comment": "A map recipe (#331, decision 0010): the land before anything is placed on it. size: the square map's side in metres, centred on the origin. relief: metres from the lowest to the highest the noise reaches. flatness: 0 leaves the noise as it is; towards 1 the middle heights flatten into broad gentle land and only the extremes rise into hills. layers: noise summed for the height, each with frequency (1 / metres), amplitude (share of relief), type (smooth or ridged) and octaves. walkable: max_grade (rise per metre a player still walks easily) and min_share (the least share of the map that should be that gentle; the tests hold every seed to it).",
+  "size": 2048.0,
+  "relief": 200.0,
+  "flatness": 0.5,
+  "layers": [
+    {
+      "frequency": 0.0011,
+      "amplitude": 1.0,
+      "type": "smooth",
+      "octaves": 3
+    },
+    {
+      "frequency": 0.0035,
+      "amplitude": 0.22,
+      "type": "ridged",
+      "octaves": 2
+    },
+    {
+      "frequency": 0.02,
+      "amplitude": 0.02,
+      "type": "smooth",
+      "octaves": 1
+    }
+  ],
+  "walkable": {
+    "max_grade": 0.35,
+    "min_share": 0.85
+  }
+}
