@@ -1,5 +1,5 @@
 {
-  "_comment": "The mixed recipe: hillier country with more woods, dry grass and rock than grassland. Fields as in grassland.json.",
+  "_comment": "The mixed recipe: hillier country with more woods, dry grass and rock than grassland. Fields as in grassland.json. earthworks: the land shaped by the roads and settlements: each road's width plus shoulder metres either side is cut or filled to the road's height, each settlement's footprint (plus shoulder) to its level, with banks rising bank_grade per metre (0.7 is about 35 degrees) out to where they meet the land, at most reach metres out; tunnels and bridges leave the land alone.",
   "size": 2048.0,
   "relief": 520.0,
   "layers": [
@@ -145,5 +145,10 @@
     },
     "sample": 4.0,
     "profile_window": 48.0
+  },
+  "earthworks": {
+    "bank_grade": 0.7,
+    "shoulder": 1.5,
+    "reach": 60.0
   }
 }
