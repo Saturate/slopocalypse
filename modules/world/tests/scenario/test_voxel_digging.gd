@@ -110,6 +110,15 @@ func test_ground_levelled_by_one_owner_is_claimed_for_everyone_else() -> void:
 	assert_bool(_voxels.is_claimed(at, 1.0, &"city")).is_false()
 
 
+func test_a_pad_can_slope_from_one_end_to_the_other() -> void:
+	# A ramp 20 m long along z (yaw 0): 2 m up at -z, level with 0 at +z.
+	var at := OUT + Vector3(-30, 0, 0)
+	_voxels.set_pads_for(&"ramp", [{"at": at, "half": Vector2(4, 10), "yaw": 0.0, "blend": 3.0, "from": at.y + 2.0}])
+	assert_float(_voxels.surface_height(at.x, at.z - 10.0)).is_equal_approx(at.y + 2.0, 0.01)
+	assert_float(_voxels.surface_height(at.x, at.z)).is_equal_approx(at.y + 1.0, 0.01)
+	assert_float(_voxels.surface_height(at.x, at.z + 10.0)).is_equal_approx(at.y, 0.01)
+
+
 func test_a_crater_on_a_pad_replays_as_deep_without_the_pad() -> void:
 	# A levelled pad 2 m over the ground, as under a mission building on a slope.
 	var spot := OUT + Vector3(10, 0, 8)

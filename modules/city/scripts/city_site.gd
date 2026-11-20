@@ -37,6 +37,8 @@ const TREE_TURN := 2.39996
 var config: Dictionary = {}
 var plan: Dictionary = {}
 var buildings: Array[CityBuilding] = []
+## The street in from the road (see `lead_in`); empty until the city module sets it.
+var approach: Dictionary = {}
 ## The hand-made blocks standing in the city (#339).
 var blocks_placed: Array[CityBlockNode] = []
 
@@ -245,6 +247,51 @@ func _streets() -> void:
 			piece += 1
 
 
+## Where a street piece over `rect` goes: its asphalt top at the city's level, where the
+## levelled ground is, so nobody stands sunk into it.
+static func street_transform(rect: Rect2, along_x: bool) -> Transform3D:
+	return Transform3D(Basis(Vector3.UP, PI / 2.0) if along_x else Basis.IDENTITY, Vector3(rect.get_center().x, -VoxRoad.BED - VoxRoad.SURFACE, rect.get_center().y))
+
+
+## Where the approach street goes: along z from `from` (at the road, `drop` metres above the
+## city's level, below if negative) to `to` (the ring street), at `x`, tilted so its top
+## follows the ramp the ground is levelled to.
+static func approach_transform(x: float, from: float, to: float, drop: float) -> Transform3D:
+	var basis := Basis(Vector3.RIGHT, atan2(drop, to - from))
+	var centre := Vector3(x, drop / 2.0, (from + to) / 2.0)
+	return Transform3D(basis, centre + basis * Vector3(0.0, -VoxRoad.BED - VoxRoad.SURFACE, 0.0))
+
+
+## The street from the road into the city, in the city's own metres: `{x, width, road, edge,
+## from, to, edge_drop, drop}`: from the road's middle (`road`), drawn from its edge (`edge`,
+## `edge_drop` over the city's level) along the road's band to `from` (`drop` over it), then
+## a ramp to the city at `to` (see `approach_transform`); drawn as it is set.
+func lead_in(info: Dictionary) -> void:
+	approach = info
+	if not _visual or info.is_empty():
+		return
+	var x := float(info["x"])
+	var drop := float(info["drop"])
+	if float(info["from"]) > float(info["edge"]):
+		var rise := float(info["edge_drop"]) - drop
+		_approach_piece("ApproachFlat", Vector2(float(info["from"]) - float(info["edge"]), rise).length(), approach_transform(x, float(info["edge"]), float(info["from"]), rise).translated(Vector3.UP * drop))
+	_approach_piece("Approach", Vector2(float(info["to"]) - float(info["from"]), drop).length(), approach_transform(x, float(info["from"]), float(info["to"]), drop))
+
+
+func _approach_piece(name_: String, length: float, where: Transform3D) -> void:
+	var width := float(approach["width"])
+	var rgb: Array = config.get("asphalt", [0.43, 0.43, 0.42])
+	var model := VoxRoad.new().build({
+		"seed": 5, "length": length, "lanes": 2.0, "lane_width": width / 2.0, "shoulder": 0.0,
+		"wear": 0.2, "potholes": 0.0, "edges": 0.0, "asphalt": Color(float(rgb[0]), float(rgb[1]), float(rgb[2])),
+	})
+	var part := MeshInstance3D.new()
+	part.name = name_
+	part.mesh = VoxGenerator.to_mesh(model)
+	part.transform = where
+	add_child(part)
+
+
 func _road(rect: Rect2, along_x: bool, marked: bool, piece: int) -> void:
 	var length := rect.size.x if along_x else rect.size.y
 	var width := rect.size.y if along_x else rect.size.x
@@ -257,7 +304,7 @@ func _road(rect: Rect2, along_x: bool, marked: bool, piece: int) -> void:
 	if not marked:
 		values["centre"] = 0.0
 	var model := VoxRoad.new().build(values)
-	var where := Transform3D(Basis(Vector3.UP, PI / 2.0) if along_x else Basis.IDENTITY, Vector3(rect.get_center().x, -VoxRoad.BED, rect.get_center().y))
+	var where := street_transform(rect, along_x)
 	for crossing: Rect2 in plan["crossings"]:
 		if rect.grow(0.01).encloses(crossing):
 			_zebra(model, where, crossing, asphalt)
