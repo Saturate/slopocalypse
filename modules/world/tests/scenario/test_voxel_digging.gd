@@ -39,27 +39,112 @@ func test_collision_matches_the_ground() -> void:
 func test_digging_lowers_the_ground_and_its_collision() -> void:
 	var spot := OUT + Vector3(3, 0, 3)
 	var before := _voxels.surface_height(spot.x, spot.z)
+	spot.y = before
 	_voxels.server_dig(spot, 2.0)
 	await get_tree().physics_frame
 	await get_tree().physics_frame
-	assert_float(_voxels.surface_height(spot.x, spot.z)).is_less(before - 1.0)
+	assert_float(_voxels.surface_height(spot.x, spot.z)).is_less(before - 2.0 * _voxels.crater_depth_share * 0.9)
 	assert_float(_ray_down(spot)).is_equal_approx(_voxels.surface_height(spot.x, spot.z), 0.1)
 
 
+func test_a_crater_keeps_its_size_and_its_walls_are_walkable() -> void:
+	# The biggest blast in the game, on open ground.
+	var spot := OUT + Vector3(-12, 0, -8)
+	var radius := 4.0
+	var before := _voxels.surface_height(spot.x, spot.z)
+	spot.y = before
+	_voxels.server_dig(spot, radius)
+	# As wide as before: the ground is lowered most of the way out to the radius.
+	var near_rim := spot + Vector3(radius * 0.8, 0, 0)
+	assert_float(_voxels.surface_height(near_rim.x, near_rim.z)).is_less(_voxels.ground_height(near_rim.x, near_rim.z) - 0.05)
+	assert_float(_voxels.surface_height(spot.x, spot.z)).is_less(before - radius * 0.3)
+	_assert_walkable(spot, radius)
+
+
+func test_blasting_the_same_crater_again_keeps_it_walkable() -> void:
+	var spot := OUT + Vector3(14, 0, -6)
+	var radius := 4.0
+	var before := _voxels.surface_height(spot.x, spot.z)
+	for i in 4:
+		# Each blast on the floor the last one left, a little off centre as in a firefight.
+		var at := spot + Vector3(0.6 * float(i), 0, -0.4 * float(i))
+		at.y = _voxels.surface_height(at.x, at.z)
+		_voxels.server_dig(at, radius)
+	assert_float(_voxels.surface_height(spot.x, spot.z)).is_greater_equal(before - radius * _voxels.crater_depth_share - 0.01)
+	_assert_walkable(spot, radius + 2.0)
+
+
+func test_a_blast_in_the_air_dents_less_and_high_enough_not_at_all() -> void:
+	var spot := OUT + Vector3(-6, 0, 10)
+	var radius := 2.0
+	var most := radius * _voxels.crater_depth_share
+	var before := _voxels.surface_height(spot.x, spot.z)
+	_voxels.server_dig(spot + Vector3.UP * (before - spot.y + most * 0.5), radius)
+	assert_float(_voxels.surface_height(spot.x, spot.z)).is_equal_approx(before - most * 0.5, 0.01)
+	var far := OUT + Vector3(8, 0, 12)
+	var untouched := _voxels.surface_height(far.x, far.z)
+	_voxels.server_dig(Vector3(far.x, untouched + most + 0.1, far.z), radius)
+	assert_float(_voxels.surface_height(far.x, far.z)).is_equal(untouched)
+	assert_int(_voxels.dig_log().size()).is_equal(1)
+
+
 func test_digging_stops_at_the_deepest_a_crater_may_go() -> void:
+	# Wide enough that its share of the radius would go deeper than the cap.
 	var spot := OUT + Vector3(-3, 0, 3)
+	var radius := _voxels.max_dig_depth / _voxels.crater_depth_share + 2.0
 	var deepest := _voxels.ground_height(spot.x, spot.z) - _voxels.max_dig_depth
-	for i in 8:
-		_voxels.server_dig(spot + Vector3.DOWN * float(i) * 2.0, 2.0)
-	assert_float(_voxels.surface_height(spot.x, spot.z)).is_greater_equal(deepest - 0.01)
+	for i in 4:
+		_voxels.server_dig(spot + Vector3.DOWN * float(i) * 2.0, radius)
+	assert_float(_voxels.surface_height(spot.x, spot.z)).is_equal_approx(deepest, 0.01)
+
+
+func test_a_crater_on_a_pad_replays_as_deep_without_the_pad() -> void:
+	# A levelled pad 2 m over the ground, as under a mission building on a slope.
+	var spot := OUT + Vector3(10, 0, 8)
+	var ground := _voxels.ground_height(spot.x, spot.z)
+	_voxels.set_pads_for(&"test", [{"at": Vector3(spot.x, ground + 2.0, spot.z), "half": Vector2(6, 6), "yaw": 0.0, "blend": 3.0}])
+	var on_pad := _voxels.surface_height(spot.x, spot.z)
+	_voxels.server_dig(Vector3(spot.x, on_pad, spot.z), 2.0)
+	var depth := on_pad - _voxels.surface_height(spot.x, spot.z)
+	assert_float(depth).is_equal_approx(2.0 * _voxels.crater_depth_share, 0.01)
+	# A late joiner replays the log before its pads are set: the entry gives the same depth
+	# against the bare ground alone, which every instance agrees on.
+	var logged: Vector4 = _voxels.dig_log()[0]
+	var most := 2.0 * _voxels.crater_depth_share
+	assert_float(most - (logged.y - ground)).is_equal_approx(depth, 0.01)
+	_voxels.set_pads_for(&"test", [])
+	_voxels.replay_dig(logged)
+	assert_float(ground - _voxels.surface_height(spot.x, spot.z)).is_equal_approx(depth, 0.01)
 
 
 func test_a_dig_says_where_the_hole_went() -> void:
 	var holes: Array[Vector3] = []
 	_voxels.dug.connect(func(center: Vector3, _radius: float) -> void: holes.append(center))
-	_voxels.server_dig(OUT + Vector3(4, -50, 4), 1.0)
+	var at := OUT + Vector3(4, -50, 4)
+	var before := _voxels.surface_height(at.x, at.z)
+	# Deep under the ground counts as on it: no deeper than one bowl.
+	_voxels.server_dig(at, 1.0)
 	assert_int(holes.size()).is_equal(1)
-	assert_float(holes[0].y).is_equal_approx(_voxels.ground_height(OUT.x + 4, OUT.z + 4) - _voxels.max_dig_depth + 1.0, 0.01)
+	assert_float(holes[0].y).is_equal_approx(before, 0.01)
+	assert_float(_voxels.surface_height(at.x, at.z)).is_equal_approx(before - _voxels.crater_depth_share, 0.01)
+
+
+## Walking across `spot` every 0.1 m in three directions, no step climbs steeper than a
+## player walks up (CharacterBody3D's 45 degrees); the crater's own share stays under 42.
+func _assert_walkable(spot: Vector3, reach: float) -> void:
+	var step := 0.1
+	for angle in [0.0, PI / 4.0, PI / 2.0]:
+		var dir := Vector3(cos(angle), 0, sin(angle))
+		var x := -reach * 1.2
+		while x < reach * 1.2:
+			var a := spot + dir * x
+			var b := spot + dir * (x + step)
+			var rise := absf(_voxels.surface_height(b.x, b.z) - _voxels.surface_height(a.x, a.z)) / step
+			var ground := absf(_voxels.ground_height(b.x, b.z) - _voxels.ground_height(a.x, a.z)) / step
+			var where := "%.2f m out at %.2f rad" % [x, angle]
+			assert_float(rise).override_failure_message("too steep to walk " + where).is_less_equal(1.0)
+			assert_float(rise - ground).override_failure_message("crater too steep " + where).is_less_equal(tan(deg_to_rad(42.0)))
+			x += step
 
 
 func test_players_standing_on_the_terrain_do_not_fall_through() -> void:

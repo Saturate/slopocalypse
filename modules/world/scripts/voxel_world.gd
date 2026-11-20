@@ -9,7 +9,7 @@ extends Node3D
 ## and coarser far away. Both apply the same digs from the same replayed events.
 
 const SHADER := "res://modules/world/shaders/voxel_ground.gdshader"
-const VOXEL_REQUIRED := {"max_dig_depth": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "lods": TYPE_ARRAY, "builds_per_frame": TYPE_FLOAT}
+const VOXEL_REQUIRED := {"max_dig_depth": TYPE_FLOAT, "crater_depth_share": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "lods": TYPE_ARRAY, "builds_per_frame": TYPE_FLOAT}
 const TILE := 32.0
 ## Collision height maps sample the ground every metre.
 const COLLISION_SPACING := 1.0
@@ -40,6 +40,10 @@ signal flooded(puddle: Vector4)
 
 var heights: TerrainHeights
 var max_dig_depth := 3.0
+## A crater's depth as a share of its radius. Its wall is steepest at the rim, a slope of
+## twice this share: 0.35 gives about 35 degrees, under the 45 a player can walk up, with
+## room for a hillside's own slope on the uphill wall.
+var crater_depth_share := 0.35
 
 var _biomes: Biomes
 var _cfg: Dictionary
@@ -81,6 +85,7 @@ func _ready() -> void:
 		return
 	_cfg = world["voxel"]
 	max_dig_depth = _cfg["max_dig_depth"]
+	crater_depth_share = _cfg["crater_depth_share"]
 	max_dig_log = int(_cfg.get("max_saved_digs", 4000))
 	_lods = _cfg["lods"]
 	heights = TerrainHeights.new(world)
@@ -264,29 +269,56 @@ func _pad_into(h: float, x: float, z: float, pads: Array) -> float:
 	return h
 
 
-## `h` lowered by any of `digs` over (x, z).
+## `h` lowered by any of `digs` over (x, z). A crater is a dent in the surface it was blasted
+## into, not a hole cut to a fixed height: deepest in the middle and easing to nothing at its
+## rim. Its wall is never steeper than the ground under it plus one bowl, wherever it is, and
+## overlapping dents take the lowest of them, so nobody is trapped in one and repeated blasts
+## can't dig a well. Each dig is (x, depth, z, radius).
 func _dig_into(h: float, x: float, z: float, digs: Array) -> float:
+	var out := h
 	for d: Vector4 in digs:
 		var dx := x - d.x
 		var dz := z - d.z
-		var r2 := d.w * d.w - dx * dx - dz * dz
-		if r2 > 0.0:
-			h = minf(h, d.y - sqrt(r2))
-	return h
+		var r2 := d.w * d.w
+		var d2 := dx * dx + dz * dz
+		if d2 < r2:
+			out = minf(out, h - d.y * (1.0 - d2 / r2))
+	return out
 
 
-## Carves a sphere out of the ground. Runs on the server and on every client from the same
-## replayed event, so all of them dig the same hole. Never deeper than `max_dig_depth` under
-## the untouched ground, so stacked explosions can't dig a well.
+## Dents the ground (see `_dig_into`). Runs on the server and on every client from the same
+## replayed event, so all of them dig the same hole. A blast on the ground dents it
+## `radius * crater_depth_share` deep (never more than `max_dig_depth`); one in the air dents
+## it less by its height, and one under the surface (in a crater already) no deeper.
 func server_dig(at: Vector3, radius: float) -> void:
 	if heights == null:
 		return
-	var floor_y := ground_height(at.x, at.z) - max_dig_depth
-	var center := Vector3(at.x, maxf(at.y, floor_y + radius), at.z)
-	var dig := Vector4(center.x, center.y, center.z, radius)
-	_dig_log.append(dig)
+	var surface := _pad_into(ground_height(at.x, at.z), at.x, at.z, _pads_in.get(_tile_of(at), []))
+	var most := minf(radius * crater_depth_share, max_dig_depth)
+	_dent(at.x, at.z, clampf(most - (at.y - surface), 0.0, most), radius)
+
+
+## A dig from `dig_log` again (a late joiner, a restart): the same dent the server made,
+## whatever pads this instance has set by now.
+func replay_dig(logged: Vector4) -> void:
+	if heights == null:
+		return
+	var most := minf(logged.w * crater_depth_share, max_dig_depth)
+	_dent(logged.x, logged.z, clampf(most - (logged.y - ground_height(logged.x, logged.z)), 0.0, most), logged.w)
+
+
+func _dent(x: float, z: float, depth: float, radius: float) -> void:
+	if depth <= 0.0:
+		return
+	var surface := _pad_into(ground_height(x, z), x, z, _pads_in.get(_tile_of(Vector3(x, 0.0, z)), []))
+	var center := Vector3(x, surface, z)
+	# Logged as the blast height over the untouched ground that gives this depth, so a replay
+	# (`replay_dig`) needs nothing that can differ between instances, such as pads.
+	var most := minf(radius * crater_depth_share, max_dig_depth)
+	_dig_log.append(Vector4(x, ground_height(x, z) + most - depth, z, radius))
 	if _dig_log.size() > max_dig_log:
 		_dig_log.remove_at(0)
+	var dig := Vector4(x, depth, z, radius)
 	var low := _tile_of(center - Vector3(radius, 0, radius))
 	var high := _tile_of(center + Vector3(radius, 0, radius))
 	for tx in range(low.x, high.x + 1):
@@ -300,13 +332,14 @@ func server_dig(at: Vector3, radius: float) -> void:
 				_collision[key] = _build_collision(key)
 			if _tiles.has(key):
 				_replace_tile(key, _tile_voxel[key])
-	var puddle := heights.water.flood(center, radius)
+	var puddle := heights.water.flood(center, radius, depth)
 	if puddle != Vector4.ZERO:
 		flooded.emit(puddle)
 	dug.emit(center, radius)
 
 
-## Every dig so far (centre, radius), oldest first.
+## Every dig so far, oldest first, for `replay_dig`: (x, y, z, radius), y being the blast
+## height over the untouched ground that dents the ground as deep as the dig did.
 func dig_log() -> Array[Vector4]:
 	return _dig_log
 
