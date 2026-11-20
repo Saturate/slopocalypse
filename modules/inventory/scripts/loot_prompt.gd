@@ -12,6 +12,8 @@ var _meds: KeyHint
 var _charges: KeyHint
 var _set_off: KeyHint
 var _row: HBoxContainer
+## The item drawn outlined: the one a press would pick up.
+var _outlined: LootItem
 
 
 func _ready() -> void:
@@ -32,6 +34,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	PromptStack.of(get_tree()).clear_line(&"loot")
+	_outline(null)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -47,6 +50,7 @@ func _process(_delta: float) -> void:
 	var prompts := PromptStack.of(get_tree())
 	var loot: Node = inventory.call(&"loot_in_reach", player)
 	var crate: Node = inventory.call(&"container_in_reach", player) if loot == null else null
+	_outline(loot as LootItem)
 	# What a press of interact will name to the server (the server can't see this machine's
 	# ragdolls, #407).
 	var intent := (player as PlayerController).intent() if player is PlayerController else null
@@ -67,3 +71,13 @@ func _process(_delta: float) -> void:
 	_charges.visible = charges > 0
 	_set_off.visible = charges > 0
 	_row.visible = not UiStack.is_blocking()
+
+
+func _outline(loot: LootItem) -> void:
+	if loot == _outlined:
+		return
+	if is_instance_valid(_outlined):
+		_outlined.set_targeted(false)
+	_outlined = loot
+	if loot != null:
+		loot.set_targeted(true)
