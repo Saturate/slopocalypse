@@ -82,7 +82,9 @@ const README = (host: string | undefined, port: number, os: TargetOs): string =>
 async function ensureWebApp(): Promise<void> {
 	const built = join(root, "modules", "web", "static", "index.html");
 	if (existsSync(join(root, "node_modules", "vite"))) {
-		const r = await run(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build", "-w", "web"], { cwd: root, timeoutMs: 300_000 });
+		// Vite through this Node, as the gate runs it: Node refuses to spawn npm.cmd on Windows
+		// without a shell (EINVAL), which broke the Windows release build.
+		const r = await run(process.execPath, [join(root, "node_modules", "vite", "bin", "vite.js"), "build", join(root, "web")], { cwd: root, timeoutMs: 300_000 });
 		if (r.code !== 0 || r.timedOut) throw new Error(`web app build failed:\n${r.output.slice(-2000)}`);
 	}
 	if (!existsSync(built)) throw new Error("the admin web app is not built: run npm ci, then npm run build -w web");
