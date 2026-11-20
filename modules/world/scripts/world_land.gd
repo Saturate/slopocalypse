@@ -135,21 +135,25 @@ func forest(x: float, z: float) -> float:
 
 ## Yellowed grass and bare patches, 0 to 1: patches out in the open that fade softly into
 ## the meadow, none in the woods.
-func dry(x: float, z: float) -> float:
+## `woods` is forest(x, z) when the caller has it already (NAN: worked out here).
+func dry(x: float, z: float, woods := NAN) -> float:
 	if _biomes == null:
 		return 0.0
-	return smoothstep(DRY_FROM, DRY_TO, _dry.get_noise_2d(x, z)) * (1.0 - forest(x, z))
+	return smoothstep(DRY_FROM, DRY_TO, _dry.get_noise_2d(x, z)) * (1.0 - (forest(x, z) if is_nan(woods) else woods))
 
 
 ## Boulders and bare rock, 0 to 1: the rock field (half as much out on the lowland, which is
 ## fields and meadow), and on steep ground in the heart of the hills rock in patches
 ## (outcrops and scree, not an even band along every ridge).
-func rock(x: float, z: float) -> float:
+## `slope` is grade(x, z) when the caller has it already (NAN: worked out here, which costs
+## four height samples).
+func rock(x: float, z: float, slope := NAN) -> float:
 	if _biomes == null:
 		return 0.0
-	var field := _biomes.rock(x, z) * lerpf(0.5, 1.0, hilliness(x, z))
+	var hilly := hilliness(x, z)
+	var field := _biomes.rock(x, z) * lerpf(0.5, 1.0, hilly)
 	var patches := smoothstep(-0.15, 0.3, _rock_patches.get_noise_2d(x, z))
-	var crag := smoothstep(_rock_from, _rock_to, grade(x, z)) * smoothstep(0.25, 0.75, hilliness(x, z))
+	var crag := smoothstep(_rock_from, _rock_to, grade(x, z) if is_nan(slope) else slope) * smoothstep(0.25, 0.75, hilly)
 	return maxf(field, crag * patches)
 
 

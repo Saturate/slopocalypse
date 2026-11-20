@@ -259,10 +259,18 @@ export interface components {
             recipe?: {
                 [key: string]: unknown;
             };
+            region?: components["schemas"]["Region"];
+        };
+        /** @description A square of the map in metres (x from left, z from top), at least 32 m a side; the whole map when left out of a request. */
+        Region: {
+            left: number;
+            top: number;
+            size: number;
         };
         RenderResult: {
             /** @description Path of the render's PNG. */
             image: string;
+            region: components["schemas"]["Region"];
             stats: {
                 summary: {
                     [key: string]: string | number;
