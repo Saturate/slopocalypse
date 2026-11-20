@@ -1,0 +1,105 @@
+{
+  "_comment": "The mixed recipe: hillier country with more woods, dry grass and rock than grassland. Fields as in grassland.json.",
+  "size": 2048.0,
+  "relief": 520.0,
+  "layers": [
+    {
+      "frequency": 0.0005,
+      "amplitude": 0.3,
+      "octaves": 2,
+      "masked": false
+    },
+    {
+      "frequency": 0.0009,
+      "amplitude": 0.7,
+      "octaves": 1,
+      "masked": true
+    },
+    {
+      "frequency": 0.0024,
+      "amplitude": 0.2,
+      "octaves": 1,
+      "masked": true
+    }
+  ],
+  "walkable": {
+    "max_grade": 0.35,
+    "min_share": 0.75,
+    "flat_grade": 0.08,
+    "min_flat_share": 0.12,
+    "hillside_grade": 0.2,
+    "min_hillside_share": 0.12
+  },
+  "hill_mask": {
+    "frequency": 0.0006,
+    "from": -0.3,
+    "to": 0.35
+  },
+  "water": {
+    "cell": 16.0,
+    "min_depth": 0.8,
+    "min_area": 1500.0,
+    "max_area": 60000.0,
+    "freeboard": 0.3,
+    "deepen": 1.6
+  },
+  "biomes": {
+    "forest_frequency": 0.0015,
+    "forest_threshold": 0.55,
+    "dry_frequency": 0.0016,
+    "rock_frequency": 0.004,
+    "rock_threshold": 0.72,
+    "map_metres_per_texel": 4.0,
+    "rock_grade_from": 0.16,
+    "rock_grade_to": 0.28,
+    "hill_forest": 1.0,
+    "rock_patch_frequency": 0.018,
+    "lowland_forest": 0.9,
+    "woodland_frequency": 0.0007
+  },
+  "zones": {
+    "cell": 16.0,
+    "slope_grade": 0.16,
+    "flat_grade": 0.06,
+    "forest_cutoff": 0.5,
+    "wet_distance": 40.0,
+    "hilltop_rise": 4.0,
+    "hilltop_ring": 96.0,
+    "spawn_margin": 40.0,
+    "spawn_edge": 220.0,
+    "uses": {
+      "city": {
+        "kinds": [
+          "flat"
+        ],
+        "min_area": 30000.0
+      },
+      "town": {
+        "kinds": [
+          "flat"
+        ],
+        "min_area": 12000.0
+      },
+      "farm": {
+        "kinds": [
+          "flat",
+          "open"
+        ],
+        "min_area": 6000.0
+      },
+      "camp": {
+        "kinds": [
+          "flat",
+          "open"
+        ],
+        "min_area": 2500.0
+      },
+      "hilltop": {
+        "kinds": [
+          "hilltop"
+        ],
+        "min_area": 500.0
+      }
+    }
+  }
+}
