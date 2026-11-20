@@ -26,6 +26,16 @@ var _pond_of := PackedInt32Array()
 var _ponds: Array[Dictionary] = []
 var _deepen := 1.0
 
+# Biomes (see `forest`, `dry`, `rock`): the noise fields, then shaped by the land.
+var _biomes: Biomes
+var _rock_from := 1.0
+var _rock_to := 2.0
+var _hill_forest := 0.0
+var _lowland_forest := 1.0
+var _rock_patches := FastNoiseLite.new()
+var _dry := FastNoiseLite.new()
+var _woodland := FastNoiseLite.new()
+
 
 func _init(recipe: Dictionary, seed_value: int) -> void:
 	size = float(recipe["size"])
@@ -57,6 +67,27 @@ func _init(recipe: Dictionary, seed_value: int) -> void:
 	var water: Variant = recipe.get("water")
 	if water is Dictionary:
 		_find_ponds(water)
+	var biomes: Variant = recipe.get("biomes")
+	if biomes is Dictionary:
+		var cfg: Dictionary = (biomes as Dictionary).duplicate()
+		cfg["seed"] = float(seed_value * 7919 + 4241)
+		_biomes = Biomes.new(cfg)
+		_rock_from = float(cfg["rock_grade_from"])
+		_rock_to = float(cfg["rock_grade_to"])
+		_hill_forest = float(cfg["hill_forest"])
+		_lowland_forest = float(cfg["lowland_forest"])
+		_rock_patches.seed = seed_value * 7919 + 9001
+		_rock_patches.frequency = float(cfg["rock_patch_frequency"])
+		_rock_patches.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		_rock_patches.fractal_octaves = 2
+		_woodland.seed = seed_value * 7919 + 2203
+		_woodland.frequency = float(cfg["woodland_frequency"])
+		_woodland.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		_woodland.fractal_octaves = 1
+		_dry.seed = seed_value * 7919 + 6007
+		_dry.frequency = float(cfg["dry_frequency"])
+		_dry.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		_dry.fractal_octaves = 2
 
 
 ## The map's footprint on the ground: x and z.
@@ -81,6 +112,45 @@ func water_level(x: float, z: float) -> float:
 ## (metres at its deepest, before the bed is deepened)}.
 func ponds() -> Array[Dictionary]:
 	return _ponds
+
+
+## Rise per metre of the ground at (x, z).
+func grade(x: float, z: float) -> float:
+	var d := GRADE_STEP
+	return Vector2(height(x + d, z) - height(x - d, z), height(x, z + d) - height(x, z - d)).length() / (2.0 * d)
+
+
+## 0 in the open, 1 deep in woods. Woods grow on the hills (`hill_forest` of the way) and in
+## a few broad woodland regions out on the lowland (`lowland_forest` at most), so the
+## lowland is mostly open fields; the forest field then cuts clearings into them. None in
+## water.
+func forest(x: float, z: float) -> float:
+	if _biomes == null or not is_nan(water_level(x, z)):
+		return 0.0
+	var region := smoothstep(0.15, 0.55, _woodland.get_noise_2d(x, z)) * _lowland_forest
+	var woody := maxf(hilliness(x, z) * _hill_forest, region)
+	var clearings := smoothstep(0.0, 0.75, _biomes.forest(x, z))
+	return clampf(woody * clearings * 1.25, 0.0, 1.0)
+
+
+## Yellowed grass and bare patches, 0 to 1: patches out in the open that fade softly into
+## the meadow, none in the woods.
+func dry(x: float, z: float) -> float:
+	if _biomes == null:
+		return 0.0
+	return smoothstep(DRY_FROM, DRY_TO, _dry.get_noise_2d(x, z)) * (1.0 - forest(x, z))
+
+
+## Boulders and bare rock, 0 to 1: the rock field (half as much out on the lowland, which is
+## fields and meadow), and on steep ground in the heart of the hills rock in patches
+## (outcrops and scree, not an even band along every ridge).
+func rock(x: float, z: float) -> float:
+	if _biomes == null:
+		return 0.0
+	var field := _biomes.rock(x, z) * lerpf(0.5, 1.0, hilliness(x, z))
+	var patches := smoothstep(-0.15, 0.3, _rock_patches.get_noise_2d(x, z))
+	var crag := smoothstep(_rock_from, _rock_to, grade(x, z)) * smoothstep(0.25, 0.75, hilliness(x, z))
+	return maxf(field, crag * patches)
 
 
 ## Height of the land before water: the noise alone.
@@ -245,6 +315,12 @@ func _cells_under(cells: Array[int], ground: PackedFloat32Array, level: float) -
 	return count
 
 
+## The dry noise's values that fade from meadow to a full dry patch: a wide band, so the
+## patches fade out instead of ending at an edge.
+const DRY_FROM := 0.25
+const DRY_TO := 0.75
+## Metres either side a slope is measured over.
+const GRADE_STEP := 2.0
 const NEIGHBOURS: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 
 

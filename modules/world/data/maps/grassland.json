@@ -1,5 +1,5 @@
 {
-  "_comment": "A map recipe (#331, decision 0010): the land before anything is placed on it. size: the square map's side in metres, centred on the origin. relief: metres from the lowest to the highest the noise reaches. hill_mask: a slow noise (frequency, 1 / metres) whose value between from and to fades hilly country in; outside it lies near-flat lowland. layers: noise summed for the height, each with frequency, amplitude (share of relief), octaves, and masked (only where the hill mask says hilly, and only rising out of the lowland). walkable: max_grade (rise per metre a player still walks easily), min_share (the least share of the map that gentle), flat_grade and min_flat_share (near-flat ground for towns and fields, and how much of it the map needs), hillside_grade and min_hillside_share (real hillsides: the least share of the map that rises at least this much); the tests hold every seed to these. water: ponds where water would collect: the land is surveyed every cell metres, a basin at least min_depth deep and min_area square metres becomes a pond (shrunk to max_area by lowering its level), its level freeboard metres below where it would spill, its bed deepen times deeper than the land.",
+  "_comment": "A map recipe (#331, decision 0010): the land before anything is placed on it. size: the square map's side in metres, centred on the origin. relief: metres from the lowest to the highest the noise reaches. hill_mask: a slow noise (frequency, 1 / metres) whose value between from and to fades hilly country in; outside it lies near-flat lowland. layers: noise summed for the height, each with frequency, amplitude (share of relief), octaves, and masked (only where the hill mask says hilly, and only rising out of the lowland). walkable: max_grade (rise per metre a player still walks easily), min_share (the least share of the map that gentle), flat_grade and min_flat_share (near-flat ground for towns and fields, and how much of it the map needs), hillside_grade and min_hillside_share (real hillsides: the least share of the map that rises at least this much); the tests hold every seed to these. water: ponds where water would collect: the land is surveyed every cell metres, a basin at least min_depth deep and min_area square metres becomes a pond (shrunk to max_area by lowering its level), its level freeboard metres below where it would spill, its bed deepen times deeper than the land. biomes: noise fields for forest, dry grass and rock (frequency 1 / metres, threshold where a field starts), then shaped by the land: rock shows on ground steeper than rock_grade_from, fully past rock_grade_to, in patches rock_patch_frequency (1 / metres) apart; woods grow on the hills (hill_forest of the way) and in a few broad woodland regions (woodland_frequency, at most lowland_forest), the forest field cutting clearings into them; none in water. map_metres_per_texel: the terrain shader's biome map resolution.",
   "size": 2048.0,
   "relief": 360.0,
   "layers": [
@@ -42,5 +42,19 @@
     "max_area": 60000.0,
     "freeboard": 0.3,
     "deepen": 1.6
+  },
+  "biomes": {
+    "forest_frequency": 0.0015,
+    "forest_threshold": 0.55,
+    "dry_frequency": 0.0012,
+    "rock_frequency": 0.004,
+    "rock_threshold": 0.72,
+    "map_metres_per_texel": 4.0,
+    "rock_grade_from": 0.16,
+    "rock_grade_to": 0.28,
+    "hill_forest": 0.9,
+    "rock_patch_frequency": 0.018,
+    "lowland_forest": 0.8,
+    "woodland_frequency": 0.0007
   }
 }

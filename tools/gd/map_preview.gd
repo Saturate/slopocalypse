@@ -7,6 +7,9 @@ extends SceneTree
 const LIGHT := Vector3(-0.6, 0.7, -0.4)
 const LOW := Color(0.36, 0.52, 0.27)
 const HIGH := Color(0.62, 0.55, 0.42)
+const FOREST := Color(0.16, 0.33, 0.15)
+const ROCK := Color(0.55, 0.54, 0.5)
+const DRY := Color(0.72, 0.66, 0.38)
 const SHALLOW := Color(0.36, 0.6, 0.7)
 const DEEP := Color(0.12, 0.27, 0.42)
 ## Metres of water from the shallow tint to the deep one.
@@ -42,7 +45,8 @@ func _initialize() -> void:
 
 
 ## The land seen from above, north (-z) up: hill shading over green lowland turning brown
-## up high, water blue by depth.
+## up high, tinted by biome (dark green woods, yellowed dry grass, grey rock), water blue by
+## depth.
 static func render(land: WorldLand, pixels: int) -> Image:
 	var b := land.bounds()
 	var step := b.size.x / pixels
@@ -72,5 +76,9 @@ static func render(land: WorldLand, pixels: int) -> Image:
 				image.set_pixel(i, j, SHALLOW.lerp(DEEP, clampf((level - h) / DEEP_AT, 0.0, 1.0)))
 				continue
 			var t := (h - low) / maxf(high - low, 0.001)
-			image.set_pixel(i, j, LOW.lerp(HIGH, t) * shade)
+			var ground := LOW.lerp(HIGH, t)
+			ground = ground.lerp(DRY, land.dry(x, z) * 0.5)
+			ground = ground.lerp(FOREST, land.forest(x, z) * 0.85)
+			ground = ground.lerp(ROCK, land.rock(x, z) * 0.8)
+			image.set_pixel(i, j, ground * shade)
 	return image
