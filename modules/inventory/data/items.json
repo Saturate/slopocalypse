@@ -572,7 +572,7 @@
       "name": "Bolt-action rifle (with its parts)",
       "short": "Bolt rifle",
       "size": [
-        6,
+        5,
         2
       ],
       "kind": "primary_gun"
