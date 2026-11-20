@@ -108,6 +108,7 @@ func _physics_tick(delta: float) -> void:
 			Log.warn(&"player", "fell through the ground at %s, putting them back on top" % at)
 			player.global_position = Vector3(at.x, ground + 1.0, at.z)
 			player.velocity = Vector3.ZERO
+			player.clear_shove()
 			server_hold(player)
 
 
@@ -269,6 +270,7 @@ func server_respawn(player: PlayerController) -> void:
 	(player.get_node("Health") as HealthComponent).server_reset()
 	player.global_position = _near_spawn(player)
 	player.velocity = Vector3.ZERO
+	player.clear_shove()
 	Net.server_broadcast(&"player.respawned", {"player": player})
 	server_hold(player)
 
@@ -310,6 +312,7 @@ func server_move_to(player: PlayerController, at: Vector3) -> void:
 	EventBus.publish(&"player.teleporting", {"player": player})
 	player.global_position = at
 	player.velocity = Vector3.ZERO
+	player.clear_shove()
 	server_hold(player)
 
 
@@ -389,6 +392,7 @@ func _on_car_entered(payload: Dictionary) -> void:
 	var player := payload.get("player") as PlayerController
 	if player == null or not _players.values().has(player):
 		return
+	player.clear_shove()
 	# Parked, not freed: the same player comes back on exit.
 	player.process_mode = Node.PROCESS_MODE_DISABLED
 	player.visible = false
@@ -401,6 +405,7 @@ func _on_car_exited(payload: Dictionary) -> void:
 		return
 	player.global_position = payload["position"]
 	player.velocity = Vector3.ZERO
+	player.clear_shove()
 	player.process_mode = Node.PROCESS_MODE_INHERIT
 	player.visible = true
 	(player.get_node("Shape") as CollisionShape3D).set_deferred(&"disabled", false)

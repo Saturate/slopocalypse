@@ -18,6 +18,7 @@
   "swim_depth": 1.4,
   "swim_speed": 0.4,
   "step_height": 0.3,
+  "shove_fade": 18.0,
   "ads_speed_multiplier": 0.55,
   "ads_seconds": 0.18,
   "ads_eye_relief": 0.17,
