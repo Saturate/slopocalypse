@@ -144,11 +144,17 @@ func _process_tick(_delta: float) -> void:
 func update_around(points: Array[Vector3], budget: float, threaded := false) -> void:
 	var reach: float = _cfg["load_distance"] if _visual else _cfg["collision_distance"]
 	var wanted: Dictionary[int, bool] = {}
+	var cols := _cols()
+	var rows := _rows()
+	var origin := _heights.extent().position
 	for p in points:
-		var first := _chunk_of(p.z + reach)
-		var last := _chunk_of(p.z - reach)
-		for i in range(maxi(first, 0), mini(last, _chunk_count() - 1) + 1):
-			wanted[i] = true
+		var from := Vector2i(floori((p.x - reach - origin.x) / CHUNK), floori((p.z - reach - origin.y) / CHUNK))
+		var to := Vector2i(floori((p.x + reach - origin.x) / CHUNK), floori((p.z + reach - origin.y) / CHUNK))
+		for row in range(maxi(from.y, 0), mini(to.y, rows - 1) + 1):
+			for col in range(maxi(from.x, 0), mini(to.x, cols - 1) + 1):
+				var i := row * cols + col
+				if _nearest(i, points) <= reach:
+					wanted[i] = true
 	var built := 0
 	# Nearest first, so the ground you stand on is never waiting behind the horizon.
 	var order := wanted.keys()
@@ -242,9 +248,9 @@ func _apply_clearings(circles: Array) -> void:
 	if touched.is_empty():
 		return
 	for i: int in _chunks.keys():
-		var span := _chunk_z(i)
+		var area := _chunk_area(i)
 		for c: Vector3 in touched:
-			if c.y + c.z > span.x and c.y - c.z < span.y:
+			if area.grow(c.z).has_point(Vector2(c.x, c.y)):
 				_free_chunk(i)
 				_chunks[i] = _build_chunk(i, plan_chunk(i, _clearings))
 				break
@@ -280,25 +286,35 @@ func _focus_points() -> Array[Vector3]:
 	return out
 
 
-func _chunk_count() -> int:
-	return int(ceil(_heights.length / CHUNK))
+## Chunks are CHUNK-metre squares over the world's extent, numbered row by row from its
+## north-west corner (row * columns + column), so an id stays a plain int in tree ids, saves
+## and messages whatever shape the world has (#472).
+func _cols() -> int:
+	return ceili(_heights.extent().size.x / CHUNK)
 
 
-## Chunk 0 starts behind the spawn at the near end; numbers grow down the road.
-func _chunk_of(z: float) -> int:
-	return floori((_heights.z_max() - z) / CHUNK)
+func _rows() -> int:
+	return ceili(_heights.extent().size.y / CHUNK)
 
 
-func _chunk_z(i: int) -> Vector2:
-	var near := _heights.z_max() - i * CHUNK
-	return Vector2(near - CHUNK, near)
+## The chunk at (x, z), or -1 outside the world.
+func chunk_at(x: float, z: float) -> int:
+	var origin := _heights.extent().position
+	var col := floori((x - origin.x) / CHUNK)
+	var row := floori((z - origin.y) / CHUNK)
+	if col < 0 or row < 0 or col >= _cols() or row >= _rows():
+		return -1
+	return row * _cols() + col
 
 
+## Metres from the nearest of `points` to chunk `i` (0 inside it).
 func _nearest(i: int, points: Array[Vector3]) -> float:
-	var span := _chunk_z(i)
+	var area := _chunk_area(i)
 	var best := INF
 	for p in points:
-		best = minf(best, maxf(maxf(span.x - p.z, p.z - span.y), 0.0))
+		var dx := maxf(maxf(area.position.x - p.x, p.x - area.end.x), 0.0)
+		var dz := maxf(maxf(area.position.y - p.z, p.z - area.end.y), 0.0)
+		best = minf(best, Vector2(dx, dz).length())
 	return best
 
 
@@ -362,8 +378,9 @@ func plan_chunk(i: int, clearings: Array[Vector3]) -> Dictionary:
 
 
 func _chunk_area(i: int) -> Rect2:
-	var span := _chunk_z(i)
-	return Rect2(_heights.extent().position.x, span.x, _heights.width, CHUNK)
+	var extent := _heights.extent()
+	var square := Rect2(extent.position + Vector2(i % _cols(), i / _cols()) * CHUNK, Vector2.ONE * CHUNK)
+	return square.intersection(extent)
 
 
 func _build_chunk(i: int, plan: Dictionary) -> Node3D:
@@ -373,7 +390,6 @@ func _build_chunk(i: int, plan: Dictionary) -> Node3D:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([_seed, i])
 	rng.state = int(plan["rng_state"])
-	var span := _chunk_z(i)
 	var area := _chunk_area(i)
 	var collision := StaticBody3D.new()
 	collision.name = "Collision"
@@ -392,7 +408,7 @@ func _build_chunk(i: int, plan: Dictionary) -> Node3D:
 			meshes[key] = _add_instances(node, key, placed[key])
 		_tree_meshes[i] = meshes
 		_add_grass(node, rng, area)
-		_add_road(node, i, span)
+		_add_road(node, i, area)
 	for n in (_trees[i] as Array).size():
 		var id := Vector2i(i, n)
 		if _damage.is_felled(id):
@@ -657,10 +673,11 @@ func clear_grass(center: Vector3, radius: float) -> void:
 ## and slope vertex by vertex, so it has no joints, no steps on climbs and no staircase
 ## edges on bends. Faces are kept short so the bend follows the curve. The car drives on
 ## the terrain levelled just under it.
-func _add_road(node: Node3D, i: int, span: Vector2) -> void:
+func _add_road(node: Node3D, i: int, area: Rect2) -> void:
 	var road := _heights.road
 	if road == null:
 		return
+	var span := Vector2(area.position.y, area.end.y)
 	# No road behind where it starts (in the start tunnel, at the cave-in).
 	span.y = minf(span.y, road.z_start())
 	if span.y - span.x < 1.0:
@@ -670,6 +687,9 @@ func _add_road(node: Node3D, i: int, span: Vector2) -> void:
 	var length := (span.y - span.x) / pieces
 	for p in pieces:
 		var mid := span.x + length * (p + 0.5)
+		# Square chunks: each piece belongs to the chunk its middle is in.
+		if not area.has_point(Vector2(road.x_at(mid), mid)):
+			continue
 		var look := {"seed": hash([_seed, i, p]), "length": length, "voxel": ROAD_VOXEL, "z_phase": mid}
 		if remoteness != null:
 			# The road runs down -z: the city's stretch is kept, the far end worn out.

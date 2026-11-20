@@ -88,8 +88,8 @@ func test_a_felled_tree_loses_its_collision_and_stays_down() -> void:
 	# Gone and back: the chunk rebuilds with the tree still down.
 	_scatter.call(&"_free_chunk", chunk)
 	await get_tree().process_frame
-	var span: Vector2 = _scatter.call(&"_chunk_z", chunk)
-	_scatter.update_around([Vector3(0, 0, (span.x + span.y) / 2.0)], INF)
+	var area: Rect2 = _scatter.call(&"_chunk_area", chunk)
+	_scatter.update_around([Vector3(area.get_center().x, 0, area.get_center().y)], INF)
 	assert_int(_trunk_shapes(chunk)).is_equal(standing - 1)
 	assert_object(_scatter.server_shoot_tree(_body(chunk), _scatter.tree_position(id))).is_not_equal(id)
 

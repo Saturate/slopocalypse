@@ -181,6 +181,10 @@ func test_players_standing_on_the_terrain_do_not_fall_through() -> void:
 func test_a_pad_levels_the_ground_under_it_and_eases_back_into_the_slope() -> void:
 	var centre := OUT + Vector3(14, 0, -6)
 	var level := _voxels.ground_height(centre.x, centre.z) + 0.7
+	# Nothing growing on it, as missions and the city clear theirs: the rays below are for the
+	# ground, not a tree or rock that happens to stand there.
+	for scenery: Node in get_tree().get_nodes_in_group(&"scenery"):
+		scenery.call(&"set_clearings_for", &"test_pad", [{"at": centre, "radius": 12.0}])
 	# Turned a quarter: its 6 m length runs along z.
 	_voxels.set_pads([{"at": Vector3(centre.x, level, centre.z), "half": Vector2(6.0, 3.0), "yaw": PI / 2.0, "blend": 3.0}])
 	await get_tree().physics_frame
