@@ -10,7 +10,9 @@ export type RenderResult = components["schemas"]["RenderResult"];
 export type Grid = components["schemas"]["Grid"];
 export type Region = components["schemas"]["Region"];
 export type Layer = NonNullable<RenderRequest["layers"]>[number];
-export const LAYERS: readonly Layer[] = ["zones", "settlements", "roads", "earthworks"];
+export const LAYERS: readonly Layer[] = ["zones", "settlements", "roads", "earthworks", "sites", "remoteness"];
+// Drawn unless switched off; the rest (the remoteness tint) only when asked for.
+export const DEFAULT_LAYERS: readonly Layer[] = ["zones", "settlements", "roads", "earthworks", "sites"];
 
 function isRecord(v: unknown): v is Record<string, unknown> {
 	return typeof v === "object" && v !== null && !Array.isArray(v);

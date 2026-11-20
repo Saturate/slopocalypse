@@ -1,7 +1,9 @@
 // Pure parts of tools/map-viewer.ts: reading a render request and naming its cache entry.
 
-export const LAYERS = ["zones", "settlements", "roads", "earthworks"] as const;
+export const LAYERS = ["zones", "settlements", "roads", "earthworks", "sites", "remoteness"] as const;
 export type Layer = (typeof LAYERS)[number];
+// Drawn when a request names none: everything but the remoteness tint, which hides the land.
+export const DEFAULT_LAYERS: readonly Layer[] = ["zones", "settlements", "roads", "earthworks", "sites"];
 
 export type RenderRequest = { map: string; seed: number; pixels: number; layers: Layer[] };
 
@@ -17,7 +19,7 @@ export function parseRender(params: URLSearchParams): RenderRequest {
 	if (!Number.isInteger(seed) || seed < 0 || seed > 2_147_483_647) throw new Error("seed must be a whole number from 0");
 	const pixels = Number(params.get("pixels") ?? "512");
 	if (!Number.isInteger(pixels) || pixels < 64 || pixels > 2048) throw new Error("pixels must be 64 to 2048");
-	const asked = (params.get("layers") ?? LAYERS.join(",")).split(",").filter((l) => l !== "");
+	const asked = (params.get("layers") ?? DEFAULT_LAYERS.join(",")).split(",").filter((l) => l !== "");
 	const layers: Layer[] = [];
 	for (const l of asked) {
 		if (!isLayer(l)) throw new Error(`unknown layer ${l}`);
