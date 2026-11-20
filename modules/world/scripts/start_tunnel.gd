@@ -29,6 +29,10 @@ var _visual := DisplayServer.get_name() != "headless"
 
 
 func _ready() -> void:
+	# A generated map starts at its camp, not in the strip's tunnel (#472).
+	if WorldMaps.is_selected():
+		queue_free()
+		return
 	var config: Variant = Data.load_json(config_path)
 	if not config is Dictionary:
 		return

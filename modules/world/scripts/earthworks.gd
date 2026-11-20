@@ -113,6 +113,23 @@ func height(x: float, z: float) -> float:
 	return lerpf(ground, shaped, hold)
 
 
+## Metres from (x, z) to the edge of the nearest road or track (0 or less on it), or INF when
+## none is within its earthworks' reach. Over a tunnel or under a bridge counts as off it.
+func road_distance(x: float, z: float) -> float:
+	var near: Variant = _tiles.get(_tile_of(x, z))
+	if near == null:
+		return INF
+	var p := Vector2(x, z)
+	var best := INF
+	for f: Dictionary in near:
+		if f.has("pad"):
+			continue
+		var road: Dictionary = _roads[int(f["road"])]
+		var at := _on_segment(road, int(f["segment"]), p, true, true)
+		best = minf(best, at.x - float(road["edge"]))
+	return best
+
+
 ## Rise per metre of the shaped ground at (x, z).
 func grade(x: float, z: float) -> float:
 	var d := WorldLand.GRADE_STEP
@@ -147,7 +164,7 @@ func _add_road(road: Dictionary) -> void:
 		var into_a := (points[mini(span.x, last)] - a).normalized()
 		var into_b := (points[maxi(span.y, 0)] - b).normalized()
 		slabs.append(PackedVector2Array([a, into_a, b, into_b]))
-	_roads.append({"points": points, "heights": road["heights"], "half": half, "slabs": slabs,
+	_roads.append({"points": points, "heights": road["heights"], "half": half, "edge": float(road["width"]) / 2.0, "slabs": slabs,
 		"bank": _track_bank if track else _bank, "reach": reach})
 	for k in points.size() - 1:
 		# A segment touching a tunnel or bridge sample is left out: the land stays as it is

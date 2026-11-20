@@ -114,6 +114,16 @@ func ponds() -> Array[Dictionary]:
 	return _ponds
 
 
+## The survey points (x, z) under pond `i`'s water.
+func pond_points(i: int) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var b := bounds()
+	for k in _pond_of.size():
+		if _pond_of[k] == i:
+			out.append(b.position + Vector2(k % _side, k / _side) * _cell)
+	return out
+
+
 ## Rise per metre of the ground at (x, z).
 func grade(x: float, z: float) -> float:
 	var d := GRADE_STEP

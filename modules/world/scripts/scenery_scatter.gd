@@ -53,8 +53,8 @@ const STEP_OVER_HEIGHT := 0.3
 ## trench floor, so anything put there would stand inside the tunnel.
 const TUNNEL_CLEARANCE := 2.0
 
-var _heights: TerrainHeights
-var _biomes: Biomes
+var _heights: GroundShape
+var _biomes: GroundBiomes
 var _cfg: Dictionary
 var _seed := 0
 var _visual := DisplayServer.get_name() != "headless"
@@ -92,6 +92,9 @@ var _pending: Dictionary[int, Dictionary] = {}
 var _clearings_gen := 0
 ## How far each place is from people (#419), or null when the world's data has none.
 var remoteness: Remoteness
+## Where players start (the strip's origin, a generated map's camp): scenery there is built
+## before anyone arrives.
+var home := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -111,15 +114,22 @@ func _ready() -> void:
 	_damage.config = _cfg
 	add_child(_damage)
 	_seed = int(_cfg["seed"])
-	_heights = TerrainHeights.new(world)
-	if world.has("remoteness") and Data.require(config_path + " remoteness", world["remoteness"], Remoteness.REQUIRED):
-		remoteness = Remoteness.new(world["remoteness"])
-	_biomes = Biomes.new(world["biomes"], _heights.stages)
+	var map := WorldMaps.shape() if WorldMaps.is_selected() else null
+	if map != null:
+		# A generated map (#472): its land, biomes and roads.
+		_heights = map
+		_biomes = map.biomes()
+		home = map.camp()
+	else:
+		_heights = TerrainHeights.new(world)
+		if world.has("remoteness") and Data.require(config_path + " remoteness", world["remoteness"], Remoteness.REQUIRED):
+			remoteness = Remoteness.new(world["remoteness"])
+		_biomes = Biomes.new(world["biomes"], _heights.stages)
 	_make_variants()
 	# Other modules ask for clearings through this group (`set_clearings`).
 	add_to_group(&"scenery")
 	# The spawn is ready before anyone arrives (the world waits on its collision).
-	update_around([Vector3.ZERO], INF)
+	update_around([home], INF)
 
 
 func _process(_delta: float) -> void:
@@ -282,7 +292,7 @@ func _focus_points() -> Array[Vector3]:
 				if n is Node3D:
 					out.append((n as Node3D).global_position)
 	if out.is_empty():
-		out.append(Vector3.ZERO)
+		out.append(home)
 	return out
 
 
@@ -427,7 +437,7 @@ func _spot(rng: RandomNumberGenerator, area: Rect2, weight: Callable, clearings:
 			continue
 		if _heights.in_tunnel(x, z, TUNNEL_CLEARANCE):
 			continue
-		if _heights.road != null and _heights.road.distance(x, z) < _heights.road.half_width + float(_cfg["road_clearance"]):
+		if _heights.near_road(x, z, float(_cfg["road_clearance"])):
 			continue
 		if _heights.in_water(x, z):
 			continue
@@ -608,7 +618,7 @@ func _add_grass(node: Node3D, rng: RandomNumberGenerator, area: Rect2) -> void:
 		var keep := 1.0 - _biomes.forest(x, z) * 0.8 - _biomes.rock(x, z) * 0.6
 		if rng.randf() > keep:
 			continue
-		if _heights.road != null and _heights.road.distance(x, z) < _heights.road.half_width + 0.5:
+		if _heights.near_road(x, z, 0.5):
 			continue
 		if _heights.in_tunnel(x, z, TUNNEL_CLEARANCE):
 			continue

@@ -1,5 +1,5 @@
 class_name Biomes
-extends RefCounted
+extends GroundBiomes
 ## Seeded biome fields shared by scenery placement and the terrain shader, so server and
 ## clients agree on where forests, meadows and rocky ground are. Each field is 0..1:
 ##   forest: tree density (dense woods with clearings and open meadows between)

@@ -1,5 +1,5 @@
 class_name TerrainHeights
-extends RefCounted
+extends GroundShape
 ## Deterministic terrain height function shared by the runtime terrain, the world builder,
 ## scenery and spawn logic, so they always agree on where the ground is.
 ##
@@ -54,13 +54,6 @@ var behind: float
 var amplitude: float
 var flat_radius: float
 var flat_blend: float
-var stages: RoadStages
-## The `start` block, or empty.
-var start: Dictionary = {}
-## Null when the config has no road.
-var road: RoadPath
-## Ponds and lakes (`water` in world.json); never null, maybe empty.
-var water: WaterBodies
 
 var _noise := FastNoiseLite.new()
 var _crags := FastNoiseLite.new()
@@ -169,9 +162,9 @@ func height_at(x: float, z: float) -> float:
 	return dry if water.bodies.is_empty() else water.carve(x, z, dry)
 
 
-## Inside a pond or lake's outline.
-func in_water(x: float, z: float) -> bool:
-	return water.body_at(x, z) >= 0
+## On the road or within `margin` metres of its edge.
+func near_road(x: float, z: float, margin: float) -> bool:
+	return road != null and road.distance(x, z) < road.half_width + margin
 
 
 ## The ground with the road and tunnel cut in, before any water.
