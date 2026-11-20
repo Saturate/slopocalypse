@@ -117,5 +117,28 @@
       "clearance": 250.0
     },
     "edge_margin": 200.0
+  },
+  "roads": {
+    "kinds": {
+      "highway": {
+        "width": 8.0,
+        "max_grade": 0.08,
+        "min_radius": 90.0
+      },
+      "two_lane": {
+        "width": 7.0,
+        "max_grade": 0.1,
+        "min_radius": 50.0
+      }
+    },
+    "cost": {
+      "forest": 2.0,
+      "slope": 1.5,
+      "wetland": 2.0,
+      "hilltop": 0.8,
+      "over_grade": 8.0,
+      "settlement": 40.0
+    },
+    "sample": 4.0
   }
 }
