@@ -19,17 +19,21 @@ const MAP_REQUIRED := {"recipe": TYPE_STRING, "seed": TYPE_FLOAT, "kill_depth": 
 var _voxels: VoxelWorld
 var _scenery: SceneryScatter
 var _announcement: Dictionary = {}
+var _data: Dictionary = {}
+## Which world this instance plays: strip, flat (the test range) or map (#472).
+var _kind := &"strip"
 var _waited := 0.0
 
 
 ## The generated map is played with `--world=map` (#472): its recipe and seed from
-## `world.json` `map`, overridden by `--map=` and `--seed=`. Anything else plays the strip.
-static func _select_map(args: PackedStringArray, data: Dictionary) -> void:
+## `world.json` `map`, overridden by `--map=` and `--seed=`. True when a map is selected;
+## anything else plays the strip.
+static func _select_map(args: PackedStringArray, data: Dictionary) -> bool:
 	WorldMaps.clear()
 	if not args.has("--world=map"):
-		return
+		return false
 	if not (data.get("map") is Dictionary and Data.require(CONFIG + " map", data["map"], MAP_REQUIRED)):
-		return
+		return false
 	var cfg: Dictionary = data["map"]
 	var recipe := str(cfg["recipe"])
 	var seed_value := int(cfg["seed"])
@@ -47,8 +51,9 @@ static func _select_map(args: PackedStringArray, data: Dictionary) -> void:
 	if WorldMaps.shape() == null:
 		Log.warn(&"world", "no playable map %s; playing the strip" % recipe)
 		WorldMaps.clear()
-		return
+		return false
 	Log.info(&"world", "playing map %s, seed %d" % [recipe, seed_value])
+	return true
 
 
 ## Puts the spawn at the map's camp and the car beside it facing down the highway, and fits
@@ -98,9 +103,39 @@ func _ready() -> void:
 	var data: Variant = Data.load_json(CONFIG)
 	if not data is Dictionary or not Data.require(CONFIG, data, {"kill_y": TYPE_FLOAT, "rescue_depth": TYPE_FLOAT}):
 		return
+	_data = data
+	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)
+	EventBus.subscribe(&"explosion", _on_explosion)
+	EventBus.subscribe(&"world.tree_felled", _on_tree_felled)
+	Net.peer_joined.connect(_on_peer_joined)
+	add_to_group(&"world_state")
+	# For the perf log (or anything else reading Performance): what the world is holding.
+	for monitor: StringName in MONITORS:
+		if not Performance.has_custom_monitor(monitor):
+			Performance.add_custom_monitor(monitor, Callable(self, MONITORS[monitor]))
+	# A client plays whatever its server plays: the world loads once the server says which
+	# (`_receive_map`, the first thing it sends a joining peer). Everyone else picks now.
+	if _waits_for_server():
+		Log.info(&"world", "waiting for the server to say which world it plays")
+		return
 	var args := Net.session_args()
-	_select_map(args, data)
-	var scene: PackedScene = load(FLAT_SCENE if args.has("--world=flat") else SCENE)
+	_kind = &"flat" if args.has("--world=flat") else &"strip"
+	if _select_map(args, data):
+		_kind = &"map"
+	_load_world()
+
+
+## Connected to a server as its client (the solo game included): the server's world decides.
+func _waits_for_server() -> bool:
+	var peer := multiplayer.multiplayer_peer
+	return peer != null and not peer is OfflineMultiplayerPeer and not multiplayer.is_server()
+
+
+## Builds the chosen world (`_kind`, and the map WorldMaps has selected) and gets its
+## announcement ready.
+func _load_world() -> void:
+	var data := _data
+	var scene: PackedScene = load(FLAT_SCENE if _kind == &"flat" else SCENE)
 	var world := scene.instantiate()
 	add_child(world)
 	# The map viewer on a dedicated server's admin pages (the web module serves them).
@@ -114,8 +149,8 @@ func _ready() -> void:
 		_voxels.dug.connect(_scenery.on_dug)
 	var spawn: Marker3D = world.get_node("SpawnPoint")
 	var car: Marker3D = world.get_node("CarSpawn")
-	# `front` and `forward`: players start inside the tunnel, so things spread "around the
-	# spawn" (crates, enemies) go around the road just outside it, on the open side.
+	# `front` and `forward`: on the strip players start inside the tunnel, so things spread
+	# "around the spawn" (crates, enemies) go around the road just outside it.
 	var forward := Vector3.FORWARD
 	var kill_y := float(data["kill_y"])
 	var map := WorldMaps.shape() if WorldMaps.is_selected() else null
@@ -130,15 +165,26 @@ func _ready() -> void:
 		"kill_y": kill_y,
 		"rescue_depth": data["rescue_depth"],
 	}
-	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)
-	EventBus.subscribe(&"explosion", _on_explosion)
-	EventBus.subscribe(&"world.tree_felled", _on_tree_felled)
-	Net.peer_joined.connect(_on_peer_joined)
-	add_to_group(&"world_state")
-	# For the perf log (or anything else reading Performance): what the world is holding.
-	for monitor: StringName in MONITORS:
-		if not Performance.has_custom_monitor(monitor):
-			Performance.add_custom_monitor(monitor, Callable(self, MONITORS[monitor]))
+
+
+## Server to a joining client, before anything else about the world: which world it plays
+## (`kind` strip, flat or map) and, for a map, its recipe and seed. The client builds the same.
+@rpc("authority", "call_remote", "reliable")
+func _receive_map(kind: String, recipe: String, seed_value: int) -> void:
+	if _voxels != null or not _waits_for_server():
+		return
+	WorldMaps.clear()
+	_kind = &"strip"
+	if kind == "flat":
+		_kind = &"flat"
+	elif kind == "map":
+		WorldMaps.select(recipe, seed_value)
+		if WorldMaps.shape() == null:
+			Net.leave("This server plays the map %s, which this game does not have." % recipe)
+			return
+		_kind = &"map"
+	Log.info(&"world", "the server plays %s" % ("map %s, seed %d" % [recipe, seed_value] if _kind == &"map" else String(_kind)))
+	_load_world()
 
 
 func _exit_tree() -> void:
@@ -181,6 +227,8 @@ func _on_tree_felled(p: Dictionary) -> void:
 func _on_peer_joined(peer: int) -> void:
 	if not _is_server():
 		return
+	# Which world first: the client builds it before the craters and trees below arrive.
+	_receive_map.rpc_id(peer, String(_kind), WorldMaps.recipe_name(), WorldMaps.seed_value())
 	# Craters first, so trees and loot settle on the ground as it is now.
 	if _voxels != null and not _voxels.dig_log().is_empty():
 		_receive_digs.rpc_id(peer, _digs_as_list())

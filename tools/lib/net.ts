@@ -150,19 +150,21 @@ export async function netSmoke(godot: string, root: string, port = 7791): Promis
 }
 
 // The generated map (#472, played with --world=map until it replaces the strip): a server and
-// a walking client on it, the client moving away from the camp with nothing logged wrong.
+// a walking client on it, the client told the map by the server and moving away from the camp
+// with nothing logged wrong.
 export async function mapSmoke(godot: string, root: string, port = 7797): Promise<StepResult> {
 	const base = ["--headless", "--path", root, "--"];
 	const server = run(godot, [...base, `--server=${port}`, "--no-save", "--world=map", "--net-report-after=700"], { cwd: root, timeoutMs: 150_000 });
 	// The server builds the map at boot before it listens: a little longer than the strip.
 	await delay(10000);
-	const client = await run(godot, [...base, `--connect=127.0.0.1:${port}`, "--world=map", "--net-report-after=400", "--bot=walk"], { cwd: root, timeoutMs: 150_000 });
+	// No --world=map on the client: it must learn the map from the server.
+	const client = await run(godot, [...base, `--connect=127.0.0.1:${port}`, "--net-report-after=400", "--bot=walk"], { cwd: root, timeoutMs: 150_000 });
 	const host = await server;
 	const problems: string[] = [];
 	for (const [name, r] of [["server", host], ["client", client]] as const) {
 		for (const line of scanLog(r.output, GODOT_NOISE)) problems.push(`${name}: ${line}`);
 		if (r.timedOut) problems.push(`${name}: timed out`);
-		if (!r.output.includes("playing map")) problems.push(`${name}: did not play the generated map`);
+		if (!r.output.includes(name === "server" ? "playing map" : "the server plays map")) problems.push(`${name}: did not play the generated map`);
 	}
 	const rep = parseReport(host.output);
 	if (rep === undefined) problems.push(`server: no NET-REPORT line; it ended with:\n${lastLines(host.output)}`);
