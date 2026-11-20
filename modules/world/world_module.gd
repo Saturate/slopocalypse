@@ -109,6 +109,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"world.tree_felled", _on_tree_felled)
 	Net.peer_joined.connect(_on_peer_joined)
 	add_to_group(&"world_state")
+	add_to_group(&"world_map")
 	# For the perf log (or anything else reading Performance): what the world is holding.
 	for monitor: StringName in MONITORS:
 		if not Performance.has_custom_monitor(monitor):
@@ -123,6 +124,15 @@ func _ready() -> void:
 	if _select_map(args, data):
 		_kind = &"map"
 	_load_world()
+
+
+## Which world this instance plays, as a save keys it (#472): "strip", "flat", or the map's
+## recipe, a hash of the recipe file (an edited recipe moves things) and its seed.
+func map_key() -> String:
+	if _kind != &"map":
+		return String(_kind)
+	var text := FileAccess.get_file_as_string(WorldMaps.MAPS_DIR.path_join(WorldMaps.recipe_name() + ".json"))
+	return "map:%s:%s:%d" % [WorldMaps.recipe_name(), text.sha256_text().left(12), WorldMaps.seed_value()]
 
 
 ## Connected to a server as its client (the solo game included): the server's world decides.
