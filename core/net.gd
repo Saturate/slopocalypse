@@ -54,7 +54,8 @@ const MAX_KEY_LENGTH := 64
 ## same version and protocol, or an older client would join and silently lose every effect
 ## whose replay it can no longer decode (#397). `_hello`, `_kicked` and `_version` must never
 ## change their arguments: they are how an older client is told to update.
-const PROTOCOL := 1
+## 2: the world module tells joining clients which world it plays (#472).
+const PROTOCOL := 2
 ## Versions are compared up to this many characters, on both sides alike.
 const MAX_VERSION_LENGTH := 64
 
