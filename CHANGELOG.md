@@ -1,5 +1,69 @@
 # Changelog
 
+## 0.10.0 - 2026-11-20
+
+### slopocalypse
+
+#### A shot water tower leaks in thin streams that fall by its legs instead of spraying like a fire hose.
+
+#### Joining a server no longer puts you inside a parked car, and leaving while driving saves you beside the car.
+
+#### Items on the ground are drawn bigger, lie flat with their names above them, and the one you would pick up glows
+
+#### The server's web page has an admin app behind its password, starting with the server's status.
+
+#### Server admins can look at world-generation maps in the admin page: pick a recipe and seed, toggle layers, try changed numbers
+
+#### The bolt-action rifle fits in the backpack now.
+
+#### Mission sites no longer land in the city, and the city keeps clear of the road where it bends.
+
+#### A street now leads from the road into the city on levelled ground, and city streets no longer swallow your feet.
+
+#### Joining a server on a different game version now says which version the server runs, instead of joining with missing effects
+
+#### Search a body where its ragdoll lies; the floating Body label is gone.
+
+#### When joining a server fails, the menu lists what to check: address and port, the UDP port on the server's firewall, your own network, and a VPN as a way round
+
+#### Cars shove people out of the way instead of stopping dead, and hurt them when they hit fast.
+
+#### New players start with 50 tokens instead of 150; the first missions pay for the rest.
+
+#### Server admins can set WEB_PASSWORD to open admin pages on the server's web page; the status page stays public.
+
+#### Craters are shallow bowls with walls you can walk out of, even on a hillside; they are as wide as before.
+
+### Internal
+
+#### World generation: city, towns and the players' camp placed on the land (not played yet).
+
+#### Decision record 0010: world generation makes the land first, then places settlements and roads that shape it.
+
+#### World generation: ponds where water collects in the low ground (not played yet).
+
+#### World generation: road heights within their grade, tunnels and bridges marked (not played yet).
+
+#### World generation (not played yet): roads cut into hills and settlements on level pads in the map preview
+
+#### A local map viewer for tuning world generation.
+
+#### The Windows export builds the admin web app through Node instead of npm.cmd
+
+#### World generation: the land of a map from a recipe (not played yet).
+
+#### tools/server.ts passes arguments after -- to the game
+
+#### World generation: the land read as zones, with a city spot and a spawn (not played yet).
+
+#### World generation: biomes on the new land, woods on the hills and open lowland (not played yet).
+
+#### World generation: roads routed between the camp, the city and towns (not played yet).
+
+#### World generation: a second, hillier map recipe (not played yet).
+
+#### World generation: a map preview tool, and broad lowland with rounded hills (not played yet).
+
 ## 0.9.0 - 2026-11-19
 
 #### Press F8 (or Report a bug in the Esc menu) to save one file with a screenshot, your logs and machine details to send us
