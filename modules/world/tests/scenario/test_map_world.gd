@@ -64,3 +64,25 @@ func test_a_hollow_inside_a_ponds_outline_but_off_the_pond_is_dry() -> void:
 			var p := box.position + box.size * Vector2(fmod(k * 0.618, 1.0), fmod(k * 0.382, 1.0))
 			if is_nan(land.water_level(p.x, p.y)):
 				assert_bool(is_nan(map.water.level_at(p.x, p.y))).override_failure_message("%s" % p).is_true()
+
+
+func test_every_road_is_cut_into_pieces_filed_under_its_chunks() -> void:
+	var map := _shape()
+	var s := SceneryScatter.new()
+	s.set(&"_visual", false)
+	add_child(s)
+	s.set_process(false)
+	var lines: Array = s.get(&"_lines")
+	var pieces: Dictionary = s.get(&"_line_pieces")
+	assert_int(lines.size()).is_equal((map.map["net"] as RoadNetwork).roads().size())
+	var total := 0.0
+	for chunk: int in pieces:
+		for piece: Vector3 in pieces[chunk]:
+			var at := (lines[int(piece.x)] as RoadLine).point_at(piece.y)
+			assert_int(s.chunk_at(at.x, at.y)).is_equal(chunk)
+			total += piece.z * 2.0
+	var length := 0.0
+	for line: RoadLine in lines:
+		length += line.length()
+	assert_float(total).is_equal_approx(length, 1.0)
+	s.queue_free()

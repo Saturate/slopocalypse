@@ -37,6 +37,10 @@ const ROADS_PER_CHUNK := 64
 const ROAD_LIFT := VoxRoad.BED + VoxRoad.SURFACE - 0.03
 ## Furthest the road's pieces reach sideways from its centre line (lanes, shoulder, kerb).
 const ROAD_REACH := 8.0
+## A generated map's roads: their shoulders, and a track's (one soil-coloured lane, no lines).
+const ROAD_SHOULDER := 0.8
+const TRACK_SHOULDER := 0.3
+const TRACK_SOIL := Color(0.4, 0.31, 0.21)
 ## Width of the burnt ring round a crater in the road, and its colour.
 const ROAD_SCORCH := 0.35
 const ROAD_SCORCH_COLOUR := Color(0.09, 0.085, 0.08)
@@ -95,6 +99,13 @@ var remoteness: Remoteness
 ## Where players start (the strip's origin, a generated map's camp): scenery there is built
 ## before anyone arrives.
 var home := Vector3.ZERO
+## A generated map's roads and tracks (#472), and their 8 m pieces by the chunk each piece's
+## middle is in: chunk -> [Vector2(road, metres along its middle)].
+var _lines: Array[RoadLine] = []
+var _line_pieces: Dictionary[int, Array] = {}
+## The road's wear and potholes by how remote it is (world.json `remoteness`): [at 0, at 1].
+var _wear_curve := Vector2(0.1, 0.55)
+var _pothole_curve := Vector2(0.0, 5.0)
 
 
 func _ready() -> void:
@@ -120,6 +131,7 @@ func _ready() -> void:
 		_heights = map
 		_biomes = map.biomes()
 		home = map.camp()
+		_cut_map_roads(map, world.get("remoteness", {}))
 	else:
 		_heights = TerrainHeights.new(world)
 		if world.has("remoteness") and Data.require(config_path + " remoteness", world["remoteness"], Remoteness.REQUIRED):
@@ -684,6 +696,9 @@ func clear_grass(center: Vector3, radius: float) -> void:
 ## edges on bends. Faces are kept short so the bend follows the curve. The car drives on
 ## the terrain levelled just under it.
 func _add_road(node: Node3D, i: int, area: Rect2) -> void:
+	if not _lines.is_empty():
+		_add_map_roads(node, i)
+		return
 	var road := _heights.road
 	if road == null:
 		return
@@ -720,6 +735,9 @@ func _add_road(node: Node3D, i: int, area: Rect2) -> void:
 
 ## Bends the road model along the road and puts it on its mesh instance.
 func _mesh_road(entry: Dictionary) -> void:
+	if entry.has("line"):
+		_mesh_map_road(entry)
+		return
 	var road := _heights.road
 	var model: VoxelModel = entry["model"]
 	var inst: MeshInstance3D = entry["mesh"]
@@ -758,13 +776,8 @@ func _mesh_road(entry: Dictionary) -> void:
 ## Takes a crater out of a road piece, with a scorched ring of broken asphalt round it.
 ## Returns false when the crater does not reach this piece.
 func _carve_road(entry: Dictionary, center: Vector3, radius: float) -> bool:
-	var road := _heights.road
-	var mid: float = entry["mid"]
-	var local_z := center.z - mid
-	if absf(local_z) > float(entry["half_length"]) + radius:
-		return false
-	var local := Vector3(center.x - road.x_at(center.z), center.y - road.height_at(center.z) + ROAD_LIFT, local_z)
-	if absf(local.x) > ROAD_REACH + radius or local.y - radius > ROAD_LIFT + 0.5:
+	var local := _crater_on_road(entry, center, radius)
+	if is_nan(local.x):
 		return false
 	var model: VoxelModel = entry["model"]
 	var rng := RandomNumberGenerator.new()
@@ -792,7 +805,7 @@ func dig_road(center: Vector3, radius: float) -> void:
 func on_dug(center: Vector3, radius: float) -> void:
 	clear_grass(center, radius)
 	if _visual:
-		var on_road := _heights.road != null and _heights.road.distance(center.x, center.z) < _heights.road.half_width
+		var on_road := _heights.near_road(center.x, center.z, 0.0)
 		dig_road(center, radius)
 		# Bigger holes throw more; a bullet's scrape throws a pinch.
 		var cfg := VoxelDebris.config(&"crater")
@@ -939,3 +952,143 @@ func felled_age(id: Vector2i) -> float:
 ## How dry a felled tree's top is by now, 0 (green) to 1 (bare branches).
 func felled_wither(id: Vector2i) -> float:
 	return _damage.wither_of(id)
+
+
+## Where a crater lies in a road piece's own frame (x across, y up from its bed, z along from
+## its middle), or NAN when it does not reach the piece.
+func _crater_on_road(entry: Dictionary, center: Vector3, radius: float) -> Vector3:
+	var local := Vector3.ZERO
+	if entry.has("line"):
+		var line := _lines[int(entry["line"])]
+		var mid := float(entry["s"])
+		var half := float(entry["half_length"])
+		var at := line.locate(Vector2(center.x, center.z), mid - half - radius, mid + half + radius)
+		if absf(at.x - mid) > half + radius:
+			return Vector3(NAN, 0.0, 0.0)
+		# The model's x runs to the left of the road (see `_mesh_map_road`).
+		local = Vector3(-at.y, center.y - line.height_at(at.x) + ROAD_LIFT, at.x - mid)
+	else:
+		var road := _heights.road
+		var local_z := center.z - float(entry["mid"])
+		if absf(local_z) > float(entry["half_length"]) + radius:
+			return Vector3(NAN, 0.0, 0.0)
+		local = Vector3(center.x - road.x_at(center.z), center.y - road.height_at(center.z) + ROAD_LIFT, local_z)
+	if absf(local.x) > ROAD_REACH + radius or local.y - radius > ROAD_LIFT + 0.5:
+		return Vector3(NAN, 0.0, 0.0)
+	return local
+
+
+## A generated map's roads cut into ROAD_PIECE-metre pieces, each filed under the chunk its
+## middle is in (#472).
+func _cut_map_roads(map: MapShape, remote_cfg: Dictionary) -> void:
+	if remote_cfg.get("road_wear") is Array and remote_cfg.get("road_potholes") is Array:
+		_wear_curve = Vector2(float(remote_cfg["road_wear"][0]), float(remote_cfg["road_wear"][1]))
+		_pothole_curve = Vector2(float(remote_cfg["road_potholes"][0]), float(remote_cfg["road_potholes"][1]))
+	var net: RoadNetwork = map.map["net"]
+	if net == null:
+		return
+	for road: Dictionary in net.roads():
+		var line := RoadLine.new(road)
+		if line.length() < 1.0:
+			continue
+		var index := _lines.size()
+		_lines.append(line)
+		var pieces := maxi(ceili(line.length() / ROAD_PIECE), 1)
+		var step := line.length() / pieces
+		for p in pieces:
+			var mid := step * (p + 0.5)
+			var at := line.point_at(mid)
+			var chunk := chunk_at(at.x, at.y)
+			if chunk < 0:
+				continue
+			if not _line_pieces.has(chunk):
+				_line_pieces[chunk] = []
+			_line_pieces[chunk].append(Vector3(index, mid, step / 2.0))
+
+
+## The road pieces whose middles are in chunk `i`, each a voxel road of its kind (lanes and
+## lines for roads, a single soil-coloured lane for a track), worn by how remote it is.
+func _add_map_roads(node: Node3D, i: int) -> void:
+	if not _line_pieces.has(i):
+		return
+	var far: MapRemoteness = (_heights as MapShape).map.get("remoteness")
+	var pieces: Array = _line_pieces[i]
+	for p in mini(pieces.size(), ROADS_PER_CHUNK):
+		var piece: Vector3 = pieces[p]
+		var line := _lines[int(piece.x)]
+		var mid := piece.y
+		var half := piece.z
+		var at := line.point_at(mid)
+		var track := line.kind == "track"
+		var shoulder := TRACK_SHOULDER if track else ROAD_SHOULDER
+		var lanes := 1 if track else 2
+		var look := {"seed": hash([_seed, i, p]), "length": half * 2.0, "voxel": ROAD_VOXEL, "z_phase": mid,
+			"lanes": lanes, "lane_width": maxf((line.width - shoulder * 2.0) / lanes, 1.0), "shoulder": shoulder}
+		if track:
+			look["asphalt"] = TRACK_SOIL
+			look["centre"] = 0
+			look["edges"] = 0
+		var r := far.at(at.x, at.y) if far != null else 0.0
+		look["wear"] = lerpf(_wear_curve.x, _wear_curve.y, r)
+		look["potholes"] = roundi(lerpf(_pothole_curve.x, _pothole_curve.y, r))
+		var model := VoxRoad.new().build(look)
+		var inst := MeshInstance3D.new()
+		inst.position = Vector3(at.x, 0.0, at.y)
+		node.add_child(inst)
+		var entry := {"model": model, "line": int(piece.x), "s": mid, "half_length": half, "mesh": inst}
+		_roads[i * ROADS_PER_CHUNK + p] = entry
+		for d in _digs:
+			_carve_road(entry, Vector3(d.x, d.y, d.z), d.w)
+		_mesh_map_road(entry)
+
+
+## A road piece bent along its road: each grid row of the straight model goes to its metre
+## along the road, across its direction and up to its height (looked up once per row, not
+## per vertex).
+func _mesh_map_road(entry: Dictionary) -> void:
+	var model: VoxelModel = entry["model"]
+	var inst: MeshInstance3D = entry["mesh"]
+	VoxShading.ensure()
+	var arrays := model.mesh_arrays_bendable(int(ROAD_BEND_STEP / ROAD_VOXEL))
+	if arrays.is_empty():
+		inst.mesh = null
+		return
+	var line := _lines[int(entry["line"])]
+	var mid := float(entry["s"])
+	var origin := inst.position
+	var start := -float(entry["half_length"]) - ROAD_VOXEL
+	var rows := ceili((float(entry["half_length"]) * 2.0 + ROAD_VOXEL * 2.0) / ROAD_VOXEL) + 1
+	var centres := PackedVector3Array()
+	var acrosses := PackedVector2Array()
+	centres.resize(rows)
+	acrosses.resize(rows)
+	for r in rows:
+		var s := mid + start + r * ROAD_VOXEL
+		var at := line.point_at(s)
+		centres[r] = Vector3(at.x - origin.x, line.height_at(s) - ROAD_LIFT, at.y - origin.z)
+		# Left of the direction: the model's x and z then turn onto the road as a rotation;
+		# its right would mirror it and turn every face inside out.
+		acrosses[r] = -line.across_at(s)
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var straight := vertices.duplicate()
+	for k in vertices.size():
+		var v := vertices[k]
+		var r := clampi(roundi((v.z - start) / ROAD_VOXEL), 0, rows - 1)
+		var c := centres[r]
+		var a := acrosses[r]
+		vertices[k] = Vector3(c.x + a.x * v.x, c.y + v.y, c.z + a.y * v.x)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	# Bent pieces turn: normals follow the turn, so lighting stays right on a bend.
+	if arrays[Mesh.ARRAY_NORMAL] is PackedVector3Array:
+		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		for k in normals.size():
+			var r := clampi(roundi((straight[k].z - start) / ROAD_VOXEL), 0, rows - 1)
+			var a := acrosses[r]
+			var n := normals[k]
+			# The model's x (across) and z (along) turned to the road's across and direction.
+			normals[k] = Vector3(a.x * n.x - a.y * n.z, n.y, a.y * n.x + a.x * n.z)
+		arrays[Mesh.ARRAY_NORMAL] = normals
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.surface_set_material(0, VoxGenerator.material())
+	inst.mesh = mesh
