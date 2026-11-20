@@ -21,6 +21,8 @@ const TRUSTED_PROXY_ENV := "WEB_TRUSTED_PROXY"
 ## A request still arriving after this, or an answer still not taken, is dropped.
 const REQUEST_TIMEOUT_MS := 3000
 const REPLY_TIMEOUT_MS := 10000
+## A page still working on its answer after this (a map render) gets a 503 instead.
+const WAIT_TIMEOUT_MS := 60000
 const MAX_HEAD_BYTES := 8192
 ## Bodies (an edited map recipe) no bigger than this.
 const MAX_BODY_BYTES := 262144
@@ -40,12 +42,12 @@ const MIN_PASSWORD_LENGTH := 12
 const REALM := "Slopocalypse admin"
 ## On public answers only: any site may read the status (dashboards), never an admin page.
 const PUBLIC := {"Access-Control-Allow-Origin": "*"}
-const REASONS := {200: "OK", 204: "No Content", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden",
+const REASONS := {200: "OK", 202: "Accepted", 503: "Service Unavailable", 204: "No Content", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden",
 	404: "Not Found", 405: "Method Not Allowed", 413: "Payload Too Large", 415: "Unsupported Media Type",
 	429: "Too Many Requests", 500: "Internal Server Error"}
 
 var _server: TCPServer
-## Per connection: {peer, address, data, since, scanned, head_end, request, out, sent}.
+## Per connection: {peer, address, data, since, scanned, head_end, request, out, sent, wait}.
 var _clients: Array[Dictionary] = []
 var _started := 0
 var _password := ""
@@ -73,6 +75,8 @@ func _ready() -> void:
 		if arg.begins_with(PORT_FLAG):
 			port = int(arg.trim_prefix(PORT_FLAG))
 	listen(port, "*")
+	# Modules with admin pages add them now, whichever of them loaded first.
+	EventBus.publish(&"web.ready", {"web": self})
 
 
 ## Starts listening (tests call this directly). False if the port is taken.
@@ -131,7 +135,8 @@ func _serve_static(req: Dictionary) -> Array:
 
 ## Adds an admin page at `path` (and everything under it), listed as `title` on /admin (not
 ## listed when empty). `handler(request)` gets {method, path, query, headers, body} and
-## returns [status, content type, body (text or bytes), extra headers (optional)].
+## returns [status, content type, body (text or bytes), extra headers (optional)], or
+## {wait: Callable} to answer later (the Callable returns the answer, or null while working).
 func add_admin_page(path: String, title: String, handler: Callable) -> void:
 	_admin[path] = {"title": title, "handler": handler}
 
@@ -155,7 +160,7 @@ func _process(_delta: float) -> void:
 			peer.disconnect_from_host()
 			continue
 		_clients.append({"peer": peer, "address": _plain_ip(peer.get_connected_host()), "data": PackedByteArray(),
-			"since": Time.get_ticks_msec(), "scanned": 0, "head_end": -1, "request": {}, "out": PackedByteArray(), "sent": -1})
+			"since": Time.get_ticks_msec(), "scanned": 0, "head_end": -1, "request": {}, "out": PackedByteArray(), "sent": -1, "wait": Callable()})
 	for client: Dictionary in _clients.duplicate():
 		if not _step(client):
 			(client["peer"] as StreamPeerTCP).disconnect_from_host()
@@ -172,7 +177,15 @@ func _step(client: Dictionary) -> bool:
 		return false
 	var waited := Time.get_ticks_msec() - int(client["since"])
 	if int(client["sent"]) >= 0:
-		return _send_some(client) and waited < REPLY_TIMEOUT_MS
+		return _send_some(client) and Time.get_ticks_msec() < int(client["deadline"])
+	var wait: Callable = client["wait"]
+	if wait.is_valid():
+		var ready: Variant = wait.call()
+		if ready is Array:
+			_queue(client, ready, str((client["request"] as Dictionary)["method"]) == "HEAD")
+		elif waited > WAIT_TIMEOUT_MS:
+			_queue(client, [503, "text/plain", "still working on it; try again"], false)
+		return true
 	if waited > REQUEST_TIMEOUT_MS:
 		return false
 	var available := peer.get_available_bytes()
@@ -204,7 +217,12 @@ func _step(client: Dictionary) -> bool:
 	if data.size() - head_end < int(req["length"]):
 		return true
 	req["body_bytes"] = data.slice(head_end, head_end + int(req["length"]))
-	_queue(client, handle(req), str(req["method"]) == "HEAD")
+	var reply: Variant = handle(req)
+	if reply is Dictionary and (reply as Dictionary).get("wait") is Callable:
+		# The page answers later (work on another thread): asked again each frame.
+		client["wait"] = (reply as Dictionary)["wait"]
+	else:
+		_queue(client, reply, str(req["method"]) == "HEAD")
 	return true
 
 
@@ -220,6 +238,10 @@ func _queue(client: Dictionary, reply: Array, head_only: bool) -> void:
 		head += "%s: %s\r\n" % [_header_safe(key), _header_safe(str(extra[key]))]
 	client["out"] = (head + "\r\n").to_utf8_buffer() + (PackedByteArray() if head_only else payload)
 	client["sent"] = 0
+	# A deferred answer gets the usual time to send from when it is ready; every other answer
+	# from when the connection came in, so a slow reader holds a slot no longer than before.
+	var start := Time.get_ticks_msec() if (client["wait"] as Callable).is_valid() else int(client["since"])
+	client["deadline"] = start + REPLY_TIMEOUT_MS
 
 
 ## Sends the next piece; false once all of it is out (or the socket refused it).
@@ -273,8 +295,9 @@ static func _parse(data: PackedByteArray, head_end: int) -> Dictionary:
 		"headers": headers, "length": int(length_text), "body": ""}
 
 
-## `[status, content type, body, headers?]` for a parsed request.
-func handle(req: Dictionary) -> Array:
+## `[status, content type, body, headers?]` for a parsed request, or {wait: Callable} from a
+## page that answers later: called each frame, it returns the answer once there is one.
+func handle(req: Dictionary) -> Variant:
 	var method := str(req["method"])
 	var path := str(req["path"])
 	if path == "/admin" or path.begins_with("/admin/"):
@@ -291,7 +314,7 @@ func handle(req: Dictionary) -> Array:
 	return [404, "text/plain", "not found"]
 
 
-func _handle_admin(req: Dictionary) -> Array:
+func _handle_admin(req: Dictionary) -> Variant:
 	if _password.is_empty():
 		return [404, "text/plain", "not found"]
 	var who := str(req.get("address", ""))

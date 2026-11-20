@@ -40,6 +40,190 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/api/v1/maps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The map recipes on this server (admin). */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Recipe names. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MapList"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/api/v1/maps/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One map recipe as stored (admin). */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The recipe (its fields are listed in TWEAKING.md). */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description No such recipe. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/api/v1/maps/render": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Render a recipe and seed (admin). Takes seconds; the request waits for it. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RenderRequest"];
+                };
+            };
+            responses: {
+                /** @description The render. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RenderResult"];
+                    };
+                };
+                /** @description Bad input or a recipe that cannot be built. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Still working after a minute; ask again. */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/api/v1/maps/image/{key}.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A render's image, kept for a while (admin). */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description PNG. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                    };
+                };
+                /** @description Not kept any more. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -62,6 +246,43 @@ export interface components {
             place: string;
             distance_m?: number;
             pays: number;
+        };
+        MapList: {
+            maps: string[];
+        };
+        RenderRequest: {
+            map: string;
+            seed?: number;
+            pixels?: number;
+            layers?: ("zones" | "settlements" | "roads" | "earthworks")[];
+            /** @description An edited recipe to render instead of the stored one (not saved). */
+            recipe?: {
+                [key: string]: unknown;
+            };
+        };
+        RenderResult: {
+            /** @description Path of the render's PNG. */
+            image: string;
+            stats: {
+                summary: {
+                    [key: string]: string | number;
+                };
+                grid: components["schemas"]["Grid"];
+            };
+        };
+        /** @description A coarse grid over the map for the hover readout, row by row from the top left. */
+        Grid: {
+            left: number;
+            top: number;
+            size: number;
+            cells: number;
+            heights: number[];
+            /** @description Index into kinds per cell, -1 for none. */
+            zones: number[];
+            kinds: string[];
+        };
+        Error: {
+            error: string;
         };
     };
     responses: never;
