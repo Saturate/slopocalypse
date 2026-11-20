@@ -90,6 +90,7 @@ func _release_when_grounded(car: CarController) -> void:
 
 
 func _ready() -> void:
+	add_to_group(&"cars_api")
 	# The server spawns cars; the spawner replicates them to clients.
 	_spawner.name = "Spawner"
 	_spawner.spawn_path = NodePath("..")
@@ -102,9 +103,11 @@ func _ready() -> void:
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	EventBus.subscribe(&"player.teleporting", _on_teleporting)
 	EventBus.subscribe(&"admin.spawn", _on_admin_spawn)
+	Net.peer_leaving.connect(_on_peer_leaving)
 
 
 func _exit_tree() -> void:
+	Net.peer_leaving.disconnect(_on_peer_leaving)
 	EventBus.unsubscribe(&"world.ready", _on_world_ready)
 	EventBus.unsubscribe(&"player.interact", _on_player_interact)
 	EventBus.unsubscribe(&"car.entered", _on_car_entered)
@@ -182,6 +185,27 @@ func _on_car_exited(payload: Dictionary) -> void:
 		# Renamed first so getting straight back in names its new input "Input" again.
 		input.name = "InputLeaving"
 		input.queue_free()
+
+
+## Where `player` would stand if they got out now (beside their door), or null when they are
+## in no car. Saves use it, so a driver saved mid-drive comes back beside the car instead of
+## where they got in, and nobody is moved to find out (#406).
+func exit_spot_of(player: Node3D) -> Variant:
+	for car in _cars:
+		var seat := car.seat_of(player)
+		if seat != &"":
+			return car.exit_position(seat)
+	return null
+
+
+## Server: someone leaving the server gets out of their car, so the seat is free.
+func _on_peer_leaving(peer: int) -> void:
+	if not multiplayer.is_server():
+		return
+	for car in _cars:
+		for who: Node3D in [car.driver, car.passenger]:
+			if who != null and int(who.get_meta(&"peer_id", 0)) == peer:
+				car.exit_car(who)
 
 
 ## Server: someone being moved (back to the spawn, an admin teleport) gets out of their
