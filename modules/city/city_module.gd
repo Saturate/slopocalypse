@@ -100,6 +100,16 @@ func _on_world_ready(_p: Dictionary) -> void:
 	var ground := get_tree().get_first_node_in_group(&"ground")
 	if ground == null or not ground.has_method(&"road_point"):
 		return
+	# On a generated map the city has its place already: its footprint, level and road side
+	# (#472). The map's road and earthworks bring the road in and level the ground.
+	var on_map: Dictionary = ground.call(&"map_city") if ground.has_method(&"map_city") else {}
+	if not on_map.is_empty():
+		place(Transform3D(Basis.looking_at(on_map["toward"]), on_map["centre"]))
+		var scenery_on_map := get_tree().get_first_node_in_group(&"scenery")
+		if scenery_on_map != null and scenery_on_map.has_method(&"set_clearings_for"):
+			scenery_on_map.call(&"set_clearings_for", &"city", clearings(site.global_transform, float(config["size"])))
+		publish_lamps()
+		return
 	place(spot(ground, config))
 	var size := float(config["size"])
 	var lead := approach(ground, site.global_transform, site.plan, config)

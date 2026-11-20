@@ -77,6 +77,29 @@ func camp() -> Vector3:
 	return Vector3(c.x, height_at(c.x, c.y), c.y)
 
 
+## The city as the map places it (#472): {centre (on its level), size (metres a side), toward
+## (unit, on the ground plane: the side the highway arrives at)}; empty without a city.
+func city() -> Dictionary:
+	var places: Settlements = map["places"]
+	if places == null or places.city().is_empty():
+		return {}
+	var c: Dictionary = places.city()
+	var foot: Rect2 = c["footprint"]
+	var centre := Vector3(foot.get_center().x, float(c["level"]), foot.get_center().y)
+	# The connector nearest the highway's end: that is the side the road comes in at.
+	var toward := Vector3.FORWARD
+	var points := highway()
+	if not points.is_empty():
+		var end := points[points.size() - 1]
+		var best := INF
+		for k: Vector3 in c["connectors"]:
+			var d := Vector2(k.x, k.z).distance_to(end)
+			if d < best:
+				best = d
+				toward = Vector3(k.x - centre.x, 0.0, k.z - centre.z).normalized()
+	return {"centre": centre, "size": foot.size.x, "toward": toward}
+
+
 ## The highway from the camp: its points from the camp's end.
 func highway() -> PackedVector2Array:
 	var net: RoadNetwork = map["net"]

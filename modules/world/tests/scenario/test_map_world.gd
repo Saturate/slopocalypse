@@ -86,3 +86,19 @@ func test_every_road_is_cut_into_pieces_filed_under_its_chunks() -> void:
 		length += line.length()
 	assert_float(total).is_equal_approx(length, 1.0)
 	s.queue_free()
+
+
+func test_the_city_footprint_is_the_size_the_city_module_builds_and_faces_the_highway() -> void:
+	var city_cfg: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://modules/city/data/city.json"))
+	for recipe_name in ["grassland", "mixed"]:
+		var recipe: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://modules/world/data/maps/%s.json" % recipe_name))
+		assert_float(float(recipe["settlements"]["city"]["max_size"])).override_failure_message(recipe_name).is_equal(float(city_cfg["size"]))
+	var map := _shape()
+	var city := map.city()
+	assert_float(float(city["size"])).is_less_equal(float(city_cfg["size"]))
+	# The highway's last point lies off the side the city faces.
+	var points := map.highway()
+	var end := points[points.size() - 1]
+	var centre: Vector3 = city["centre"]
+	var to_end := Vector3(end.x - centre.x, 0.0, end.y - centre.z).normalized()
+	assert_float(to_end.dot(city["toward"])).is_greater(0.7)
