@@ -7,6 +7,8 @@ extends RefCounted
 ## safely can be, its corners rounded into arcs, and sampled evenly. Later slices give the roads a profile and cut them into the land.
 ## Pure and seeded through its settlements; no autoloads.
 
+## Most forward and backward passes holding a profile to its grade (see `_profile`).
+const PROFILE_PASSES := 64
 ## Easing passes after the arcs (see `_ease`).
 const EASE_PASSES := 6
 ## Metres between points drawn along a corner's arc.
@@ -79,8 +81,72 @@ func _join(kind: StringName, from_name: String, start: Vector2, from_place: Dict
 	if out_from != Vector2.ZERO:
 		curve.insert(0, start)
 	var points := _resample(_ease(_resample(curve, float(_cfg["sample"])), EASE_PASSES), float(_cfg["sample"]))
-	_roads.append({"kind": String(kind), "from": from_name, "to": to_name, "points": points,
-		"width": float(kind_cfg["width"]), "max_grade": float(kind_cfg["max_grade"])})
+	var land := settlements.zones.land
+	var start_level := float(from_place["level"]) if not from_place.is_empty() else land.height(start.x, start.y)
+	var heights := _profile(points, start_level, float(place["level"]), max_grade)
+	var road := {"kind": String(kind), "from": from_name, "to": to_name, "points": points, "heights": heights,
+		"width": float(kind_cfg["width"]), "max_grade": max_grade,
+		"max_cut": float(kind_cfg["max_cut"]), "max_fill": float(kind_cfg["max_fill"])}
+	road["tunnels"] = _spans(points, heights, func(ground: float, h: float) -> bool: return ground - h > float(kind_cfg["max_cut"]))
+	road["bridges"] = _spans(points, heights, func(ground: float, h: float) -> bool: return h - ground > float(kind_cfg["max_fill"]))
+	_roads.append(road)
+
+
+## The road's height at each of `points`: the land under it averaged over `profile_window`
+## metres, pinned to `from` and `to` at its ends, then held to `max_grade` between samples by
+## passes forwards and backwards until nothing moves (it always settles when the ends are
+## reachable at that grade).
+func _profile(points: PackedVector2Array, from: float, to: float, max_grade: float) -> PackedFloat32Array:
+	var land := settlements.zones.land
+	var n := points.size()
+	var ground := PackedFloat32Array()
+	ground.resize(n)
+	for i in n:
+		ground[i] = land.height(points[i].x, points[i].y)
+	var half := maxi(int(float(_cfg["profile_window"]) / float(_cfg["sample"]) / 2.0), 0)
+	var h := PackedFloat32Array()
+	h.resize(n)
+	for i in n:
+		var total := 0.0
+		var count := 0
+		for k in range(maxi(i - half, 0), mini(i + half, n - 1) + 1):
+			total += ground[k]
+			count += 1
+		h[i] = total / count
+	h[0] = from
+	h[n - 1] = to
+	for pass_index in PROFILE_PASSES:
+		var moved := false
+		for i in range(1, n - 1):
+			var step := max_grade * points[i].distance_to(points[i - 1])
+			var held := clampf(h[i], h[i - 1] - step, h[i - 1] + step)
+			moved = moved or held != h[i]
+			h[i] = held
+		for i in range(n - 2, 0, -1):
+			var step := max_grade * points[i].distance_to(points[i + 1])
+			var held := clampf(h[i], h[i + 1] - step, h[i + 1] + step)
+			moved = moved or held != h[i]
+			h[i] = held
+		if not moved:
+			break
+	return h
+
+
+## Runs of samples where `test(ground, road height)` holds, as [first, last] indices.
+func _spans(points: PackedVector2Array, heights: PackedFloat32Array, test: Callable) -> Array[Vector2i]:
+	var land := settlements.zones.land
+	var out: Array[Vector2i] = []
+	var open := -1
+	for i in points.size():
+		var hit: bool = test.call(land.height(points[i].x, points[i].y), heights[i])
+		if hit and open < 0:
+			open = i
+		elif not hit and open >= 0:
+			out.append(Vector2i(open, i - 1))
+			open = -1
+	if open >= 0:
+		out.append(Vector2i(open, points.size() - 1))
+	return out
 
 
 ## Out of `place` square to its side at `at`.
