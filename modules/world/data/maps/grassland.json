@@ -1,5 +1,5 @@
 {
-  "_comment": "A map recipe (#331, decision 0010): the land before anything is placed on it. size: the square map's side in metres, centred on the origin. relief: metres from the lowest to the highest the noise reaches. hill_mask: a slow noise (frequency, 1 / metres) whose value between from and to fades hilly country in; outside it lies near-flat lowland. layers: noise summed for the height, each with frequency, amplitude (share of relief), octaves, and masked (only where the hill mask says hilly, and only rising out of the lowland). walkable: max_grade (rise per metre a player still walks easily), min_share (the least share of the map that gentle), flat_grade and min_flat_share (near-flat ground for towns and fields, and how much of it the map needs), hillside_grade and min_hillside_share (real hillsides: the least share of the map that rises at least this much); the tests hold every seed to these.",
+  "_comment": "A map recipe (#331, decision 0010): the land before anything is placed on it. size: the square map's side in metres, centred on the origin. relief: metres from the lowest to the highest the noise reaches. hill_mask: a slow noise (frequency, 1 / metres) whose value between from and to fades hilly country in; outside it lies near-flat lowland. layers: noise summed for the height, each with frequency, amplitude (share of relief), octaves, and masked (only where the hill mask says hilly, and only rising out of the lowland). walkable: max_grade (rise per metre a player still walks easily), min_share (the least share of the map that gentle), flat_grade and min_flat_share (near-flat ground for towns and fields, and how much of it the map needs), hillside_grade and min_hillside_share (real hillsides: the least share of the map that rises at least this much); the tests hold every seed to these. water: ponds where water would collect: the land is surveyed every cell metres, a basin at least min_depth deep and min_area square metres becomes a pond (shrunk to max_area by lowering its level), its level freeboard metres below where it would spill, its bed deepen times deeper than the land.",
   "size": 2048.0,
   "relief": 360.0,
   "layers": [
@@ -34,5 +34,13 @@
     "frequency": 0.0005,
     "from": -0.1,
     "to": 0.5
+  },
+  "water": {
+    "cell": 16.0,
+    "min_depth": 0.8,
+    "min_area": 1500.0,
+    "max_area": 60000.0,
+    "freeboard": 0.3,
+    "deepen": 1.6
   }
 }

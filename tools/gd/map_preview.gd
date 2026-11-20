@@ -7,6 +7,10 @@ extends SceneTree
 const LIGHT := Vector3(-0.6, 0.7, -0.4)
 const LOW := Color(0.36, 0.52, 0.27)
 const HIGH := Color(0.62, 0.55, 0.42)
+const SHALLOW := Color(0.36, 0.6, 0.7)
+const DEEP := Color(0.12, 0.27, 0.42)
+## Metres of water from the shallow tint to the deep one.
+const DEEP_AT := 3.0
 
 
 func _initialize() -> void:
@@ -38,7 +42,7 @@ func _initialize() -> void:
 
 
 ## The land seen from above, north (-z) up: hill shading over green lowland turning brown
-## up high.
+## up high, water blue by depth.
 static func render(land: WorldLand, pixels: int) -> Image:
 	var b := land.bounds()
 	var step := b.size.x / pixels
@@ -61,6 +65,12 @@ static func render(land: WorldLand, pixels: int) -> Image:
 			var down := heights[mini(j + 1, pixels - 1) * pixels + i]
 			var normal := Vector3(h - right, step, h - down).normalized()
 			var shade := clampf(0.55 + 0.6 * normal.dot(light), 0.25, 1.15)
+			var x := b.position.x + (i + 0.5) * step
+			var z := b.position.y + (j + 0.5) * step
+			var level := land.water_level(x, z)
+			if not is_nan(level):
+				image.set_pixel(i, j, SHALLOW.lerp(DEEP, clampf((level - h) / DEEP_AT, 0.0, 1.0)))
+				continue
 			var t := (h - low) / maxf(high - low, 0.001)
 			image.set_pixel(i, j, LOW.lerp(HIGH, t) * shade)
 	return image
