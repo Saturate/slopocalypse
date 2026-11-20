@@ -101,5 +101,21 @@
         "min_area": 500.0
       }
     }
+  },
+  "settlements": {
+    "city": {
+      "use": "city",
+      "size": 128.0
+    },
+    "town": {
+      "use": "town",
+      "size": 64.0,
+      "spacing": 500.0,
+      "max": 2
+    },
+    "camp": {
+      "clearance": 250.0
+    },
+    "edge_margin": 200.0
   }
 }
