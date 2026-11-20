@@ -22,7 +22,15 @@ func _init(map_zones: LandZones, config: Dictionary) -> void:
 	var town_cfg: Dictionary = config["town"]
 	var candidates := _squares(_use_kinds(StringName(str(city_cfg["use"]))), float(city_cfg["size"]))
 	if not candidates.is_empty():
-		_city = _settlement(&"city", candidates[0])
+		var found: Dictionary = candidates[0]
+		# The city the city module builds is `max_size` across: its footprint is that square
+		# in the middle of the largest one, not all of it (#472).
+		if city_cfg.has("max_size"):
+			var foot: Rect2 = found["footprint"]
+			var side := minf(foot.size.x, float(city_cfg["max_size"]))
+			found = found.duplicate()
+			found["footprint"] = Rect2(foot.get_center() - Vector2.ONE * side / 2.0, Vector2.ONE * side)
+		_city = _settlement(&"city", found)
 	for found: Dictionary in _squares(_use_kinds(StringName(str(town_cfg["use"]))), float(town_cfg["size"])):
 		if _towns.size() >= int(town_cfg["max"]):
 			break

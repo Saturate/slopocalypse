@@ -182,6 +182,11 @@ func water_level_at(position: Vector3) -> float:
 	return heights.water.level_at(position.x, position.z)
 
 
+## On a generated map, where the city stands (see MapShape.city); empty on the strip.
+func map_city() -> Dictionary:
+	return (heights as MapShape).city() if heights is MapShape else {}
+
+
 ## Height of the untouched ground (ignores digging) for placing spawns and scenery.
 func ground_height(x: float, z: float) -> float:
 	return heights.height_at(x, z) if heights != null else 0.0

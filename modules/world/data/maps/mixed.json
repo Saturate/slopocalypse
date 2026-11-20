@@ -105,7 +105,8 @@
   "settlements": {
     "city": {
       "use": "city",
-      "size": 128.0
+      "size": 128.0,
+      "max_size": 150.0
     },
     "town": {
       "use": "town",
