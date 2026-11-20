@@ -1,6 +1,6 @@
 # 0007. Maps are recipes of generated and tailored sites, stitched by roads
 
-Status: accepted
+Status: accepted; generation order superseded by 0010
 Date: 2026-11-17
 Issue or PR: #331
 
