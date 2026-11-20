@@ -7,8 +7,9 @@ extends RefCounted
 ## `cfg` is the `buildings` block of missions.json; `road_at` maps metres along the road to
 ## a point on it; `along` is where the zone's centre is on the road. Returns layout entries
 ## `{position, yaw, width, depth, wall_height, windows, paint, seed}`; `position` is on the
-## road's level, the caller puts it on the ground.
-static func buildings(cfg: Dictionary, seed_value: int, road_at: Callable, along: float) -> Array:
+## road's level, the caller puts it on the ground. `blocked(at, radius) -> bool` turns down a
+## spot someone else has claimed (the city), so the buildings go up beside it instead.
+static func buildings(cfg: Dictionary, seed_value: int, road_at: Callable, along: float, blocked := Callable()) -> Array:
 	if cfg.get("row") is Array:
 		return row(cfg, road_at, along)
 	var rng := RandomNumberGenerator.new()
@@ -23,7 +24,7 @@ static func buildings(cfg: Dictionary, seed_value: int, road_at: Callable, along
 	var gap := float(cfg.get("gap", 3.0))
 	var out := []
 	var tries := 0
-	while out.size() < count and tries < count * 20:
+	while out.size() < count and tries < count * 40:
 		tries += 1
 		var w := snappedf(rng.randf_range(float(width[0]), float(width[1])), 0.25)
 		var d := snappedf(rng.randf_range(float(depth[0]), float(depth[1])), 0.25)
@@ -32,6 +33,8 @@ static func buildings(cfg: Dictionary, seed_value: int, road_at: Callable, along
 		var lateral := rng.randf_range(float(off[0]), float(off[1])) + d / 2.0
 		var at := on_road + Vector3(side * lateral, 0.0, 0.0)
 		var radius := Vector2(w, d).length() / 2.0
+		if blocked.is_valid() and bool(blocked.call(at, radius)):
+			continue
 		var clear := true
 		for other: Dictionary in out:
 			var o: Vector3 = other["position"]
