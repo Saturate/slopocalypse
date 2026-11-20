@@ -208,6 +208,22 @@ func set_pads_for(owner: StringName, pads: Array) -> void:
 	_apply_pads(all)
 
 
+## Whether a circle of `radius` at `at` reaches onto a pad of an owner other than `owner`
+## (its blend included): ground someone else has levelled for what stands there.
+func is_claimed(at: Vector3, radius: float, owner: StringName) -> bool:
+	for key: StringName in _pad_sets:
+		if key == owner:
+			continue
+		for p: Dictionary in _pad_sets[key]:
+			var centre: Vector3 = p["at"]
+			var half: Vector2 = p["half"]
+			var reach := float(p.get("blend", 3.0)) + radius
+			var local := Basis(Vector3.UP, float(p.get("yaw", 0.0))).inverse() * (at - centre)
+			if absf(local.x) < half.x + reach and absf(local.z) < half.y + reach:
+				return true
+	return false
+
+
 ## Pads for callers that name no owner (the missions).
 func set_pads(pads: Array) -> void:
 	set_pads_for(&"", pads)

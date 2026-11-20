@@ -19,6 +19,9 @@ const REQUIRED := {
 }
 ## Clearing circles over the footprint are this far apart.
 const CLEARING_STEP := 20.0
+## Metres between road samples when keeping the city off the road: finer than the road
+## bends, so no stretch of it slips between two samples into the footprint.
+const ROAD_CHECK_STEP := 2.0
 ## `--start=city`: the server puts every player down in the city's streets instead of at
 ## the spawn (and back there after dying); `--bot=city` walks its avenues (CityBot). Both
 ## for `tools/bench.ts solo-city` and for playtesting the city without the drive out.
@@ -124,6 +127,20 @@ static func spot(ground: Node, cfg: Dictionary) -> Transform3D:
 	var at := centre + away * (absf(side) + size / 2.0)
 	# -z toward the road.
 	var basis := Basis.looking_at(-away)
+	# Squared to the road at one point, the city would let a bend further along run into it:
+	# moved out until the whole stretch beside it keeps `side` off its near edge.
+	var reach := size / 2.0 + absf(side)
+	var step := ROAD_CHECK_STEP
+	var metres := m - reach * 2.0
+	var push := 0.0
+	while metres <= m + reach * 2.0:
+		var local := basis.inverse() * ((ground.call(&"road_point", metres) as Vector3) - at)
+		# Past a corner, `side` is measured from the corner, not straight out.
+		var past := maxf(absf(local.x) - size / 2.0, 0.0)
+		if past < absf(side):
+			push = maxf(push, local.z + size / 2.0 + sqrt(side * side - past * past))
+		metres += step
+	at += away * push
 	var heights: Array[float] = []
 	for c: Vector3 in [Vector3.ZERO, Vector3(size / 2.0, 0, size / 2.0), Vector3(-size / 2.0, 0, size / 2.0), Vector3(size / 2.0, 0, -size / 2.0), Vector3(-size / 2.0, 0, -size / 2.0)]:
 		var p := at + basis * c

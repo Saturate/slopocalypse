@@ -98,6 +98,18 @@ func test_digging_stops_at_the_deepest_a_crater_may_go() -> void:
 	assert_float(_voxels.surface_height(spot.x, spot.z)).is_equal_approx(deepest, 0.01)
 
 
+func test_ground_levelled_by_one_owner_is_claimed_for_everyone_else() -> void:
+	var at := OUT + Vector3(30, 0, 0)
+	_voxels.set_pads_for(&"city", [{"at": at, "half": Vector2(20, 10), "yaw": PI / 2.0, "blend": 6.0}])
+	# Turned a quarter: 10 m across x, 20 m along z, and its blend round that.
+	assert_bool(_voxels.is_claimed(at + Vector3(0, 0, 18), 1.0, &"")).is_true()
+	assert_bool(_voxels.is_claimed(at + Vector3(14, 0, 0), 1.0, &"")).is_true()
+	assert_bool(_voxels.is_claimed(at + Vector3(20, 0, 0), 1.0, &"")).is_false()
+	assert_bool(_voxels.is_claimed(at + Vector3(19, 0, 0), 4.0, &"")).is_true()
+	# Its own pads never block the owner, which replaces them.
+	assert_bool(_voxels.is_claimed(at, 1.0, &"city")).is_false()
+
+
 func test_a_crater_on_a_pad_replays_as_deep_without_the_pad() -> void:
 	# A levelled pad 2 m over the ground, as under a mission building on a slope.
 	var spot := OUT + Vector3(10, 0, 8)

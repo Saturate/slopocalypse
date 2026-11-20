@@ -77,6 +77,16 @@ func test_buildings_keep_off_the_road_and_apart() -> void:
 				assert_float(gap).is_greater(float(a["radius"]) + float(b["radius"]))
 
 
+func test_buildings_keep_out_of_ground_others_have_claimed() -> void:
+	# The city on the +x side of the road here.
+	var city := func(at: Vector3, radius: float) -> bool: return at.x + radius > 0.0
+	for seed_value in 10:
+		var layout := MissionLayout.buildings(_cfg(), seed_value, _road, 300.0, city)
+		assert_int(layout.size()).is_between(int(_cfg()["count"][0]), int(_cfg()["count"][1]))
+		for entry: Dictionary in layout:
+			assert_float((entry["position"] as Vector3).x + float(entry["radius"])).is_less_equal(0.0)
+
+
 func test_doors_face_the_road() -> void:
 	for entry: Dictionary in MissionLayout.buildings(_cfg(), 7, _road, 300.0):
 		var door := Basis(Vector3.UP, float(entry["yaw"])) * Vector3.FORWARD

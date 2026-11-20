@@ -13,6 +13,9 @@ extends Node
 ## buildings (`mines`) and tripwires across their doors (`tripwires`), with warning signs.
 
 const CONFIG := "res://modules/missions/data/missions.json"
+## Draws before `random_spot` settles for a claimed spot: with the city covering at most
+## half a zone beside the road, the chance all of them land in it is under one in a thousand.
+const RANDOM_SPOT_TRIES := 10
 const REQUIRED := {
 	"home_radius": TYPE_FLOAT, "reach": TYPE_FLOAT, "ride_fade_seconds": TYPE_FLOAT,
 	"ride_home_reach": TYPE_FLOAT, "drop_spread": TYPE_FLOAT, "board": TYPE_DICTIONARY,
@@ -540,7 +543,7 @@ func _open_zone() -> void:
 	# A mission can override the layout (a lone cabin: one building, far from the road).
 	var layout: Dictionary = (config["buildings"] as Dictionary).duplicate()
 	layout.merge(current.get("buildings", {}), true)
-	buildings = MissionLayout.buildings(layout, int(config["seed"]) * 7919 + _runs, _road_at, along)
+	buildings = MissionLayout.buildings(layout, int(config["seed"]) * 7919 + _runs, _road_at, along, _claimed)
 	for entry: Dictionary in buildings:
 		var at: Vector3 = entry["position"]
 		# On the average ground under its footprint (the pad levels to it: dug in uphill, built
@@ -902,12 +905,17 @@ func riders_in_zone() -> Array[Node3D]:
 	return out
 
 
-## Server: a random spot on the ground in the zone, within `share` of its radius.
+## Server: a random spot on the ground in the zone, within `share` of its radius, off ground
+## someone else has claimed (the city) unless the whole zone is.
 func random_spot(share: float) -> Vector3:
 	var radius := float((config["zone"] as Dictionary).get("radius", 45.0)) * share
-	var a := rng.randf() * TAU
-	var r := sqrt(rng.randf()) * radius
-	var at := zone + Vector3(cos(a) * r, 0.0, sin(a) * r)
+	var at := zone
+	for i in RANDOM_SPOT_TRIES:
+		var a := rng.randf() * TAU
+		var r := sqrt(rng.randf()) * radius
+		at = zone + Vector3(cos(a) * r, 0.0, sin(a) * r)
+		if not _claimed(at, 1.0):
+			break
 	at.y = ground_y(at.x, at.z)
 	return at
 
@@ -936,6 +944,13 @@ func ground_y(x: float, z: float) -> float:
 	if ground != null and ground.has_method(&"ground_height"):
 		return float(ground.call(&"ground_height", x, z))
 	return 0.0
+
+
+## Whether ground at `at` within `radius` is levelled for someone else (the city): no mission
+## building goes up there.
+func _claimed(at: Vector3, radius: float) -> bool:
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	return ground != null and ground.has_method(&"is_claimed") and bool(ground.call(&"is_claimed", at, radius, &""))
 
 
 ## A point on the road `metres` out (straight down -z without a world, as in tests).
