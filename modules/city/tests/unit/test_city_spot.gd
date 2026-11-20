@@ -21,6 +21,16 @@ func _spot(ground: Node) -> Transform3D:
 	return (load(CITY) as GDScript).call(&"spot", ground, _cfg())
 
 
+class HillGround:
+	extends BendingGround
+
+	func road_point(metres: float) -> Vector3:
+		return Vector3(0.0, 0.0, -metres)
+
+	func ground_height(x: float, _z: float) -> float:
+		return maxf(x, 0.0) * 0.5
+
+
 func _cfg() -> Dictionary:
 	return {"at": 260.0, "side": 18.0, "size": 150.0}
 
@@ -40,6 +50,15 @@ func test_on_a_straight_road_the_near_edge_is_side_away() -> void:
 	var ground: BendingGround = auto_free(BendingGround.new())
 	var where := _spot(ground)
 	assert_float(_gap(ground, where, 150.0)).is_equal_approx(18.0, 0.5)
+
+
+func test_the_city_sits_within_a_drivable_grade_of_the_road() -> void:
+	var ground: HillGround = auto_free(HillGround.new())
+	var cfg := _cfg()
+	cfg["approach_max_grade"] = 0.25
+	var where: Transform3D = (load(CITY) as GDScript).call(&"spot", ground, cfg)
+	# The land beside the road climbs 1 m every 2 m; the road stays at 0.
+	assert_float(where.origin.y).is_less_equal(0.25 * 18.0 + 0.01)
 
 
 func test_a_road_bending_towards_it_never_enters_the_city() -> void:

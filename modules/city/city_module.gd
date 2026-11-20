@@ -16,12 +16,16 @@ const REQUIRED := {
 	"lamp_inset": TYPE_FLOAT, "tree_spacing": TYPE_FLOAT, "tree_inset": TYPE_FLOAT, "tree_street_width": TYPE_FLOAT,
 	"tree_height": TYPE_FLOAT, "tree_crown": TYPE_FLOAT, "tree_trunk": TYPE_FLOAT, "door_clear": TYPE_FLOAT,
 	"spot_nudge": TYPE_FLOAT, "pad_blend": TYPE_FLOAT, "builds_per_frame": TYPE_FLOAT,
+	"approach_blend": TYPE_FLOAT, "approach_max_grade": TYPE_FLOAT,
 }
 ## Clearing circles over the footprint are this far apart.
 const CLEARING_STEP := 20.0
 ## Metres between road samples when keeping the city off the road: finer than the road
 ## bends, so no stretch of it slips between two samples into the footprint.
 const ROAD_CHECK_STEP := 2.0
+## Metres the street in starts under the road's asphalt (drawn a few cm higher), so its end
+## is hidden there instead of standing on the voxel ground, which draws up to a voxel low.
+const APPROACH_TUCK := 1.0
 ## `--start=city`: the server puts every player down in the city's streets instead of at
 ## the spawn (and back there after dying); `--bot=city` walks its avenues (CityBot). Both
 ## for `tools/bench.ts solo-city` and for playtesting the city without the drive out.
@@ -98,11 +102,25 @@ func _on_world_ready(_p: Dictionary) -> void:
 		return
 	place(spot(ground, config))
 	var size := float(config["size"])
+	var lead := approach(ground, site.global_transform, site.plan, config)
+	site.lead_in(lead)
+	var pads := [{"at": site.global_position, "half": Vector2(size / 2.0, size / 2.0), "yaw": site.global_rotation.y, "blend": float(config["pad_blend"])}]
+	var circles := clearings(site.global_transform, size)
+	if not lead.is_empty():
+		var from := float(lead["from"])
+		var to := float(lead["to"])
+		var half := Vector2(float(lead["width"]) / 2.0 + float(config["pavement"]), (to - from) / 2.0)
+		pads.append({"at": site.global_transform * Vector3(float(lead["x"]), 0.0, (from + to) / 2.0), "half": half, "yaw": site.global_rotation.y,
+			"blend": float(config["approach_blend"]), "from_ground": true})
+		var z := from
+		while z < to:
+			circles.append({"at": site.global_transform * Vector3(float(lead["x"]), 0.0, z), "radius": half.x + float(config["approach_blend"])})
+			z += CLEARING_STEP / 2.0
 	if ground.has_method(&"set_pads_for"):
-		ground.call(&"set_pads_for", &"city", [{"at": site.global_position, "half": Vector2(size / 2.0, size / 2.0), "yaw": site.global_rotation.y, "blend": float(config["pad_blend"])}])
+		ground.call(&"set_pads_for", &"city", pads)
 	var scenery := get_tree().get_first_node_in_group(&"scenery")
 	if scenery != null and scenery.has_method(&"set_clearings_for"):
-		scenery.call(&"set_clearings_for", &"city", clearings(site.global_transform, size))
+		scenery.call(&"set_clearings_for", &"city", circles)
 	publish_lamps()
 
 
@@ -147,7 +165,79 @@ static func spot(ground: Node, cfg: Dictionary) -> Transform3D:
 		heights.append(float(ground.call(&"ground_height", p.x, p.z)))
 	heights.sort()
 	at.y = heights[heights.size() / 2]
+	# No steeper than `approach_max_grade` up the street in from the road: the city sits
+	# within that of the road's height over the ramp between the road's band and its edge.
+	var band := 0.0
+	if ground.has_method(&"road_share_at"):
+		while band < absf(side) + push:
+			var p := centre + away * band
+			if float(ground.call(&"road_share_at", p.x, p.z)) >= 1.0:
+				break
+			band += ROAD_CHECK_STEP / 8.0
+	var ramp := maxf(absf(side) + push - band, 1.0)
+	var grade := float(cfg.get("approach_max_grade", 1.0)) * ramp
+	at.y = clampf(at.y, centre.y - grade, centre.y + grade)
 	return Transform3D(basis, at)
+
+
+## The street in from the road, in the city's own metres (see `CitySite.lead_in`): straight
+## out from the ring street along the inner street nearest the road to the road's middle,
+## at the road's height. Empty if the road never crosses that line beside the city.
+static func approach(ground: Node, where: Transform3D, plan: Dictionary, cfg: Dictionary) -> Dictionary:
+	var size := float(cfg["size"])
+	var m := float(cfg["at"])
+	var inverse := where.affine_inverse()
+	var aim := (inverse * (ground.call(&"road_point", m) as Vector3)).x
+	var lines: Array = plan["lines"][0]
+	var widths: Array = plan["widths"]
+	var x := 0.0
+	var width := float(cfg["street_width"])
+	var best := INF
+	for i in range(1, lines.size() - 1):
+		var centre := float(lines[i]) + float(widths[i]) / 2.0
+		if absf(centre - aim) < best:
+			best = absf(centre - aim)
+			x = centre
+			width = float(widths[i])
+	# Where the road crosses that line: the nearest of its points, finely sampled.
+	var hit := Vector3.ZERO
+	best = INF
+	var metres := m - size
+	while metres <= m + size:
+		var local := inverse * (ground.call(&"road_point", metres) as Vector3)
+		if absf(local.x - x) < best and local.z < -size / 2.0:
+			best = absf(local.x - x)
+			hit = local
+		metres += ROAD_CHECK_STEP / 4.0
+	if best > ROAD_CHECK_STEP:
+		return {}
+	# The road keeps its own level across its band, wider along this line where the road
+	# crosses it at an angle: the street runs flat at the road's height to the band's end and
+	# only then slopes to the city.
+	# The drawn street starts at the road's edge along this line (`edge`), not over the road,
+	# whose asphalt curves under any straight piece laid across it.
+	var from := hit.z
+	var edge := hit.z
+	if ground.has_method(&"road_share_at"):
+		while from < -size / 2.0:
+			var p := where * Vector3(x, 0.0, from)
+			var share := float(ground.call(&"road_share_at", p.x, p.z))
+			if share <= 0.0:
+				edge = from
+			if share >= 1.0:
+				break
+			from += ROAD_CHECK_STEP / 8.0
+	if -size / 2.0 - from < 1.0:
+		return {}
+	edge = maxf(edge - APPROACH_TUCK, hit.z)
+	# The road climbs as it goes, and crosses this line at an angle: across its band the ground
+	# is the road's height where each point is, so both ends of the flat stretch take theirs.
+	var at_edge := where * Vector3(x, 0.0, edge)
+	var at_from := where * Vector3(x, 0.0, from)
+	var level := where.origin.y
+	return {"x": x, "width": width, "road": hit.z, "edge": edge, "from": from, "to": -size / 2.0,
+		"edge_drop": float(ground.call(&"ground_height", at_edge.x, at_edge.z)) - level,
+		"drop": float(ground.call(&"ground_height", at_from.x, at_from.z)) - level}
 
 
 ## Circles covering the square footprint, so nothing grows in the city.

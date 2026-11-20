@@ -224,6 +224,15 @@ func is_claimed(at: Vector3, radius: float, owner: StringName) -> bool:
 	return false
 
 
+## How much a pad levels the ground at (x, z) for the road: 0 on the road (it keeps its own
+## level), 1 from `PAD_ROAD_GAP` metres past its edge.
+func road_share_at(x: float, z: float) -> float:
+	if heights == null or heights.road == null:
+		return 1.0
+	var road: RoadPath = heights.road
+	return smoothstep(road.half_width, road.half_width + PAD_ROAD_GAP, road.distance(x, z))
+
+
 ## Pads for callers that name no owner (the missions).
 func set_pads(pads: Array) -> void:
 	set_pads_for(&"", pads)
@@ -232,7 +241,10 @@ func set_pads(pads: Array) -> void:
 ## Levels the ground under footprints (mission buildings), replacing any earlier set. Each
 ## pad is `{at: Vector3, half: Vector2, yaw: float, blend: float}`: a rectangle `half` either
 ## side of `at` (x across, y along, turned by `yaw` like a node's rotation.y) flat at `at.y`,
-## easing back into the natural ground over `blend` metres. Raises and lowers alike; craters
+## easing back into the natural ground over `blend` metres. With `from` (a height) it is a
+## ramp instead: `from` at its -z end rising or falling evenly to `at.y` at its +z end (a
+## street from the road into the city); with `from_ground` the -z end is the untouched
+## ground there, wherever along that end. Raises and lowers alike; craters
 ## still dig into it. Every instance sets the same pads from the same layout, so nothing about
 ## it is sent.
 func _apply_pads(pads: Array) -> void:
@@ -244,7 +256,7 @@ func _apply_pads(pads: Array) -> void:
 		var at: Vector3 = p["at"]
 		var half: Vector2 = p["half"]
 		var yaw := float(p.get("yaw", 0.0))
-		var pad := {"x": at.x, "z": at.z, "h": at.y, "hx": half.x, "hz": half.y, "c": cos(yaw), "s": sin(yaw), "blend": maxf(0.01, float(p.get("blend", 3.0)))}
+		var pad := {"x": at.x, "z": at.z, "h": at.y, "from": float(p.get("from", at.y)), "from_ground": bool(p.get("from_ground", false)), "hx": half.x, "hz": half.y, "c": cos(yaw), "s": sin(yaw), "blend": maxf(0.01, float(p.get("blend", 3.0)))}
 		var reach := half.length() + float(pad["blend"])
 		var low := _tile_of(at - Vector3(reach, 0, reach))
 		var high := _tile_of(at + Vector3(reach, 0, reach))
@@ -269,6 +281,7 @@ func _apply_pads(pads: Array) -> void:
 func _pad_into(h: float, x: float, z: float, pads: Array) -> float:
 	if pads.is_empty():
 		return h
+	# As `road_share_at`, inline: this runs for every ground sample under a pad.
 	var road_share := 1.0
 	if heights != null and heights.road != null:
 		var road: RoadPath = heights.road
@@ -281,7 +294,16 @@ func _pad_into(h: float, x: float, z: float, pads: Array) -> float:
 		var lz := dx * float(p["s"]) + dz * float(p["c"])
 		var out := Vector2(maxf(absf(lx) - float(p["hx"]), 0.0), maxf(absf(lz) - float(p["hz"]), 0.0)).length()
 		var weight := (1.0 - smoothstep(0.0, float(p["blend"]), out)) * road_share
-		h = lerpf(h, float(p["h"]), weight)
+		var level := float(p["h"])
+		var t := clampf(lz / float(p["hz"]) * 0.5 + 0.5, 0.0, 1.0)
+		if bool(p["from_ground"]):
+			# Straight back to the -z end, on the untouched ground there: the ramp leaves a
+			# road band that tilts as the road climbs, at that band's own height.
+			var hz := float(p["hz"])
+			level = lerpf(ground_height(float(p["x"]) + lx * float(p["c"]) - hz * float(p["s"]), float(p["z"]) - lx * float(p["s"]) - hz * float(p["c"])), level, t)
+		elif float(p["from"]) != level:
+			level = lerpf(float(p["from"]), level, t)
+		h = lerpf(h, level, weight)
 	return h
 
 
