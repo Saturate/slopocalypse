@@ -100,7 +100,9 @@ func _physics_tick(_delta: float) -> void:
 			continue
 		var input_action := &"charge" if action == &"throw" else action
 		if Input.is_action_just_pressed(input_action):
-			if _remote:
+			if _remote and action == &"interact":
+				intent.submit_interact.rpc_id(1, intent.interact_target)
+			elif _remote:
 				intent.submit_action.rpc_id(1, action)
 			else:
 				intent.set(action, true)

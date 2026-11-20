@@ -47,6 +47,12 @@ func _process(_delta: float) -> void:
 	var prompts := PromptStack.of(get_tree())
 	var loot: Node = inventory.call(&"loot_in_reach", player)
 	var crate: Node = inventory.call(&"container_in_reach", player) if loot == null else null
+	# What a press of interact will name to the server (the server can't see this machine's
+	# ragdolls, #407).
+	var intent := (player as PlayerController).intent() if player is PlayerController else null
+	if intent != null:
+		var shown: Node = loot if loot != null else crate
+		intent.interact_target = shown.get_path() if shown != null else NodePath()
 	if loot != null:
 		var info: Dictionary = inventory.call(&"item_info", str(loot.get(&"item")))
 		prompts.set_line(&"loot", &"interact", "Pick up %s" % str(info.get("name", loot.get(&"item"))))
