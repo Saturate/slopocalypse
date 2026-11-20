@@ -228,7 +228,7 @@ func _find_ponds(water: Dictionary) -> void:
 	filled.resize(n)
 	var seen := PackedByteArray()
 	seen.resize(n)
-	var heap := _Heap.new()
+	var heap := MinHeap.new()
 	for j in _side:
 		for i in _side:
 			if i == 0 or j == 0 or i == _side - 1 or j == _side - 1:
@@ -322,50 +322,3 @@ const DRY_TO := 0.75
 ## Metres either side a slope is measured over.
 const GRADE_STEP := 2.0
 const NEIGHBOURS: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
-
-
-## A min-heap of (key, value) for the priority flood.
-class _Heap:
-	var _keys := PackedFloat32Array()
-	var _values := PackedInt32Array()
-
-	func is_empty() -> bool:
-		return _keys.is_empty()
-
-	func push(key: float, value: int) -> void:
-		_keys.append(key)
-		_values.append(value)
-		var i := _keys.size() - 1
-		while i > 0:
-			var parent := (i - 1) / 2
-			if _keys[parent] <= _keys[i]:
-				break
-			_swap(i, parent)
-			i = parent
-
-	## The value with the smallest key, taken off.
-	func pop() -> int:
-		var top := _values[0]
-		var last := _keys.size() - 1
-		_swap(0, last)
-		_keys.resize(last)
-		_values.resize(last)
-		var i := 0
-		while true:
-			var smallest := i
-			for c in [2 * i + 1, 2 * i + 2]:
-				if c < _keys.size() and _keys[c] < _keys[smallest]:
-					smallest = c
-			if smallest == i:
-				break
-			_swap(i, smallest)
-			i = smallest
-		return top
-
-	func _swap(a: int, b: int) -> void:
-		var k := _keys[a]
-		_keys[a] = _keys[b]
-		_keys[b] = k
-		var v := _values[a]
-		_values[a] = _values[b]
-		_values[b] = v

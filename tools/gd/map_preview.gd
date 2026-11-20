@@ -18,6 +18,7 @@ const ZONE_EDGE := Color(0.1, 0.1, 0.1)
 const CITY := Color(0.85, 0.15, 0.1)
 const SPAWN := Color(1, 1, 1)
 const TOWN := Color(0.95, 0.55, 0.1)
+const ROAD := Color(0.18, 0.18, 0.2)
 
 
 func _initialize() -> void:
@@ -45,7 +46,11 @@ func _initialize() -> void:
 		draw_zones(image, zones)
 		var places_cfg: Variant = (recipe as Dictionary).get("settlements")
 		if places_cfg is Dictionary:
-			draw_settlements(image, Settlements.new(zones, places_cfg))
+			var places := Settlements.new(zones, places_cfg)
+			var roads_cfg: Variant = (recipe as Dictionary).get("roads")
+			if roads_cfg is Dictionary:
+				draw_roads(image, RoadNetwork.new(places, roads_cfg))
+			draw_settlements(image, places)
 	var err := image.save_png(args[2])
 	if err != OK:
 		push_error("map_preview: could not write %s (%d)" % [args[2], err])
@@ -149,3 +154,19 @@ static func draw_settlements(image: Image, places: Settlements) -> void:
 		for di in range(-4, 5):
 			if di * di + dj * dj <= 16 and ci + di >= 0 and cj + dj >= 0 and ci + di < pixels and cj + dj < pixels:
 				image.set_pixel(ci + di, cj + dj, SPAWN)
+
+
+## Each road as a dark line as wide as the road (at least a pixel).
+static func draw_roads(image: Image, net: RoadNetwork) -> void:
+	var b := net.settlements.zones.land.bounds()
+	var pixels := image.get_width()
+	var step := b.size.x / pixels
+	for road: Dictionary in net.roads():
+		var half := maxi(int(float(road["width"]) / step / 2.0), 0)
+		for p: Vector2 in road["points"]:
+			var ci := int((p.x - b.position.x) / step)
+			var cj := int((p.y - b.position.y) / step)
+			for dj in range(-half, half + 1):
+				for di in range(-half, half + 1):
+					if ci + di >= 0 and cj + dj >= 0 and ci + di < pixels and cj + dj < pixels:
+						image.set_pixel(ci + di, cj + dj, ROAD)
