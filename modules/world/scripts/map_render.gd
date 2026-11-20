@@ -43,6 +43,7 @@ const SECTIONS := {
 		"camp": {"clearance": "n"}, "edge_margin": "n"},
 	"roads": {"kinds": "d", "cost": {"forest": "n", "slope": "n", "wetland": "n", "hilltop": "n", "over_grade": "n"},
 		"sample": "n", "profile_window": "n"},
+	"earthworks": {"bank_grade": "n", "shoulder": "n", "reach": "n"},
 }
 const ROAD_KIND := {"width": "n", "max_grade": "n", "min_radius": "n", "max_cut": "n", "max_fill": "n"}
 ## Kinds the road network builds; an edited recipe must still have them.
@@ -60,6 +61,9 @@ const LIMITS := {
 	"settlements.town.max": Vector2(0, 16),
 	"roads.sample": Vector2(1, 32),
 	"roads.profile_window": Vector2(0, 500),
+	"earthworks.bank_grade": Vector2(0.1, 3),
+	"earthworks.shoulder": Vector2(0, 20),
+	"earthworks.reach": Vector2(0, 200),
 }
 const MAX_LAYERS := 8
 const MAX_OCTAVES := 8
@@ -152,7 +156,6 @@ static func make(recipe: Dictionary, seed_value: int, pixels: int, layers: Packe
 	if layers.is_empty():
 		layers = ALL_LAYERS.split(",")
 	var land := WorldLand.new(recipe, seed_value)
-	var image := render(land, maxi(pixels, 16))
 	var zones: LandZones = null
 	var places: Settlements = null
 	var net: RoadNetwork = null
@@ -165,20 +168,27 @@ static func make(recipe: Dictionary, seed_value: int, pixels: int, layers: Packe
 			var roads_cfg: Variant = recipe.get("roads")
 			if roads_cfg is Dictionary:
 				net = RoadNetwork.new(places, roads_cfg)
+	var works: Earthworks = null
+	var works_cfg: Variant = recipe.get("earthworks")
+	if works_cfg is Dictionary and places != null:
+		works = Earthworks.new(land, places, net, works_cfg)
 	var built := Time.get_ticks_msec() - started
+	# Without the earthworks layer the land is drawn as it was before anything shaped it.
+	var shaped := works if layers.has("earthworks") else null
+	var image := render(land, maxi(pixels, 16), shaped)
 	if zones != null and layers.has("zones"):
 		draw_zones(image, zones)
 	if net != null and layers.has("roads"):
 		draw_roads(image, net, layers.has("earthworks"))
 	if places != null and layers.has("settlements"):
 		draw_settlements(image, places)
-	return {"image": image, "stats": stats(land, zones, places, net, built)}
+	return {"image": image, "stats": stats(land, zones, places, net, shaped, built)}
 
 
 ## The land seen from above, north (-z) up: hill shading over green lowland turning brown
 ## up high, tinted by biome (dark green woods, yellowed dry grass, grey rock), water blue by
 ## depth.
-static func render(land: WorldLand, pixels: int) -> Image:
+static func render(land: WorldLand, pixels: int, works: Earthworks = null) -> Image:
 	var b := land.bounds()
 	var step := b.size.x / pixels
 	var heights := PackedFloat32Array()
@@ -187,7 +197,9 @@ static func render(land: WorldLand, pixels: int) -> Image:
 	var high := -INF
 	for j in pixels:
 		for i in pixels:
-			var h := land.height(b.position.x + (i + 0.5) * step, b.position.y + (j + 0.5) * step)
+			var x := b.position.x + (i + 0.5) * step
+			var z := b.position.y + (j + 0.5) * step
+			var h := works.height(x, z) if works != null else land.height(x, z)
 			heights[j * pixels + i] = h
 			low = minf(low, h)
 			high = maxf(high, h)
@@ -203,7 +215,8 @@ static func render(land: WorldLand, pixels: int) -> Image:
 			var x := b.position.x + (i + 0.5) * step
 			var z := b.position.y + (j + 0.5) * step
 			var level := land.water_level(x, z)
-			if not is_nan(level):
+			# An embankment can stand above a pond's edge: then it is ground.
+			if not is_nan(level) and level > h:
 				image.set_pixel(i, j, SHALLOW.lerp(DEEP, clampf((level - h) / DEEP_AT, 0.0, 1.0)))
 				continue
 			var t := (h - low) / maxf(high - low, 0.001)
@@ -301,7 +314,7 @@ static func draw_roads(image: Image, net: RoadNetwork, earthworks: bool) -> void
 
 ## What the viewer shows beside the map: a summary of the land, settlements and roads, and
 ## a coarse grid of heights and zone kinds for the hover readout.
-static func stats(land: WorldLand, zones: LandZones, places: Settlements, net: RoadNetwork, built_ms: int) -> Dictionary:
+static func stats(land: WorldLand, zones: LandZones, places: Settlements, net: RoadNetwork, works: Earthworks, built_ms: int) -> Dictionary:
 	var summary := {
 		"map": "%d m square" % int(land.size),
 		"built in": "%d ms" % built_ms,
@@ -339,6 +352,6 @@ static func stats(land: WorldLand, zones: LandZones, places: Settlements, net: R
 		for i in GRID_CELLS:
 			var x := b.position.x + (i + 0.5) * cell
 			var z := b.position.y + (j + 0.5) * cell
-			heights.append(snappedf(land.height(x, z), 0.1))
+			heights.append(snappedf(works.height(x, z) if works != null else land.height(x, z), 0.1))
 			kinds.append(LandZones.KINDS.find(str(zones.zone_at(x, z).get("kind", ""))) if zones != null else -1)
 	return {"summary": summary, "grid": {"left": b.position.x, "top": b.position.y, "size": b.size.x, "cells": GRID_CELLS, "heights": heights, "zones": kinds, "kinds": LandZones.KINDS}}
