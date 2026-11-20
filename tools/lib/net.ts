@@ -15,10 +15,12 @@ export interface NetReport {
 	shots: number;
 	driven: number;
 	ammo: number;
+	parked: number;
+	drivers: number;
 }
 
 export function parseReport(output: string): NetReport | undefined {
-	const m = /NET-REPORT mode=(\w+) peer=(\d+) peers=(\d+) players=(\d+) local_players=(\d+) moved=([\d.]+) shots=(\d+) driven=([\d.]+) ammo=(-?\d+)/.exec(output);
+	const m = /NET-REPORT mode=(\w+) peer=(\d+) peers=(\d+) players=(\d+) local_players=(\d+) moved=([\d.]+) shots=(\d+) driven=([\d.]+) ammo=(-?\d+) parked=(\d+) drivers=(\d+)/.exec(output);
 	if (m === null) return undefined;
 	return {
 		mode: m[1] ?? "",
@@ -30,6 +32,8 @@ export function parseReport(output: string): NetReport | undefined {
 		shots: Number(m[7]),
 		driven: Number(m[8]),
 		ammo: Number(m[9]),
+		parked: Number(m[10]),
+		drivers: Number(m[11]),
 	};
 }
 
@@ -147,6 +151,42 @@ export async function netSmoke(godot: string, root: string, port = 7791): Promis
 	return problems.length > 0
 		? { ok: false, detail: problems.slice(0, 20).join("\n") }
 		: { ok: true, detail: "server + 2 clients: walking, shooting and driving reach the server and everyone else" };
+}
+
+// Someone who joins after a player got in the car. Getting in is broadcast once, to whoever
+// is connected then, so the late client only knows about it if the server catches it up
+// (#433): it must show the driver parked and the car as driven, as the server does.
+export async function lateJoinSmoke(godot: string, root: string, port = 7795): Promise<StepResult> {
+	const base = ["--headless", "--path", root, "--"];
+	const join = `--connect=127.0.0.1:${port}`;
+	// The server counts from its first player and outlasts both clients' reports; the sitter
+	// reports late enough to have walked to the car and got in.
+	const server = run(godot, [...base, `--server=${port}`, "--net-report-after=2400", "--no-save"], { cwd: root, timeoutMs: 180_000 });
+	await delay(4000);
+	const sitter = run(godot, [...base, join, "--net-report-after=900", "--bot=sit", "--name=Sitter"], { cwd: root, timeoutMs: 180_000 });
+	// Long enough for the sitter to be in the car before the second client knocks.
+	await delay(20_000);
+	const late = run(godot, [...base, join, "--net-report-after=300", "--name=Late"], { cwd: root, timeoutMs: 180_000 });
+	const results: [string, ProcResult][] = [["server", await server], ["sitting client", await sitter], ["late client", await late]];
+
+	const problems: string[] = [];
+	for (const [name, r] of results) {
+		for (const line of scanLog(r.output, GODOT_NOISE)) problems.push(`${name}: ${line}`);
+		if (r.timedOut) problems.push(`${name}: timed out`);
+		const rep = parseReport(r.output);
+		if (rep === undefined) {
+			problems.push(`${name}: no NET-REPORT line; it ended with:\n${lastLines(r.output)}`);
+			continue;
+		}
+		// The sitter reports before the late client is in; everyone else sees both players.
+		const players = name === "sitting client" ? 1 : 2;
+		if (rep.players < players) problems.push(`${name}: wrong session shape: ${JSON.stringify(rep)}`);
+		if (rep.parked !== 1) problems.push(`${name}: the driver's body is not hidden (parked=${rep.parked})`);
+		if (rep.drivers !== 1) problems.push(`${name}: the car does not know its driver (drivers=${rep.drivers})`);
+	}
+	return problems.length > 0
+		? { ok: false, detail: problems.slice(0, 20).join("\n") }
+		: { ok: true, detail: "a client that joins after someone got in the car sees them in it" };
 }
 
 // Progress survives a server restart: a named bot walks off and the server stops (saving on
