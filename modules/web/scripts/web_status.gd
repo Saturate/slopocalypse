@@ -62,7 +62,13 @@ static func html(status: Dictionary, refresh_seconds: int = 10) -> String:
 		if not board.is_empty():
 			rows.append("<h3>On the board</h3><ul>%s</ul>" % "".join(board.map(func(o: Dictionary) -> String: return "<li><b>%s</b> &middot; %s &middot; %s &middot; %d tokens</li>" % [e.call(o["codename"]), e.call(o["kind"]), e.call(o["place"]), int(o["pays"])])))
 	rows.append("<p class=dim>Join from the game's main menu with this server's address. Get the game: <a href=\"%s\">%s</a></p>" % [RELEASES, RELEASES])
-	return "<!doctype html><html><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><meta http-equiv=refresh content=%d><title>Slopocalypse server</title><style>body{background:#151714;color:#e2e1da;font:16px/1.5 system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 16px}h1,h2,h3{color:#d19e4c;margin:.8em 0 .3em}a{color:#d19e4c}.dim{color:#9a9b95}ul{padding-left:1.2em}</style></head><body>%s</body></html>" % [refresh_seconds, "\n".join(rows)]
+	return page("Slopocalypse server", "\n".join(rows), refresh_seconds)
+
+
+## A plain dark page around `body` (HTML), refreshing itself every `refresh_seconds` when above 0.
+static func page(title: String, body: String, refresh_seconds: int = 0) -> String:
+	var refresh := "<meta http-equiv=refresh content=%d>" % refresh_seconds if refresh_seconds > 0 else ""
+	return "<!doctype html><html><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">%s<title>%s</title><style>body{background:#151714;color:#e2e1da;font:16px/1.5 system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 16px}h1,h2,h3{color:#d19e4c;margin:.8em 0 .3em}a{color:#d19e4c}.dim{color:#9a9b95}ul{padding-left:1.2em}</style></head><body>%s</body></html>" % [refresh, title.xml_escape(), body]
 
 
 static func _duration(seconds: int) -> String:
