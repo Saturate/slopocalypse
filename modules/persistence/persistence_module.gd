@@ -201,12 +201,16 @@ func _restore(peer: int, saved: Dictionary) -> void:
 	# Saved dead (or never placed): they start over at the spawn like a respawn would.
 	if player == null or not at is Vector3 or float(saved.get("health", 0.0)) <= 0.0:
 		return
+	(player.get_node("Health") as HealthComponent).server_set(float(saved["health"]))
 	# The world may have changed under the spot since (a mountain where the road was):
 	# a spot now inside the ground starts them at the spawn instead, gear and all.
 	if _buried(at as Vector3):
 		Log.info(&"persistence", "%s's saved spot is under the ground now; starting at the spawn" % name_of(peer))
 		return
-	(player.get_node("Health") as HealthComponent).server_set(float(saved["health"]))
+	# A car parked over the spot since: put there, they would start inside it, stuck (#406).
+	if PlayerController.vehicle_at(player.get_world_3d(), (at as Vector3) + Vector3.UP * 0.2):
+		Log.info(&"persistence", "%s's saved spot has a car on it now; starting at the spawn" % name_of(peer))
+		return
 	player.global_position = (at as Vector3) + Vector3.UP * 0.2
 	player.velocity = Vector3.ZERO
 	# Terrain only streams in around players, so it may not be there yet: hang in place
@@ -259,7 +263,7 @@ func server_save_player(peer: int) -> bool:
 	var save := {
 		"health": 0.0 if dead else health.health,
 		"tokens": int(missions.call(&"server_tokens_of", peer)) if missions != null else 0,
-		"position": null if dead else player.global_position,
+		"position": null if dead else _standing_spot(player),
 		"items": inventory.call(&"server_items_of", peer) if inventory != null else [],
 		"builds": weapons.call(&"server_builds_of", peer) if weapons != null else {},
 		"standing": factions.call(&"server_standing_of", peer) if factions != null else {},
@@ -269,6 +273,14 @@ func server_save_player(peer: int) -> bool:
 		Log.error(&"persistence", "could not save %s: %s" % [player_name, store.last_error()])
 		return false
 	return true
+
+
+## Where `player` stands, or for someone in a car where they would get out (a parked body in
+## a car stays where it got in).
+func _standing_spot(player: Node3D) -> Vector3:
+	var cars := get_tree().get_first_node_in_group(&"cars_api")
+	var spot: Variant = cars.call(&"exit_spot_of", player) if cars != null else null
+	return spot if spot is Vector3 else player.global_position
 
 
 func server_save_world() -> bool:

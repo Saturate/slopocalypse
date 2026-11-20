@@ -4,6 +4,10 @@ extends CharacterBody3D
 ## slide, hop, vault low cover and mantle onto ledges. Cosmetic camera feel (FOV, bob)
 ## lives in PlayerCameraFeel on clients; nothing here depends on rendering.
 
+## A standing person, for checking where one can be put (#406): a little slimmer than the
+## body so touching a car door does not count.
+const STAND_CHECK_RADIUS := 0.3
+const STAND_CHECK_HEIGHT := 1.7
 const CONFIG := "res://modules/player/data/player.json"
 const REQUIRED := {
 	"walk_speed": TYPE_FLOAT,
@@ -411,3 +415,19 @@ func _apply_height(height: float) -> void:
 	_capsule.radius = config["radius"]
 	_shape_node.position.y = height / 2.0
 	_head.position.y = height - float(config["eye_offset"])
+
+
+## Whether a vehicle's body overlaps a standing person with their feet at `at` in `world`.
+static func vehicle_at(world: World3D, at: Vector3) -> bool:
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = STAND_CHECK_RADIUS
+	capsule.height = STAND_CHECK_HEIGHT
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = capsule
+	query.transform = Transform3D(Basis.IDENTITY, at + Vector3.UP * (STAND_CHECK_HEIGHT / 2.0 + 0.05))
+	query.collision_mask = PhysicsLayers.SOLID
+	for hit: Dictionary in world.direct_space_state.intersect_shape(query, 8):
+		var body := hit.get("collider") as Node
+		if body != null and body.is_in_group(&"vehicles"):
+			return true
+	return false

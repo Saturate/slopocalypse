@@ -8,6 +8,8 @@ extends Node
 const SCENE := "res://modules/player/scenes/player.tscn"
 ## How far down a held player looks for ground before letting go.
 const GROUND_PROBE := 40.0
+## Random spots near the spawn tried before falling back to the rings round it.
+const NEAR_SPAWN_TRIES := 8
 
 var _spawner := MultiplayerSpawner.new()
 var _players: Dictionary[int, PlayerController] = {}
@@ -176,7 +178,7 @@ func _server_spawn(peer: int) -> void:
 	var taken: Array[Vector3] = []
 	for p: PlayerController in _players.values():
 		taken.append(p.global_position if p.is_inside_tree() else p.position)
-	_spawner.spawn({"peer": peer, "position": free_spawn_point(_spawn, taken, _spawn_spacing())})
+	_spawner.spawn({"peer": peer, "position": free_spawn_point(_spawn, taken, _spawn_spacing(), _car_at)})
 
 
 ## How far apart players who join together start, from player.json, read once; 0 (everyone
@@ -198,16 +200,36 @@ static func spawn_spacing_from(config: Dictionary) -> float:
 ## The spawn itself when nobody stands on it, else the first spot on rings `spacing` apart
 ## around it that is `spacing` from everyone. Two bodies in one spot push each other out the
 ## same way every tick and slide off together at tens of metres a second.
-static func free_spawn_point(spawn: Vector3, taken: Array[Vector3], spacing: float) -> Vector3:
+## `blocked(at) -> bool` turns down a spot for anything else in the way (a parked car, #406).
+static func free_spawn_point(spawn: Vector3, taken: Array[Vector3], spacing: float, blocked := Callable()) -> Vector3:
 	const PER_RING := 8
 	const MAX_RINGS := 4
 	for ring in MAX_RINGS + 1:
 		for i in (1 if ring == 0 else PER_RING):
 			var angle := TAU * float(i) / float(PER_RING)
 			var at := spawn + Vector3(cos(angle), 0.0, sin(angle)) * spacing * float(ring)
+			if blocked.is_valid() and bool(blocked.call(at)):
+				continue
 			if taken.all(func(t: Vector3) -> bool: return Vector2(t.x - at.x, t.z - at.z).length() >= spacing):
 				return at
 	return spawn
+
+
+## A spot within `respawn_spread` of the spawn with no car on it (one parked on the spawn
+## would trap whoever is put inside it, #406); the free spawn rings if every draw has one.
+func _near_spawn(player: PlayerController) -> Vector3:
+	var spread := float(player.config.get("respawn_spread", 0.0))
+	for i in NEAR_SPAWN_TRIES:
+		var at := _spawn + Vector3(_rng.randf_range(-spread, spread), 0.5, _rng.randf_range(-spread, spread))
+		if not _car_at(at):
+			return at
+	return free_spawn_point(_spawn, [], _spawn_spacing(), _car_at) + Vector3.UP * 0.5
+
+
+## Whether a car stands where a person would with their feet at `at`: a body put there would
+## start inside it and could not move.
+func _car_at(at: Vector3) -> bool:
+	return PlayerController.vehicle_at(get_viewport().find_world_3d(), at) if is_inside_tree() else false
 
 
 ## Runs on the server and, through the spawner, on every client.
@@ -245,8 +267,7 @@ func _server_died(source: Node, player: PlayerController) -> void:
 func server_respawn(player: PlayerController) -> void:
 	_respawn_in.erase(player)
 	(player.get_node("Health") as HealthComponent).server_reset()
-	var spread := float(player.config.get("respawn_spread", 0.0))
-	player.global_position = _spawn + Vector3(_rng.randf_range(-spread, spread), 0.5, _rng.randf_range(-spread, spread))
+	player.global_position = _near_spawn(player)
 	player.velocity = Vector3.ZERO
 	Net.server_broadcast(&"player.respawned", {"player": player})
 	server_hold(player)
@@ -278,8 +299,7 @@ func server_back_to_spawn(player: PlayerController) -> bool:
 		return false
 	_back_cooldown[player] = float(player.config.get("back_to_spawn_cooldown_seconds", 10.0))
 	EventBus.publish(&"player.back_to_spawn", {"player": player})
-	var spread := float(player.config.get("respawn_spread", 0.0))
-	server_move_to(player, _spawn + Vector3(_rng.randf_range(-spread, spread), 0.5, _rng.randf_range(-spread, spread)))
+	server_move_to(player, _near_spawn(player))
 	Log.info(&"player", "%s went back to the spawn" % who)
 	return true
 
