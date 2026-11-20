@@ -52,9 +52,11 @@ func test_most_of_it_is_gentle_enough_to_walk_on_every_seed() -> void:
 
 func test_it_has_hills_not_a_plain() -> void:
 	var recipe := _recipe()
+	var walk: Dictionary = recipe["walkable"]
+	for seed_value in 20:
+		var hillsides := 1.0 - WorldLand.new(recipe, seed_value).walkable_share(SURVEY, float(walk["hillside_grade"]))
+		assert_float(hillsides).override_failure_message("seed %d: %.2f hillside" % [seed_value, hillsides]).is_greater_equal(float(walk["min_hillside_share"]))
 	var land := WorldLand.new(recipe, 3)
-	# Some of it steeper than an easy walk: ridges and hillsides, not a plain.
-	assert_float(land.walkable_share(SURVEY, float(recipe["walkable"]["max_grade"]))).is_less(0.99)
 	var low := INF
 	var high := -INF
 	var b := land.bounds()
@@ -63,7 +65,43 @@ func test_it_has_hills_not_a_plain() -> void:
 			var h := land.height(b.position.x + b.size.x * i / 64.0, b.position.y + b.size.y * j / 64.0)
 			low = minf(low, h)
 			high = maxf(high, h)
-	assert_float(high - low).is_greater(50.0)
+	assert_float(high - low).is_greater(60.0)
+
+
+## Whether a `side` metre square at (x, z) is everywhere flatter than `max_grade`.
+func _flat_square(land: WorldLand, x: float, z: float, side: float, max_grade: float) -> bool:
+	var step := 16.0
+	var i := 0.0
+	while i <= side:
+		var j := 0.0
+		while j <= side:
+			var h := land.height(x + i, z + j)
+			var grade := Vector2(land.height(x + i + step, z + j) - h, land.height(x + i, z + j + step) - h).length() / step
+			if grade > max_grade:
+				return false
+			j += step
+		i += step
+	return true
+
+
+func test_every_seed_has_broad_flat_lowland_for_a_town() -> void:
+	var recipe := _recipe()
+	var flat := float(recipe["walkable"]["flat_grade"])
+	for seed_value in 20:
+		var land := WorldLand.new(recipe, seed_value)
+		# Lots of nearly flat ground for farms and roads...
+		assert_float(land.walkable_share(SURVEY, flat)).override_failure_message("seed %d: too little flat ground" % seed_value).is_greater_equal(float(recipe["walkable"]["min_flat_share"]))
+		# ...and somewhere a town fits on it.
+		var b := land.bounds()
+		var found := false
+		var x := b.position.x + 64.0
+		while x < b.end.x - 256.0 and not found:
+			var z := b.position.y + 64.0
+			while z < b.end.y - 256.0 and not found:
+				found = _flat_square(land, x, z, 192.0, flat)
+				z += 96.0
+			x += 96.0
+		assert_bool(found).override_failure_message("seed %d: no flat 192 m square" % seed_value).is_true()
 
 
 func test_surveying_a_whole_map_is_quick() -> void:
