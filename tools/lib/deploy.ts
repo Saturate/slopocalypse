@@ -24,28 +24,39 @@ export function quote(value: string): string {
 }
 
 // The game's flags for its web page; only what differs from the defaults.
-export function webFlags(t: DeployTarget): string {
+export const webFlags = (t: DeployTarget): string => {
 	if (t.web === null) return "";
 	const port = t.web.port === t.port ? "" : ` --web-port=${t.web.port}`;
 	const bind = t.web.bind === "*" ? "" : ` --web-bind=${t.web.bind}`;
 	return ` --web${port}${bind}`;
-}
+};
+
+// The word after `--name` on the command line, if there is one.
+const flagValue = (args: readonly string[], name: string): string | undefined => {
+	const i = args.indexOf(`--${name}`);
+	return i >= 0 ? args[i + 1] : undefined;
+};
+
+// The web page's port: the game's own unless one is given, and only a real port number.
+const webPort = (text: string | undefined, gamePort: number): number => {
+	const port = text === undefined ? gamePort : Number(text);
+	if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad --web-port ${text ?? ""}`);
+	return port;
+};
+
+// "*" (every address) or one IP address; anything else the game would refuse.
+const webBind = (bind: string): string => {
+	if (bind !== "*" && isIP(bind) === 0) throw new Error(`bad --web-bind ${bind}: an IP address such as 127.0.0.1, or *`);
+	return bind;
+};
 
 // --web, --web-port N and --web-bind ADDRESS from the command line (either of the last two
 // turns the page on). Throws on a port or address the game would refuse.
-export function webOptions(args: readonly string[], gamePort: number): DeployTarget["web"] {
-	const value = (name: string): string | undefined => {
-		const i = args.indexOf(`--${name}`);
-		return i >= 0 ? args[i + 1] : undefined;
-	};
-	const portText = value("web-port");
-	const bind = value("web-bind") ?? "*";
-	if (!args.includes("--web") && portText === undefined && !args.includes("--web-bind")) return null;
-	const port = portText === undefined ? gamePort : Number(portText);
-	if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad --web-port ${portText ?? ""}`);
-	if (bind !== "*" && isIP(bind) === 0) throw new Error(`bad --web-bind ${bind}: an IP address such as 127.0.0.1, or *`);
-	return { port, bind };
-}
+export const webOptions = (args: readonly string[], gamePort: number): DeployTarget["web"] => {
+	const asked = ["--web", "--web-port", "--web-bind"].some((flag) => args.includes(flag));
+	if (!asked) return null;
+	return { port: webPort(flagValue(args, "web-port"), gamePort), bind: webBind(flagValue(args, "web-bind") ?? "*") };
+};
 
 export function systemdUnit(t: DeployTarget): string {
 	return [
