@@ -75,9 +75,9 @@ func test_riding_out_puts_the_drive_in_a_crate_in_the_zone() -> void:
 	assert_array(_inventory.call(&"crate_contents", _crate())).contains_exactly(["usb_drive"])
 	var zone: Vector3 = _missions.get(&"zone")
 	var dropoff: Vector3 = _missions.call(&"dropoff_of", _missions.get(&"current"))
-	# Out in the zone, past the drop-off.
-	assert_float(_crate().global_position.distance_to(zone)).is_less(60.0)
-	assert_float(_crate().global_position.z).is_less(dropoff.z)
+	# Out in the zone, a walk from the drop-off.
+	assert_float(_crate().global_position.distance_to(zone)).is_less(float(_missions.call(&"zone_radius")))
+	assert_float(_crate().global_position.distance_to(dropoff)).is_greater(15.0)
 
 
 func test_the_clock_starts_when_someone_reaches_the_zone() -> void:

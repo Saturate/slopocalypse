@@ -16,13 +16,14 @@ func before_test() -> void:
 	EventBus.publish(&"world.ready", {"spawn": Vector3.ZERO})
 
 
-static func _road(metres: float) -> Vector3:
-	return Vector3(0.0, 0.0, -metres)
+## A roadside place 300 m out: an empty footprint, the road to its -x.
+static func _place() -> Dictionary:
+	return {"centre": Vector3(0.0, 0.0, -300.0), "footprint": Rect2(0.0, -300.0, 0.0, 0.0), "toward": Vector3.LEFT}
 
 
 func _entry(material: String) -> Dictionary:
 	var cfg: Dictionary = (_missions.get(&"config") as Dictionary)["buildings"]
-	var entry: Dictionary = MissionLayout.buildings(cfg, 3, _road, 300.0)[0]
+	var entry: Dictionary = MissionLayout.buildings(cfg, 3, _place())[0]
 	entry["material"] = material
 	entry["windows"] = 2
 	entry["position"] = Vector3(0, 0, -40)

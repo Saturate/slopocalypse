@@ -221,6 +221,17 @@ func road_point(metres: float) -> Vector3:
 	return home + Vector3(0.0, 0.0, -metres)
 
 
+## How long the highway from the camp is, metres (INF off the map, where `road_point` runs on).
+func road_length() -> float:
+	if not heights is MapShape:
+		return INF
+	var points := (heights as MapShape).highway()
+	var length := 0.0
+	for k in range(1, points.size()):
+		length += points[k].distance_to(points[k - 1])
+	return length
+
+
 ## The ground as it is now: levelled pads and craters included.
 func surface_height(x: float, z: float) -> float:
 	var key := _tile_of(Vector3(x, 0.0, z))
@@ -259,6 +270,11 @@ func is_claimed(at: Vector3, radius: float, owner: StringName) -> bool:
 			if absf(local.x) < half.x + reach and absf(local.z) < half.y + reach:
 				return true
 	return false
+
+
+## Whether a circle of `radius` at `at` reaches within `margin` of a road's or track's edge.
+func near_road(at: Vector3, radius: float, margin: float) -> bool:
+	return heights != null and heights.near_road(at.x, at.z, radius + margin)
 
 
 ## Pads for callers that name no owner (the missions).

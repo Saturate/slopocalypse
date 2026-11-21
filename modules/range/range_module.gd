@@ -99,11 +99,13 @@ func _server_arrive(player: Node3D) -> void:
 				inventory.call(&"server_give", peer, item)
 
 
-## Across the road from the middle of the row (the row stands on the road's +x side).
+## Across the road from the middle of the row (the row stands on the road's +x side, its
+## doors on the line through the zone's centre, `roadside_off` metres from the road).
 func stand_spot() -> Vector3:
 	var missions := _missions()
 	var zone: Vector3 = missions.get(&"zone")
-	var at := zone + Vector3(-float(config.get("stand_across", 6.0)), 0.0, 0.0)
+	var across := float((config["mission"] as Dictionary).get("roadside_off", 0.0)) + float(config.get("stand_across", 6.0))
+	var at := zone + Vector3(-across, 0.0, 0.0)
 	at.y = float(missions.call(&"ground_y", at.x, at.z)) + 0.5
 	return at
 

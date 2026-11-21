@@ -159,7 +159,8 @@ func sites(kind: String) -> Array[Vector3]:
 ## Every site, in the order the map placed them: {kind, centre (on the pad's level),
 ## footprint (Rect2 on x, z), connectors (Vector3, the middle of each side), toward (unit, on
 ## the ground plane: from the centre to the side its track leaves by, or to the side nearest
-## a road when it has no track)}.
+## a road when it has no track), remoteness (0 to 1, see MapRemoteness), track (where its
+## track meets the road network, see `_track_mouth`; empty when it has none)}.
 func site_list() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var all: MapSites = map.get("sites")
@@ -167,12 +168,14 @@ func site_list() -> Array[Dictionary]:
 		return out
 	# A site's track is named after its kind and its place in the list (MapRender.build).
 	var starts: Dictionary[String, Vector2] = {}
+	var tracks: Dictionary[String, Dictionary] = {}
 	var net: RoadNetwork = map.get("net")
 	if net != null:
 		for road: Dictionary in net.roads():
 			var points: PackedVector2Array = road["points"]
 			if road["kind"] == "track" and not points.is_empty():
 				starts[str(road["from"])] = points[0]
+				tracks[str(road["from"])] = road
 	var sites := all.sites()
 	for i in sites.size():
 		var s: Dictionary = sites[i]
@@ -186,8 +189,40 @@ func site_list() -> Array[Dictionary]:
 			if d < best:
 				best = d
 				toward = Vector3(k.x - c.x, 0.0, k.z - c.y).normalized()
-		out.append({"kind": s["kind"], "centre": centre, "footprint": s["footprint"], "connectors": s["connectors"], "toward": toward})
+		var mouth := _track_mouth(tracks[name], net) if tracks.has(name) else {}
+		out.append({"kind": s["kind"], "centre": centre, "footprint": s["footprint"], "connectors": s["connectors"], "toward": toward,
+			"remoteness": float(s.get("remoteness", 0.0)), "track": mouth})
 	return out
+
+
+## The site's own track and where it meets the road network (a road, or a track built before
+## it): {points (x, z, from the site's end to the road's), track_width, end (on the ground
+## there), up (unit, on the ground plane: the way the track leaves the road), along (unit: the
+## way the road it meets runs there), width (that road's width), length (the track's metres)}.
+func _track_mouth(track: Dictionary, net: RoadNetwork) -> Dictionary:
+	var points: PackedVector2Array = track["points"]
+	var end := points[points.size() - 1]
+	# A few samples back, so the track's last square turn onto the road does not decide it.
+	var back := points[maxi(points.size() - 4, 0)]
+	var up := Vector3(back.x - end.x, 0.0, back.y - end.y)
+	var along := Vector3(up.z, 0.0, -up.x)
+	var width := 0.0
+	var best := INF
+	# Only roads made before it: a track joins those, and later tracks may join it near its end.
+	for road: Dictionary in net.roads():
+		if is_same(road, track):
+			break
+		var line: PackedVector2Array = road["points"]
+		for k in line.size():
+			var d := line[k].distance_squared_to(end)
+			if d < best and line.size() > 1:
+				best = d
+				var a := line[maxi(k - 1, 0)]
+				var b := line[mini(k + 1, line.size() - 1)]
+				along = Vector3(b.x - a.x, 0.0, b.y - a.y)
+				width = float(road["width"])
+	return {"points": points, "track_width": float(track["width"]), "end": Vector3(end.x, height_at(end.x, end.y), end.y), "up": up.normalized() if up.length() > 0.01 else Vector3.FORWARD,
+		"along": along.normalized() if along.length() > 0.01 else Vector3.RIGHT, "width": width, "length": MapRender.track_length(track)}
 
 
 ## The highway from the camp: its points from the camp's end.
