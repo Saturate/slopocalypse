@@ -1,9 +1,15 @@
 class_name SoundBank
 extends RefCounted
-## Every sound in the game, synthesised once at runtime from noise and tones: no recorded
-## audio, so nothing to license. Each is a short mono 16-bit AudioStreamWAV, cached by name.
+## Every sound in the game. A recording wins when there is one: `<id>.ogg` in `SOUNDS_DIR`,
+## or several takes `<id>_1.ogg`, `<id>_2.ogg`, ... picked at random per play. Without one
+## the sound is synthesised once at runtime from noise and tones, a short mono 16-bit
+## AudioStreamWAV cached by name, so recordings can land one sound at a time.
 
 const RATE := 44100
+## Recorded sounds; see its README for naming and licences.
+const SOUNDS_DIR := "res://modules/audio/sounds"
+## Sounds that play as loops; a recording of one is set to loop as well.
+const LOOPED: Array[String] = ["wind", "rotor", "crickets"]
 ## The wind loop is long so nobody hears it repeat.
 const WIND_SECONDS := 24.0
 ## Different bird songs, asked for as "bird0", "bird1", ...
@@ -13,9 +19,124 @@ const BIRD_VARIANTS := 4
 const SURFACE_FAMILIES: Array[String] = ["wood", "metal", "glass", "glass_small", "brick", "concrete"]
 
 static var _cache: Dictionary[String, AudioStreamWAV] = {}
+## Recorded takes by sound id (each an Array[AudioStream]), found once per folder list.
+static var _takes: Dictionary = {}
+static var _scanned := false
+static var _dirs := PackedStringArray()
+static var _dirs_set := false
+static var _take_name: RegEx
 
 
-static func get_sound(sound: String) -> AudioStreamWAV:
+## A recording of `sound` (a random take) when there is one, otherwise the generated sound.
+static func get_sound(sound: String) -> AudioStream:
+	var recorded := takes(sound)
+	if not recorded.is_empty():
+		return recorded.pick_random()
+	return generated(sound)
+
+
+## The recorded takes of `sound`, empty when it has none.
+static func takes(sound: String) -> Array[AudioStream]:
+	find_recordings()
+	if not _takes.has(sound):
+		return []
+	return _takes[sound]
+
+
+## Where recordings are looked for: the built-in folder, then its copy under the `tweaks/`
+## folder beside an exported game, whose takes replace the built-in ones for that sound.
+static func default_dirs() -> PackedStringArray:
+	var dirs := PackedStringArray([SOUNDS_DIR])
+	if not Data.tweaks_root.is_empty():
+		dirs.append(Data.tweaks_root.path_join(SOUNDS_DIR.trim_prefix("res://")))
+	return dirs
+
+
+## Look for recordings in `dirs` instead, in order: a later folder's takes of a sound replace
+## an earlier one's. Takes effect on the next lookup.
+static func use_recordings(dirs: PackedStringArray) -> void:
+	_dirs = dirs
+	_dirs_set = true
+	_scanned = false
+	_takes.clear()
+
+
+## Finds and loads the recordings now if that hasn't happened yet, so the first play of a
+## sound doesn't wait on the disk.
+static func find_recordings() -> void:
+	if not _scanned:
+		_scan()
+
+
+## The sound id a recording's file name is for: "rifle.ogg" and "rifle_2.ogg" are both
+## "rifle"; "" for anything that isn't an .ogg.
+static func take_id(file: String) -> String:
+	if file.get_extension().to_lower() != "ogg":
+		return ""
+	if _take_name == null:
+		_take_name = RegEx.create_from_string("^(.+)_\\d+$")
+	var base := file.get_basename()
+	var m := _take_name.search(base)
+	return m.get_string(1) if m != null else base
+
+
+## Every recording is found and loaded once, before the first sound plays, so a play never
+## touches the disk.
+static func _scan() -> void:
+	_scanned = true
+	_takes.clear()
+	if not _dirs_set:
+		_dirs = default_dirs()
+	for dir in _dirs:
+		var found: Dictionary = {}
+		var files := _list(dir)
+		files.sort()
+		for file in files:
+			var id := take_id(file)
+			if id.is_empty():
+				continue
+			var stream := _load_take(dir.path_join(file), id)
+			if stream == null:
+				continue
+			var list: Array[AudioStream] = []
+			if found.has(id):
+				list = found[id]
+			list.append(stream)
+			found[id] = list
+		for id: String in found:
+			if _takes.has(id):
+				Log.info(&"audio", "%s: takes from %s replace the built-in ones" % [id, dir])
+			_takes[id] = found[id]
+
+
+## File names in `dir`. In an exported game a res:// folder holds only the `.import` stubs
+## of recordings (the audio itself is remapped into `.godot/imported`), so res:// folders
+## are listed through the resource loader, which reports them under their own names.
+static func _list(dir: String) -> PackedStringArray:
+	if dir.begins_with("res://"):
+		return ResourceLoader.list_directory(dir)
+	return DirAccess.get_files_at(dir) if DirAccess.dir_exists_absolute(dir) else PackedStringArray()
+
+
+## A res:// recording is an imported resource (ResourceLoader, never FileAccess on the raw
+## path, which an export doesn't ship); anything else (tweaks, tests) is a raw .ogg file.
+static func _load_take(path: String, id: String) -> AudioStream:
+	var stream: AudioStream = null
+	if path.begins_with("res://"):
+		if ResourceLoader.exists(path, "AudioStream"):
+			stream = ResourceLoader.load(path, "AudioStream") as AudioStream
+	else:
+		stream = AudioStreamOggVorbis.load_from_file(path)
+	if stream == null:
+		Log.error(&"audio", "%s: not imported yet, or not a playable Ogg Vorbis file" % path)
+		return null
+	if stream is AudioStreamOggVorbis:
+		(stream as AudioStreamOggVorbis).loop = id in LOOPED
+	return stream
+
+
+## The sound made in code, whether or not a recording exists.
+static func generated(sound: String) -> AudioStreamWAV:
 	if _cache.has(sound):
 		return _cache[sound]
 	var samples := PackedFloat32Array()
