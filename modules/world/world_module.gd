@@ -25,12 +25,12 @@ var _kind := &"strip"
 var _waited := 0.0
 
 
-## The generated map is played with `--world=map` (#472): its recipe and seed from
-## `world.json` `map`, overridden by `--map=` and `--seed=`. True when a map is selected;
-## anything else plays the strip.
+## The generated map is the world (#472, decision 0012): its recipe and seed from
+## `world.json` `map`, overridden by `--map=` and `--seed=`. `--world=strip` plays the old
+## strip (until it is removed) and `--world=flat` the test range. True when a map is selected.
 static func _select_map(args: PackedStringArray, data: Dictionary) -> bool:
 	WorldMaps.clear()
-	if not args.has("--world=map"):
+	if args.has("--world=strip") or args.has("--world=flat"):
 		return false
 	if not (data.get("map") is Dictionary and Data.require(CONFIG + " map", data["map"], MAP_REQUIRED)):
 		return false
@@ -198,6 +198,8 @@ func _receive_map(kind: String, recipe: String, seed_value: int) -> void:
 
 
 func _exit_tree() -> void:
+	# The selection is static: the next session (or test) picks its own world.
+	WorldMaps.clear()
 	for monitor: StringName in MONITORS:
 		if Performance.has_custom_monitor(monitor):
 			Performance.remove_custom_monitor(monitor)
