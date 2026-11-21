@@ -161,6 +161,9 @@ func _update_ads(delta: float) -> void:
 	var nearest := (_camera as Camera3D).near + NEAR_MARGIN if _camera is Camera3D else 0.0
 	# Only ever nearer: the arms already reach as far as the gun was set up to sit (a pistol
 	# at arm's length), so a view narrower than the default shows the gun a little bigger.
+	# The near-plane floor leaves magnified scopes (eye relief 0.06 against a 0.05 near
+	# plane) where they were set up at every field of view. That only shows while raising:
+	# once up, ScopeView hides the gun and draws the lens as a fixed share of the screen.
 	var scale := minf(view_scale, 1.0)
 	_aim.set(&"eye_relief", maxf(relief * scale, minf(relief, nearest)))
 	if not _hip_read:
