@@ -100,7 +100,9 @@ func _sheet(index: int, offer: Dictionary, chosen: bool, running: bool) -> Contr
 	objective.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	objective.custom_minimum_size.x = SHEET_WIDTH - 32
 	col.add_child(objective)
-	col.add_child(_label("%d m down the road" % int(offer.get("distance", 0)), 15, DIM))
+	# A site's distance is from the camp as the crow flies; a roadside spot's is along the highway.
+	var at_site := not (offer.get("site", {}) as Dictionary).is_empty()
+	col.add_child(_label(("%d m from camp" if at_site else "%d m down the highway") % int(offer.get("distance", 0)), 15, DIM))
 	if offer.has("time_limit"):
 		col.add_child(_label("Time limit %d:%02d once you arrive" % [int(offer["time_limit"]) / 60, int(offer["time_limit"]) % 60], 15, DIM))
 	if offer.has("guards"):

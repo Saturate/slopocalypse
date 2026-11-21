@@ -1,25 +1,30 @@
 extends Node
 ## Home base and the mission run. The start tunnel is home: a mission board on the wall
 ## offers a few missions, and the car parked inside rides everyone at home out to the chosen
-## mission's drop-off point down the road; the car waiting there rides them back. The server
-## owns the run (`home`, then `in_mission` until nobody is out any more) and tells everyone
-## through `missions.*` topics.
+## mission's drop-off; the car waiting there rides them back. The server owns the run
+## (`home`, then `in_mission` until nobody is out any more) and tells everyone through
+## `missions.*` topics.
 ##
-## Each mission has a zone past the drop-off with buildings (MissionLayout) and is of one
-## kind, a MissionType script named in data (Smash & Grab, Clean Sweep, ...). The kind lays
+## Each mission goes to one of the map's sites (a farm, a cabin, a mast; MissionSites) or,
+## where none fits, a spot beside the highway. Its zone centres on that place with mission
+## buildings round it (MissionLayout); the drop-off is beside the road where the site's
+## track meets it, so the group walks or drives up the track. Each mission is of one kind,
+## a MissionType script named in data (Smash & Grab, Clean Sweep, ...). The kind lays
 ## out its content and decides when the job is done; riding home then pays everyone who rode
 ## home in tokens. This module only knows the run, the zone, the buildings, crates, pay and
 ## markers, plus hazards any mission can ask for in its data: buried mines around the
 ## buildings (`mines`) and tripwires across their doors (`tripwires`), with warning signs.
 
 const CONFIG := "res://modules/missions/data/missions.json"
-## Draws before `random_spot` settles for a claimed spot: with the city covering at most
-## half a zone beside the road, the chance all of them land in it is under one in a thousand.
+## Draws before `random_spot` settles for a claimed spot: with a site's pad or the city
+## covering at most half a zone, the chance all of them land on it is under one in a thousand.
 const RANDOM_SPOT_TRIES := 10
+## Draws for a patrol or mine spot off claimed ground before giving up on it.
+const OPEN_SPOT_TRIES := 6
 const REQUIRED := {
 	"home_radius": TYPE_FLOAT, "reach": TYPE_FLOAT, "ride_fade_seconds": TYPE_FLOAT,
 	"ride_home_reach": TYPE_FLOAT, "drop_spread": TYPE_FLOAT, "board": TYPE_DICTIONARY,
-	"transport": TYPE_DICTIONARY, "dropoff_side": TYPE_FLOAT, "offered": TYPE_FLOAT,
+	"transport": TYPE_DICTIONARY, "dropoff_side": TYPE_FLOAT, "dropoff": TYPE_DICTIONARY, "offered": TYPE_FLOAT,
 	"seed": TYPE_FLOAT, "missions": TYPE_ARRAY, "zone": TYPE_DICTIONARY, "types": TYPE_DICTIONARY,
 	"codenames": TYPE_DICTIONARY, "buildings": TYPE_DICTIONARY, "starting_tokens": TYPE_FLOAT,
 }
@@ -45,6 +50,11 @@ var current: Dictionary = {}
 var state := HOME
 ## Everywhere: the zone's centre and its buildings as layout entries while a run is on.
 var zone := Vector3.ZERO
+## Server: how far the zone reaches from `zone`, set when it opens.
+var _zone_radius := 0.0
+## Server: the map's sites (VoxelWorld.map_site_list), read when the world is ready; empty
+## on the flat test world.
+var sites: Array = []
 var buildings: Array = []
 ## This instance's own player's tokens, as the server last said.
 var my_tokens := 0
@@ -117,9 +127,14 @@ func _exit_tree() -> void:
 
 
 ## `offered` missions rolled from the config with `seed`: each picks a template (no repeats
-## while there are enough), keeps the template's own fields, rolls its distance, payout and
-## any other `[min, max]` count (guards), and gets a codename.
-static func roll_offers(cfg: Dictionary, seed_value: int) -> Array:
+## while there are enough) and a place for it among `sites` (MissionSites.pick: of the
+## template's kinds, within its distance of `home`, never a site another offer has), keeps
+## the template's own fields, rolls its payout and any other `[min, max]` count (guards), and
+## gets a codename. `site` is the place's MissionSites.describe, or empty for a roadside
+## spot; `distance` is the site's from `home`, or for a roadside spot rolled from the
+## template's range as metres along the highway. A template with no place this time is
+## passed over.
+static func roll_offers(cfg: Dictionary, seed_value: int, map_sites: Array = [], home := Vector3.ZERO) -> Array:
 	var rng_ := RandomNumberGenerator.new()
 	rng_.seed = seed_value
 	var templates: Array = (cfg.get("missions", []) as Array).duplicate()
@@ -128,12 +143,20 @@ static func roll_offers(cfg: Dictionary, seed_value: int) -> Array:
 	var second: Array = names.get("second", ["Fox"])
 	var types: Dictionary = cfg.get("types", {})
 	var out := []
-	for i in int(cfg.get("offered", 3)):
+	var used := {}
+	var tries := 0
+	# Every template twice over: enough to fill the board when some have no place this time.
+	var most := ((cfg.get("missions", []) as Array).size() + 1) * 2
+	while out.size() < int(cfg.get("offered", 3)) and tries < most:
+		tries += 1
 		if templates.is_empty():
 			templates = (cfg.get("missions", []) as Array).duplicate()
 		if templates.is_empty():
 			break
 		var t: Dictionary = templates.pop_at(rng_.randi_range(0, templates.size() - 1))
+		var where := MissionSites.pick(t, map_sites, home, used, rng_)
+		if where == MissionSites.NOWHERE:
+			continue
 		var offer := t.duplicate(true)
 		var kind: Dictionary = types.get(str(t.get("type", "")), {})
 		offer.merge(kind.get("defaults", {}), false)
@@ -143,6 +166,11 @@ static func roll_offers(cfg: Dictionary, seed_value: int) -> Array:
 		for key: String in ["distance", "payout"]:
 			var r: Array = t.get(key, [100.0, 200.0])
 			offer[key] = snappedf(rng_.randf_range(float(r[0]), float(r[1])), 10.0)
+		offer["site"] = {}
+		if where >= 0:
+			used[where] = true
+			offer["site"] = MissionSites.describe(map_sites[where], where, cfg)
+			offer["distance"] = snappedf(MissionSites.distance(map_sites[where], home), 10.0)
 		for key: String in ["guards", "patrols", "mines", "tripwires"]:
 			if t.get(key) is Array:
 				offer[key] = rng_.randi_range(int(t[key][0]), int(t[key][1]))
@@ -150,16 +178,48 @@ static func roll_offers(cfg: Dictionary, seed_value: int) -> Array:
 	return out
 
 
-## Where a mission drops the group off: beside the road `distance` metres out.
+## Server: the board's offers for `seed_value`, at the map's sites. A roadside offer further
+## out than the highway runs (less the zone's way on past the drop-off) is brought back onto it.
+func _roll(seed_value: int) -> Array:
+	var rolled := roll_offers(config, seed_value, sites, _spawn)
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	var length := float(ground.call(&"road_length")) if ground != null and ground.has_method(&"road_length") else INF
+	var ahead := float((config.get("roadside", {}) as Dictionary).get("ahead", 0.0))
+	for offer: Dictionary in rolled:
+		if (offer["site"] as Dictionary).is_empty():
+			offer["distance"] = snappedf(clampf(float(offer["distance"]), 0.0, maxf(length - ahead, 0.0)), 10.0)
+	return rolled
+
+
+## Where `mission` happens (MissionSites): its site's place, or a spot beside the highway
+## `distance` metres out when it has none. {centre, footprint, toward, dropoff, up, across,
+## car_off, facing}.
+func place_of(mission: Dictionary) -> Dictionary:
+	var site: Dictionary = mission.get("site", {})
+	if not site.is_empty():
+		return MissionSites.at_site(site, config)
+	var roadside: Dictionary = config.get("roadside", {})
+	var off := float(mission.get("roadside_off", roadside.get("off_road", 45.0)))
+	var ahead := float(mission.get("roadside_ahead", roadside.get("ahead", 40.0)))
+	return MissionSites.roadside(_road_at, float(mission.get("distance", 0.0)), ahead, off, config)
+
+
+## Where a mission sets the group down: on its site's own track a short walk out of the zone
+## (see MissionSites), or beside the highway.
 func dropoff_of(mission: Dictionary) -> Vector3:
-	var at := _road_at(float(mission.get("distance", 0.0)))
-	at.x += float(config.get("dropoff_side", 0.0))
+	var at: Vector3 = place_of(mission)["dropoff"]
 	at.y = ground_y(at.x, at.z)
 	return at
 
 
 func _on_world_ready(payload: Dictionary) -> void:
 	_spawn = payload.get("spawn", Vector3.ZERO)
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	sites = ground.call(&"map_site_list") if ground != null and ground.has_method(&"map_site_list") else []
+	# Offers rolled before the map was there knew no sites; the server rolls them again.
+	if multiplayer.is_server() and state == HOME and current.is_empty():
+		offers = _roll(int(config["seed"]) + _runs)
+		_broadcast()
 	_board = MissionBoard.new()
 	_board.name = "MissionBoard"
 	add_child(_board)
@@ -191,7 +251,31 @@ func _place_dropoff_car() -> void:
 	_dropoff_car = TransportCar.new()
 	_dropoff_car.name = "DropoffCar"
 	add_child(_dropoff_car)
-	_dropoff_car.global_position = dropoff_of(current)
+	var place := place_of(current)
+	_dropoff_car.global_position = car_spot(place)
+	# Its nose is +Z.
+	var facing: Vector3 = place["facing"]
+	_dropoff_car.rotation.y = atan2(facing.x, facing.z)
+
+
+## Where the drop-off car stands for `place`: `car_off` metres to one side of the drop-off,
+## beside the way rather than on it, on whichever side the ground is nearer the way's level
+## (the same on every machine: it is the map's ground).
+func car_spot(place: Dictionary) -> Vector3:
+	var drop: Vector3 = place["dropoff"]
+	drop.y = ground_y(drop.x, drop.z)
+	var off := float(place["car_off"])
+	if off <= 0.0:
+		return drop
+	var best := drop
+	var best_step := INF
+	for side: Vector3 in [place["across"] as Vector3, -(place["across"] as Vector3)]:
+		var at := drop + side * off
+		at.y = ground_y(at.x, at.z)
+		if absf(at.y - drop.y) < best_step:
+			best_step = absf(at.y - drop.y)
+			best = at
+	return best
 
 
 ## What `player` is looking at among the board and the two cars: "board", "ride_out",
@@ -290,6 +374,9 @@ func server_ride_out() -> bool:
 	if current.is_empty() or state != HOME:
 		return false
 	var at := dropoff_of(current)
+	var place := place_of(current)
+	var up: Vector3 = place["up"]
+	var across: Vector3 = place["across"]
 	var riders: Array[Node3D] = []
 	for node: Node in get_tree().get_nodes_in_group(&"players"):
 		var player := node as Node3D
@@ -303,8 +390,9 @@ func server_ride_out() -> bool:
 	for i in riders.size():
 		var player := riders[i]
 		_out[int(player.get_meta(&"peer_id", 1))] = true
-		# Line up beside the car, not on top of each other.
-		var spot := at + Vector3(-1.5 - spread * (i % 3), 0.5, spread * (i / 3) - 1.0)
+		# Lined up a little on toward the site, not on top of each other.
+		var spot := at + up * (2.5 + spread * (i / 3)) + across * (spread * (i % 3 - 1))
+		spot.y = ground_y(spot.x, spot.z) + 0.5
 		EventBus.publish(&"player.move_requested", {"player": player, "position": spot})
 	EventBus.publish(&"missions.started", {"mission": current.get("id", ""), "riders": _out.keys()})
 	_broadcast(_out.keys())
@@ -354,7 +442,7 @@ func _end_if_nobody_out() -> void:
 	_runs += 1
 	state = HOME
 	current = {}
-	offers = roll_offers(config, int(config["seed"]) + _runs)
+	offers = _roll(int(config["seed"]) + _runs)
 	_broadcast()
 
 
@@ -409,7 +497,7 @@ func _on_changed(p: Dictionary) -> void:
 
 ## Which mission a dictionary is, ignoring run details such as `paid`.
 static func _key(mission: Dictionary) -> String:
-	return "%s@%s" % [mission.get("id", ""), mission.get("distance", 0)]
+	return "%s@%s@%s" % [mission.get("id", ""), mission.get("distance", 0), (mission.get("site", {}) as Dictionary).get("index", -1)]
 
 
 ## Everywhere: makes (or drops) the kind of mission being run.
@@ -532,18 +620,18 @@ func _on_player_spawned(p: Dictionary) -> void:
 	add_child(fade)
 
 
-## Server: lays out the zone past the drop-off with its buildings, then lets the mission's
-## kind put its content in.
+## Server: lays out the zone round the mission's place with its buildings, then lets the
+## mission's kind put its content in.
 func _open_zone() -> void:
-	var z: Dictionary = config["zone"]
-	var along := float(current.get("distance", 0.0)) + float(z.get("beyond_dropoff", 70.0))
-	zone = _road_at(along)
+	var place := place_of(current)
+	zone = place["centre"]
+	_zone_radius = MissionSites.zone_radius(place["footprint"], config)
 	zone.y = ground_y(zone.x, zone.z)
 	rng.seed = int(config["seed"]) * 31 + _runs
-	# A mission can override the layout (a lone cabin: one building, far from the road).
+	# A mission can override the layout (by the cabin: one shed close to it).
 	var layout: Dictionary = (config["buildings"] as Dictionary).duplicate()
 	layout.merge(current.get("buildings", {}), true)
-	buildings = MissionLayout.buildings(layout, int(config["seed"]) * 7919 + _runs, _road_at, along, _claimed)
+	buildings = MissionLayout.buildings(layout, int(config["seed"]) * 7919 + _runs, place, _blocked)
 	for entry: Dictionary in buildings:
 		var at: Vector3 = entry["position"]
 		# On the average ground under its footprint (the pad levels to it: dug in uphill, built
@@ -572,9 +660,17 @@ func _place_hazards() -> void:
 			var b: Dictionary = buildings[rng.randi_range(0, buildings.size() - 1)]
 			centre = b["position"]
 			radius = float(b.get("radius", 4.0))
-		var a := rng.randf() * TAU
-		var r := radius + rng.randf_range(float(ring[0]), float(ring[1]))
-		var at := centre + Vector3(cos(a) * r, 0.0, sin(a) * r)
+		var at := centre
+		var open := false
+		for _try in OPEN_SPOT_TRIES:
+			var a := rng.randf() * TAU
+			var r := radius + rng.randf_range(float(ring[0]), float(ring[1]))
+			at = centre + Vector3(cos(a) * r, 0.0, sin(a) * r)
+			if open_ground(at):
+				open = true
+				break
+		if not open:
+			continue
 		# Not right on a doorstep: the wire is for that.
 		var on_step := _building_nodes.any(func(n: MissionBuilding) -> bool: return at.distance_to(n.global_transform * Vector3(0, 0, -float(n.spec["depth"]) / 2.0 - 1.0)) < keep_clear)
 		if on_step:
@@ -589,8 +685,12 @@ func _place_hazards() -> void:
 		server_spawn_hazard("wire", a, b)
 	if count > 0:
 		for i in int(h.get("signs", 2)):
-			var a := rng.randf() * TAU
-			var at := zone + Vector3(cos(a), 0.0, sin(a)) * float(h.get("sign_distance", 30.0))
+			var at := zone
+			for _try in OPEN_SPOT_TRIES:
+				var a := rng.randf() * TAU
+				at = zone + Vector3(cos(a), 0.0, sin(a)) * float(h.get("sign_distance", 30.0))
+				if open_ground(at):
+					break
 			at.y = ground_y(at.x, at.z)
 			server_spawn_hazard("sign", at, Vector3.ZERO)
 
@@ -894,9 +994,15 @@ func fill_buildings_with_loot(skip: Array) -> void:
 			spawn_crate(_building_nodes[i].inside(0.8, 0.5), inventory.call(&"roll_crate_loot"))
 
 
+## How far the zone reaches from its centre: the place's footprint and `zone.radius` metres
+## round it.
+func zone_radius() -> float:
+	return _zone_radius
+
+
 ## Server: the riders (living, out on this run) inside the zone.
 func riders_in_zone() -> Array[Node3D]:
-	var radius := float((config["zone"] as Dictionary).get("radius", 45.0))
+	var radius := zone_radius()
 	var out: Array[Node3D] = []
 	for node: Node in get_tree().get_nodes_in_group(&"players"):
 		var p := node as Node3D
@@ -908,13 +1014,13 @@ func riders_in_zone() -> Array[Node3D]:
 ## Server: a random spot on the ground in the zone, within `share` of its radius, off ground
 ## someone else has claimed (the city) unless the whole zone is.
 func random_spot(share: float) -> Vector3:
-	var radius := float((config["zone"] as Dictionary).get("radius", 45.0)) * share
+	var radius := zone_radius() * share
 	var at := zone
 	for i in RANDOM_SPOT_TRIES:
 		var a := rng.randf() * TAU
 		var r := sqrt(rng.randf()) * radius
 		at = zone + Vector3(cos(a) * r, 0.0, sin(a) * r)
-		if not _claimed(at, 1.0):
+		if not claimed(at, 1.0):
 			break
 	at.y = ground_y(at.x, at.z)
 	return at
@@ -946,14 +1052,55 @@ func ground_y(x: float, z: float) -> float:
 	return 0.0
 
 
-## Whether ground at `at` within `radius` is levelled for someone else (the city): no mission
-## building goes up there.
-func _claimed(at: Vector3, radius: float) -> bool:
+## Whether ground at `at` within `radius` is levelled for someone else (a map site's pad and
+## yard, the city): no mission building, mine or patrol stop goes there.
+func claimed(at: Vector3, radius: float) -> bool:
 	var ground := get_tree().get_first_node_in_group(&"ground")
 	return ground != null and ground.has_method(&"is_claimed") and bool(ground.call(&"is_claimed", at, radius, &""))
 
 
-## A point on the road `metres` out (straight down -z without a world, as in tests).
+## Whether a mission building of `radius` at `at` would be too near claimed ground (its pad
+## and the blend round it must not reshape a site's pad), too near a road or track
+## (`buildings.road_clear` metres from its edge) or in water at its middle or corners.
+func _blocked(at: Vector3, radius: float) -> bool:
+	var cfg: Dictionary = config["buildings"]
+	if claimed(at, radius + float(cfg.get("pad_margin", 1.5)) + float(cfg.get("pad_blend", 4.0))):
+		return true
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	if ground == null:
+		return false
+	if ground.has_method(&"near_road") and bool(ground.call(&"near_road", at, radius, float(cfg.get("road_clear", 3.0)))):
+		return true
+	for corner: Vector3 in [Vector3.ZERO, Vector3(1, 0, 1), Vector3(1, 0, -1), Vector3(-1, 0, 1), Vector3(-1, 0, -1)]:
+		if _wet(at + corner * radius * 0.71):
+			return true
+	return false
+
+
+## Whether a mine, sign or patrol stop may go at `at`: off claimed ground, roads and tracks,
+## water and ground steeper than `hazards.max_grade`.
+func open_ground(at: Vector3) -> bool:
+	if claimed(at, 0.5):
+		return false
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	if ground == null:
+		return true
+	if ground.has_method(&"near_road") and bool(ground.call(&"near_road", at, 0.5, 0.5)):
+		return false
+	if _wet(at):
+		return false
+	var grade := float((config.get("hazards", {}) as Dictionary).get("max_grade", 0.5))
+	var dx := ground_y(at.x + 1.0, at.z) - ground_y(at.x - 1.0, at.z)
+	var dz := ground_y(at.x, at.z + 1.0) - ground_y(at.x, at.z - 1.0)
+	return Vector2(dx, dz).length() / 2.0 <= grade
+
+
+func _wet(at: Vector3) -> bool:
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	return ground != null and ground.has_method(&"water_level_at") and not is_nan(float(ground.call(&"water_level_at", at)))
+
+
+## A point on the highway `metres` out (straight down -z without a world, as in tests).
 func _road_at(metres: float) -> Vector3:
 	var ground := get_tree().get_first_node_in_group(&"ground")
 	if ground != null and ground.has_method(&"road_point"):
