@@ -1,6 +1,6 @@
 extends Node3D
-## Capture setup: the same view down the road from beside the tunnel at dawn, morning,
-## midday, late afternoon, dusk and midnight.
+## Capture setup: the same view down the highway from by the camp at dawn, morning, midday,
+## late afternoon, dusk and midnight.
 
 const WORLD := "res://modules/world/scenes/world.tscn"
 const FRAMES_PER_SHOT := 120
@@ -16,8 +16,7 @@ var _lighting := DayLighting.new()
 
 func _ready() -> void:
 	_world = await VoxelWorld.add_and_wait(self, WORLD)
-	var heights := (_world.get_node("Terrain") as VoxelWorld).heights
-	var portal: float = heights.start["portal_z"]
+	var terrain := _world.get_node("Terrain") as VoxelWorld
 	_clock = DayClock.from_data()
 	add_child(_lighting)
 	var env := _world.get_node("Environment") as WorldEnvironment
@@ -26,14 +25,13 @@ func _ready() -> void:
 	_camera.far = 900.0
 	add_child(_camera)
 	_camera.current = true
-	var z := portal - 14.0
-	var at := Vector3(heights.road.x_at(z), heights.height_at(heights.road.x_at(z), z) + 3.0, z)
+	var at := terrain.road_point(14.0) + Vector3.UP * 3.0
 	_camera.global_position = at
-	var far := portal - 90.0
-	_camera.look_at(Vector3(heights.road.x_at(far), at.y + 2.0, far))
-	_camera.add_child((_world.get_node("Terrain") as VoxelWorld).make_viewer())
+	var far := terrain.road_point(90.0)
+	_camera.look_at(Vector3(far.x, at.y + 2.0, far.z))
+	_camera.add_child(terrain.make_viewer())
 	(_world.get_node("Scenery") as SceneryScatter).update_around([at], INF)
-	(_world.get_node("Terrain") as VoxelWorld).update_around([at], INF)
+	terrain.update_around([at], INF)
 	_go(0)
 
 

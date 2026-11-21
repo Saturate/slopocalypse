@@ -39,3 +39,5 @@ map. Hard: the ground contract changes (`road_point` goes), scenery and saves mo
 chunk ids, and captures, tests and benchmarks that hard-code strip positions are rewritten.
 Revisit the live height if voxel streaming or scenery placement shows it in profiles, or if
 maps grow past 2 km.
+The strip is removed (its scripts, data, tunnel, the city's street in from the road and the
+water towers' road spots); `road_point` stays, meaning metres along the highway from the camp.

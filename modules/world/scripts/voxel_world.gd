@@ -1,7 +1,7 @@
 class_name VoxelWorld
 extends Node3D
-## The ground: blocky voxel columns over TerrainHeights, streamed in 32 m tiles around
-## whoever needs them, and diggable.
+## The ground: blocky voxel columns over the generated map (MapShape), streamed in 32 m tiles
+## around whoever needs them, and diggable.
 ##
 ## The server builds collision tiles (height maps of the smooth ground, with craters cut in)
 ## around every player, enemy, vehicle and terrain viewer, so nobody's ground depends on
@@ -20,8 +20,6 @@ const STEEP_SLOPE := 1.1
 const SKIRT := 2.0
 ## Focus points closer together than this (metres) count as one.
 const THIN_GRID := 4.0
-## `road_point` keeps this far from the end of the world.
-const ROAD_END_MARGIN := 20.0
 const GRASS := Color(0.36, 0.5, 0.22)
 const LITTER := Color(0.33, 0.29, 0.18)
 const STRAW := Color(0.7, 0.61, 0.36)
@@ -29,7 +27,6 @@ const STONE := Color(0.5, 0.49, 0.46)
 const ROCK := Color(0.45, 0.44, 0.42)
 const SOIL := Color(0.42, 0.31, 0.2)
 const DIRT := Color(0.38, 0.28, 0.18)
-const GRAVEL := Color(0.3, 0.29, 0.27)
 
 ## A hole was dug (after clamping), so grass over it can go.
 signal dug(center: Vector3, radius: float)
@@ -38,9 +35,9 @@ signal flooded(puddle: Vector4)
 
 @export_file("*.json") var config_path: String = "res://modules/world/data/world.json"
 
+## The map's land; null when no map could be built.
 var heights: GroundShape
-## Where players start: always kept built (the strip's spawn is the origin; a generated
-## map's is its camp).
+## Where players start (the map's camp): always kept built.
 var home := Vector3.ZERO
 var max_dig_depth := 3.0
 ## A crater's depth as a share of its radius. Its wall is steepest at the rim, a slope of
@@ -81,7 +78,7 @@ var _tile_jobs: Dictionary[Vector2i, Dictionary] = {}
 
 func _ready() -> void:
 	var data: Variant = Data.load_json(config_path)
-	if not data is Dictionary or not Data.require(config_path, data, TerrainHeights.REQUIRED):
+	if not data is Dictionary:
 		return
 	var world: Dictionary = data
 	if not world.has("voxel") or not Data.require(config_path + " voxel", world["voxel"], VOXEL_REQUIRED):
@@ -91,16 +88,14 @@ func _ready() -> void:
 	crater_depth_share = _cfg["crater_depth_share"]
 	max_dig_log = int(_cfg.get("max_saved_digs", 4000))
 	_lods = _cfg["lods"]
-	# A generated map when one is selected (#472), else the strip.
-	var map := WorldMaps.shape() if WorldMaps.is_selected() else null
-	if map != null:
-		heights = map
-		_biomes = map.biomes()
-		home = map.camp()
-	else:
-		heights = TerrainHeights.new(world)
-		if world.get("biomes") is Dictionary:
-			_biomes = Biomes.new(world["biomes"], heights.stages)
+	# The world module selects the map; built on its own (a test, a capture) it is world.json's.
+	var map := WorldMaps.shape_or_default()
+	if map == null:
+		Log.error(&"world", "no map to build the ground from (%s)" % WorldMaps.recipe_name())
+		return
+	heights = map
+	_biomes = map.biomes()
+	home = map.camp()
 	# Other modules place things on the ground where no tile is built (the server only builds
 	# near players): `ground_height` answers anywhere.
 	add_to_group(&"ground")
@@ -182,18 +177,17 @@ func water_level_at(position: Vector3) -> float:
 	return heights.water.level_at(position.x, position.z)
 
 
-## On a generated map, where the city stands (see MapShape.city); empty on the strip.
+## Where the map's city stands (see MapShape.city); empty without one.
 func map_city() -> Dictionary:
 	return (heights as MapShape).city() if heights is MapShape else {}
 
 
-## Whether this is a generated map (not the old strip or the flat test world).
+## Whether this is a generated map (not the flat test world, whose ground is FlatGround).
 func on_map() -> bool:
 	return heights is MapShape
 
 
-## On a generated map, the centres of its sites of `kind` (see MapShape.sites); none on
-## the strip.
+## The centres of the map's sites of `kind` (see MapShape.sites).
 func map_sites(kind: String) -> Array[Vector3]:
 	return (heights as MapShape).sites(kind) if heights is MapShape else ([] as Array[Vector3])
 
@@ -203,18 +197,12 @@ func ground_height(x: float, z: float) -> float:
 	return heights.height_at(x, z) if heights != null else 0.0
 
 
-## A point on the road `metres` out from the start (past the tunnel portal, if there is
-## one), on the untouched ground; the far end of the road if it is shorter than that.
+## A point `metres` along the highway from the camp, on the untouched ground; the far end
+## of the highway if it is shorter than that.
 func road_point(metres: float) -> Vector3:
-	# On a generated map: along the highway from the camp.
 	if heights is MapShape:
 		return (heights as MapShape).road_point(metres)
-	if heights == null or heights.road == null:
-		return Vector3(0.0, 0.0, -metres)
-	var start := float(heights.start["portal_z"]) if heights.has_tunnel() else heights.z_max()
-	var z := maxf(start - metres, heights.z_min() + ROAD_END_MARGIN)
-	var x := heights.road.x_at(z)
-	return Vector3(x, heights.height_at(x, z), z)
+	return home + Vector3(0.0, 0.0, -metres)
 
 
 ## The ground as it is now: levelled pads and craters included.
@@ -253,15 +241,6 @@ func is_claimed(at: Vector3, radius: float, owner: StringName) -> bool:
 	return false
 
 
-## How much a pad levels the ground at (x, z) for the road: 0 on the road (it keeps its own
-## level), 1 from `PAD_ROAD_GAP` metres past its edge.
-func road_share_at(x: float, z: float) -> float:
-	if heights == null or heights.road == null:
-		return 1.0
-	var road: RoadPath = heights.road
-	return smoothstep(road.half_width, road.half_width + PAD_ROAD_GAP, road.distance(x, z))
-
-
 ## Pads for callers that name no owner (the missions).
 func set_pads(pads: Array) -> void:
 	set_pads_for(&"", pads)
@@ -271,11 +250,9 @@ func set_pads(pads: Array) -> void:
 ## pad is `{at: Vector3, half: Vector2, yaw: float, blend: float}`: a rectangle `half` either
 ## side of `at` (x across, y along, turned by `yaw` like a node's rotation.y) flat at `at.y`,
 ## easing back into the natural ground over `blend` metres. With `from` (a height) it is a
-## ramp instead: `from` at its -z end rising or falling evenly to `at.y` at its +z end (a
-## street from the road into the city); with `from_ground` the -z end is the untouched
-## ground there, wherever along that end. Raises and lowers alike; craters
-## still dig into it. Every instance sets the same pads from the same layout, so nothing about
-## it is sent.
+## ramp instead: `from` at its -z end rising or falling evenly to `at.y` at its +z end.
+## Raises and lowers alike; craters still dig into it. Every instance sets the same pads from
+## the same layout, so nothing about it is sent.
 func _apply_pads(pads: Array) -> void:
 	var touched: Dictionary[Vector2i, bool] = {}
 	for key: Vector2i in _pads_in:
@@ -285,7 +262,7 @@ func _apply_pads(pads: Array) -> void:
 		var at: Vector3 = p["at"]
 		var half: Vector2 = p["half"]
 		var yaw := float(p.get("yaw", 0.0))
-		var pad := {"x": at.x, "z": at.z, "h": at.y, "from": float(p.get("from", at.y)), "from_ground": bool(p.get("from_ground", false)), "hx": half.x, "hz": half.y, "c": cos(yaw), "s": sin(yaw), "blend": maxf(0.01, float(p.get("blend", 3.0)))}
+		var pad := {"x": at.x, "z": at.z, "h": at.y, "from": float(p.get("from", at.y)), "hx": half.x, "hz": half.y, "c": cos(yaw), "s": sin(yaw), "blend": maxf(0.01, float(p.get("blend", 3.0)))}
 		var reach := half.length() + float(pad["blend"])
 		var low := _tile_of(at - Vector3(reach, 0, reach))
 		var high := _tile_of(at + Vector3(reach, 0, reach))
@@ -310,11 +287,10 @@ func _apply_pads(pads: Array) -> void:
 func _pad_into(h: float, x: float, z: float, pads: Array) -> float:
 	if pads.is_empty():
 		return h
-	# As `road_share_at`, inline: this runs for every ground sample under a pad.
-	var road_share := 1.0
-	if heights != null and heights.road != null:
-		var road: RoadPath = heights.road
-		road_share = smoothstep(road.half_width, road.half_width + PAD_ROAD_GAP, road.distance(x, z))
+	# How much the pads may level here: 0 on a road (it keeps its own level), 1 from
+	# `PAD_ROAD_GAP` metres past its edge. Looked up only once a pad reaches this sample:
+	# this runs for every ground sample in a tile with a pad, and most lie outside them.
+	var road_share := -1.0
 	for p: Dictionary in pads:
 		var dx := x - float(p["x"])
 		var dz := z - float(p["z"])
@@ -322,16 +298,15 @@ func _pad_into(h: float, x: float, z: float, pads: Array) -> float:
 		var lx := dx * float(p["c"]) - dz * float(p["s"])
 		var lz := dx * float(p["s"]) + dz * float(p["c"])
 		var out := Vector2(maxf(absf(lx) - float(p["hx"]), 0.0), maxf(absf(lz) - float(p["hz"]), 0.0)).length()
-		var weight := (1.0 - smoothstep(0.0, float(p["blend"]), out)) * road_share
+		var weight := 1.0 - smoothstep(0.0, float(p["blend"]), out)
+		if weight <= 0.0:
+			continue
+		if road_share < 0.0:
+			road_share = smoothstep(0.0, PAD_ROAD_GAP, heights.road_edge_distance(x, z)) if heights != null else 1.0
+		weight *= road_share
 		var level := float(p["h"])
-		var t := clampf(lz / float(p["hz"]) * 0.5 + 0.5, 0.0, 1.0)
-		if bool(p["from_ground"]):
-			# Straight back to the -z end, on the untouched ground there: the ramp leaves a
-			# road band that tilts as the road climbs, at that band's own height.
-			var hz := float(p["hz"])
-			level = lerpf(ground_height(float(p["x"]) + lx * float(p["c"]) - hz * float(p["s"]), float(p["z"]) - lx * float(p["s"]) - hz * float(p["c"])), level, t)
-		elif float(p["from"]) != level:
-			level = lerpf(float(p["from"]), level, t)
+		if float(p["from"]) != level:
+			level = lerpf(float(p["from"]), level, clampf(lz / float(p["hz"]) * 0.5 + 0.5, 0.0, 1.0))
 		h = lerpf(h, level, weight)
 	return h
 
@@ -758,9 +733,6 @@ func ground_colour(x: float, z: float) -> Color:
 
 
 func _colour_at(x: float, z: float, digs: bool) -> Color:
-	# The tunnel's floor under its road shows through potholes: gravel, not grass.
-	if heights != null and heights.in_tunnel(x, z, 1.0):
-		return GRAVEL
 	if _biomes == null:
 		return GRASS
 	var c := GRASS.lerp(STRAW, _biomes.dry(x, z))

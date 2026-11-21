@@ -1,23 +1,17 @@
 extends GdUnitTestSuite
+## The biome noise fields WorldLand shapes by the land.
 
-const CONFIG := "res://modules/world/data/world.json"
+const CONFIG := {"seed": 77.0, "forest_frequency": 0.012, "forest_threshold": 0.52, "dry_frequency": 0.01, "rock_frequency": 0.018, "rock_threshold": 0.66}
 
 var _biomes: Biomes
 
 
 func before_test() -> void:
-	var data: Dictionary = Data.load_json(CONFIG)
-	_biomes = Biomes.new(data["biomes"])
-
-
-func test_config_has_every_required_field() -> void:
-	var data: Dictionary = Data.load_json(CONFIG)
-	assert_bool(Data.require(CONFIG, data["biomes"], Biomes.REQUIRED)).is_true()
+	_biomes = Biomes.new(CONFIG)
 
 
 func test_same_seed_same_biome() -> void:
-	var data: Dictionary = Data.load_json(CONFIG)
-	var other := Biomes.new(data["biomes"])
+	var other := Biomes.new(CONFIG)
 	assert_float(other.forest(37.0, -81.0)).is_equal(_biomes.forest(37.0, -81.0))
 
 
@@ -50,23 +44,3 @@ func test_forests_are_never_dry() -> void:
 		if _biomes.forest(x, 10.0) > 0.99:
 			assert_float(_biomes.dry(x, 10.0)).is_less(0.02)
 
-
-func test_bake_covers_the_area_at_its_resolution() -> void:
-	var tex := _biomes.bake(Rect2(-64.0, -256.0, 128.0, 256.0), 4.0)
-	assert_int(tex.get_width()).is_equal(32)
-	assert_int(tex.get_height()).is_equal(64)
-
-
-func test_stages_move_the_biomes_down_the_road() -> void:
-	var data: Dictionary = Data.load_json(CONFIG)
-	var staged := Biomes.new(data["biomes"], RoadStages.new([{"at": 0.0, "forest": 1.0, "dry": 0.0}, {"at": 1000.0, "forest": 0.0, "dry": 1.0}]))
-	var early_forest := 0.0
-	var late_forest := 0.0
-	var late_dry := 0.0
-	for i in 200:
-		var x := -100.0 + i
-		early_forest += staged.forest(x, -10.0)
-		late_forest += staged.forest(x, -1500.0)
-		late_dry += staged.dry(x, -1500.0)
-	assert_float(early_forest).is_greater(late_forest + 20.0)
-	assert_float(late_dry).is_greater(100.0)

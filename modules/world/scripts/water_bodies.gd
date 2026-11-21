@@ -9,7 +9,7 @@ extends RefCounted
 ## to a bed that slopes from the edge to `depth` below the level over `shore` metres; outside,
 ## higher ground eases down to just over the level within `bank` metres, so a pond on a slope
 ## gets a sloping bank instead of a pit.
-## Runs without autoloads (the world builder uses TerrainHeights).
+## Runs without autoloads (MapShape builds it in WorldMaps).
 
 ## Each: {outline: PackedVector2Array, level, depth, box: Rect2}.
 var bodies: Array[Dictionary] = []

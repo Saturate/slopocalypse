@@ -1,20 +1,17 @@
 extends SceneTree
-## Builds modules/world/scenes/world.tscn: terrain node, light, sky, cover boxes, spawn point.
+## Builds modules/world/scenes/world.tscn: terrain node, scenery, light, sky, boundary, spawn
+## point. The map is built at runtime, so the root (WorldRoot) puts the spawn, the car and the
+## boundary walls on it then.
 
 const OUT := "res://modules/world/scenes/world.tscn"
 const CONFIG := "res://modules/world/data/world.json"
 
 
 func _initialize() -> void:
-	var config: Variant = JSON.parse_string(FileAccess.get_file_as_string(CONFIG))
-	if not config is Dictionary:
-		push_error("%s: could not parse" % CONFIG)
-		quit(1)
-		return
-	var heights := TerrainHeights.new(config)
-
 	var root := Node3D.new()
 	root.name = "World"
+	root.set_script(load("res://modules/world/scripts/world_root.gd"))
+	root.set("config_path", CONFIG)
 
 	# Smooth voxel terrain, built at runtime by VoxelWorld (Voxel Tools) from world.json.
 	var terrain := Node3D.new()
@@ -22,13 +19,6 @@ func _initialize() -> void:
 	terrain.set_script(load("res://modules/world/scripts/voxel_world.gd"))
 	terrain.set("config_path", CONFIG)
 	root.add_child(terrain)
-
-	# The tunnel the road (and the players) come out of; built at runtime from world.json.
-	var tunnel := Node3D.new()
-	tunnel.name = "StartTunnel"
-	tunnel.set_script(load("res://modules/world/scripts/start_tunnel.gd"))
-	tunnel.set("config_path", CONFIG)
-	root.add_child(tunnel)
 
 	var scenery := Node3D.new()
 	scenery.name = "Scenery"
@@ -97,39 +87,15 @@ func _initialize() -> void:
 	env.add_to_group(&"world_environment", true)
 	root.add_child(env)
 
-	var cover_root := Node3D.new()
-	cover_root.name = "Cover"
-	root.add_child(cover_root)
-	# Weathered concrete and timber (CC0 ambientCG) instead of flat colours.
-	var palette: Array[StandardMaterial3D] = [
-		WorldMaterials.triplanar("Concrete034", Color(0.6, 0.59, 0.56), 2.0),
-		WorldMaterials.triplanar("Planks037A", Color(0.7, 0.64, 0.56), 1.5),
-		WorldMaterials.triplanar("Concrete034", Color(0.48, 0.47, 0.45), 2.0),
-	]
-	var index := 0
-	for item: Dictionary in config["cover"]:
-		cover_root.add_child(_cover_box(index, item, heights, palette[index % palette.size()]))
-		index += 1
-
-	root.add_child(_boundary(heights.extent()))
+	root.add_child(_boundary())
 
 	var spawn := Marker3D.new()
 	spawn.name = "SpawnPoint"
-	spawn.position = Vector3(0.0, heights.height_at(0.0, 0.0) + 1.0, 0.0)
 	spawn.add_to_group(&"spawn_point", true)
 	root.add_child(spawn)
 
-	# The car waits on the road just outside the tunnel, nose down the road (cars drive along
-	# their +Z, the road runs along -Z).
 	var car := Marker3D.new()
 	car.name = "CarSpawn"
-	var car_z := 0.0
-	var car_side := 0.0
-	if heights.has_tunnel():
-		car_z = float(heights.start["portal_z"]) - float(heights.start["car_distance"])
-		car_side = float(heights.start["car_side"])
-	var car_x := (heights.road.x_at(car_z) if heights.road != null else 0.0) + car_side
-	car.transform = Transform3D(Basis(Vector3.UP, PI), Vector3(car_x, heights.height_at(car_x, car_z) + 1.0, car_z))
 	root.add_child(car)
 
 	var result := SceneBuilder.pack_and_save(root, OUT)
@@ -141,55 +107,14 @@ func _initialize() -> void:
 	quit(0)
 
 
-## Invisible walls just inside the world's edge so nobody walks or drives off it.
-func _boundary(area: Rect2) -> StaticBody3D:
+## Invisible walls just inside the world's edge so nobody walks or drives off it; WorldRoot
+## sizes and places them on the map.
+func _boundary() -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.name = "Boundary"
-	var inset := 1.0
-	var left := area.position.x + inset
-	var right := area.end.x - inset
-	var far := area.position.y + inset
-	var near := area.end.y - inset
-	var mid := area.get_center()
-	# Tall enough to reach well below the voxel depth, so nothing slips under the wall.
-	var height := 400.0
-	var thickness := 2.0
-	var walls := [
-		["North", Vector3(mid.x, 0.0, far), Vector3(area.size.x, height, thickness)],
-		["South", Vector3(mid.x, 0.0, near), Vector3(area.size.x, height, thickness)],
-		["West", Vector3(left, 0.0, mid.y), Vector3(thickness, height, area.size.y)],
-		["East", Vector3(right, 0.0, mid.y), Vector3(thickness, height, area.size.y)],
-	]
-	for w: Array in walls:
+	for side: String in ["North", "South", "West", "East"]:
 		var shape := CollisionShape3D.new()
-		shape.name = w[0]
-		var box := BoxShape3D.new()
-		box.size = w[2]
-		shape.shape = box
-		shape.position = w[1]
+		shape.name = side
+		shape.shape = BoxShape3D.new()
 		body.add_child(shape)
-	return body
-
-
-func _cover_box(index: int, item: Dictionary, heights: TerrainHeights, mat: Material) -> StaticBody3D:
-	var size := Vector3(item["w"], item["h"], item["d"])
-	var x: float = item["x"]
-	var z: float = item["z"]
-	var body := StaticBody3D.new()
-	body.name = "Cover%d" % index
-	# Sink the box a little so it never floats on a slope.
-	body.position = Vector3(x, heights.height_at(x, z) + size.y / 2.0 - 0.3, z)
-	var mesh := MeshInstance3D.new()
-	mesh.name = "Mesh"
-	var box := BoxMesh.new()
-	box.size = size
-	box.material = mat
-	mesh.mesh = box
-	body.add_child(mesh)
-	var shape := CollisionShape3D.new()
-	shape.name = "Shape"
-	var box_shape := BoxShape3D.new()
-	box_shape.size = size
-	shape.shape = box_shape
-	body.add_child(shape)
 	return body

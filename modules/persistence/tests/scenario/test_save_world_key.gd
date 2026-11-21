@@ -46,7 +46,7 @@ func _put_world(saves: Node) -> void:
 
 func test_a_save_from_before_saves_knew_their_world_is_moved_aside() -> void:
 	var path := _dir.path_join("world.db")
-	var old := _saves(path, "strip")
+	var old := _saves(path, "flat")
 	_put_world(old)
 	old.set(&"store", null)
 	# Same file, opened by a server that plays a generated map.
@@ -72,6 +72,6 @@ func test_a_save_for_this_world_is_kept() -> void:
 
 
 func test_a_fresh_save_just_records_its_world() -> void:
-	var saves := _saves(_dir.path_join("world.db"), "strip")
+	var saves := _saves(_dir.path_join("world.db"), "flat")
 	saves.call(&"_check_map")
-	assert_str(str(bytes_to_var((saves.get(&"store") as SaveStore).load_part("map")["data"]))).is_equal("strip")
+	assert_str(str(bytes_to_var((saves.get(&"store") as SaveStore).load_part("map")["data"]))).is_equal("flat")

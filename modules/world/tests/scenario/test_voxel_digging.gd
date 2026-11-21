@@ -4,9 +4,11 @@ extends GdUnitTestSuite
 
 const WORLD := "res://modules/world/scenes/world.tscn"
 
-## Open ground down the road from the start tunnel (rays at the spawn would hit its roof).
-const OUT := Vector3(0, 0, -40)
+## Metres of open ground round `_out`: no road (pads keep off roads) and no pond.
+const OPEN_REACH := 50.0
 
+## Open ground near the camp, kept built for the test.
+var _out := Vector3.ZERO
 var _world: Node3D
 var _voxels: VoxelWorld
 
@@ -14,6 +16,38 @@ var _voxels: VoxelWorld
 func before_test() -> void:
 	_world = await VoxelWorld.add_and_wait(self, WORLD)
 	_voxels = _world.get_node("Terrain")
+	_out = _open_ground()
+	var viewer := _voxels.make_viewer()
+	_world.add_child(viewer)
+	viewer.global_position = _out
+	_voxels.update_around([_out], INF)
+
+
+## The nearest spot to the camp, on rings 40 m apart, with OPEN_REACH metres of open ground
+## round it.
+func _open_ground() -> Vector3:
+	var shape := _voxels.heights
+	var home := _voxels.home
+	for ring in range(1, 20):
+		for k in 16:
+			var angle := TAU * k / 16.0
+			var at := home + Vector3(cos(angle), 0, sin(angle)) * ring * 40.0
+			if _is_open(shape, at):
+				return Vector3(at.x, 0, at.z)
+	fail("no open ground near the camp")
+	return home
+
+
+func _is_open(shape: GroundShape, at: Vector3) -> bool:
+	if shape.near_road(at.x, at.z, OPEN_REACH):
+		return false
+	for dx in range(-5, 6):
+		for dz in range(-5, 6):
+			var x := at.x + dx * OPEN_REACH / 5.0
+			var z := at.z + dz * OPEN_REACH / 5.0
+			if shape.in_water(x, z) or shape.near_road(x, z, 4.0) or shape.on_site(x, z):
+				return false
+	return true
 
 
 func after_test() -> void:
@@ -27,17 +61,17 @@ func _ray_down(at: Vector3) -> float:
 
 
 func test_spawn_area_loads() -> void:
-	assert_bool(_voxels.is_ready_at(Vector3.ZERO)).is_true()
+	assert_bool(_voxels.is_ready_at(_voxels.home)).is_true()
 
 
 func test_collision_matches_the_ground() -> void:
 	await get_tree().physics_frame
-	for at in [OUT + Vector3(3, 0, 3), OUT + Vector3(-10, 0, 6), OUT + Vector3(12, 0, -12)]:
+	for at in [_out + Vector3(3, 0, 3), _out + Vector3(-10, 0, 6), _out + Vector3(12, 0, -12)]:
 		assert_float(_ray_down(at)).is_equal_approx(_voxels.ground_height(at.x, at.z), 0.05)
 
 
 func test_digging_lowers_the_ground_and_its_collision() -> void:
-	var spot := OUT + Vector3(3, 0, 3)
+	var spot := _out + Vector3(3, 0, 3)
 	var before := _voxels.surface_height(spot.x, spot.z)
 	spot.y = before
 	_voxels.server_dig(spot, 2.0)
@@ -49,7 +83,7 @@ func test_digging_lowers_the_ground_and_its_collision() -> void:
 
 func test_a_crater_keeps_its_size_and_its_walls_are_walkable() -> void:
 	# The biggest blast in the game, on open ground.
-	var spot := OUT + Vector3(-12, 0, -8)
+	var spot := _out + Vector3(-12, 0, -8)
 	var radius := 4.0
 	var before := _voxels.surface_height(spot.x, spot.z)
 	spot.y = before
@@ -62,7 +96,7 @@ func test_a_crater_keeps_its_size_and_its_walls_are_walkable() -> void:
 
 
 func test_blasting_the_same_crater_again_keeps_it_walkable() -> void:
-	var spot := OUT + Vector3(14, 0, -6)
+	var spot := _out + Vector3(14, 0, -6)
 	var radius := 4.0
 	var before := _voxels.surface_height(spot.x, spot.z)
 	for i in 4:
@@ -75,13 +109,13 @@ func test_blasting_the_same_crater_again_keeps_it_walkable() -> void:
 
 
 func test_a_blast_in_the_air_dents_less_and_high_enough_not_at_all() -> void:
-	var spot := OUT + Vector3(-6, 0, 10)
+	var spot := _out + Vector3(-6, 0, 10)
 	var radius := 2.0
 	var most := radius * _voxels.crater_depth_share
 	var before := _voxels.surface_height(spot.x, spot.z)
 	_voxels.server_dig(spot + Vector3.UP * (before - spot.y + most * 0.5), radius)
 	assert_float(_voxels.surface_height(spot.x, spot.z)).is_equal_approx(before - most * 0.5, 0.01)
-	var far := OUT + Vector3(8, 0, 12)
+	var far := _out + Vector3(8, 0, 12)
 	var untouched := _voxels.surface_height(far.x, far.z)
 	_voxels.server_dig(Vector3(far.x, untouched + most + 0.1, far.z), radius)
 	assert_float(_voxels.surface_height(far.x, far.z)).is_equal(untouched)
@@ -90,7 +124,7 @@ func test_a_blast_in_the_air_dents_less_and_high_enough_not_at_all() -> void:
 
 func test_digging_stops_at_the_deepest_a_crater_may_go() -> void:
 	# Wide enough that its share of the radius would go deeper than the cap.
-	var spot := OUT + Vector3(-3, 0, 3)
+	var spot := _out + Vector3(-3, 0, 3)
 	var radius := _voxels.max_dig_depth / _voxels.crater_depth_share + 2.0
 	var deepest := _voxels.ground_height(spot.x, spot.z) - _voxels.max_dig_depth
 	for i in 4:
@@ -99,7 +133,7 @@ func test_digging_stops_at_the_deepest_a_crater_may_go() -> void:
 
 
 func test_ground_levelled_by_one_owner_is_claimed_for_everyone_else() -> void:
-	var at := OUT + Vector3(30, 0, 0)
+	var at := _out + Vector3(30, 0, 0)
 	_voxels.set_pads_for(&"city", [{"at": at, "half": Vector2(20, 10), "yaw": PI / 2.0, "blend": 6.0}])
 	# Turned a quarter: 10 m across x, 20 m along z, and its blend round that.
 	assert_bool(_voxels.is_claimed(at + Vector3(0, 0, 18), 1.0, &"")).is_true()
@@ -112,7 +146,7 @@ func test_ground_levelled_by_one_owner_is_claimed_for_everyone_else() -> void:
 
 func test_a_pad_can_slope_from_one_end_to_the_other() -> void:
 	# A ramp 20 m long along z (yaw 0): 2 m up at -z, level with 0 at +z.
-	var at := OUT + Vector3(-30, 0, 0)
+	var at := _out + Vector3(-30, 0, 0)
 	_voxels.set_pads_for(&"ramp", [{"at": at, "half": Vector2(4, 10), "yaw": 0.0, "blend": 3.0, "from": at.y + 2.0}])
 	assert_float(_voxels.surface_height(at.x, at.z - 10.0)).is_equal_approx(at.y + 2.0, 0.01)
 	assert_float(_voxels.surface_height(at.x, at.z)).is_equal_approx(at.y + 1.0, 0.01)
@@ -121,7 +155,7 @@ func test_a_pad_can_slope_from_one_end_to_the_other() -> void:
 
 func test_a_crater_on_a_pad_replays_as_deep_without_the_pad() -> void:
 	# A levelled pad 2 m over the ground, as under a mission building on a slope.
-	var spot := OUT + Vector3(10, 0, 8)
+	var spot := _out + Vector3(10, 0, 8)
 	var ground := _voxels.ground_height(spot.x, spot.z)
 	_voxels.set_pads_for(&"test", [{"at": Vector3(spot.x, ground + 2.0, spot.z), "half": Vector2(6, 6), "yaw": 0.0, "blend": 3.0}])
 	var on_pad := _voxels.surface_height(spot.x, spot.z)
@@ -141,7 +175,7 @@ func test_a_crater_on_a_pad_replays_as_deep_without_the_pad() -> void:
 func test_a_dig_says_where_the_hole_went() -> void:
 	var holes: Array[Vector3] = []
 	_voxels.dug.connect(func(center: Vector3, _radius: float) -> void: holes.append(center))
-	var at := OUT + Vector3(4, -50, 4)
+	var at := _out + Vector3(4, -50, 4)
 	var before := _voxels.surface_height(at.x, at.z)
 	# Deep under the ground counts as on it: no deeper than one bowl.
 	_voxels.server_dig(at, 1.0)
@@ -171,15 +205,16 @@ func _assert_walkable(spot: Vector3, reach: float) -> void:
 func test_players_standing_on_the_terrain_do_not_fall_through() -> void:
 	var player: PlayerController = auto_free((load("res://modules/player/scenes/player.tscn") as PackedScene).instantiate())
 	add_child(player)
-	player.global_position = Vector3(0, 2, 0)
+	var ground := _voxels.surface_height(_out.x, _out.z)
+	player.global_position = Vector3(_out.x, ground + 2.0, _out.z)
 	for i in 120:
 		await get_tree().physics_frame
 	assert_bool(player.is_on_floor()).is_true()
-	assert_float(player.global_position.y).is_equal_approx(0.0, 0.3)
+	assert_float(player.global_position.y).is_equal_approx(ground, 0.3)
 
 
 func test_a_pad_levels_the_ground_under_it_and_eases_back_into_the_slope() -> void:
-	var centre := OUT + Vector3(14, 0, -6)
+	var centre := _out + Vector3(14, 0, -6)
 	var level := _voxels.ground_height(centre.x, centre.z) + 0.7
 	# Nothing growing on it, as missions and the city clear theirs: the rays below are for the
 	# ground, not a tree or rock that happens to stand there.

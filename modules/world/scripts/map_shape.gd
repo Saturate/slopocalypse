@@ -63,6 +63,10 @@ func near_road(x: float, z: float, margin: float) -> bool:
 	return works != null and works.road_distance(x, z) < margin
 
 
+func road_edge_distance(x: float, z: float) -> float:
+	return maxf(works.road_distance(x, z), 0.0) if works != null else INF
+
+
 func on_site(x: float, z: float) -> bool:
 	var p := Vector2(x, z)
 	for foot in _site_feet:

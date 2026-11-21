@@ -21,9 +21,7 @@ Running notes: playtest feedback, findings, known issues and ideas for later. De
 ## Known issues
 
 - Gore: limbs taken off while Blood was on stay off if Blood is turned off and on again, but their stump caps are removed and not put back (#387).
-- The start tunnel is a trench in the height-map ground with a voxel lining, roof and rock cover built over it (#124). From far away, at coarse ground detail, the trench edges can show beside the cover; the cover reaches 2 m past the trench to hide it up close.
 
-- Cover boxes are axis-aligned on slopes, so one corner digs in and the far end can lift (visual review, #7). Fine for greybox; align to the terrain normal when the real map arrives.
 - Car chase camera is rigidly parented to the car, so speed and turns are hard to read (visual review, #8). A smoothed follow camera with lag and FOV kick is a candidate after the Checkpoint A playtest.
 - The box car has no front or back shape, so its heading is hard to read from outside.
 - Trees and rocks stay floating where the ground was dug away (grass now goes, and dug ground shows as dirt).

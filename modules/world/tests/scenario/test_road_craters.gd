@@ -3,14 +3,15 @@ extends GdUnitTestSuite
 ## pieces that load in after the explosion come with the crater already in them.
 
 const CONFIG := "res://modules/world/data/world.json"
-const AT_Z := -40.0
+## Metres along the highway from the camp.
+const ALONG := 40.0
 
 var _scatter: SceneryScatter
 
 
 func before_test() -> void:
 	_scatter = auto_free(SceneryScatter.new())
-	_scatter.config_path = CONFIG
+	_scatter.config_path = _near_config(48.0)
 	# Headless runs skip visuals; the road is a visual, so build it anyway.
 	_scatter.set(&"_visual", true)
 	_scatter.set_process(false)
@@ -18,8 +19,7 @@ func before_test() -> void:
 
 
 func _road_point() -> Vector3:
-	var heights := TerrainHeights.new(Data.load_json(CONFIG))
-	return Vector3(heights.road.x_at(AT_Z), heights.road.height_at(AT_Z), AT_Z)
+	return WorldMaps.shape_or_default().road_point(ALONG)
 
 
 func _road_voxels() -> int:
@@ -44,7 +44,8 @@ func test_a_crater_off_the_road_leaves_it_alone() -> void:
 	var at := _road_point()
 	_scatter.update_around([at], INF)
 	var whole := _road_voxels()
-	_scatter.on_dug(at + Vector3(30.0, 0.0, 0.0), 2.0)
+	var side := WorldMaps.shape_or_default().forward().cross(Vector3.UP)
+	_scatter.on_dug(at + side * 30.0, 2.0)
 	assert_int(_road_voxels()).is_equal(whole)
 
 
@@ -58,3 +59,15 @@ func test_road_loaded_later_has_the_old_crater() -> void:
 	_scatter.on_dug(at, 2.0)
 	_scatter.update_around([at], INF)
 	assert_int(_road_voxels()).is_less(whole)
+
+
+## world.json with scenery built only `reach` metres round whoever needs it: the map has
+## many roads, and building every piece within the full load distance costs seconds a test.
+static func _near_config(reach: float) -> String:
+	var data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(CONFIG))
+	(data["scatter"] as Dictionary)["load_distance"] = reach
+	var path := "user://test_world_near.json"
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	file.store_string(JSON.stringify(data))
+	file.close()
+	return path

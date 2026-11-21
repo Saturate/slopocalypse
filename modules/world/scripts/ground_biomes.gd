@@ -1,8 +1,7 @@
 class_name GroundBiomes
 extends RefCounted
 ## What grows and lies on the ground at a point, 0 to 1 each: woods, dry grass, rock. The
-## terrain colours and the scenery read these; the strip (Biomes) and the generated map
-## (LandBiomes) answer them their own way (#472).
+## terrain colours and the scenery read these; the generated map answers them (LandBiomes).
 
 
 func forest(_x: float, _z: float) -> float:

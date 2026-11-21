@@ -1,10 +1,11 @@
 class_name WorldMaps
 extends RefCounted
 ## Which generated map this game plays (#472), built once and shared: the terrain, the
-## scenery and the modules placing things all read the same MapShape. Nothing selected: the
-## strip is played. Runs without autoloads (the voxel world and scenery read it in _ready).
+## scenery and the modules placing things all read the same MapShape. Runs without autoloads
+## (the voxel world and scenery read it in _ready).
 
 const MAPS_DIR := "res://modules/world/data/maps"
+const CONFIG := "res://modules/world/data/world.json"
 
 static var _recipe_name := ""
 static var _seed := 0
@@ -16,6 +17,27 @@ static func select(recipe_name: String, seed_value: int) -> void:
 		_shape = null
 	_recipe_name = recipe_name
 	_seed = seed_value
+
+
+## The map `world.json` `map` names (recipe and seed): what a world built without the world
+## module (a test, a capture) stands on. False when that section is missing.
+static func select_default() -> bool:
+	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(CONFIG))
+	if not data is Dictionary or not (data as Dictionary).get("map") is Dictionary:
+		return false
+	var cfg: Dictionary = data["map"]
+	if not cfg.get("recipe") is String or not (cfg.get("seed") is float or cfg.get("seed") is int):
+		return false
+	select(str(cfg["recipe"]), int(cfg["seed"]))
+	return true
+
+
+## The selected map, or the default one when none is selected; null when that recipe is
+## missing or broken.
+static func shape_or_default() -> MapShape:
+	if not is_selected():
+		select_default()
+	return shape()
 
 
 static func clear() -> void:
@@ -41,7 +63,7 @@ static func shape() -> MapShape:
 		return _shape
 	var path := MAPS_DIR.path_join(_recipe_name + ".json")
 	var recipe: Variant = JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
-	# Said once by whoever selected it (the world module falls back to the strip).
+	# Said once by whoever selected it (the world module).
 	if not recipe is Dictionary or not MapRender.check(recipe).is_empty():
 		return null
 	var built := MapRender.build(recipe, _seed)

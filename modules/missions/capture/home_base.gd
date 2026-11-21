@@ -1,6 +1,6 @@
 extends Node3D
-## Capture setup: first person in the home tunnel, turning from the mission board on the wall
-## to the transport car parked further in, then the board screen open.
+## Capture setup: first person at the camp, turning from the mission board
+## to the transport car beside it, then the board screen open.
 
 const WORLD := "res://modules/world/scenes/world.tscn"
 const PLAYER := "res://modules/player/scenes/player.tscn"
