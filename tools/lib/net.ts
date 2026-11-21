@@ -166,21 +166,33 @@ function seatProblems(name: string, r: ProcResult, players: number): string[] {
 	return problems;
 }
 
+// Longest wait for the sitting client to get in before the late client starts anyway.
+const SEAT_WAIT_MS = 90_000;
+
 // Someone who joins after a player got in the car. Getting in is broadcast once, to whoever
 // is connected then, so the late client only knows about it if the server catches it up
 // (#433): it must show the driver parked and the car as driven, as the server does.
-export async function lateJoinSmoke(godot: string, root: string, port = 7795): Promise<StepResult> {
+export async function lateJoinSmoke(godot: string, root: string, port = 7792): Promise<StepResult> {
 	const base = ["--headless", "--path", root, "--"];
 	const join = `--connect=127.0.0.1:${port}`;
 	// The server counts from its first player and outlasts both clients' reports; the sitter
 	// reports late enough to have walked to the car and got in.
 	const server = run(godot, [...base, `--server=${port}`, "--net-report-after=2400", "--no-save"], { cwd: root, timeoutMs: 180_000 });
 	await delay(4000);
-	const sitter = run(godot, [...base, join, "--net-report-after=900", "--bot=sit", "--name=Sitter"], { cwd: root, timeoutMs: 180_000 });
-	// Long enough for the sitter to be in the car before the second client knocks.
-	await delay(20_000);
+	let markSeated = (): void => {};
+	const seated = new Promise<void>((resolve) => (markSeated = resolve));
+	const sitter = run(godot, [...base, join, "--net-report-after=900", "--bot=sit", "--name=Sitter"], {
+		cwd: root,
+		timeoutMs: 180_000,
+		// CarBot.SEATED_LOG: the sitter is in the car, so the second client can knock.
+		onOutput: (output) => {
+			if (output.includes("bot seated")) markSeated();
+		},
+	});
+	// A sitter that never sits ends (report or timeout) and fails below; don't wait past that.
+	await Promise.race([seated, sitter, delay(SEAT_WAIT_MS)]);
 	const late = run(godot, [...base, join, "--net-report-after=300", "--name=Late"], { cwd: root, timeoutMs: 180_000 });
-	// The sitter reports before the late client is in; everyone else sees both players.
+	// The sitter may report before the late client is in; everyone else sees both players.
 	const results: [string, ProcResult][] = [["server", await server], ["sitting client", await sitter], ["late client", await late]];
 	const problems = results.flatMap(([name, r]) => seatProblems(name, r, name === "sitting client" ? 1 : 2));
 	return problems.length > 0

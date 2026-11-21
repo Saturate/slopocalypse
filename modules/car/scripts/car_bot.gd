@@ -7,6 +7,7 @@ extends Node
 
 const BEHAVIOUR := "drive"
 const SIT := "sit"
+const SEATED_LOG := "bot seated"
 ## Let the player land and the car settle before walking over.
 const WAIT_TICKS := 90
 const DRIVE_TICKS := 240
@@ -30,6 +31,9 @@ func entered(car: CarController) -> void:
 	_car = car
 	_state = State.DRIVE
 	_ticks = 0
+	if sit:
+		# tools/lib/net.ts lateJoinSmoke waits for this line before a second client joins.
+		Log.info(&"car", SEATED_LOG)
 
 
 func _physics_process(_delta: float) -> void:
