@@ -34,6 +34,9 @@ const REQUIRED := {
 var config: Dictionary = {}
 var target: Node3D
 var downed := false
+## The players' camp (#420): it never dives at anyone inside the fence, and pulls out of a
+## dive when its target gets in. Null: nowhere is safe.
+var safe_zone: CampLayout
 
 var _health: HealthComponent
 var _rotors: Node3D
@@ -184,6 +187,11 @@ func _watch_sights(delta: float) -> void:
 		server_anger(watcher)
 
 
+## Whether `who` stands inside the camp's fence, where no drone dives.
+func is_safe(who: Node3D) -> bool:
+	return safe_zone != null and who != null and safe_zone.inside(who.global_position)
+
+
 func is_diving() -> bool:
 	return _dive_left >= 0.0
 
@@ -211,8 +219,8 @@ func _step_dive(delta: float) -> void:
 	if to.length() < float(config["dive_trigger_radius"]):
 		server_detonate(float(config["dive_blast_radius"]), float(config["dive_damage"]))
 		return
-	if _dive_left < 0.0 or target.get_meta(&"dead", false):
-		# Missed: pull up and go back to circling.
+	if _dive_left < 0.0 or target.get_meta(&"dead", false) or is_safe(target):
+		# Missed, or its target got into the camp: pull up and go back to circling.
 		_dive_left = -1.0
 		_until_dive = _next_dive()
 		return
@@ -238,8 +246,12 @@ func _step_stalk(delta: float) -> void:
 	if _angry:
 		_until_dive -= delta
 		if _until_dive <= 0.0 and not target.get_meta(&"dead", false):
-			server_dive()
-			return
+			if is_safe(target):
+				# Waits its next turn: someone stepping out of the camp is fair game again.
+				_until_dive = _next_dive()
+			else:
+				server_dive()
+				return
 	_until_turn -= delta
 	if _until_turn <= 0.0:
 		_orbit_direction = -_orbit_direction if _rng.randf() < 0.5 else _orbit_direction

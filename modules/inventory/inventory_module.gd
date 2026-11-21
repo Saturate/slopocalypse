@@ -557,7 +557,8 @@ func _on_world_ready(payload: Dictionary) -> void:
 	if not multiplayer.is_server():
 		return
 	var spawn: Vector3 = payload.get("spawn", Vector3.ZERO)
-	# Crates spread around the road outside the start tunnel, on its open side.
+	# Crates spread along the highway out of the camp's gate, on its open side, starting past
+	# the camp's fence.
 	var front: Vector3 = payload.get("front", spawn)
 	var forward: Vector3 = payload.get("forward", Vector3.ZERO)
 	var crates: Dictionary = _data.get("crates", {})
@@ -1099,7 +1100,7 @@ func _on_ground(at: Vector3) -> Vector3:
 	if world == null:
 		return at
 	# From just over the ground (or over `at` when that is higher, e.g. on a roof), not from
-	# high above: under a roof, like in the start tunnel, that would land on the roof.
+	# high above: under a roof, like a building's, that would land on the roof.
 	var from_y := at.y + 20.0
 	var ground_node := get_tree().get_first_node_in_group(&"ground")
 	if ground_node != null and ground_node.has_method(&"ground_height"):

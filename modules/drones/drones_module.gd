@@ -1,6 +1,8 @@
 extends Node
 ## Keeps a stalker drone on the hunt: spawns one at a distance from a player once the world
 ## is ready, and sends a replacement a few seconds after each one goes down. Server only.
+## The players' camp is safe (#420): a drone is never sent for someone inside its fence,
+## strike drones are not drawn to shots fired from inside, and no drone dives in there.
 ## Other modules (missions) send strike drones at spots through the `drones_api` group:
 ## `server_spawn_strike`, `strike_count`, `server_clear_strikes`.
 
@@ -11,6 +13,8 @@ const SPAWN_HEIGHT := 20.0
 
 var config: Dictionary = {}
 var _players: Array[Node3D] = []
+## The players' camp, from `world.ready`; null until then.
+var camp: CampLayout
 var _drones: Array[StalkerDrone] = []
 var _respawn_in := -1.0
 var _rng := RandomNumberGenerator.new()
@@ -44,9 +48,23 @@ func _ready() -> void:
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	EventBus.subscribe(&"admin.spawn", _on_admin_spawn)
 	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)
+	EventBus.subscribe(&"world.ready", _on_world_ready)
+
+
+func _on_world_ready(p: Dictionary) -> void:
+	camp = CampLayout.of_ready(p)
+	for drone in _drones + _strikes:
+		if is_instance_valid(drone):
+			drone.safe_zone = camp
+
+
+## Whether `who` is inside the camp's fence.
+func in_camp(who: Node3D) -> bool:
+	return camp != null and who != null and camp.inside(who.global_position)
 
 
 func _exit_tree() -> void:
+	EventBus.unsubscribe(&"world.ready", _on_world_ready)
 	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
 	EventBus.unsubscribe(&"admin.spawn", _on_admin_spawn)
 	EventBus.unsubscribe(&"weapon.fired", _on_weapon_fired)
@@ -79,8 +97,13 @@ func _physics_tick(delta: float) -> void:
 	_players = alive
 	if _respawn_in >= 0.0:
 		_respawn_in -= delta
-		if _respawn_in < 0.0 and _drones.size() < int(config["max_drones"]) and not _players.is_empty():
-			server_spawn(_players[_rng.randi() % _players.size()])
+		if _respawn_in < 0.0 and _drones.size() < int(config["max_drones"]):
+			var out_there := _players.filter(func(p: Node3D) -> bool: return not in_camp(p))
+			if out_there.is_empty():
+				# Everyone is home: look again in a second.
+				_respawn_in = 1.0
+			else:
+				server_spawn(out_there[_rng.randi() % out_there.size()])
 
 
 ## Server only: a new drone appears high up at spawn distance from `target` and hunts it.
@@ -93,6 +116,7 @@ func server_spawn(target: Node3D) -> StalkerDrone:
 	var drone: StalkerDrone = _spawner.spawn({"index": _spawned_count, "position": at})
 	_spawned_count += 1
 	drone.target = target
+	drone.safe_zone = camp
 	drone.destroyed.connect(_on_drone_destroyed.bind(drone))
 	_drones.append(drone)
 	return drone
@@ -128,6 +152,7 @@ func server_spawn_strike(point: Vector3) -> StalkerDrone:
 	at.y = maxf(point.y, StalkerDrone.terrain_height(get_tree(), at)) + SPAWN_HEIGHT
 	var drone: StalkerDrone = _spawner.spawn({"index": _spawned_count, "position": at})
 	_spawned_count += 1
+	drone.safe_zone = camp
 	drone.server_strike(marker)
 	drone.destroyed.connect(_on_strike_destroyed.bind(drone))
 	drone.damaged_by.connect(_on_strike_shot)
@@ -161,7 +186,7 @@ func _on_weapon_fired(p: Dictionary) -> void:
 	if not multiplayer.is_server():
 		return
 	var shooter := p.get("holder") as Node3D
-	if shooter != null and shooter.is_in_group(&"players"):
+	if shooter != null and shooter.is_in_group(&"players") and not in_camp(shooter):
 		_alert_strikes(shooter, shooter.global_position, float(config.get("strike_hear_radius", 25.0)))
 
 

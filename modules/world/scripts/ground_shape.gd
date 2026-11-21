@@ -47,3 +47,9 @@ func near_site(_x: float, _z: float, _clearance: Dictionary) -> bool:
 ## ground kept free of trees.
 func near_power(_x: float, _z: float, _high: float, _low: float) -> bool:
 	return false
+
+
+## Whether (x, z) is on the players' camp pad or within `margin` metres of it: ground kept
+## free of trees and rocks.
+func near_camp(_x: float, _z: float, _margin: float) -> bool:
+	return false

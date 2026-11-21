@@ -48,7 +48,12 @@ func _init(places: Settlements, config: Dictionary) -> void:
 	var city := places.city()
 	if city.is_empty():
 		return
-	_join(&"highway", "camp", places.camp(), {}, "city", city)
+	# Out of the camp pad's side nearest the city, where its gate is (#420).
+	var camp := places.camp_place()
+	if camp.is_empty():
+		_join(&"highway", "camp", places.camp(), {}, "city", city)
+	else:
+		_join(&"highway", "camp", _nearest_connector(camp, city["centre"]), camp, "city", city)
 	for i in places.towns().size():
 		var town: Dictionary = places.towns()[i]
 		# From the town's side nearest the city to the city.
@@ -76,6 +81,10 @@ func add_track(site: Dictionary, name: String, avoid: Array[Rect2]) -> void:
 	# rather than running side by side); the one with the shortest way there wins, so a road
 	# just across a lake does not pull a track all the way round it.
 	var targets: Array[Vector3] = []
+	var camp_place := settlements.camp_place()
+	var camp_out := Rect2()
+	if not camp_place.is_empty():
+		camp_out = (camp_place["footprint"] as Rect2).grow(settlements.zones.cell_size() * 3.0)
 	for road in _roads:
 		var points: PackedVector2Array = road["points"]
 		var heights: PackedFloat32Array = road["heights"]
@@ -83,8 +92,10 @@ func add_track(site: Dictionary, name: String, avoid: Array[Rect2]) -> void:
 		var nearest_d := INF
 		for k in points.size():
 			var d := points[k].distance_to(centre)
-			# Not where a track leaves another site: joining there would end against it.
-			if d < nearest_d and avoid.all(func(r: Rect2) -> bool: return not r.grow(_track_half() + 2.0).has_point(points[k])):
+			# Not where a track leaves another site: joining there would end against it. Nor on
+			# the highway's straight lead out of the camp's gate.
+			if d < nearest_d and avoid.all(func(r: Rect2) -> bool: return not r.grow(_track_half() + 2.0).has_point(points[k])) \
+					and not camp_out.has_point(points[k]):
 				nearest_d = d
 				nearest = k
 		if nearest >= 0:
@@ -294,8 +305,7 @@ func _route(a: Vector2, b: Vector2, max_grade: float, cross := 0.0) -> PackedVec
 	if _heights.is_empty():
 		_heights.resize(n * n)
 		_extra.resize(n * n)
-		var places: Array[Dictionary] = [settlements.city()]
-		places.append_array(settlements.towns())
+		var places := settlements.all_places()
 		for j in n:
 			for i in n:
 				var c := zones.cell_centre(i, j)
@@ -405,8 +415,7 @@ func _straighten(path: PackedVector2Array, max_grade: float) -> PackedVector2Arr
 ## climbs steeper than `max_grade` between samples.
 func _clear_run(a: Vector2, b: Vector2, max_grade: float) -> bool:
 	var land := settlements.zones.land
-	var places: Array[Dictionary] = [settlements.city()]
-	places.append_array(settlements.towns())
+	var places := settlements.all_places()
 	var steps := maxi(ceili(a.distance_to(b) / CHECK_STEP), 1)
 	var last := land.height(a.x, a.y)
 	for k in range(1, steps + 1):

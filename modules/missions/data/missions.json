@@ -4,8 +4,6 @@
   "ride_fade_seconds": 0.8,
   "ride_home_reach": 14.0,
   "drop_spread": 2.0,
-  "board": { "offset": [4.9, 0.0, -3.0] },
-  "transport": { "offset": [-2.6, 0.0, -8.0] },
   "dropoff_side": 5.0,
   "dropoff": { "outside": 25.0, "car_gap": 1.6 },
   "roadside": { "off_road": 45.0, "ahead": 40.0 },

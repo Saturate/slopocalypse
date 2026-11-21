@@ -12,7 +12,7 @@ extends Node3D
 
 @export_file("*.json") var config_path: String = "res://modules/world/data/world.json"
 
-const REQUIRED := {"seed": TYPE_FLOAT, "trees_per_hectare": TYPE_FLOAT, "rocks_per_hectare": TYPE_FLOAT, "grass_per_m2": TYPE_FLOAT, "clear_radius": TYPE_FLOAT, "max_steepness": TYPE_FLOAT, "road_clearance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "grass_distance": TYPE_FLOAT, "tree_detail_distance": TYPE_FLOAT, "variants": TYPE_FLOAT, "tree_hits": TYPE_FLOAT, "tree_blast_reach": TYPE_FLOAT, "tree_fall_seconds": TYPE_FLOAT, "tree_collapse": TYPE_FLOAT, "tree_wither_seconds": TYPE_FLOAT, "site_clearance": TYPE_DICTIONARY, "power_clearance": TYPE_DICTIONARY}
+const REQUIRED := {"seed": TYPE_FLOAT, "trees_per_hectare": TYPE_FLOAT, "rocks_per_hectare": TYPE_FLOAT, "grass_per_m2": TYPE_FLOAT, "clear_radius": TYPE_FLOAT, "max_steepness": TYPE_FLOAT, "road_clearance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "grass_distance": TYPE_FLOAT, "tree_detail_distance": TYPE_FLOAT, "variants": TYPE_FLOAT, "tree_hits": TYPE_FLOAT, "tree_blast_reach": TYPE_FLOAT, "tree_fall_seconds": TYPE_FLOAT, "tree_collapse": TYPE_FLOAT, "tree_wither_seconds": TYPE_FLOAT, "site_clearance": TYPE_DICTIONARY, "power_clearance": TYPE_DICTIONARY, "camp_clearance": TYPE_FLOAT}
 
 const CHUNK := 64.0
 ## Chunks split across the width into cells, so distance culling works per cell.
@@ -437,13 +437,15 @@ func _build_chunk(i: int, plan: Dictionary) -> Node3D:
 	return node
 
 
-## A spot on gentle ground inside `area`, clear of the spawn and the road, kept with the
-## probability `weight(x, z)` gives.
+## A spot on gentle ground inside `area`, clear of the spawn, the camp and the road, kept
+## with the probability `weight(x, z)` gives.
 func _spot(rng: RandomNumberGenerator, area: Rect2, weight: Callable, clearings: Array[Vector3]) -> Variant:
 	for attempt in 6:
 		var x := rng.randf_range(area.position.x + 4.0, area.end.x - 4.0)
 		var z := rng.randf_range(area.position.y, area.end.y)
 		if Vector2(x - home.x, z - home.z).length() < float(_cfg["clear_radius"]):
+			continue
+		if _heights.near_camp(x, z, float(_cfg["camp_clearance"])):
 			continue
 		if _heights.near_road(x, z, float(_cfg["road_clearance"])):
 			continue

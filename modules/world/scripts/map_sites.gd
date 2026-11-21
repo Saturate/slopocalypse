@@ -33,10 +33,7 @@ func _init(map_zones: LandZones, places: Settlements, net: RoadNetwork, far: Map
 	# Settlements keep more room round them than roads do: farms crowding the city read as
 	# its suburbs, not countryside.
 	if places != null:
-		var all: Array[Dictionary] = places.towns().duplicate()
-		if not places.city().is_empty():
-			all.append(places.city())
-		for place in all:
+		for place in places.all_places():
 			occupancy.claim_anyway((place["footprint"] as Rect2).grow(float(config["settlement_clearance"])))
 	var inside := map_zones.land.bounds().grow(-float(config["edge_margin"]))
 	_spacing_any = float(config["spacing_any"])

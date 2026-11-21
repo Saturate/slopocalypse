@@ -1,9 +1,10 @@
 extends Node
-## Home base and the mission run. The start tunnel is home: a mission board on the wall
-## offers a few missions, and the car parked inside rides everyone at home out to the chosen
-## mission's drop-off; the car waiting there rides them back. The server owns the run
-## (`home`, then `in_mission` until nobody is out any more) and tells everyone through
-## `missions.*` topics.
+## Home base and the mission run. The players' camp is home: a mission board inside the
+## fence offers a few missions, and the transport parked by the gate rides everyone at home
+## out to the chosen mission's drop-off; the car waiting there rides them back. Board and
+## transport stand on their spots in the camp's layout (CampLayout, carried by
+## `world.ready`). The server owns the run (`home`, then `in_mission` until nobody is out
+## any more) and tells everyone through `missions.*` topics.
 ##
 ## Each mission goes to one of the map's sites (a farm, a cabin, a mast; MissionSites) or,
 ## where none fits, a spot beside the highway. Its zone centres on that place with mission
@@ -23,8 +24,7 @@ const RANDOM_SPOT_TRIES := 10
 const OPEN_SPOT_TRIES := 6
 const REQUIRED := {
 	"home_radius": TYPE_FLOAT, "reach": TYPE_FLOAT, "ride_fade_seconds": TYPE_FLOAT,
-	"ride_home_reach": TYPE_FLOAT, "drop_spread": TYPE_FLOAT, "board": TYPE_DICTIONARY,
-	"transport": TYPE_DICTIONARY, "dropoff_side": TYPE_FLOAT, "dropoff": TYPE_DICTIONARY, "offered": TYPE_FLOAT,
+	"ride_home_reach": TYPE_FLOAT, "drop_spread": TYPE_FLOAT, "dropoff_side": TYPE_FLOAT, "dropoff": TYPE_DICTIONARY, "offered": TYPE_FLOAT,
 	"seed": TYPE_FLOAT, "missions": TYPE_ARRAY, "zone": TYPE_DICTIONARY, "types": TYPE_DICTIONARY,
 	"codenames": TYPE_DICTIONARY, "buildings": TYPE_DICTIONARY, "starting_tokens": TYPE_FLOAT,
 }
@@ -39,6 +39,9 @@ const MARKER_NEAR := 10.0
 const MARKER_FADE := 8.0
 ## Trees are cleared this far around a building's footprint.
 const CLEARING_MARGIN := 4.0
+## Without a camp layout: board and transport this far off the spawn (the trader's stall
+## stands on the other side), so nothing stands on the spawn or in each other.
+const FALLBACK_SPOTS := {"board": Vector3(0.0, 0.0, 4.0), "transport": Vector3(0.0, 0.0, -6.0)}
 const HOME := "home"
 const IN_MISSION := "in_mission"
 
@@ -62,6 +65,8 @@ var my_tokens := 0
 var rng := RandomNumberGenerator.new()
 
 var _spawn := Vector3.ZERO
+## The players' camp (home), from `world.ready`; null until then or without a usable config.
+var _camp: CampLayout
 var _board: MissionBoard
 var _transport: TransportCar
 var _dropoff_car: TransportCar
@@ -220,25 +225,28 @@ func _on_world_ready(payload: Dictionary) -> void:
 	if multiplayer.is_server() and state == HOME and current.is_empty():
 		offers = _roll(int(config["seed"]) + _runs)
 		_broadcast()
+	_camp = CampLayout.of_ready(payload)
+	var camp := _camp
 	_board = MissionBoard.new()
 	_board.name = "MissionBoard"
 	add_child(_board)
-	_board.global_position = _home_point(config["board"])
-	_board.rotation.y = PI / 2.0 if float((config["board"]["offset"] as Array)[0]) > 0.0 else -PI / 2.0
+	_board.global_transform = _home_spot(camp, "board")
 	_transport = TransportCar.new()
 	_transport.name = "Transport"
 	add_child(_transport)
-	_transport.global_position = _home_point(config["transport"])
+	_transport.global_transform = _home_spot(camp, "transport")
 	_place_dropoff_car()
 
 
-## A spot in the tunnel `offset` from the spawn, on its floor.
-func _home_point(entry: Dictionary) -> Vector3:
-	var o: Array = entry.get("offset", [0.0, 0.0, 0.0])
-	var at := _spawn + Vector3(float(o[0]), float(o[1]), float(o[2]))
+## Where `name` stands in the camp. Without one (world.json's camp is broken, which the
+## world logs) a few metres off the spawn, apart from each other and the trader's stall.
+func _home_spot(camp: CampLayout, name: String) -> Transform3D:
+	if camp != null:
+		return camp.spot(name)
+	var off: Vector3 = FALLBACK_SPOTS.get(name, Vector3.ZERO)
 	# The spawn marker floats a metre over the floor.
-	at.y = _spawn.y - 1.0 + float(o[1])
-	return at
+	var at := _spawn + Vector3.DOWN + off
+	return Transform3D(Basis.looking_at(Vector3(_spawn.x - at.x, 0.0, _spawn.z - at.z) if off != Vector3.ZERO else Vector3.FORWARD, Vector3.UP), at)
 
 
 func _place_dropoff_car() -> void:
@@ -300,7 +308,10 @@ func facing(player: Node3D) -> String:
 	return best
 
 
+## Inside the camp's fence; without a camp, within `home_radius` of the spawn.
 func is_home(player: Node3D) -> bool:
+	if _camp != null:
+		return _camp.inside(player.global_position)
 	return player.global_position.distance_to(_spawn) < float(config.get("home_radius", 26.0))
 
 

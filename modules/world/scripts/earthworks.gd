@@ -3,9 +3,10 @@ extends RefCounted
 ## The land as roads and settlements shape it (#428, decision 0010): each road is cut into
 ## hills and built up over dips to its own height across its width and shoulders, with
 ## banks no steeper than `bank_grade` (rise per metre) out to where they meet the land; each
-## settlement stands on a level pad at its level with the same banks. Tunnel and bridge
-## spans leave the land alone. The shaping is part of the height function, so everything
-## that samples heights (preview, terrain, collision) agrees. Pure; no autoloads.
+## settlement (the players' camp too) stands on a level pad at its level with the same
+## banks. Tunnel and bridge spans leave the land alone. The shaping is part of the height
+## function, so everything that samples heights (preview, terrain, collision) agrees. Pure;
+## no autoloads.
 
 ## Metres a side of the tiles road segments and pads are indexed by.
 const TILE := 32.0
@@ -34,10 +35,7 @@ func _init(ground: WorldLand, places: Settlements, net: RoadNetwork, config: Dic
 	_track_bank = float(config.get("track_bank_grade", _bank))
 	_track_reach = float(config.get("track_reach", _reach))
 	if places != null:
-		var all: Array[Dictionary] = places.towns().duplicate()
-		if not places.city().is_empty():
-			all.append(places.city())
-		for place in all:
+		for place in places.all_places():
 			_add_pad(place["footprint"], float(place["level"]))
 	# Sites stand on level pads of their own, as settlements do (#429).
 	if placed != null:
