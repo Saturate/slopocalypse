@@ -150,3 +150,57 @@ func test_a_player_climbs_the_lookout_ladder_onto_the_deck() -> void:
 	assert_float(player.global_position.y).is_equal_approx(7.0, 0.2)
 	assert_float(player.global_position.z).is_greater(-deck)
 	assert_float(player.global_position.z).is_less(deck)
+
+
+## What a piece stands on (x, z), from its generator's width and depth, or a square of its
+## width; a zero rect for pieces without one.
+func _piece_box(p: Dictionary) -> Rect2:
+	var params: Dictionary = p["params"]
+	if not params.has("width"):
+		return Rect2()
+	var half := Vector3(float(params["width"]), 0.0, float(params.get("depth", params["width"]))) / 2.0
+	var xform: Transform3D = p["transform"]
+	var box := Rect2(Vector2(xform.origin.x, xform.origin.z), Vector2.ZERO)
+	for corner: Vector3 in [Vector3(-half.x, 0, -half.z), Vector3(half.x, 0, -half.z), Vector3(half.x, 0, half.z), Vector3(-half.x, 0, half.z)]:
+		var at := xform * corner
+		box = box.expand(Vector2(at.x, at.z))
+	return box
+
+
+## Each farm, cabin and lookout's yard (packed dirt the world draws like a track) starts where
+## its track arrives, reaches every building on it and runs under none of them (#470).
+func test_a_sites_yard_joins_its_track_to_its_buildings_without_running_under_them() -> void:
+	var shape := _default_shape()
+	var sites := shape.site_list()
+	var cfg := _config()
+	var planned := SiteLayout.plan(sites, cfg)
+	var yards := SiteLayout.yards(sites, cfg)
+	var starts: Dictionary[String, Vector2] = {}
+	for road: Dictionary in (shape.map["net"] as RoadNetwork).roads():
+		if road["kind"] == "track":
+			starts[str(road["from"])] = (road["points"] as PackedVector2Array)[0]
+	var checked := 0
+	for i in sites.size():
+		var kind := str(sites[i]["kind"])
+		if not ["farm", "cabin", "lookout"].has(kind) or not starts.has("%s %d" % [kind, i]):
+			continue
+		checked += 1
+		var mine: Array[Rect2] = []
+		for y: Dictionary in yards:
+			if int(y["site"]) == i:
+				mine.append(y["rect"])
+				assert_bool((sites[i]["footprint"] as Rect2).grow(0.01).encloses(y["rect"])).override_failure_message("%s %d: a yard leaves the pad" % [kind, i]).is_true()
+		# Two yards over each other would flicker.
+		for a in mine.size():
+			for b in range(a + 1, mine.size()):
+				assert_bool(mine[a].intersects(mine[b])).override_failure_message("%s %d: yards overlap" % [kind, i]).is_false()
+		var start := starts["%s %d" % [kind, i]]
+		assert_bool(mine.any(func(r: Rect2) -> bool: return r.grow(0.5).has_point(start))).override_failure_message("%s %d: no yard where the track arrives" % [kind, i]).is_true()
+		for p: Dictionary in planned:
+			var box := _piece_box(p)
+			if int(p["site"]) != i or box.size == Vector2.ZERO:
+				continue
+			var what := "%s %d: %s" % [kind, i, p["generator"]]
+			assert_bool(mine.any(func(r: Rect2) -> bool: return r.grow(1.0).intersects(box))).override_failure_message(what + " is out of the yard's reach").is_true()
+			assert_bool(mine.any(func(r: Rect2) -> bool: return r.intersects(box.grow(-0.5)))).override_failure_message(what + " stands on the yard").is_false()
+	assert_int(checked).is_greater(2)

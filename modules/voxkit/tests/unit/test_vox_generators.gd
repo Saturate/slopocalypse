@@ -71,3 +71,21 @@ func test_withered_trees_lose_their_leaves_but_keep_the_trunk() -> void:
 		var green := _mean_colour(fresh)
 		var brown := _mean_colour(dry)
 		assert_float(brown.g - brown.r).override_failure_message(gen.title() + " did not go brown").is_less(green.g - green.r)
+
+
+## A track is laid a few centimetres proud of the ground: a hole through it shows the grass
+## under it as rings and dark pits (#470), so a dirt road wears as colour only.
+func test_a_worn_dirt_road_keeps_every_voxel() -> void:
+	var road := VoxRoad.new()
+	var base := {"seed": 7, "length": 8.0, "lanes": 1, "voxel": 0.1, "surface": VoxRoad.DIRT, "centre": 0, "edges": 0}
+	var plain := base.duplicate()
+	plain["wear"] = 0.0
+	plain["potholes"] = 0
+	var worn := base.duplicate()
+	worn["wear"] = 1.0
+	worn["potholes"] = 12
+	assert_int(road.build(worn).voxel_count()).is_equal(road.build(plain).voxel_count())
+	# Asphalt still tears and cracks.
+	worn["surface"] = 0
+	plain["surface"] = 0
+	assert_int(road.build(worn).voxel_count()).is_less(road.build(plain).voxel_count())

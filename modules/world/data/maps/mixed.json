@@ -1,5 +1,5 @@
 {
-  "_comment": "The mixed recipe: hillier country with more woods, dry grass and rock than grassland. Fields as in grassland.json. earthworks: the land shaped by the roads and settlements: each road's width plus shoulder metres either side is cut or filled to the road's height, each settlement's footprint (plus shoulder) to its level, with banks rising bank_grade per metre (0.7 is about 35 degrees) out to where they meet the land, at most reach metres out (a track's banks rise track_bank_grade per metre, at most track_reach out); tunnels and bridges leave the land alone. remoteness: how far a place is from people, 0 to 1: the way from the nearest settlement or the camp, counting metres along a road once and off_road times over open land (water cannot be crossed); reach metres of way makes 1. sites: what stands out in the land, placed after the roads (#429): clearance metres kept free round roads, settlement_clearance round settlements, edge_margin in from the map's edge, spacing_any between any two sites; per kind in kinds, tried in this order, count [least, most], the zone kinds it may stand on, its remoteness [low, high], road: [nearest, furthest] metres from a road, spacing: metres from another of its kind, size: its footprint [x, z] in metres, max_grade: the steepest ground it stands on, prefer_high: try the highest spots first, min_height: the least share of the map's height range it stands at, and near / near_distance: within that many metres of a kind placed before it, or of a town's or the city's edge ('town').",
+  "_comment": "The mixed recipe: hillier country with more woods, dry grass and rock than grassland. Fields as in grassland.json. earthworks: the land shaped by the roads and settlements: each road's width plus shoulder metres either side is cut or filled to the road's height, each settlement's footprint (plus shoulder) to its level, with banks rising bank_grade per metre (0.7 is about 35 degrees) out to where they meet the land, at most reach metres out (a track's banks rise track_bank_grade per metre, at most track_reach out); tunnels and bridges leave the land alone. remoteness: how far a place is from people, 0 to 1: the way from the nearest settlement or the camp, counting metres along a road once and off_road times over open land (water cannot be crossed); reach metres of way makes 1. sites: what stands out in the land, placed after the roads (#429): clearance metres kept free round roads, settlement_clearance round settlements, edge_margin in from the map's edge, spacing_any between any two sites; per kind in kinds, tried in this order, count [least, most], the zone kinds it may stand on, its remoteness [low, high], road: [nearest, furthest] metres from a road, spacing: metres from another of its kind, size: its footprint [x, z] in metres, max_grade: the steepest ground it stands on, prefer_high: try the highest spots first, min_height: the least share of the map's height range it stands at, and near / near_distance: within that many metres of a kind placed before it, or of a town's or the city's edge ('town'); max_track: the longest track the kind may have, in metres (a spot whose straight way to a road is too far for it is passed over, and a site whose track still runs longer is dropped); roads.kinds.track.cross_slope: extra cost per metre per unit of the land's slope across the way.",
   "size": 2048.0,
   "relief": 520.0,
   "layers": [
@@ -136,6 +136,7 @@
         "max_fill": 5.0
       },
       "track": {
+        "cross_slope": 4.0,
         "width": 3.5,
         "max_grade": 0.18,
         "min_radius": 12.0,
@@ -173,6 +174,7 @@
     "spacing_any": 24.0,
     "kinds": {
       "farm": {
+        "max_track": 250.0,
         "count": [
           2,
           5
@@ -197,6 +199,7 @@
         "max_grade": 0.08
       },
       "water_tower": {
+        "max_track": 250.0,
         "count": [
           1,
           4
@@ -223,6 +226,7 @@
         "near_distance": 70.0
       },
       "town_tower": {
+        "max_track": 250.0,
         "count": [
           1,
           2
@@ -249,6 +253,7 @@
         "near_distance": 180.0
       },
       "antenna": {
+        "max_track": 900.0,
         "count": [
           1,
           3
@@ -274,6 +279,7 @@
         "min_height": 0.35
       },
       "lookout": {
+        "max_track": 900.0,
         "count": [
           1,
           3
@@ -300,6 +306,7 @@
         "min_height": 0.35
       },
       "cabin": {
+        "max_track": 900.0,
         "count": [
           1,
           2

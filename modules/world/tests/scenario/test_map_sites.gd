@@ -65,6 +65,11 @@ func test_every_site_keeps_its_kinds_rules() -> void:
 			assert_bool((rule["zones"] as Array).has(str(zones.zone_at(c.x, c.y)["kind"]))).override_failure_message(what + " on the wrong zone").is_true()
 			var r := far.at(c.x, c.y)
 			assert_float(r).override_failure_message(what + " too near or far").is_between(float(rule["remoteness"][0]), float(rule["remoteness"][1]))
+			# Near the kind it was placed by (a water tower by its farm), which still stands.
+			if rule.has("near") and str(rule["near"]) != "town":
+				var within := float(rule.get("near_distance", 80.0))
+				var anchored := (world["sites"] as MapSites).sites().any(func(o: Dictionary) -> bool: return o["kind"] == rule["near"] and (o["centre"] as Vector2).distance_to(c) <= within)
+				assert_bool(anchored).override_failure_message(what + " has no %s near it" % rule["near"]).is_true()
 			seen[site["kind"]] = seen.get(site["kind"], 0) + 1
 		for kind: String in seen:
 			assert_int(seen[kind]).override_failure_message("%s: too many %s" % [world["name"], kind]).is_less_equal(int(kinds[kind]["count"][1]))
@@ -130,3 +135,25 @@ func test_every_site_stands_on_a_level_pad() -> void:
 			var foot: Rect2 = site["footprint"]
 			for corner: Vector2 in [foot.position + Vector2.ONE, foot.end - Vector2.ONE, foot.get_center()]:
 				assert_float(works.height(corner.x, corner.y)).override_failure_message("%s: %s" % [world["name"], site["kind"]]).is_equal_approx(float(site["level"]), 0.05)
+
+
+func test_no_track_runs_longer_than_its_kind_allows() -> void:
+	for world in _worlds:
+		var kinds: Dictionary = world["recipe"]["sites"]["kinds"]
+		for road: Dictionary in (world["net"] as RoadNetwork).roads():
+			if road["kind"] != "track":
+				continue
+			var kind := str(road["from"]).split(" ")[0]
+			var limit := float((kinds[kind] as Dictionary).get("max_track", INF))
+			assert_float(MapRender.track_length(road)).override_failure_message("%s: %s" % [world["name"], road["from"]]).is_less_equal(limit)
+
+
+## No track turns sharply from one sample to the next, also where winding legs were joined
+## (#470): the drawn track folds over on itself at a kink.
+func test_no_track_kinks() -> void:
+	for world in _worlds:
+		for road: Dictionary in (world["net"] as RoadNetwork).roads():
+			if road["kind"] != "track":
+				continue
+			var sharpest := RoadNetwork.sharpest_turn(road["points"])
+			assert_float(sharpest).override_failure_message("%s: %s" % [world["name"], road["from"]]).is_less_equal(RoadNetwork.MAX_TRACK_TURN)

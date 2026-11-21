@@ -51,6 +51,8 @@ const ROAD_RIM_BITES := 7
 const TREE_HIT_SLACK := 0.5
 const DIRT := Color(0.32, 0.25, 0.17)
 const ASPHALT_CHIPS := Color(0.2, 0.2, 0.21)
+## Furthest from a yard anything asks about it (grass keeps half a metre off), metres.
+const YARD_MARGIN := 1.0
 ## Rocks whose top is lower than this above the ground get no collision; feet clear them.
 const STEP_OVER_HEIGHT := 0.3
 
@@ -97,6 +99,13 @@ var home := Vector3.ZERO
 ## middle is in: chunk -> [Vector2(road, metres along its middle)].
 var _lines: Array[RoadLine] = []
 var _line_pieces: Dictionary[int, Array] = {}
+## How many of `_lines` are the map's roads and tracks; yards other modules lay follow them.
+var _road_lines := 0
+## Yards by who laid them (see `set_yards_for`), the ground each covers, and the same filed
+## under every chunk-sized square they reach, so a grass blade looks at the few near it.
+var _yard_sets: Dictionary[StringName, Array] = {}
+var _yard_rects: Array[Rect2] = []
+var _yards_near: Dictionary[Vector2i, Array] = {}
 ## The road's wear and potholes by how remote it is (world.json `roads`): [at 0, at 1].
 var _wear_curve := Vector2(0.1, 0.55)
 var _pothole_curve := Vector2(0.0, 5.0)
@@ -619,7 +628,7 @@ func _add_grass(node: Node3D, rng: RandomNumberGenerator, area: Rect2) -> void:
 		var keep := 1.0 - _biomes.forest(x, z) * 0.8 - _biomes.rock(x, z) * 0.6
 		if rng.randf() > keep:
 			continue
-		if _heights.near_road(x, z, 0.5):
+		if _heights.near_road(x, z, 0.5) or _on_yard(x, z, 0.5):
 			continue
 		if _heights.in_water(x, z):
 			continue
@@ -870,7 +879,7 @@ func _crater_on_road(entry: Dictionary, center: Vector3, radius: float) -> Vecto
 		return Vector3(NAN, 0.0, 0.0)
 	# The model's x runs to the left of the road (see `_mesh_map_road`).
 	var local := Vector3(-at.y, center.y - line.height_at(at.x) + ROAD_LIFT, at.x - mid)
-	if absf(local.x) > ROAD_REACH + radius or local.y - radius > ROAD_LIFT + 0.5:
+	if absf(local.x) > maxf(ROAD_REACH, line.width / 2.0) + radius or local.y - radius > ROAD_LIFT + 0.5:
 		return Vector3(NAN, 0.0, 0.0)
 	return local
 
@@ -885,22 +894,78 @@ func _cut_map_roads(map: MapShape, roads_cfg: Dictionary) -> void:
 	if net == null:
 		return
 	for road: Dictionary in net.roads():
-		var line := RoadLine.new(road)
-		if line.length() < 1.0:
+		_add_line(RoadLine.new(road))
+	_road_lines = _lines.size()
+
+
+func _add_line(line: RoadLine) -> void:
+	if line.length() < 1.0:
+		return
+	var index := _lines.size()
+	_lines.append(line)
+	var pieces := maxi(ceili(line.length() / ROAD_PIECE), 1)
+	var step := line.length() / pieces
+	for p in pieces:
+		var mid := step * (p + 0.5)
+		var at := line.point_at(mid)
+		var chunk := chunk_at(at.x, at.y)
+		if chunk < 0:
 			continue
-		var index := _lines.size()
-		_lines.append(line)
-		var pieces := maxi(ceili(line.length() / ROAD_PIECE), 1)
-		var step := line.length() / pieces
-		for p in pieces:
-			var mid := step * (p + 0.5)
-			var at := line.point_at(mid)
-			var chunk := chunk_at(at.x, at.y)
-			if chunk < 0:
-				continue
-			if not _line_pieces.has(chunk):
-				_line_pieces[chunk] = []
-			_line_pieces[chunk].append(Vector3(index, mid, step / 2.0))
+		if not _line_pieces.has(chunk):
+			_line_pieces[chunk] = []
+		_line_pieces[chunk].append(Vector3(index, mid, step / 2.0))
+
+
+## `owner`'s yards, replacing its earlier ones: packed dirt drawn like a track and kept clear
+## of grass (a site's yard, laid by the module that knows what stands there). Each is
+## {from: Vector2, to: Vector2 (x, z: the middle of its two ends), width, level (its top's
+## height)}. Every client sets the same yards from the same map; the server draws none.
+func set_yards_for(owner: StringName, yards: Array) -> void:
+	var touched := _yard_rects.duplicate()
+	_yard_sets[owner] = yards
+	_lines.resize(_road_lines)
+	for chunk: int in _line_pieces.keys():
+		var kept: Array = (_line_pieces[chunk] as Array).filter(func(piece: Vector3) -> bool: return int(piece.x) < _road_lines)
+		if kept.is_empty():
+			_line_pieces.erase(chunk)
+		else:
+			_line_pieces[chunk] = kept
+	_yard_rects.clear()
+	_yards_near.clear()
+	for key: StringName in _yard_sets:
+		for y: Dictionary in _yard_sets[key]:
+			var from: Vector2 = y["from"]
+			var to: Vector2 = y["to"]
+			var level := float(y["level"])
+			_add_line(RoadLine.new({"kind": "yard", "width": float(y["width"]), "points": PackedVector2Array([from, to]), "heights": PackedFloat32Array([level, level])}))
+			var side := (to - from).normalized().orthogonal() * float(y["width"]) / 2.0
+			var rect := Rect2(from + side, Vector2.ZERO).expand(from - side).expand(to + side).expand(to - side)
+			_yard_rects.append(rect)
+			var reach := rect.grow(YARD_MARGIN)
+			for cz in range(floori(reach.position.y / CHUNK), floori(reach.end.y / CHUNK) + 1):
+				for cx in range(floori(reach.position.x / CHUNK), floori(reach.end.x / CHUNK) + 1):
+					if not _yards_near.has(Vector2i(cx, cz)):
+						_yards_near[Vector2i(cx, cz)] = []
+					_yards_near[Vector2i(cx, cz)].append(rect)
+	touched.append_array(_yard_rects)
+	if not _visual:
+		return
+	for i: int in _chunks.keys():
+		var area := _chunk_area(i).grow(ROAD_PIECE)
+		for rect: Rect2 in touched:
+			if area.intersects(rect):
+				_free_chunk(i)
+				_chunks[i] = _build_chunk(i, plan_chunk(i, _clearings))
+				break
+
+
+## Whether (x, z) is on a yard or within `margin` (at most YARD_MARGIN) of one.
+func _on_yard(x: float, z: float, margin: float) -> bool:
+	var p := Vector2(x, z)
+	for rect: Rect2 in _yards_near.get(Vector2i(floori(x / CHUNK), floori(z / CHUNK)), []):
+		if rect.grow(margin).has_point(p):
+			return true
+	return false
 
 
 ## The road pieces whose middles are in chunk `i`, each a voxel road of its kind (lanes and
@@ -916,13 +981,17 @@ func _add_map_roads(node: Node3D, i: int) -> void:
 		var mid := piece.y
 		var half := piece.z
 		var at := line.point_at(mid)
-		var track := line.kind == "track"
-		var shoulder := TRACK_SHOULDER if track else ROAD_SHOULDER
+		var yard := line.kind == "yard"
+		var track := line.kind == "track" or yard
+		# A yard is open ground: no gravel edge, and no ruts across it.
+		var shoulder := 0.0 if yard else TRACK_SHOULDER if track else ROAD_SHOULDER
 		var lanes := 1 if track else 2
 		var look := {"seed": hash([_seed, i, p]), "length": half * 2.0, "voxel": ROAD_VOXEL, "z_phase": mid,
 			"lanes": lanes, "lane_width": maxf((line.width - shoulder * 2.0) / lanes, 1.0), "shoulder": shoulder}
 		if track:
 			look["asphalt"] = TRACK_SOIL
+			look["surface"] = VoxRoad.DIRT
+			look["ruts"] = 0 if yard else 1
 			look["centre"] = 0
 			look["edges"] = 0
 		var r := far.at(at.x, at.y) if far != null else 0.0

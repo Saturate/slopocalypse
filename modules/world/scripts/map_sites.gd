@@ -12,6 +12,10 @@ const KIND := {"count": "a", "zones": "a", "remoteness": "a", "road": "a", "spac
 ## Fields the `sites` section needs besides its kinds.
 const SECTION := {"clearance": "n", "settlement_clearance": "n", "edge_margin": "n", "spacing_any": "n", "kinds": "d"}
 
+## How much longer than the straight way to the nearest road a track usually runs (the
+## median over the shipped recipes' first eight seeds is about 1.2).
+const TRACK_WINDING := 1.25
+
 var remoteness: MapRemoteness
 
 ## Each {kind, centre (x, z), footprint (Rect2), level, remoteness}.
@@ -105,6 +109,10 @@ func _fits(spot: Vector2, kind: String, rule: Dictionary, map_zones: LandZones, 
 	var reach: Array = rule["road"]
 	if road < float(reach[0]) or road > float(reach[1]):
 		return false
+	# A spot whose track would likely run longer than its kind allows is passed over, so a
+	# spot nearer a road is tried instead of the site being dropped once its track is laid.
+	if rule.has("max_track") and road * TRACK_WINDING > float(rule["max_track"]):
+		return false
 	if map_zones.land.grade(spot.x, spot.y) > float(rule["max_grade"]):
 		return false
 	if rule.has("min_height") and map_zones.land.height(spot.x, spot.y) < lerpf(_low, _high, float(rule["min_height"])):
@@ -146,6 +154,15 @@ func _claim(spot: Vector2, kind: String, rule: Dictionary, occupancy: MapOccupan
 	]
 	_sites.append({"kind": kind, "centre": spot, "footprint": foot, "level": level, "remoteness": remoteness.at(spot.x, spot.y), "connectors": connectors})
 	return true
+
+
+## Drops the sites at `indices` (their tracks were too long, see MapRender.build), keeping
+## the rest in order.
+func drop(indices: Array[int]) -> void:
+	for i in range(indices.size() - 1, -1, -1):
+		var kind := str(_sites[indices[i]]["kind"])
+		_counts[kind] = _counts[kind] - Vector2i(1, 0)
+		_sites.remove_at(indices[i])
 
 
 ## Whether the straight line from `a` to `b` passes through `rect` (sampled every metre).

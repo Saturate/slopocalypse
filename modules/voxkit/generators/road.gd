@@ -2,7 +2,8 @@ class_name VoxRoad
 extends VoxGenerator
 ## A stretch of road along z: asphalt on a gravel bed with shoulders, white edge lines, a
 ## centre line (dashed, solid or double), lane dividers, and wear: lighter patches, cracks
-## and potholes. It can bend.
+## and potholes. It can bend. A dirt surface (a track) has no asphalt to crack or tear: it
+## is uneven in colour voxel by voxel, and worn into two darker wheel ruts along its length.
 
 const ASPHALT := Color(0.2, 0.2, 0.21)
 const PATCH := Color(0.27, 0.27, 0.27)
@@ -10,6 +11,15 @@ const GRAVEL := Color(0.47, 0.43, 0.37)
 const WHITE := Color(0.9, 0.9, 0.86)
 const YELLOW := Color(0.92, 0.72, 0.15)
 const CENTRE: Array[String] = ["None", "Dashed", "Solid", "Double", "Double yellow"]
+const SURFACES: Array[String] = ["Asphalt", "Dirt"]
+const DIRT := 1
+## A dirt surface's colour varies this much voxel by voxel (asphalt's varies 0.07).
+const DIRT_JITTER := 0.14
+## Wheel ruts: their middles this share of the half-width either side of the centre, this
+## wide, and darker by up to this much on a fully worn track.
+const RUT_AT := 0.45
+const RUT_WIDTH := 0.4
+const RUT_DARK := 0.2
 const BED := 0.2
 const SURFACE := 0.08
 
@@ -34,6 +44,8 @@ func params() -> Array[Dictionary]:
 		param("wear", "Wear", 0.0, 1.0, 0.05, 0.35),
 		param("potholes", "Potholes and tears", 0.0, 12.0, 1.0, 2.0),
 		param("tear_size", "Tear size (m)", 0.3, 4.0, 0.1, 1.6),
+		choice("surface", "Surface", SURFACES, 0),
+		choice("ruts", "Wheel ruts (dirt)", ["No", "Yes"], 1),
 		voxel_param(0.04, 0.25, 0.08),
 	]
 
@@ -63,6 +75,8 @@ func build(values: Dictionary) -> VoxelModel:
 	var m := new_model()
 	m.setup(Vector3(half_all * 2.0 + spread * 2.0 + v * 4.0, BED + SURFACE + rise + v * 2.0, length), v)
 	var top := BED + SURFACE
+	var dirt := int(p["surface"]) == DIRT
+	var grain := DIRT_JITTER if dirt else 0.07
 	# Row by row along the length, so the road can follow its curve.
 	var z := -length / 2
 	while z < length / 2 - 0.0001:
@@ -74,8 +88,17 @@ func build(values: Dictionary) -> VoxelModel:
 		# Shoulders level with the asphalt: lower, and the ground beside the road shows through.
 		m.fill_box(Vector3(c - half_all, y + BED, z), Vector3(c - half_road, y + top, z1), GRAVEL, 0.22, seed + 1)
 		m.fill_box(Vector3(c + half_road, y + BED, z), Vector3(c + half_all, y + top, z1), GRAVEL, 0.22, seed + 1)
-		m.fill_box(Vector3(c - half_road, y + BED, z), Vector3(c + half_road, y + top, z1), asphalt, 0.07, seed + 2)
+		m.fill_box(Vector3(c - half_road, y + BED, z), Vector3(c + half_road, y + top, z1), asphalt, grain, seed + 2)
+		if dirt and int(p["ruts"]) == 1 and float(p["wear"]) > 0.0:
+			var rut := asphalt.darkened(RUT_DARK * float(p["wear"]))
+			for side: float in [-1.0, 1.0]:
+				var at := c + side * half_road * RUT_AT
+				m.paint_box(Vector3(at - RUT_WIDTH / 2.0, y + BED, z), Vector3(at + RUT_WIDTH / 2.0, y + top, z1), rut, grain, seed + 3)
 		z = z1
+	# Dirt has no asphalt to crack or tear, and a carve through a thin dirt surface laid just
+	# proud of the ground shows that ground through it (#470); round patches read as holes.
+	if dirt:
+		return m
 	# Wear first, then the lines over it: paint only lands on asphalt that is still there, so
 	# a tear or crack breaks a line, and the lines get their own chips after.
 	_wear(m, p, rng, length, x_of, y_of, half_road, top, v, seed, asphalt, patch)

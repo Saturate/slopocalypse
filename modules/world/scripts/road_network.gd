@@ -11,6 +11,10 @@ extends RefCounted
 const PROFILE_PASSES := 64
 ## Easing passes after the arcs (see `_ease`).
 const EASE_PASSES := 6
+## Most a track turns from one sample to the next (radians), and the most extra easing passes
+## spent getting it there.
+const MAX_TRACK_TURN := 0.8
+const UNKINK_PASSES := 48
 ## Metres between points drawn along a corner's arc.
 const ARC_STEP := 2.0
 ## Metres between checks along a straight run.
@@ -29,9 +33,11 @@ var settlements: Settlements
 var _cfg: Dictionary
 ## Each {kind, from, to, points (x, z every `sample` metres), width, max_grade}.
 var _roads: Array[Dictionary] = []
-## The routing grid, built once: each cell's height, and its extra cost (-1: impassable).
+## The routing grid, built once: each cell's height, its extra cost (-1: impassable), and
+## the land's slope there (rise per metre along x and z).
 var _heights := PackedFloat32Array()
 var _extra := PackedFloat32Array()
+var _slopes := PackedVector2Array()
 ## Footprints a route may not cross besides water and settlements (other sites, for a track).
 var _avoid: Array[Rect2] = []
 
@@ -90,7 +96,7 @@ func add_track(site: Dictionary, name: String, avoid: Array[Rect2]) -> void:
 	# Each target's way there, shortest first.
 	var ways: Array[Vector4] = []
 	for t in targets:
-		var way := _route(centre, Vector2(t.x, t.z), float(kind_cfg["max_grade"]))
+		var way := _route(centre, Vector2(t.x, t.z), float(kind_cfg["max_grade"]), float(kind_cfg.get("cross_slope", 0.0)))
 		if way.is_empty():
 			continue
 		var length := 0.0
@@ -166,7 +172,7 @@ func _join(kind: StringName, from_name: String, start: Vector2, from_place: Dict
 	var out_from := _outward(from_place, start) if not from_place.is_empty() else Vector2.ZERO
 	var out_to := _outward(place, end)
 	var max_grade := float(kind_cfg["max_grade"])
-	var path := _route(start + out_from * cell * 3.0, end + out_to * cell * 3.0, max_grade)
+	var path := _route(start + out_from * cell * 3.0, end + out_to * cell * 3.0, max_grade, float(kind_cfg.get("cross_slope", 0.0)))
 	if path.is_empty():
 		return
 	# A track winds over the land; pulling a long one straight also costs seconds, testing a
@@ -181,6 +187,12 @@ func _join(kind: StringName, from_name: String, start: Vector2, from_place: Dict
 	if out_from != Vector2.ZERO:
 		curve.insert(0, start)
 	var points := _resample(_ease(_resample(curve, float(_cfg["sample"])), EASE_PASSES), float(_cfg["sample"]))
+	# Legs of a winding track that run side by side would be drawn over each other and
+	# fight over the ground between them: the loop between them is cut out.
+	# Eased again after, so neither the join nor a short lead-in turning back towards the road
+	# leaves a kink the drawn track would fold over at.
+	if kind == &"track":
+		points = _unkink(_resample(_ease(merge_legs(points, float(kind_cfg["width"])), EASE_PASSES), float(_cfg["sample"])), float(_cfg["sample"]))
 	var land := settlements.zones.land
 	var start_level := float(from_place["level"]) if not from_place.is_empty() else land.height(start.x, start.y)
 	# A kind may follow the land more closely than the main roads (a dirt track, 8 m).
@@ -265,7 +277,9 @@ static func _outward(place: Dictionary, at: Vector2) -> Vector2:
 
 
 ## The cheapest way over the zone grid from `a` to `b` (A*), as cell centres, starting at `a`.
-func _route(a: Vector2, b: Vector2, max_grade: float) -> PackedVector2Array:
+## `cross` is the extra cost per metre per unit of the land's slope across the way: a way
+## along a hillside needs a notch cut into it, and winds into switchbacks.
+func _route(a: Vector2, b: Vector2, max_grade: float, cross := 0.0) -> PackedVector2Array:
 	var zones := settlements.zones
 	var land := zones.land
 	var n := zones.side()
@@ -295,6 +309,8 @@ func _route(a: Vector2, b: Vector2, max_grade: float) -> PackedVector2Array:
 				for place in places:
 					if (place["footprint"] as Rect2).grow(-cell * 0.5).has_point(c):
 						_extra[k] = -1.0
+	if _slopes.is_empty():
+		_slopes = _grid_slopes(_heights, n, cell)
 	var heights := _heights
 	var extra := _extra
 	if not _avoid.is_empty():
@@ -345,6 +361,9 @@ func _route(a: Vector2, b: Vector2, max_grade: float) -> PackedVector2Array:
 			var step_cost := run * (1.0 + maxf(extra[nk], 0.0))
 			if grade > max_grade:
 				step_cost += run * over * (grade - max_grade) / max_grade
+			if cross > 0.0:
+				var across := Vector2(-step.y, step.x).normalized()
+				step_cost += run * cross * absf(_slopes[nk].dot(across))
 			var total := best[k] + step_cost
 			if total < best[nk]:
 				best[nk] = total
@@ -408,6 +427,80 @@ func _clear_run(a: Vector2, b: Vector2, max_grade: float) -> bool:
 			return false
 		last = h
 	return true
+
+
+## `points` eased a pass at a time until no sample turns more than MAX_TRACK_TURN from the
+## one before (or the passes run out), resampled every `step` metres.
+static func _unkink(points: PackedVector2Array, step: float) -> PackedVector2Array:
+	var p := points
+	for pass_index in UNKINK_PASSES:
+		if sharpest_turn(p) <= MAX_TRACK_TURN:
+			break
+		p = _resample(_ease(p, 1), step)
+	return p
+
+
+## The most `points` turns from one segment to the next (radians).
+static func sharpest_turn(points: PackedVector2Array) -> float:
+	var out := 0.0
+	for k in range(1, points.size() - 1):
+		out = maxf(out, absf((points[k] - points[k - 1]).angle_to(points[k + 1] - points[k])))
+	return out
+
+
+## The land's slope (rise per metre along x and z) at each cell of an `n` x `n` grid of
+## `heights` `cell` metres apart, from its neighbours either side (one side at the edges).
+static func _grid_slopes(heights: PackedFloat32Array, n: int, cell: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	out.resize(n * n)
+	for j in n:
+		for i in n:
+			var il := maxi(i - 1, 0)
+			var ir := mini(i + 1, n - 1)
+			var jl := maxi(j - 1, 0)
+			var jr := mini(j + 1, n - 1)
+			out[j * n + i] = Vector2((heights[j * n + ir] - heights[j * n + il]) / (maxi(ir - il, 1) * cell),
+				(heights[jr * n + i] - heights[jl * n + i]) / (maxi(jr - jl, 1) * cell))
+	return out
+
+
+## `points` with every loop cut out where the line comes back within `width` of itself
+## (centre to centre: the two legs' surfaces would overlap) after running at least three
+## widths away, so the far leg joins the near one where they meet.
+static func merge_legs(points: PackedVector2Array, width: float) -> PackedVector2Array:
+	var n := points.size()
+	var along := PackedFloat32Array([0.0])
+	var longest := 0.0
+	for k in range(1, n):
+		var step := points[k].distance_to(points[k - 1])
+		along.append(along[k - 1] + step)
+		longest = maxf(longest, step)
+	# Segments filed by the grid square of their start: a segment within `width` of a point
+	# starts within `width` plus its own length of it, so the squares round it hold them all.
+	var size := width + longest
+	var grid: Dictionary[Vector2i, PackedInt32Array] = {}
+	for k in n - 1:
+		var key := Vector2i(floori(points[k].x / size), floori(points[k].y / size))
+		if not grid.has(key):
+			grid[key] = PackedInt32Array()
+		grid[key].append(k)
+	var out := PackedVector2Array()
+	var a := 0
+	while a < n:
+		out.append(points[a])
+		# The furthest segment along that comes back near this point.
+		var skip_to := -1
+		var home := Vector2i(floori(points[a].x / size), floori(points[a].y / size))
+		for dj in range(-1, 2):
+			for di in range(-1, 2):
+				for b: int in grid.get(home + Vector2i(di, dj), PackedInt32Array()):
+					if b + 1 <= skip_to or along[b] - along[a] < width * 3.0:
+						continue
+					var near := Geometry2D.get_closest_point_to_segment(points[a], points[b], points[b + 1])
+					if near.distance_to(points[a]) < width:
+						skip_to = b + 1
+		a = skip_to if skip_to > 0 else a + 1
+	return out
 
 
 ## Each corner rounded into a circular arc of `radius` (smaller where the straights either
