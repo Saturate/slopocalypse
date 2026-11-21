@@ -1,9 +1,10 @@
+import { createSocket } from "node:dgram";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join as pathJoin } from "node:path";
 import { GODOT_NOISE, type StepResult } from "./gate.ts";
 import { scanLog } from "./log-scan.ts";
-import { run, type ProcResult } from "./proc.ts";
+import { run, type ProcResult, type RunOptions } from "./proc.ts";
 
 export interface NetReport {
 	mode: string;
@@ -56,6 +57,71 @@ function isRunning(pid: number): boolean {
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
+// True when nothing on this machine holds UDP `port` (ENet's), on any address.
+function udpFree(port: number): Promise<boolean> {
+	return new Promise((resolve) => {
+		const socket = createSocket("udp4");
+		socket.once("error", () => {
+			socket.close();
+			resolve(false);
+		});
+		socket.bind(port, "0.0.0.0", () => socket.close(() => resolve(true)));
+	});
+}
+
+// The first free UDP port from `preferred` on: a process left over from an earlier step, or a
+// game the developer has running, must not turn a smoke check into a connection failure.
+export async function freeUdpPort(preferred: number, tries = 50): Promise<number> {
+	for (let port = preferred; port < preferred + tries; port++) if (await udpFree(port)) return port;
+	throw new Error(`no free UDP port in ${preferred}..${preferred + tries - 1}`);
+}
+
+// A process whose output can be waited on while it runs.
+export interface Watched {
+	done: Promise<ProcResult>;
+	// Resolves true once `pattern` shows in the output, false after `timeoutMs` or when the
+	// process ended without it.
+	sees(pattern: RegExp, timeoutMs: number): Promise<boolean>;
+}
+
+export function watch(cmd: string, args: readonly string[], opts: Omit<RunOptions, "onOutput">): Watched {
+	let output = "";
+	let ended = false;
+	const waiters = new Set<() => void>();
+	const done = run(cmd, args, {
+		...opts,
+		onOutput: (text) => {
+			output += text;
+			for (const w of [...waiters]) w();
+		},
+	});
+	void done.finally(() => {
+		ended = true;
+		for (const w of [...waiters]) w();
+	});
+	const sees = (pattern: RegExp, timeoutMs: number): Promise<boolean> =>
+		new Promise((resolve) => {
+			const check = (): void => {
+				if (pattern.test(output)) finish(true);
+				else if (ended) finish(false);
+			};
+			const timer = setTimeout(() => finish(false), timeoutMs);
+			const finish = (seen: boolean): void => {
+				clearTimeout(timer);
+				waiters.delete(check);
+				resolve(seen);
+			};
+			waiters.add(check);
+			check();
+		});
+	return { done, sees };
+}
+
+// A server has its world built and is answering once Boot has loaded the modules; clients that
+// knock earlier wait on a main loop that is not polling, and give up on a slow machine.
+const SERVER_READY = /boot: loaded modules:/;
+const SERVER_READY_MS = 120_000;
+
 // The last lines a process printed, for a report that never came.
 const lastLines = (output: string, count = 8): string =>
 	output
@@ -105,22 +171,21 @@ export async function soloSmoke(godot: string, root: string): Promise<StepResult
 // that walks and fires, client 2 one that gets in the car and drives, both through the
 // network intent path; the checks prove input reaches the server and the results
 // (movement, shots, the car's new position) reach everyone.
-export async function netSmoke(godot: string, root: string, port = 7791): Promise<StepResult> {
+export async function netSmoke(godot: string, root: string, preferredPort = 7791): Promise<StepResult> {
 	const base = ["--headless", "--path", root, "--"];
-	// Clients report 900 physics frames after connecting and stay connected; the server
-	// reports 1300 after its first player joined, while it still has both, then quits, which
-	// closes the clients. Counting from the first peer keeps that 400-frame margin however
-	// long each process takes to load.
+	const port = await freeUdpPort(preferredPort);
+	// Clients report 900 physics frames after their player is in the world and stay
+	// connected; the server reports once it has counted 1300 from its first player and both
+	// clients have reported, then quits, which closes the clients.
 	const saves = mkdtempSync(pathJoin(tmpdir(), "slopocalypse-net-"));
-	const server = run(godot, [...base, `--server=${port}`, "--net-report-after=1300", `--save=${pathJoin(saves, "world.db")}`], { cwd: root, timeoutMs: 150_000 });
-	// Let the server open its port and load the world before clients knock.
-	await delay(4000);
+	const server = watch(godot, [...base, `--server=${port}`, "--net-report-after=1300", `--save=${pathJoin(saves, "world.db")}`], { cwd: root, timeoutMs: 240_000 });
+	await server.sees(SERVER_READY, SERVER_READY_MS);
 	const join = `--connect=127.0.0.1:${port}`;
 	const clients = [
-		run(godot, [...base, join, "--net-report-after=900", "--bot=walk"], { cwd: root, timeoutMs: 150_000 }),
-		run(godot, [...base, join, "--net-report-after=900", "--bot=drive"], { cwd: root, timeoutMs: 150_000 }),
+		run(godot, [...base, join, "--net-report-after=900", "--bot=walk"], { cwd: root, timeoutMs: 240_000 }),
+		run(godot, [...base, join, "--net-report-after=900", "--bot=drive"], { cwd: root, timeoutMs: 240_000 }),
 	];
-	const results: [string, ProcResult][] = [["server", await server], ["client 1 (bot)", await clients[0]!], ["client 2", await clients[1]!]];
+	const results: [string, ProcResult][] = [["server", await server.done], ["client 1 (bot)", await clients[0]!], ["client 2", await clients[1]!]];
 	rmSync(saves, { recursive: true, force: true });
 
 	const problems: string[] = [];
@@ -152,8 +217,9 @@ export async function netSmoke(godot: string, root: string, port = 7791): Promis
 // Progress survives a server restart: a named bot walks off and the server stops (saving on
 // the way out); a second server on the same file must put the same name back where it was,
 // without that client moving at all.
-export async function saveSmoke(godot: string, root: string, port = 7793): Promise<StepResult> {
+export async function saveSmoke(godot: string, root: string, preferredPort = 7793): Promise<StepResult> {
 	const base = ["--headless", "--path", root, "--"];
+	const port = await freeUdpPort(preferredPort);
 	const saves = mkdtempSync(pathJoin(tmpdir(), "slopocalypse-save-"));
 	const save = `--save=${pathJoin(saves, "world.db")}`;
 	const address = `--connect=127.0.0.1:${port}`;
@@ -163,10 +229,10 @@ export async function saveSmoke(godot: string, root: string, port = 7793): Promi
 		if (r.timedOut) problems.push(`${name}: timed out`);
 	};
 	try {
-		const first = run(godot, [...base, `--server=${port}`, "--net-report-after=1100", save], { cwd: root, timeoutMs: 150_000 });
-		await delay(4000);
-		const walker = await run(godot, [...base, address, "--net-report-after=900", "--bot=walk", "--name=Saver"], { cwd: root, timeoutMs: 150_000 });
-		const firstServer = await first;
+		const first = watch(godot, [...base, `--server=${port}`, "--net-report-after=1100", save], { cwd: root, timeoutMs: 240_000 });
+		await first.sees(SERVER_READY, SERVER_READY_MS);
+		const walker = await run(godot, [...base, address, "--net-report-after=900", "--bot=walk", "--name=Saver"], { cwd: root, timeoutMs: 240_000 });
+		const firstServer = await first.done;
 		check("first server", firstServer);
 		check("walking client", walker);
 		// The server reports in the same frame it stops and saves; the bot keeps walking
@@ -174,13 +240,13 @@ export async function saveSmoke(godot: string, root: string, port = 7793): Promi
 		const walked = parseReport(firstServer.output)?.moved ?? 0;
 		if (walked < 3.0) problems.push(`first server: Saver did not get 3 m from the spawn (moved=${walked})`);
 
-		const second = run(godot, [...base, `--server=${port}`, "--net-report-after=700", save], { cwd: root, timeoutMs: 150_000 });
-		await delay(4000);
+		const second = watch(godot, [...base, `--server=${port}`, "--net-report-after=700", save], { cwd: root, timeoutMs: 240_000 });
+		await second.sees(SERVER_READY, SERVER_READY_MS);
 		// A client claiming another build alongside: the server must turn it away with a reason.
-		const stale = run(godot, [...base, address, "--claim-version=0.0.0-old", "--name=Stale"], { cwd: root, timeoutMs: 60_000 });
-		const back = await run(godot, [...base, address, "--net-report-after=400", "--name=Saver"], { cwd: root, timeoutMs: 150_000 });
+		const stale = run(godot, [...base, address, "--claim-version=0.0.0-old", "--name=Stale"], { cwd: root, timeoutMs: 120_000 });
+		const back = await run(godot, [...base, address, "--net-report-after=400", "--name=Saver"], { cwd: root, timeoutMs: 240_000 });
 		const staleClient = await stale;
-		const secondServer = await second;
+		const secondServer = await second.done;
 		check("stale client", staleClient);
 		if (!staleClient.output.includes("Update to join")) problems.push(`stale client: not told to update; it ended with:\n${lastLines(staleClient.output)}`);
 		if (secondServer.output.includes("Stale is back") || secondServer.output.includes("is Stale")) problems.push("second server: let a client on another build join");

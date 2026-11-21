@@ -17,8 +17,9 @@ extends Node
 ## downstream can ask `identity_of(peer)`; one that stays silent is dropped.
 ##
 ## Test hook: --net-report-after=FRAMES prints a NET-REPORT line and quits, so tools can
-## check a session from the outside. The physics frames count from the first peer: for a
-## client its server, for a server its first player.
+## check a session from the outside. A client or solo game counts physics frames from when its
+## own player is in the world, and tells its server once it has reported; a server counts from
+## its first peer and reports and stops only once every client on it has reported.
 
 ## Server: a peer connected and said who they are.
 signal peer_joined(peer_id: int)
@@ -55,7 +56,10 @@ const MAX_KEY_LENGTH := 64
 ## whose replay it can no longer decode (#397). `_hello`, `_kicked` and `_version` must never
 ## change their arguments: they are how an older client is told to update.
 ## 2: the world module tells joining clients which world it plays (#472).
-const PROTOCOL := 2
+## 3: tool-run clients tell the server they have reported (`_wrote_report`).
+const PROTOCOL := 3
+## How long a --net-report-after server waits for its clients' reports before it stops anyway.
+const REPORT_WAIT_SECONDS := 60.0
 ## Versions are compared up to this many characters, on both sides alike.
 const MAX_VERSION_LENGTH := 64
 
@@ -77,6 +81,12 @@ var _waited_for_first := 0.0
 
 var _report_after := -1
 var _frames := 0
+## Client or solo: this instance's own player is in the world, so its report clock runs.
+var _in_play := false
+## Server: peers that said their report is out; seconds waited for the rest.
+var _reported: Dictionary = {}
+var _report_wait := 0.0
+var _stopped := false
 
 ## Server: peer -> {name, key} once they said hello; peer -> seconds waited until then.
 var _identities: Dictionary = {}
@@ -237,7 +247,8 @@ func _on_peer_left(id: int) -> void:
 	_unnamed.erase(id)
 	_builds.erase(id)
 	if not _identities.has(id):
-		Log.info(&"net", "peer %d left before saying who they are" % id)
+		# Only a server learns who peers are; on a client this would misread every peer.
+		Log.info(&"net", "peer %d left%s" % [id, " before saying who they are" if multiplayer.is_server() else ""])
 	else:
 		Log.info(&"net", "peer %d (%s) left" % [id, _identities[id]["name"]])
 		peer_leaving.emit(id)
@@ -329,6 +340,10 @@ func _decode(encoded: Dictionary) -> Dictionary:
 
 
 func _stop() -> void:
+	# Physics can tick several times in the frame that quits; saving twice would be wasted.
+	if _stopped:
+		return
+	_stopped = true
 	stopping.emit()
 	get_tree().quit(0)
 
@@ -397,14 +412,22 @@ func _hang_up() -> void:
 
 
 ## Client to server, just before the hello: which build this client runs. Its name sorts
-## after every other RPC here on purpose: Godot numbers a node's RPCs in name order, so a new
-## one sorting first would shift `_hello` and `_kicked` and older clients could not even be
-## told to update.
+## after `_hello`, `_kicked` and `_replay` on purpose: Godot numbers a node's RPCs in name
+## order, so a new RPC must sort after this one, or it would shift `_version` and older
+## clients could not even be told to update.
 @rpc("any_peer", "call_remote", "reliable")
 func _version(version: String, protocol: int) -> void:
 	var peer := multiplayer.get_remote_sender_id()
 	if multiplayer.is_server() and _unnamed.has(peer):
 		_builds[peer] = build_mismatch(_own_version().left(MAX_VERSION_LENGTH), PROTOCOL, version.left(MAX_VERSION_LENGTH), protocol)
+
+
+## Client to server, test hook: this client's NET-REPORT is out, so a --net-report-after
+## server may stop. Sorts after `_version`; see there.
+@rpc("any_peer", "call_remote", "reliable")
+func _wrote_report() -> void:
+	if multiplayer.is_server():
+		_reported[multiplayer.get_remote_sender_id()] = true
 
 
 ## Why a client on `version`/`protocol` may not join a server on its own, or "" when it may.
@@ -469,16 +492,56 @@ func _physics_tick(delta: float) -> void:
 	_watch_empty(delta)
 	_drop_silent(delta)
 	# Counted from when the session has someone in it, not from launch: a slow machine can
-	# spend seconds loading first, and the smoke tests start their processes seconds apart, so
-	# counting from launch let a server stop before a slow client had reported.
-	if _report_after < 0 or not _had_peers:
+	# spend seconds loading first, and the smoke tests start their processes seconds apart.
+	if _report_after < 0 or not _report_clock_running():
 		return
 	_frames += 1
-	if _frames == _report_after:
+	if mode == Mode.SERVER:
+		_server_report_tick(delta)
+	elif _frames == _report_after:
 		print(report())
 		# Clients keep running so the server can still count them; they close when it leaves.
-		if mode != Mode.CLIENT:
+		if mode == Mode.SOLO:
 			_stop()
+		elif is_session_connected():
+			_wrote_report.rpc_id(1)
+
+
+## Server: the connected peers that have not said their report is out.
+static func unreported(peers: PackedInt32Array, reported: Dictionary) -> Array[int]:
+	var out: Array[int] = []
+	for p in peers:
+		if not reported.has(p):
+			out.append(p)
+	return out
+
+
+## A client builds the server's world only after joining, which stalls its frames for seconds
+## on a slow machine; counting from the connection left a bot too little time to walk or
+## drive before its report. A server counts from its first peer.
+func _report_clock_running() -> bool:
+	if mode == Mode.SERVER:
+		return _had_peers
+	if not _in_play and is_inside_tree():
+		var me := multiplayer.get_unique_id()
+		_in_play = get_tree().get_nodes_in_group(&"players").any(func(p: Node) -> bool: return int(p.get_meta(&"peer_id", 0)) == me)
+	return _in_play
+
+
+## The server's own clock says nothing about how far its clients got, so it reports and stops
+## only once each of them has reported: the clients' reports and its own then cover the same
+## play, and no client is cut off before its report.
+func _server_report_tick(delta: float) -> void:
+	if _frames < _report_after or _stopped:
+		return
+	var waiting := unreported(multiplayer.get_peers(), _reported)
+	if not waiting.is_empty():
+		_report_wait += delta
+		if _report_wait < REPORT_WAIT_SECONDS:
+			return
+		Log.error(&"net", "no report from peer(s) %s within %d s; reporting without them" % [waiting, int(REPORT_WAIT_SECONDS)])
+	print(report())
+	_stop()
 
 
 ## A solo server must not linger as an orphan. A game that crashes is timed out by ENet and
