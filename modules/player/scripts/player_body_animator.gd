@@ -10,7 +10,14 @@ extends Node
 const BLEND_RATE := 12.0
 const AIM_RATE := 15.0
 
+## Never closer to the eye than the camera's near plane plus this, or the sight's rear is cut.
+const NEAR_MARGIN := 0.01
+
 var player: PlayerController
+## How far from the eye the held gun sits, as a share of where it was set up to sit: below 1
+## nearer, for a view wider than the default, so the sight picture keeps its size on screen.
+## The local camera feel sets it; everyone else's body stays at 1.
+var view_scale := 1.0
 
 var _tree: AnimationTree
 var _aim: Node
@@ -98,7 +105,8 @@ func _update_ads(delta: float) -> void:
 	var relief := float(player.config["ads_eye_relief"])
 	if sight != null:
 		relief = float(sight.get_meta(&"eye_relief", relief))
-	_aim.set(&"eye_relief", relief)
+	var nearest := (_camera as Camera3D).near + NEAR_MARGIN if _camera is Camera3D else 0.0
+	_aim.set(&"eye_relief", maxf(relief * view_scale, minf(relief, nearest)))
 	if not _hip_read:
 		_hip_read = true
 		_default_hip = _aim.get(&"hip_sight")
@@ -107,6 +115,9 @@ func _update_ads(delta: float) -> void:
 		var hip := _default_hip
 		if sight != null and sight.has_meta(&"hip_sight"):
 			hip = sight.get_meta(&"hip_sight")
+		# Only the distance changes: the same sideways and downward offset then lands on the
+		# same spot on screen at any field of view.
+		hip.z = minf(hip.z * view_scale, maxf(hip.z, -nearest))
 		_aim.set(&"hip_sight", hip)
 	if sight != null:
 		# The sight in the space of the bone the weapon hangs from (the socket's parent is
