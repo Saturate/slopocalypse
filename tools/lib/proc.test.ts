@@ -42,13 +42,16 @@ test("children: kill ends what the command left running once it exits", posix, a
 });
 
 test("by default the output of children that finish later is kept", async () => {
-	const r = await run("sh", ["-c", "(sleep 0.3; echo late) & echo early"], { cwd: ".", timeoutMs: 10_000 });
+	// A child that inherits the output and writes after its parent has gone.
+	const late = "setTimeout(() => console.log('late'), 300)";
+	const parent = `require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(late)}], { stdio: "inherit", detached: true }).unref(); console.log("early")`;
+	const r = await run(process.execPath, ["-e", parent], { cwd: ".", timeoutMs: 10_000 });
 	assert.match(r.output, /early/);
 	assert.match(r.output, /late/);
 });
 
 test("output is seen as it comes", async () => {
 	const seen: string[] = [];
-	await run("sh", ["-c", "echo one; echo two"], { cwd: ".", timeoutMs: 10_000, onOutput: (t) => seen.push(t) });
+	await run(process.execPath, ["-e", "console.log('one'); console.log('two')"], { cwd: ".", timeoutMs: 10_000, onOutput: (t) => seen.push(t) });
 	assert.match(seen.join(""), /one\ntwo/);
 });

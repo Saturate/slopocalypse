@@ -178,6 +178,7 @@ function newestReport(dir: string): string | undefined {
 
 interface ShardRun {
 	suites: number;
+	planned: string[];
 	result: ProcResult;
 	times: Record<string, number>;
 }
@@ -205,9 +206,14 @@ async function runShard(godot: string, root: string, files: readonly string[], i
 		const result = await run(godot, args, { cwd: root, timeoutMs: 1_200_000, env: { ...process.env, ...userDirEnv(platform, userDir) } });
 		const xml = newestReport(reports);
 		const times = xml !== undefined && existsSync(xml) ? suiteTimes(readFileSync(xml, "utf8")) : {};
-		return { suites: files.length, result, times };
+		return { suites: files.length, result, times, planned: files.map((f) => toRes(root, f)) };
 	} finally {
-		rmSync(userDir, { recursive: true, force: true });
+		// A Godot child still holding a file (Windows) must not turn the results into a throw.
+		try {
+			rmSync(userDir, { recursive: true, force: true });
+		} catch {
+			// Left in the temp folder.
+		}
 	}
 }
 
@@ -239,6 +245,9 @@ export async function runGdUnit(godot: string, root: string, testDirs: readonly 
 			if (r.code !== 0 && summary.errors + summary.failures === 0) lines.push(`${name}exit ${r.code}`);
 		}
 		if (problems.length > 0) lines.push(`${name}unexpected error lines:`, ...problems.map((p) => "  " + p));
+		// A suite gdUnit skipped without a word would otherwise pass as fewer cases.
+		const missing = summary === undefined ? [] : shard.planned.filter((p) => shard.times[p] === undefined);
+		if (missing.length > 0) lines.push(`${name}suites that did not run:`, ...missing.map((p) => "  " + p));
 		if (lines.length > before) failed.push(...failureLines(r.output));
 		// Self-test fixtures live in fresh hidden folders; their times would only pile up.
 		for (const [path, secs] of Object.entries(shard.times)) if (!path.includes("/.")) times[path] = Math.round(secs * 10) / 10;

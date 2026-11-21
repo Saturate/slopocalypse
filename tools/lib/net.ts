@@ -117,6 +117,11 @@ export function watch(cmd: string, args: readonly string[], opts: Omit<RunOption
 	return { done, sees };
 }
 
+async function serverReady(server: Watched, name: string): Promise<string | undefined> {
+	if (await server.sees(SERVER_READY, SERVER_READY_MS)) return undefined;
+	return `${name}: never finished loading; it ended with:\n${lastLines((await server.done).output)}`;
+}
+
 // A server has its world built and is answering once Boot has loaded the modules; clients that
 // knock earlier wait on a main loop that is not polling, and give up on a slow machine.
 const SERVER_READY = /boot: loaded modules:/;
@@ -179,7 +184,11 @@ export async function netSmoke(godot: string, root: string, preferredPort = 7791
 	// clients have reported, then quits, which closes the clients.
 	const saves = mkdtempSync(pathJoin(tmpdir(), "slopocalypse-net-"));
 	const server = watch(godot, [...base, `--server=${port}`, "--net-report-after=1300", `--save=${pathJoin(saves, "world.db")}`], { cwd: root, timeoutMs: 240_000 });
-	await server.sees(SERVER_READY, SERVER_READY_MS);
+	const notReady = await serverReady(server, "server");
+	if (notReady !== undefined) {
+		rmSync(saves, { recursive: true, force: true });
+		return { ok: false, detail: notReady };
+	}
 	const join = `--connect=127.0.0.1:${port}`;
 	const clients = [
 		run(godot, [...base, join, "--net-report-after=900", "--bot=walk"], { cwd: root, timeoutMs: 240_000 }),
@@ -230,7 +239,8 @@ export async function saveSmoke(godot: string, root: string, preferredPort = 779
 	};
 	try {
 		const first = watch(godot, [...base, `--server=${port}`, "--net-report-after=1100", save], { cwd: root, timeoutMs: 240_000 });
-		await first.sees(SERVER_READY, SERVER_READY_MS);
+		const firstNotReady = await serverReady(first, "first server");
+		if (firstNotReady !== undefined) return { ok: false, detail: firstNotReady };
 		const walker = await run(godot, [...base, address, "--net-report-after=900", "--bot=walk", "--name=Saver"], { cwd: root, timeoutMs: 240_000 });
 		const firstServer = await first.done;
 		check("first server", firstServer);
@@ -241,7 +251,8 @@ export async function saveSmoke(godot: string, root: string, preferredPort = 779
 		if (walked < 3.0) problems.push(`first server: Saver did not get 3 m from the spawn (moved=${walked})`);
 
 		const second = watch(godot, [...base, `--server=${port}`, "--net-report-after=700", save], { cwd: root, timeoutMs: 240_000 });
-		await second.sees(SERVER_READY, SERVER_READY_MS);
+		const secondNotReady = await serverReady(second, "second server");
+		if (secondNotReady !== undefined) return { ok: false, detail: secondNotReady };
 		// A client claiming another build alongside: the server must turn it away with a reason.
 		const stale = run(godot, [...base, address, "--claim-version=0.0.0-old", "--name=Stale"], { cwd: root, timeoutMs: 120_000 });
 		const back = await run(godot, [...base, address, "--net-report-after=400", "--name=Saver"], { cwd: root, timeoutMs: 240_000 });
