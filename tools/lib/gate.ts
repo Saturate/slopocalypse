@@ -85,6 +85,7 @@ const MAX_SHARDS = 6;
 // Estimates for a suite with no recorded time: scenario suites run physics for seconds.
 const GUESS_SCENARIO_SECONDS = 5;
 const GUESS_SECONDS = 1;
+const SUITE_OVERHEAD_SECONDS = 0.1;
 // Times from the last runs on this machine (git-ignored) win over the committed ones, which
 // CI uses; refresh the committed file by copying the local one over it now and then.
 const LOCAL_DURATIONS = "tests/reports/durations.json";
@@ -123,8 +124,9 @@ export function planShards(suites: readonly Suite[], count: number): string[][] 
 	const order = [...suites].sort((a, b) => b.seconds - a.seconds || a.path.localeCompare(b.path));
 	for (const suite of order) {
 		let least = shards[0]!;
-		for (const shard of shards) if (shard.total < least.total) least = shard;
-		least.total += suite.seconds;
+		for (const shard of shards) if (shard.total < least.total || (shard.total === least.total && shard.paths.length < least.paths.length)) least = shard;
+		// Loading a suite costs something even when its tests take no time.
+		least.total += Math.max(suite.seconds, SUITE_OVERHEAD_SECONDS);
 		least.paths.push(suite.path);
 	}
 	return shards.map((s) => s.paths).filter((p) => p.length > 0);

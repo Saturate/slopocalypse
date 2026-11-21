@@ -21,10 +21,14 @@ func test_nothing_counts_before_the_first_peer() -> void:
 	assert_int(int(_net.get(&"_frames"))).is_equal(0)
 
 
-func test_a_server_counts_once_someone_is_there() -> void:
+func test_a_server_counts_once_a_player_has_joined() -> void:
 	_net.set(&"mode", NetSession.Mode.SERVER)
 	_ticks(30)
+	# A connection alone (a client about to be turned away) does not start the clock.
 	_net.set(&"_had_peers", true)
+	_ticks(10)
+	assert_int(int(_net.get(&"_frames"))).is_equal(0)
+	_net.set(&"_had_players", true)
 	_ticks(20)
 	assert_int(int(_net.get(&"_frames"))).is_equal(20)
 

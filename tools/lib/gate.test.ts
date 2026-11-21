@@ -91,3 +91,8 @@ test("finds test_*.gd suites only, in a stable order", () => {
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+test("suites that take no time still spread across shards", () => {
+	const suites = ["a", "b", "c", "d"].map((path) => ({ path, seconds: 0 }));
+	assert.deepEqual(planShards(suites, 2).map((s) => s.length), [2, 2]);
+});

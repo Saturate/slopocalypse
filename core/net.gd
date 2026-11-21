@@ -19,7 +19,7 @@ extends Node
 ## Test hook: --net-report-after=FRAMES prints a NET-REPORT line and quits, so tools can
 ## check a session from the outside. A client or solo game counts physics frames from when its
 ## own player is in the world, and tells its server once it has reported; a server counts from
-## its first peer and reports and stops only once every client on it has reported.
+## its first player and reports and stops only once every client on it has reported.
 
 ## Server: a peer connected and said who they are.
 signal peer_joined(peer_id: int)
@@ -83,6 +83,8 @@ var _report_after := -1
 var _frames := 0
 ## Client or solo: this instance's own player is in the world, so its report clock runs.
 var _in_play := false
+## Server: someone has joined (said hello and was let in), which starts its report clock.
+var _had_players := false
 ## Server: peers that said their report is out; seconds waited for the rest.
 var _reported: Dictionary = {}
 var _report_wait := 0.0
@@ -373,6 +375,7 @@ func _hello(player_name: String, key: String) -> void:
 		return
 	_identities[peer] = {"name": player_name.strip_edges().left(MAX_NAME_LENGTH), "key": key.left(MAX_KEY_LENGTH)}
 	Log.info(&"net", "peer %d is %s" % [peer, _identities[peer]["name"]])
+	_had_players = true
 	peer_joined.emit(peer)
 
 
@@ -518,10 +521,11 @@ static func unreported(peers: PackedInt32Array, reported: Dictionary) -> Array[i
 
 ## A client builds the server's world only after joining, which stalls its frames for seconds
 ## on a slow machine; counting from the connection left a bot too little time to walk or
-## drive before its report. A server counts from its first peer.
+## drive before its report. A server counts from its first player: a client it turns away
+## must not start the clock, or it could run out before the real player has even connected.
 func _report_clock_running() -> bool:
 	if mode == Mode.SERVER:
-		return _had_peers
+		return _had_players
 	if not _in_play and is_inside_tree():
 		var me := multiplayer.get_unique_id()
 		_in_play = get_tree().get_nodes_in_group(&"players").any(func(p: Node) -> bool: return int(p.get_meta(&"peer_id", 0)) == me)

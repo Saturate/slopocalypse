@@ -265,7 +265,7 @@ export async function saveSmoke(godot: string, root: string, preferredPort = 779
 		check("returning client", back);
 		if (!secondServer.output.includes("Saver is back")) problems.push("second server: did not recognise Saver from the save");
 		const rep = parseReport(back.output);
-		if (rep === undefined) problems.push(`returning client: no NET-REPORT line; it ended with:\n${lastLines(back.output)}`);
+		if (rep === undefined) problems.push(`returning client: no NET-REPORT line; it ended with:\n${lastLines(back.output)}\n  and the second server with:\n${lastLines(secondServer.output, 12)}`);
 		else if (Math.abs(rep.moved - walked) > 1.5) problems.push(`returning client: not put back where it left (moved=${rep.moved}, left at ${walked})`);
 	} finally {
 		rmSync(saves, { recursive: true, force: true });
