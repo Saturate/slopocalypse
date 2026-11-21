@@ -29,6 +29,7 @@
     "stats": true,
     "report": true,
     "gore": true,
-    "benchmark": true
+    "benchmark": true,
+    "wires": true
   }
 }
