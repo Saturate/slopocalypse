@@ -76,6 +76,9 @@ func _ready() -> void:
 	_intent = get_node(intent_path)
 	_exit_point = get_node(exit_point_path)
 	_passenger_exit = get_node_or_null(passenger_exit_path)
+	# On the compass strip (#455); it fades out once you are next to it or in it.
+	add_to_group(&"compass_markers")
+	set_meta(&"compass_kind", "car")
 	var data: Variant = Data.load_json(CONFIG)
 	if not data is Dictionary or not Data.require(CONFIG, data, REQUIRED):
 		set_physics_process(false)
