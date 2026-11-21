@@ -1,4 +1,5 @@
 // Pieces of tools/deploy.ts that are pure text, so they can be tested without a server.
+import { isIP } from "node:net";
 
 export interface DeployTarget {
 	// Install folder on the server; releases/<stamp> and a `current` link live inside it.
@@ -9,6 +10,9 @@ export interface DeployTarget {
 	// Releases kept on disk so a bad deploy can be rolled back by hand.
 	keep: number;
 	openFirewall: boolean;
+	// The server's web page (`--web`), or null for none. `port` defaults to the game's port and
+	// `bind` to every address ("*"); "127.0.0.1" keeps it for a proxy on the same machine.
+	web: { port: number; bind: string } | null;
 }
 
 export const SERVICE = "slopocalypse";
@@ -17,6 +21,30 @@ export const LINUX_EXE = "Slopocalypse.x86_64";
 // A shell-safe single-quoted word.
 export function quote(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+// The game's flags for its web page; only what differs from the defaults.
+export function webFlags(t: DeployTarget): string {
+	if (t.web === null) return "";
+	const port = t.web.port === t.port ? "" : ` --web-port=${t.web.port}`;
+	const bind = t.web.bind === "*" ? "" : ` --web-bind=${t.web.bind}`;
+	return ` --web${port}${bind}`;
+}
+
+// --web, --web-port N and --web-bind ADDRESS from the command line (either of the last two
+// turns the page on). Throws on a port or address the game would refuse.
+export function webOptions(args: readonly string[], gamePort: number): DeployTarget["web"] {
+	const value = (name: string): string | undefined => {
+		const i = args.indexOf(`--${name}`);
+		return i >= 0 ? args[i + 1] : undefined;
+	};
+	const portText = value("web-port");
+	const bind = value("web-bind") ?? "*";
+	if (!args.includes("--web") && portText === undefined && !args.includes("--web-bind")) return null;
+	const port = portText === undefined ? gamePort : Number(portText);
+	if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad --web-port ${portText ?? ""}`);
+	if (bind !== "*" && isIP(bind) === 0) throw new Error(`bad --web-bind ${bind}: an IP address such as 127.0.0.1, or *`);
+	return { port, bind };
 }
 
 export function systemdUnit(t: DeployTarget): string {
@@ -32,7 +60,7 @@ export function systemdUnit(t: DeployTarget): string {
 		// user:// resolves under HOME; keep it inside the install folder, not a login home.
 		`Environment=HOME=${t.dir}/home`,
 		// The save sits beside the releases, so upgrades and rollbacks keep everyone's gear.
-		`ExecStart=${t.dir}/current/${LINUX_EXE} --headless -- --server=${t.port} --save=${t.dir}/saves/world.db`,
+		`ExecStart=${t.dir}/current/${LINUX_EXE} --headless -- --server=${t.port} --save=${t.dir}/saves/world.db${webFlags(t)}`,
 		"Restart=on-failure",
 		"RestartSec=3",
 		"",
@@ -64,6 +92,9 @@ export function installScript(t: DeployTarget, stamp: string, tarball: string): 
 		`$SUDO systemctl enable ${SERVICE} >/dev/null 2>&1`,
 		`$SUDO systemctl restart ${SERVICE}`,
 		...(t.openFirewall ? [`if command -v ufw >/dev/null 2>&1; then $SUDO ufw allow ${t.port}/udp; fi`] : []),
+		// A page on every address is for the public; one bound to a single address sits behind
+		// a proxy on that machine and stays closed.
+		...(t.openFirewall && t.web !== null && t.web.bind === "*" ? [`if command -v ufw >/dev/null 2>&1; then $SUDO ufw allow ${t.web.port}/tcp; fi`] : []),
 		// Oldest releases go; `current` always points at a kept one.
 		`cd ${quote(`${t.dir}/releases`)} && ls -1 | sort | head -n -${t.keep} | xargs -r $SUDO rm -rf`,
 		"",

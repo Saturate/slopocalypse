@@ -1,6 +1,9 @@
 // Puts the dedicated server on a Linux machine you own and keeps it running with systemd.
 //   node tools/deploy.ts --host user@server [--port 7777] [--dir /opt/slopocalypse] [--user slopocalypse]
+//                        [--web] [--web-port 8080] [--web-bind 127.0.0.1]
 //                        [--open-firewall] (--zip build/linux-folder-or-zip | --ci) [--dry-run]
+// --web turns on the server's web page (status, and admin pages with WEB_PASSWORD); --web-port
+// moves it off the game's port and --web-bind 127.0.0.1 keeps it for an HTTPS proxy on the box.
 // The Linux build needs the Rust extensions compiled for Linux, which this Windows machine
 // cannot do. Give a Linux build with --zip (built on a Linux box with
 // `node tools/export.ts --os linux`), or --ci to run the manual `server-build` GitHub
@@ -13,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { argv, exit } from "node:process";
 import { extract } from "./lib/download.ts";
-import { checkScript, installScript, LINUX_EXE, serverIsUp, type DeployTarget } from "./lib/deploy.ts";
+import { checkScript, installScript, LINUX_EXE, serverIsUp, webOptions, type DeployTarget } from "./lib/deploy.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const WORKFLOW = "server-build.yml";
@@ -64,14 +67,16 @@ async function localBuild(path: string): Promise<string> {
 async function main(): Promise<void> {
 	const host = arg("host");
 	if (host === undefined) throw new Error("missing --host user@server");
+	const port = Number(arg("port") ?? "7777");
+	if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("bad --port");
 	const target: DeployTarget = {
 		dir: arg("dir") ?? "/opt/slopocalypse",
-		port: Number(arg("port") ?? "7777"),
+		port,
 		user: arg("user") ?? "slopocalypse",
 		keep: 3,
 		openFirewall: argv.includes("--open-firewall"),
+		web: webOptions(argv, port),
 	};
-	if (!Number.isInteger(target.port) || target.port < 1 || target.port > 65535) throw new Error("bad --port");
 	const stamp = stampNow();
 	const remoteTar = `/tmp/slopocalypse-${stamp}.tar.gz`;
 
