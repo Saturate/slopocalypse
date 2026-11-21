@@ -105,6 +105,9 @@ var _slide_cooldown := 0.0
 var _shove := Vector3.ZERO
 ## The way into the ladder being climbed (level, unit).
 var _ladder_into := Vector3.ZERO
+## On a ladder, held to it with no gravity. Synced, so other screens show the climb instead
+## of judging a body rising or sinking at climbing speed as falling.
+var climbing := false
 
 
 ## A copy of someone else's body on a client: it shows what the server sends and runs no
@@ -164,6 +167,23 @@ func grounded() -> bool:
 	if is_physics_processing():
 		return is_on_floor()
 	return absf(velocity.y) <= HELD_AIRBORNE_SPEED
+
+
+## Off the ground and not holding on to anything: what the body animator shows as falling.
+func airborne() -> bool:
+	return not climbing and not grounded()
+
+
+## The way into the ladder being climbed (level, unit); zero when not climbing. A copy held
+## still never steps, so it asks the ladders where it is.
+func ladder_into() -> Vector3:
+	if not climbing:
+		return Vector3.ZERO
+	if is_physics_processing():
+		return _ladder_into
+	var ladder := Ladders.at(global_position, _capsule.height, _capsule.radius)
+	var into: Vector3 = ladder.get("into", Vector3.ZERO)
+	return into
 
 
 func _physics_process(delta: float) -> void:
@@ -257,7 +277,7 @@ func _step_normal(delta: float) -> void:
 	var depth := water_depth()
 	_set_swimming(depth > float(config["swim_depth"]))
 	var ladder := {} if swimming else Ladders.at(global_position, _capsule.height, _capsule.radius)
-	var climbing := false
+	climbing = false
 	if not ladder.is_empty():
 		var into: Vector3 = ladder["into"]
 		var aim := float(config["climb_aim"])
@@ -423,6 +443,7 @@ func _try_traverse() -> bool:
 
 func _start_path(new_mode: Mode, over: Vector3, to: Vector3, exit_velocity: Vector3) -> void:
 	mode = new_mode
+	climbing = false
 	_path_t = 0.0
 	_path_from = global_position
 	_path_over = over
@@ -448,6 +469,7 @@ func _step_path(delta: float) -> void:
 
 func _start_slide() -> void:
 	mode = Mode.SLIDE
+	climbing = false
 	_slide_left = config["slide_time"]
 	var flat := Vector3(velocity.x, 0.0, velocity.z)
 	# The boost tops out one boost over sprint speed (repeated slides stacked it: 93 m/s in a

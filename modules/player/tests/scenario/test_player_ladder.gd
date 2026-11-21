@@ -89,3 +89,33 @@ func test_off_the_ladder_the_player_falls() -> void:
 	_player.global_position = Vector3(5, 3, 0)
 	await _frames(30)
 	assert_float(_player.global_position.y).is_less(1.0)
+
+
+func test_climbing_is_set_on_it_and_clears_stepping_off_at_the_bottom() -> void:
+	assert_bool(_player.climbing).is_false()
+	_player.intent().move = Vector2(0, 1)
+	await _frames(40)
+	assert_bool(_player.climbing).is_true()
+	_player.intent().move = Vector2(0, -1)
+	await _frames(90)
+	# Back on the ground and walked back off it.
+	assert_float(_player.global_position.y).is_less(0.2)
+	assert_bool(_player.climbing).is_false()
+
+
+func test_climbing_clears_stepping_off_at_the_top() -> void:
+	# A deck behind the wall at the ladder's top, to step onto.
+	_box(Vector3(0, LADDER_TOP - 0.25, -2.1), Vector3(4.0, 0.5, 2.8))
+	_player.intent().move = Vector2(0, 1)
+	var climbed := false
+	for i in 300:
+		await get_tree().physics_frame
+		climbed = climbed or _player.climbing
+		if _player.global_position.z < -1.2:
+			break
+	_player.intent().move = Vector2.ZERO
+	await _frames(10)
+	assert_bool(climbed).is_true()
+	assert_bool(_player.climbing).is_false()
+	assert_float(_player.global_position.y).is_equal_approx(LADDER_TOP, 0.1)
+	assert_float(_player.global_position.z).is_less(-1.0)
