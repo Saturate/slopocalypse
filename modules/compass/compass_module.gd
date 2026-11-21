@@ -1,7 +1,7 @@
 extends Node
 ## The compass strip along the top of the screen (#455): client only, for the local player.
-## The strip (CompassStrip) finds what to show by itself; this gives it the base (the world's
-## spawn) and the player. Other modules add markers by putting a Node3D in the
+## The strip (CompassStrip) finds what to show by itself; this gives it the base (the camp's
+## centre, from the camp layout in `world.ready`) and the player. Other modules add markers by putting a Node3D in the
 ## `compass_markers` group with a `compass_kind` meta; nothing here knows them.
 
 const CONFIG := "res://modules/compass/data/compass.json"
@@ -12,8 +12,8 @@ const REQUIRED := {"span_degrees": TYPE_FLOAT, "tick_degrees": TYPE_FLOAT, "widt
 var config: Dictionary = {}
 
 var _strip: CompassStrip
-var _spawn := Vector3.ZERO
-var _has_spawn := false
+var _base := Vector3.ZERO
+var _has_base := false
 
 
 func _ready() -> void:
@@ -31,12 +31,13 @@ func _exit_tree() -> void:
 
 
 func _on_world_ready(payload: Dictionary) -> void:
-	if not payload.has("spawn"):
+	var camp := CampLayout.of_ready(payload)
+	if camp == null:
 		return
-	_spawn = payload["spawn"]
-	_has_spawn = true
+	_base = camp.centre
+	_has_base = true
 	if _strip != null:
-		_strip.set_base(_spawn)
+		_strip.set_base(_base)
 
 
 func _on_player_spawned(payload: Dictionary) -> void:
@@ -50,7 +51,7 @@ func _on_player_spawned(payload: Dictionary) -> void:
 		_strip = CompassStrip.new()
 		_strip.name = "Compass"
 		_strip.config = config
-		if _has_spawn:
-			_strip.set_base(_spawn)
+		if _has_base:
+			_strip.set_base(_base)
 		add_child(_strip)
 	_strip.player = player

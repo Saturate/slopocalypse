@@ -6,10 +6,10 @@ extends CanvasLayer
 ## A marker past an edge sticks to that edge with an arrow pointing out; one close by fades
 ## out, since you can see the thing itself. Off in Settings ("compass").
 ##
-## What it shows: the base (the world's spawn, given by the module), the other players (their
+## What it shows: the base (the camp's centre, given by the module), the other players (their
 ## names come with their spawn), and anything another module puts in the `compass_markers`
 ## group: a Node3D with a `compass_kind` meta ("objective", "car", ...) and, optionally, a
-## `compass_label` meta. Hidden nodes are skipped. See docs/decisions/0013.
+## `compass_label` meta. Hidden nodes are skipped. See docs/decisions/0016.
 
 const GROUP := &"compass_markers"
 const KIND_META := &"compass_kind"
@@ -43,7 +43,7 @@ func _ready() -> void:
 	_plate.bevel = 2.0
 
 
-## Where the base is (the players' camp at the world's spawn).
+## Where the base is (the players' camp's centre).
 func set_base(at: Vector3) -> void:
 	_base = at
 	_has_base = true

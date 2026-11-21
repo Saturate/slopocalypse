@@ -18,13 +18,13 @@ static func heading(basis: Basis) -> float:
 
 ## Where `bearing_deg` lands on a strip showing `span` degrees centred on `heading_deg`:
 ## {x: -1 (left edge) to 1 (right edge), clamped: true when it is past an edge and sticks
-## to it}. Straight behind counts as past the right edge.
+## to it}. Straight behind wraps to -180 degrees, so it sticks to the left edge.
 static func place(bearing_deg: float, heading_deg: float, span: float) -> Dictionary:
 	var off := wrapf(bearing_deg - heading_deg, -180.0, 180.0)
 	var x := off / (span * 0.5)
 	if absf(x) <= 1.0:
 		return {"x": x, "clamped": false}
-	return {"x": signf(x) if x != 0.0 else 1.0, "clamped": true}
+	return {"x": signf(x), "clamped": true}
 
 
 ## How visible a marker this far away is: 0 within `near` metres (you can see the thing

@@ -37,8 +37,8 @@ func test_markers_past_the_edge_stick_to_it_pointing_out() -> void:
 	var left := CompassMath.place(200.0, 0.0, SPAN)
 	assert_float(float(left["x"])).is_equal(-1.0)
 	assert_bool(bool(left["clamped"])).is_true()
-	# Straight behind goes to one edge, not the middle.
-	assert_float(absf(float(CompassMath.place(180.0, 0.0, SPAN)["x"]))).is_equal(1.0)
+	# Straight behind goes to the left edge, not the middle.
+	assert_float(float(CompassMath.place(180.0, 0.0, SPAN)["x"])).is_equal(-1.0)
 
 
 func test_markers_fade_out_up_close() -> void:
