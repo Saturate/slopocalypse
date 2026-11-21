@@ -45,3 +45,20 @@ static func worst_hitches(log: String, from: float, to: float, count: int) -> Ar
 		found.append({"t": t, "ms": float(rec["spike_ms"]), "zones": rec.get("zones", {}), "compiles": rec.get("compiles", {})})
 	found.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["ms"]) > float(b["ms"]))
 	return found.slice(0, count)
+
+
+## A run in a line or two for pasting in a chat (#377): the game's version, the frame rate,
+## the 1 % low, the worst frame, then the machine. `machine` may hold version, gpu, renderer,
+## cpu, os and resolution; empty ones are left out. No names, keys or paths.
+static func summary_text(results: Dictionary, machine: Dictionary) -> String:
+	var version := str(machine.get("version", ""))
+	var head := "Slopocalypse%s benchmark: %.0f fps average, %.0f fps 1%% low, worst frame %.1f ms" % [
+		" " + version if not version.is_empty() else "", float(results.get("fps_mean", 0.0)),
+		float(results.get("fps_low_1pct", 0.0)), float(results.get("frame_ms_worst", 0.0))]
+	var parts: Array[String] = []
+	for key: String in ["gpu", "renderer", "cpu", "os", "resolution"]:
+		var value := str(machine.get(key, "")).strip_edges()
+		if not value.is_empty():
+			parts.append(value)
+	return head if parts.is_empty() else head + "\n" + ", ".join(parts)
+

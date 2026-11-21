@@ -59,5 +59,7 @@ USER slopocalypse
 WORKDIR /opt/slopocalypse
 EXPOSE 7777/udp
 # Tuning without a rebuild: mount files over /opt/slopocalypse/tweaks/<res path>, see TWEAKING.md.
+# The web page (TCP): -e WEB_PORT=8080 moves it off the game's port, -e WEB_PASSWORD=... turns on
+# the admin pages; behind an HTTPS proxy publish it on loopback only (-p 127.0.0.1:8080:8080/tcp).
 ENTRYPOINT ["./Slopocalypse.x86_64", "--headless", "--"]
 CMD ["--server=7777", "--save=/data/world.db", "--web"]

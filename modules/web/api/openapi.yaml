@@ -119,6 +119,47 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Mission"
+        kills:
+          $ref: "#/components/schemas/Kills"
+    Kills:
+      type: object
+      description: The kill board, when the stats module is on (#344).
+      required: [totals, top]
+      properties:
+        totals:
+          type: object
+          description: Everyone's counts on this server added up.
+          required: [soldiers, drones, players, civilians, deaths, headshots, longest_kill_m]
+          properties:
+            soldiers:
+              type: integer
+            drones:
+              type: integer
+            players:
+              type: integer
+            civilians:
+              type: integer
+            deaths:
+              type: integer
+            headshots:
+              type: integer
+            longest_kill_m:
+              type: integer
+        top:
+          type: array
+          description: The players with the most kills of soldiers, drones and players, most first.
+          items:
+            type: object
+            required: [name, kills, headshots, longest_kill_m]
+            properties:
+              name:
+                type: string
+              kills:
+                type: integer
+              headshots:
+                type: integer
+              longest_kill_m:
+                type: integer
     Mission:
       type: object
       required: [codename, kind, place, pays]

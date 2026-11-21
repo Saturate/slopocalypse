@@ -18,6 +18,7 @@ var _key_buttons: Dictionary[String, Button] = {}
 var _sliders: Dictionary[String, HSlider] = {}
 var _fullscreen: Button
 var _blood: Button
+var _compass: Button
 
 
 func _init() -> void:
@@ -33,6 +34,9 @@ func _init() -> void:
 	# module the toggle would do nothing, so it isn't offered.
 	_blood = _toggle("Blood", "blood")
 	_blood.visible = Features.is_enabled(&"gore")
+	# Read by the compass module each frame; offered only with it.
+	_compass = _toggle("Compass", "compass")
+	_compass.visible = Features.is_enabled(&"compass")
 	var keys_head := Label.new()
 	keys_head.theme_type_variation = &"HeadingLabel"
 	keys_head.text = "KEYS"
@@ -132,7 +136,7 @@ func _refresh() -> void:
 	for key: String in _sliders:
 		_sliders[key].set_value_no_signal(float(Settings.value(key)))
 		_sliders[key].value_changed.emit(_sliders[key].value)
-	for toggle: Button in [_fullscreen, _blood]:
+	for toggle: Button in [_fullscreen, _blood, _compass]:
 		toggle.set_pressed_no_signal(bool(Settings.value(String(toggle.get_meta(&"setting")))))
 		_show_toggle(toggle)
 	var keys := content.get_node(^"Keys") as GridContainer
