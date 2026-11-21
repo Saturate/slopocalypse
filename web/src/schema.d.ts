@@ -239,6 +239,27 @@ export interface components {
             mission_state?: string;
             mission?: components["schemas"]["Mission"] | null;
             board?: components["schemas"]["Mission"][];
+            kills?: components["schemas"]["Kills"];
+        };
+        /** @description The kill board, when the stats module is on (#344). */
+        Kills: {
+            /** @description Everyone's counts on this server added up. */
+            totals: {
+                soldiers: number;
+                drones: number;
+                players: number;
+                civilians: number;
+                deaths: number;
+                headshots: number;
+                longest_kill_m: number;
+            };
+            /** @description The players with the most kills of soldiers, drones and players, most first. */
+            top: {
+                name: string;
+                kills: number;
+                headshots: number;
+                longest_kill_m: number;
+            }[];
         };
         Mission: {
             codename: string;
