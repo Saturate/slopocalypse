@@ -37,6 +37,10 @@ func _answers(address: String, port: int) -> bool:
 		if not sent:
 			peer.put_data("GET /status.json HTTP/1.1\r\n\r\n".to_utf8_buffer())
 			sent = true
+			# macOS reports a refused connect to the machine's own address as connected
+			# until the first write fails and closes the socket.
+			if peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
+				return false
 		if peer.get_available_bytes() > 0:
 			var got: Array = peer.get_data(peer.get_available_bytes())
 			peer.disconnect_from_host()

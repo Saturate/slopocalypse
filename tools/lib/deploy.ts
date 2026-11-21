@@ -31,10 +31,14 @@ export const webFlags = (t: DeployTarget): string => {
 	return ` --web${port}${bind}`;
 };
 
-// The word after `--name` on the command line, if there is one.
+// The word after `--name` on the command line; undefined without the flag. A flag with no
+// value throws, so a forgotten address can't fall back to every address.
 const flagValue = (args: readonly string[], name: string): string | undefined => {
 	const i = args.indexOf(`--${name}`);
-	return i >= 0 ? args[i + 1] : undefined;
+	if (i < 0) return undefined;
+	const value = args[i + 1];
+	if (value === undefined || value.startsWith("--")) throw new Error(`--${name} needs a value`);
+	return value;
 };
 
 const isPort = (n: number): boolean => Number.isInteger(n) && n >= 1 && n <= 65535;

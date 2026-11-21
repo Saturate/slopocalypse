@@ -4,6 +4,9 @@
 //                        [--open-firewall] (--zip build/linux-folder-or-zip | --ci) [--dry-run]
 // --web turns on the server's web page (status, and admin pages with WEB_PASSWORD); --web-port
 // moves it off the game's port and --web-bind 127.0.0.1 keeps it for an HTTPS proxy on the box.
+// Behind a proxy, set WEB_PASSWORD and WEB_TRUSTED_PROXY=127.0.0.1/32 in the service's
+// environment on the server (`sudo systemctl edit slopocalypse`, then `Environment=...` lines
+// under [Service]; the drop-in survives redeploys). This tool never carries the password.
 // The Linux build needs the Rust extensions compiled for Linux, which this Windows machine
 // cannot do. Give a Linux build with --zip (built on a Linux box with
 // `node tools/export.ts --os linux`), or --ci to run the manual `server-build` GitHub
@@ -16,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { argv, exit } from "node:process";
 import { extract } from "./lib/download.ts";
-import { checkScript, installScript, LINUX_EXE, serverIsUp, webOptions, type DeployTarget } from "./lib/deploy.ts";
+import { checkScript, installScript, LINUX_EXE, SERVICE, serverIsUp, webOptions, type DeployTarget } from "./lib/deploy.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const WORKFLOW = "server-build.yml";
@@ -115,6 +118,10 @@ async function main(): Promise<void> {
 	console.log(`\nServer is up: ${name}:${target.port} (UDP).`);
 	console.log("If friends cannot connect, open UDP port " + target.port + " in the server's firewall and any cloud provider firewall.");
 	console.log(`Friend zip that lists it: node tools/export.ts --connect ${name}${target.port === 7777 ? "" : `:${target.port}`}`);
+	if (target.web !== null && target.web.bind !== "*") {
+		console.log(`Web page on ${target.web.bind}:${target.web.port} for a proxy on the box. Set WEB_PASSWORD and WEB_TRUSTED_PROXY=127.0.0.1/32 in the service:`);
+		console.log(`  ssh ${host} sudo systemctl edit ${SERVICE}   (Environment=... lines under [Service], then restart)`);
+	}
 }
 
 main().catch((err: unknown) => {

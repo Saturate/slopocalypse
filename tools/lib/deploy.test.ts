@@ -52,6 +52,13 @@ test("web options come from --web, --web-port and --web-bind, and bad ones are r
 	assert.throws(() => webOptions(["--web-bind", "localhost"], 7777), /web-bind/);
 });
 
+test("a web flag with no value is refused rather than opening the page on every address", () => {
+	assert.throws(() => webOptions(["--web-bind"], 7777), /--web-bind needs a value/);
+	assert.throws(() => webOptions(["--web-bind", "--open-firewall"], 7777), /--web-bind needs a value/);
+	assert.throws(() => webOptions(["--web", "--web-port"], 7777), /--web-port needs a value/);
+	assert.throws(() => webOptions(["--web-port", "--dry-run"], 7777), /--web-port needs a value/);
+});
+
 test("the firewall opens the web port only for a page on every address", () => {
 	const open = { ...target, openFirewall: true };
 	assert.match(installScript({ ...open, web: { port: 8080, bind: "*" } }, "s", "/tmp/t"), /ufw allow 8080\/tcp/);

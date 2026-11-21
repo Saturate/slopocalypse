@@ -59,15 +59,15 @@ The page speaks plain HTTP, so on the open internet put a reverse proxy in front
 - `--web-port=8080` or `WEB_PORT=8080`: the page on its own TCP port instead of the game's.
 - `--web-bind=127.0.0.1` or `WEB_BIND=127.0.0.1`: listen on that address only (default `*`, every address), so only a proxy on the same machine reaches it. An address that isn't an IP keeps the page off rather than opening it to everyone.
 
-In Docker, publish the TCP port on the host's loopback only and let the proxy on the host reach it there; `WEB_BIND` is for running the server on the host itself (`tools/deploy.ts --web-port 8080 --web-bind 127.0.0.1` sets both in the service):
+In Docker, publish the TCP port on the host's loopback only and let the proxy on the host reach it there; `WEB_BIND` is for running the server on the host itself (`tools/deploy.ts --web-port 8080 --web-bind 127.0.0.1` sets both in the service). Behind a proxy, always set `WEB_PASSWORD` (the admin pages stay off without it) and `WEB_TRUSTED_PROXY` in the server's environment: `-e` for Docker; for the systemd service from `tools/deploy.ts`, `sudo systemctl edit slopocalypse` and add `Environment=WEB_PASSWORD=...` and `Environment=WEB_TRUSTED_PROXY=127.0.0.1/32` under `[Service]` (the drop-in survives redeploys). Keep the password out of any file in a repository:
 
 ```sh
 docker run -d --name slopocalypse --restart unless-stopped -p 7777:7777/udp -p 127.0.0.1:8080:8080/tcp \
-  -e WEB_PORT=8080 -e WEB_PASSWORD=<a long password> -e WEB_TRUSTED_PROXY=172.16.0.0/12 \
+  -e WEB_PORT=8080 -e WEB_PASSWORD=<a long password> -e WEB_TRUSTED_PROXY=172.17.0.1/32 \
   -v slopocalypse-data:/data slopocalypse-server
 ```
 
-A Caddyfile for it (Caddy gets the certificate itself). The page limits wrong admin passwords per visitor by the `X-Real-IP` header from a trusted proxy (`WEB_TRUSTED_PROXY`: the Docker bridge range above, `127.0.0.1/32` for a server on the host), so the proxy sets it:
+A Caddyfile for it (Caddy gets the certificate itself). The page limits wrong admin passwords per visitor by the `X-Real-IP` header from a trusted proxy, so the proxy sets it. `WEB_TRUSTED_PROXY` names the one address the proxy's connections arrive from: `172.17.0.1/32` above is the default Docker bridge's gateway, which is where traffic published on the host's loopback comes from (check yours with `docker network inspect bridge`); for a server on the host it is `127.0.0.1/32`. Trust only that address: anyone else in a trusted range can claim any `X-Real-IP` and dodge the limit. The check reads IPv4 only, so publish and bind the page on `127.0.0.1`, not `localhost` or `::1`, and point the proxy at `127.0.0.1`:
 
 ```
 slop.example.com {
