@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkScript, installScript, quote, serverIsUp, systemdUnit, type DeployTarget } from "./deploy.ts";
+import { checkScript, installScript, quote, serverIsUp, systemdUnit, webOptions, type DeployTarget } from "./deploy.ts";
 
-const target: DeployTarget = { dir: "/opt/slopocalypse", port: 7777, user: "slopocalypse", keep: 3, openFirewall: false };
+const target: DeployTarget = { dir: "/opt/slopocalypse", port: 7777, user: "slopocalypse", keep: 3, openFirewall: false, web: null };
 
 test("the service runs the headless server on the chosen port as its own user", () => {
 	const unit = systemdUnit({ ...target, port: 9000 });
@@ -35,4 +35,25 @@ test("up means active and listening on the port", () => {
 	assert.equal(serverIsUp("failed\n", journal, 7777), false);
 	assert.equal(serverIsUp("active\n", journal, 9000), false);
 	assert.match(checkScript(target), /journalctl -u slopocalypse/);
+});
+
+test("the web page is off unless asked for, and only non-default flags are passed", () => {
+	assert.doesNotMatch(systemdUnit(target), /--web/);
+	assert.match(systemdUnit({ ...target, web: { port: 7777, bind: "*" } }), /world\.db --web$/m);
+	assert.match(systemdUnit({ ...target, web: { port: 8080, bind: "127.0.0.1" } }), /world\.db --web --web-port=8080 --web-bind=127\.0\.0\.1$/m);
+});
+
+test("web options come from --web, --web-port and --web-bind, and bad ones are refused", () => {
+	assert.equal(webOptions(["--host", "me@box"], 7777), null);
+	assert.deepEqual(webOptions(["--web"], 7777), { port: 7777, bind: "*" });
+	assert.deepEqual(webOptions(["--web-bind", "127.0.0.1"], 9000), { port: 9000, bind: "127.0.0.1" });
+	assert.deepEqual(webOptions(["--web-port", "8080"], 7777), { port: 8080, bind: "*" });
+	assert.throws(() => webOptions(["--web-port", "http"], 7777), /web-port/);
+	assert.throws(() => webOptions(["--web-bind", "localhost"], 7777), /web-bind/);
+});
+
+test("the firewall opens the web port only for a page on every address", () => {
+	const open = { ...target, openFirewall: true };
+	assert.match(installScript({ ...open, web: { port: 8080, bind: "*" } }, "s", "/tmp/t"), /ufw allow 8080\/tcp/);
+	assert.doesNotMatch(installScript({ ...open, web: { port: 8080, bind: "127.0.0.1" } }, "s", "/tmp/t"), /tcp/);
 });
