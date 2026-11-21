@@ -132,6 +132,15 @@ func enter(who: Node3D) -> void:
 	Net.server_broadcast(&"car.entered", {"player": who, "car": self, "seat": seat})
 
 
+## Who sits in `seat` (null for nobody), as a replayed `car.entered` or `car.exited` says.
+## Only the server decides seats; this is how a client's copy of the car knows its occupants.
+func show_seat(seat: StringName, who: Node3D) -> void:
+	if seat == DRIVER:
+		driver = who
+	else:
+		passenger = who
+
+
 ## Lets `who` out (the driver when not given) beside their own door.
 func exit_car(who: Node3D = null) -> void:
 	if who == null:
