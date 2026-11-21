@@ -1,7 +1,7 @@
 class_name Settings
 extends RefCounted
 ## The player's own settings, kept in user://settings.cfg: mouse sensitivity, field of view,
-## volume, fullscreen, UI scale, blood and key bindings. Gameplay code asks for the values
+## volume, fullscreen, UI scale, blood, the compass strip and key bindings. Gameplay code asks for the values
 ## (`mouse_scale()`, `fov_offset()`); boot applies the rest once at start.
 ##
 ## Static, like UiStack: one set per machine, no node needed. It still reaches autoloads by
@@ -25,6 +25,7 @@ const DEFAULTS := {
 	"fullscreen": false,
 	"ui_scale": 1.0,
 	"blood": true,
+	"compass": true,
 }
 
 static var _values: Dictionary = DEFAULTS.duplicate()
