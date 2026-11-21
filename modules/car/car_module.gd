@@ -299,8 +299,9 @@ func _is_local(who: Node) -> bool:
 	return Net.has_local_player() and int(who.get_meta(&"peer_id", 0)) == Net.local_peer_id()
 
 
+## Session args, not only the command line: a menu choice adds `--bot=` too (the Benchmark).
 func _bot_behaviour() -> String:
-	for arg in OS.get_cmdline_user_args():
+	for arg in Net.session_args():
 		if arg.begins_with("--bot="):
 			return arg.trim_prefix("--bot=")
 	return ""
