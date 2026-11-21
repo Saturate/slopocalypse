@@ -2,7 +2,8 @@ class_name BenchmarkResults
 extends CanvasLayer
 ## Client: the benchmark's numbers when the run ends: frame rate, 1 % low, worst frame,
 ## what drawing cost, and the worst hitches with what ran in them. Save report writes the
-## file to send us; Back to menu leaves.
+## file to send us; Copy summary puts the headline numbers and the machine on the clipboard
+## for a chat; Back to menu leaves.
 
 signal save_requested
 
@@ -12,6 +13,7 @@ var _frame: ScreenFrame
 var _lines: VBoxContainer
 var _status: Label
 var _save: Button
+var _results: Dictionary = {}
 
 
 func _ready() -> void:
@@ -31,11 +33,13 @@ func _ready() -> void:
 	row.add_theme_constant_override(&"separation", 12)
 	_frame.content.add_child(row)
 	_save = _button(row, &"Save", "Save report", func() -> void: save_requested.emit())
+	_button(row, &"Copy", "Copy summary", _copy_summary)
 	_button(row, &"Leave", "Back to menu", func() -> void: Net.leave())
 	_frame.add_hint(&"ui_cancel", "Back to menu")
 
 
 func show_results(results: Dictionary, can_save: bool) -> void:
+	_results = results
 	for child in _lines.get_children():
 		child.queue_free()
 	_line("%.0f FPS" % results["fps_mean"], &"TitleLabel")
@@ -65,6 +69,25 @@ func show_saved(path: String) -> void:
 	_status.text = "Saved %s\nin %s\nSend that file to us (Discord is fine)." % [path.get_file(), path.get_base_dir()]
 	_save.visible = false
 	OS.shell_show_in_file_manager(path)
+
+
+## The short summary of this run and machine (BenchmarkStats.summary_text) onto the clipboard.
+func _copy_summary() -> void:
+	DisplayServer.clipboard_set(BenchmarkStats.summary_text(_results, machine(get_viewport())))
+	_status.text = "Copied. Paste it wherever you share results."
+
+
+## What the short summary says about the machine: no names, keys or paths.
+static func machine(viewport: Viewport) -> Dictionary:
+	var size := viewport.get_visible_rect().size if viewport != null else Vector2.ZERO
+	return {
+		"version": str(ProjectSettings.get_setting("application/config/version", "")),
+		"gpu": RenderingServer.get_video_adapter_name(),
+		"renderer": "%s (%s)" % [RenderingServer.get_current_rendering_method(), RenderingServer.get_current_rendering_driver_name()],
+		"cpu": OS.get_processor_name(),
+		"os": "%s %s" % [OS.get_name(), OS.get_version()],
+		"resolution": "%dx%d" % [int(size.x), int(size.y)] if size != Vector2.ZERO else "",
+	}
 
 
 func is_open() -> bool:
