@@ -150,6 +150,8 @@ func test_a_player_climbs_the_lookout_ladder_onto_the_deck() -> void:
 	assert_float(player.global_position.y).is_equal_approx(7.0, 0.2)
 	assert_float(player.global_position.z).is_greater(-deck)
 	assert_float(player.global_position.z).is_less(deck)
+	# Stepped off onto the deck: no longer holding on to the ladder.
+	assert_bool(player.climbing).is_false()
 
 
 ## What a piece stands on (x, z), from its generator's width and depth, or a square of its
