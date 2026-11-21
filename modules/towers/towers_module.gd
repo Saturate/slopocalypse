@@ -1,10 +1,10 @@
 extends Node
-## Water towers beside the road whose tanks leak where they are shot (WaterTower). The server
+## Water towers at the map's tower sites whose tanks leak where they are shot (WaterTower). The server
 ## decides which rounds hole a tank and broadcasts `towers.holed`; every machine drains the
 ## same tank from the holes, and someone joining later is sent the holes with their ages.
 
 const CONFIG := "res://modules/towers/data/towers.json"
-const REQUIRED := {"tower": TYPE_DICTIONARY, "spots": TYPE_ARRAY}
+const REQUIRED := {"tower": TYPE_DICTIONARY, "sites": TYPE_ARRAY}
 
 var config: Dictionary = {}
 var towers: Array[WaterTower] = []
@@ -35,27 +35,15 @@ func _exit_tree() -> void:
 func _on_world_ready(_p: Dictionary) -> void:
 	if not towers.is_empty():
 		return
+	# The map has water-tower sites by its farms and towns (#472); the flat test world none.
 	var ground := get_tree().get_first_node_in_group(&"ground")
-	if ground == null or not ground.has_method(&"road_point"):
+	if ground == null or not ground.has_method(&"map_sites"):
 		return
 	var spots: Array[Transform3D] = []
-	# A generated map has water-tower sites by its farms and towns (#472); kinds in the
-	# order the data lists them, so every machine numbers the towers alike.
-	if ground.has_method(&"on_map") and bool(ground.call(&"on_map")):
-		for kind: Variant in config.get("sites", []):
-			for at: Vector3 in ground.call(&"map_sites", str(kind)):
-				spots.append(Transform3D(Basis.IDENTITY, at))
-		place(spots)
-		return
-	for s: Dictionary in config["spots"]:
-		var m := float(s["at"])
-		var centre: Vector3 = ground.call(&"road_point", m)
-		var along: Vector3 = (ground.call(&"road_point", m + 1.0) as Vector3) - centre
-		along.y = 0.0
-		var right := along.normalized().cross(Vector3.UP) if along.length() > 0.001 else Vector3.RIGHT
-		var at := centre + right * float(s["side"])
-		at.y = float(ground.call(&"ground_height", at.x, at.z))
-		spots.append(Transform3D(Basis.IDENTITY, at))
+	# Kinds in the order the data lists them, so every machine numbers the towers alike.
+	for kind: Variant in config["sites"]:
+		for at: Vector3 in ground.call(&"map_sites", str(kind)):
+			spots.append(Transform3D(Basis.IDENTITY, at))
 	place(spots)
 
 

@@ -26,12 +26,13 @@ func _frames(count: int) -> void:
 func test_walking_into_the_edge_stops_at_the_wall() -> void:
 	var player: PlayerController = auto_free((load(PLAYER) as PackedScene).instantiate())
 	add_child(player)
-	var data: Dictionary = Data.load_json("res://modules/world/data/world.json")
-	# The far end of the road, where the world stops.
-	var far: float = float(data["behind"]) - float(data["length"])
-	# Near the far end, facing down the road (-Z), sprinting outwards. This tests the walls, not voxel streaming (test_voxel_digging covers that), so give the
-	# player a flat floor near the edge instead of waiting for terrain to stream in there.
-	var floor_y := 60.0
+	var map := WorldMaps.shape_or_default()
+	# The map's north edge, where the world stops.
+	var far := map.extent().position.y
+	# Near that edge, facing it (-Z), sprinting outwards. This tests the walls, not voxel
+	# streaming (test_voxel_digging covers that), so give the player a flat floor near the
+	# edge instead of waiting for terrain to stream in there.
+	var floor_y := map.high() + 2.0
 	var floor_body: StaticBody3D = auto_free(StaticBody3D.new())
 	var floor_shape := CollisionShape3D.new()
 	var floor_box := BoxShape3D.new()

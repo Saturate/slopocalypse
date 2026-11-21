@@ -1,8 +1,9 @@
 extends Node
-## Loads the world, waits until the ground around the spawn has collision, then announces
-## it. `--world=flat` loads the flat test world instead (a plain plane: no terrain, scenery
-## or road; the test range uses it). Also owns terrain-side reactions: shots that hit the ground dig a small crater, and
-## explosions a big one. The ground follows players, enemies and vehicles on its own.
+## Loads the world (the generated map, decision 0012), waits until the ground around the
+## spawn has collision, then announces it. `--world=flat` loads the flat test world instead (a
+## plain plane: no terrain, scenery or road; the test range uses it). Also owns terrain-side
+## reactions: shots that hit the ground dig a small crater, and explosions a big one. The
+## ground follows players, enemies and vehicles on its own.
 
 const SCENE := "res://modules/world/scenes/world.tscn"
 const FLAT_SCENE := "res://modules/world/scenes/flat_world.tscn"
@@ -11,30 +12,23 @@ const CONFIG := "res://modules/world/data/world.json"
 const READY_TIMEOUT_SECONDS := 30.0
 const BULLET_CRATER_RADIUS := 0.35
 const SPAWN_AREA_RADIUS := 16.0
-## Metres the map's boundary walls reach past its lowest and highest ground, so nothing
-## slips under or over them.
-const WALL_MARGIN := 100.0
 const MAP_REQUIRED := {"recipe": TYPE_STRING, "seed": TYPE_FLOAT, "kill_depth": TYPE_FLOAT, "car_ahead": TYPE_FLOAT, "car_side": TYPE_FLOAT}
 
 var _voxels: VoxelWorld
 var _scenery: SceneryScatter
 var _announcement: Dictionary = {}
 var _data: Dictionary = {}
-## Which world this instance plays: strip, flat (the test range) or map (#472).
-var _kind := &"strip"
+## Which world this instance plays: map (#472) or flat (the test range); empty when the
+## map could not be built.
+var _kind := &""
 var _waited := 0.0
 
 
 ## The generated map is the world (#472, decision 0012): its recipe and seed from
-## `world.json` `map`, overridden by `--map=` and `--seed=`. `--world=strip` plays the old
-## strip (until it is removed) and `--world=flat` the test range. True when a map is selected.
-static func _select_map(args: PackedStringArray, data: Dictionary) -> bool:
+## `world.json` `map`, overridden by `--map=` and `--seed=`. A recipe that is missing or
+## broken falls back to world.json's; true when a playable map is selected.
+static func _select_map(args: PackedStringArray, cfg: Dictionary) -> bool:
 	WorldMaps.clear()
-	if args.has("--world=strip") or args.has("--world=flat"):
-		return false
-	if not (data.get("map") is Dictionary and Data.require(CONFIG + " map", data["map"], MAP_REQUIRED)):
-		return false
-	var cfg: Dictionary = data["map"]
 	var recipe := str(cfg["recipe"])
 	var seed_value := int(cfg["seed"])
 	for arg in args:
@@ -47,44 +41,16 @@ static func _select_map(args: PackedStringArray, data: Dictionary) -> bool:
 		Log.warn(&"world", "--map=%s is not a recipe name; playing %s" % [recipe, cfg["recipe"]])
 		recipe = str(cfg["recipe"])
 	WorldMaps.select(recipe, seed_value)
-	# A recipe that is missing or broken: the strip, whole (with its tunnel), not half a map.
+	if WorldMaps.shape() == null and recipe != str(cfg["recipe"]):
+		Log.warn(&"world", "no playable map %s; playing %s" % [recipe, cfg["recipe"]])
+		recipe = str(cfg["recipe"])
+		WorldMaps.select(recipe, seed_value)
 	if WorldMaps.shape() == null:
-		Log.warn(&"world", "no playable map %s; playing the strip" % recipe)
+		Log.error(&"world", "no playable map %s (%s); no world loaded" % [recipe, WorldMaps.MAPS_DIR])
 		WorldMaps.clear()
 		return false
 	Log.info(&"world", "playing map %s, seed %d" % [recipe, seed_value])
 	return true
-
-
-## Puts the spawn at the map's camp and the car beside it facing down the highway, and fits
-## the boundary walls to the map; returns which way the highway leaves the camp.
-static func _place_on_map(world: Node, map: MapShape, spawn: Marker3D, car: Marker3D, cfg: Dictionary) -> Vector3:
-	var camp := map.camp()
-	var forward := map.forward()
-	spawn.global_position = camp + Vector3.UP
-	var side := forward.cross(Vector3.UP).normalized()
-	var at := camp + forward * float(cfg["car_ahead"]) + side * float(cfg["car_side"])
-	at.y = map.height_at(at.x, at.z) + 1.0
-	# Cars drive along their +Z: the nose points down the highway.
-	car.global_transform = Transform3D(Basis.looking_at(-forward, Vector3.UP), at)
-	var boundary := world.get_node_or_null("Boundary")
-	if boundary != null:
-		var area := map.extent()
-		var mid_y := (map.low() + map.high()) / 2.0
-		var height := map.high() - map.low() + WALL_MARGIN * 2.0
-		var walls := {"North": [Vector3(area.get_center().x, mid_y, area.position.y + 1.0), Vector3(area.size.x, height, 2.0)],
-			"South": [Vector3(area.get_center().x, mid_y, area.end.y - 1.0), Vector3(area.size.x, height, 2.0)],
-			"West": [Vector3(area.position.x + 1.0, mid_y, area.get_center().y), Vector3(2.0, height, area.size.y)],
-			"East": [Vector3(area.end.x - 1.0, mid_y, area.get_center().y), Vector3(2.0, height, area.size.y)]}
-		for name: String in walls:
-			var shape := boundary.get_node_or_null(name) as CollisionShape3D
-			if shape == null:
-				continue
-			var box := BoxShape3D.new()
-			box.size = walls[name][1]
-			shape.shape = box
-			shape.position = walls[name][0]
-	return forward
 
 
 ## Performance custom monitors this module publishes, and the method each one reads.
@@ -101,7 +67,9 @@ func _monitor_felled() -> int:
 
 func _ready() -> void:
 	var data: Variant = Data.load_json(CONFIG)
-	if not data is Dictionary or not Data.require(CONFIG, data, {"kill_y": TYPE_FLOAT, "rescue_depth": TYPE_FLOAT}):
+	if not data is Dictionary or not Data.require(CONFIG, data, {"rescue_depth": TYPE_FLOAT, "map": TYPE_DICTIONARY}):
+		return
+	if not Data.require(CONFIG + " map", data["map"], MAP_REQUIRED):
 		return
 	_data = data
 	EventBus.subscribe(&"weapon.fired", _on_weapon_fired)
@@ -120,14 +88,18 @@ func _ready() -> void:
 		Log.info(&"world", "waiting for the server to say which world it plays")
 		return
 	var args := Net.session_args()
-	_kind = &"flat" if args.has("--world=flat") else &"strip"
-	if _select_map(args, data):
+	WorldMaps.clear()
+	if args.has("--world=flat"):
+		_kind = &"flat"
+	elif _select_map(args, data["map"]):
 		_kind = &"map"
+	else:
+		return
 	_load_world()
 
 
-## Which world this instance plays, as a save keys it (#472): "strip", "flat", or the map's
-## recipe, a hash of the recipe file (an edited recipe moves things) and its seed.
+## Which world this instance plays, as a save keys it (#472): "flat", or the map's recipe, a
+## hash of the recipe file (an edited recipe moves things) and its seed.
 func map_key() -> String:
 	if _kind != &"map":
 		return String(_kind)
@@ -157,16 +129,17 @@ func _load_world() -> void:
 	_scenery = world.get_node_or_null("Scenery") as SceneryScatter
 	if _voxels != null and _scenery != null:
 		_voxels.dug.connect(_scenery.on_dug)
+	# The world scene put these on the map's camp (WorldRoot); the flat world's stand still.
 	var spawn: Marker3D = world.get_node("SpawnPoint")
 	var car: Marker3D = world.get_node("CarSpawn")
-	# `front` and `forward`: on the strip players start inside the tunnel, so things spread
-	# "around the spawn" (crates, enemies) go around the road just outside it.
 	var forward := Vector3.FORWARD
-	var kill_y := float(data["kill_y"])
-	var map := WorldMaps.shape() if WorldMaps.is_selected() else null
+	# The flat world's ground is at 0.
+	var low := 0.0
+	var map := WorldMaps.shape() if _kind == &"map" else null
 	if map != null:
-		forward = _place_on_map(world, map, spawn, car, data["map"])
-		kill_y = map.low() - float((data["map"] as Dictionary)["kill_depth"])
+		forward = map.forward()
+		low = map.low()
+	var kill_y := low - float((data["map"] as Dictionary)["kill_depth"])
 	_announcement = {
 		"spawn": spawn.global_position,
 		"car": car.global_transform,
@@ -178,18 +151,17 @@ func _load_world() -> void:
 
 
 ## Server to a joining client, before anything else about the world: which world it plays
-## (`kind` strip, flat or map) and, for a map, its recipe and seed. The client builds the same.
+## (`kind` flat or map) and, for a map, its recipe and seed. The client builds the same.
 @rpc("authority", "call_remote", "reliable")
 func _receive_map(kind: String, recipe: String, seed_value: int) -> void:
 	if _voxels != null or not _waits_for_server():
 		return
 	WorldMaps.clear()
-	_kind = &"strip"
 	if kind == "flat":
 		_kind = &"flat"
-	elif kind == "map":
+	else:
 		WorldMaps.select(recipe, seed_value)
-		if WorldMaps.shape() == null:
+		if kind != "map" or WorldMaps.shape() == null:
 			Net.leave("This server plays the map %s, which this game does not have." % recipe)
 			return
 		_kind = &"map"
@@ -280,9 +252,10 @@ func world_state_owner() -> String:
 	return "world"
 
 
-## 2: trees by square chunk ids (#472); a version-1 save's tree ids point elsewhere.
+## 3: trees by square chunk ids with the spawn clearing round the camp (#472); older saves'
+## tree ids point at other trees.
 func world_state_version() -> int:
-	return 2
+	return 3
 
 
 func server_world_state() -> Dictionary:
@@ -290,8 +263,8 @@ func server_world_state() -> Dictionary:
 
 
 func server_restore_world_state(version: int, data: Variant) -> void:
-	if version != 2 or not data is Dictionary:
-		Log.warn(&"world", "saved world damage is version %d; this game reads 2, so it starts undamaged" % version)
+	if version != 3 or not data is Dictionary:
+		Log.warn(&"world", "saved world damage is version %d; this game reads 3, so it starts undamaged" % version)
 		return
 	var d: Dictionary = data
 	if _voxels != null:

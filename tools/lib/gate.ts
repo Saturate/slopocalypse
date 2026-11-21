@@ -93,7 +93,8 @@ export async function runGdUnit(godot: string, root: string, testDirs: readonly 
 		"res://tests/reports",
 		...testDirs.flatMap((d) => ["-a", toRes(root, d)]),
 	];
-	const r = await run(godot, args, { cwd: root, timeoutMs: 600_000 });
+	// The full suite runs about 10 minutes on a quiet machine; the limit only catches a hang.
+	const r = await run(godot, args, { cwd: root, timeoutMs: 1_200_000 });
 	const summary = testSummary(r.output);
 	const problems = scanLog(r.output, GODOT_NOISE);
 	const lines: string[] = [];

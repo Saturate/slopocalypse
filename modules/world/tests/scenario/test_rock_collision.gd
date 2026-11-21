@@ -27,7 +27,7 @@ func _shapes() -> Array[CollisionShape3D]:
 
 
 func test_rock_collision_hugs_the_rock_and_skips_pebbles() -> void:
-	var heights := TerrainHeights.new(Data.load_json(_scatter.config_path))
+	var heights := WorldMaps.shape_or_default()
 	var hulls := 0
 	for shape in _shapes():
 		if shape.shape is SphereShape3D:
@@ -49,10 +49,17 @@ func test_rock_collision_hugs_the_rock_and_skips_pebbles() -> void:
 	assert_int(hulls).is_greater(3)
 
 
-func test_chunks_follow_the_players_down_the_road() -> void:
+func test_chunks_follow_the_players_across_the_map() -> void:
 	var start := _scatter.loaded_chunks()
 	assert_bool(start.is_empty()).is_false()
-	_scatter.update_around([Vector3(0.0, 0.0, -1200.0)], INF)
+	# The corner of the map furthest from the camp, well inside its edge.
+	var area := WorldMaps.shape_or_default().extent().grow(-100.0)
+	var home := Vector2(_scatter.home.x, _scatter.home.z)
+	var far := area.position
+	for corner: Vector2 in [area.position, area.end, Vector2(area.position.x, area.end.y), Vector2(area.end.x, area.position.y)]:
+		if corner.distance_to(home) > far.distance_to(home):
+			far = corner
+	_scatter.update_around([Vector3(far.x, 0.0, far.y)], INF)
 	await get_tree().process_frame
 	var later := _scatter.loaded_chunks()
 	for i in start:

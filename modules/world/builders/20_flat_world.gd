@@ -1,7 +1,7 @@
 extends SceneTree
 ## Builds the flat test world (`--world=flat`, used by the test range): a plain level plane
 ## with collision, the same sun and sky as the main world, a spawn point and a car spot. No
-## terrain, scenery, road or tunnel.
+## terrain, scenery or road.
 
 const OUT := "res://modules/world/scenes/flat_world.tscn"
 const SIZE := 1200.0

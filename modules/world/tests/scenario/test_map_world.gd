@@ -141,3 +141,35 @@ func test_no_tree_or_rock_grows_on_a_site_pad() -> void:
 					assert_bool(foot.has_point(Vector2(at.x, at.z))).override_failure_message("%s on a %s" % [kind, site["kind"]]).is_false()
 	assert_bool(map.on_site(map.camp().x, map.camp().z)).is_false()
 	s.queue_free()
+
+
+func test_a_pad_levels_the_ground_beside_a_road_but_not_the_road() -> void:
+	var map := _shape()
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
+	var voxels: VoxelWorld = world.get_node("Terrain")
+	var on_road := map.road_point(150.0)
+	var across := (map.road_point(151.0) - on_road).cross(Vector3.UP).normalized()
+	# The first spot off to the side that is past the road's edge and its fade.
+	var beside := on_road
+	for step in 40:
+		beside = on_road + across * float(step) * 0.5
+		if map.road_edge_distance(beside.x, beside.z) > voxels.PAD_ROAD_GAP + 0.5:
+			break
+	var level := maxf(on_road.y, voxels.ground_height(beside.x, beside.z)) + 4.0
+	voxels.set_pads_for(&"test_pad", [{"at": Vector3(on_road.x, level, on_road.z), "half": Vector2(30.0, 30.0), "yaw": 0.0, "blend": 3.0}])
+	assert_float(voxels.surface_height(on_road.x, on_road.z)).is_equal_approx(voxels.ground_height(on_road.x, on_road.z), 0.01)
+	assert_float(voxels.surface_height(beside.x, beside.z)).is_equal_approx(level, 0.01)
+	voxels.set_pads_for(&"test_pad", [])
+	world.queue_free()
+
+
+func test_a_map_name_that_is_not_a_recipe_plays_the_default() -> void:
+	var cfg: Dictionary = (JSON.parse_string(FileAccess.get_file_as_string("res://modules/world/data/world.json")) as Dictionary)["map"]
+	var module: GDScript = load("res://modules/world/world_module.gd")
+	Log.begin_capture()
+	var picked: bool = module.call(&"_select_map", PackedStringArray(["--map=no_such_recipe", "--seed=3"]), cfg)
+	Log.end_capture()
+	assert_bool(picked).is_true()
+	assert_str(WorldMaps.recipe_name()).is_equal(str(cfg["recipe"]))
+	assert_int(WorldMaps.seed_value()).is_equal(3)
+	WorldMaps.clear()

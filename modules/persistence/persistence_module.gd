@@ -140,7 +140,7 @@ func server_load_world() -> void:
 	Log.info(&"persistence", "world loaded: %d loot on the ground, %d crates" % [(world["loot"] as Array).size(), (world["crates"] as Array).size()])
 
 
-## A save belongs to one world (#472): the strip, the test range, or a generated map's recipe
+## A save belongs to one world (#472): the test range or a generated map's recipe
 ## and seed (the world module's `map_key`). A save for another world, or from before saves
 ## knew their world, would put craters, trees, loot and players where that world had them:
 ## it is moved aside (`<file>.old-<time>`) and a fresh one starts.
@@ -149,6 +149,12 @@ func _check_map() -> void:
 	if world == null or not world.has_method(&"map_key"):
 		return
 	var key := str(world.call(&"map_key"))
+	# No world loaded (a broken map recipe): leave the save alone rather than set it aside
+	# for a world that isn't there.
+	if key.is_empty():
+		Log.warn(&"persistence", "no world loaded; not saving, and the save is left as it is")
+		enabled = false
+		return
 	var part := store.load_part(MAP_PART)
 	var saved := ""
 	if not part.is_empty():

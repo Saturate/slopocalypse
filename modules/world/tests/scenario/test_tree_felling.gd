@@ -10,11 +10,12 @@ var _scatter: SceneryScatter
 
 func _make(visual: bool) -> void:
 	_scatter = auto_free(SceneryScatter.new())
-	_scatter.config_path = CONFIG
+	_scatter.config_path = _near_config(64.0)
 	_scatter.set(&"_visual", visual)
 	_scatter.set_process(false)
 	add_child(_scatter)
-	_scatter.update_around([Vector3(0, 0, -150)], INF)
+	# Round the camp, where the scatter keeps its chunks with nobody about.
+	_scatter.update_around([_scatter.home], INF)
 
 
 ## The first chunk with trees in it, and its collision body.
@@ -174,3 +175,15 @@ func test_a_late_joiner_sees_an_old_tree_already_dry_and_lying_still() -> void:
 	# No fall animation: already on the ground.
 	assert_float(_fallen(chunk).transform.basis.y.normalized().y).is_less(0.3)
 	assert_float(float(_fallen_top(chunk).get_meta(&"wither"))).is_equal_approx(1.0 / 3.0, 0.001)
+
+
+## world.json with scenery built only `reach` metres round whoever needs it: the map has
+## many roads, and building every piece within the full load distance costs seconds a test.
+static func _near_config(reach: float) -> String:
+	var data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(CONFIG))
+	(data["scatter"] as Dictionary)["load_distance"] = reach
+	var path := "user://test_world_near.json"
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	file.store_string(JSON.stringify(data))
+	file.close()
+	return path
