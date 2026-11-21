@@ -86,6 +86,8 @@ const MAX_SITES := 64
 const MAX_LAYERS := 8
 const MAX_OCTAVES := 8
 const MAX_ROAD_RADIUS := 500.0
+## A road kind's cross-slope cost past this would route a track the long way round every hill.
+const MAX_CROSS_SLOPE := 50.0
 
 
 ## What is wrong with `recipe` for building a map, or "" when nothing is: checked before any
@@ -125,6 +127,12 @@ static func check(recipe: Dictionary) -> String:
 			var radius := float((spec as Dictionary)["min_radius"])
 			if radius < 0.0 or radius > MAX_ROAD_RADIUS:
 				return "roads.kinds.%s.min_radius: 0 to %d" % [kind, MAX_ROAD_RADIUS]
+		for kind: String in recipe["roads"]["kinds"]:
+			var spec: Variant = recipe["roads"]["kinds"][kind]
+			if spec is Dictionary and (spec as Dictionary).has("cross_slope"):
+				var cross: Variant = spec["cross_slope"]
+				if not (cross is float or cross is int) or float(cross) < 0.0 or float(cross) > MAX_CROSS_SLOPE:
+					return "roads.kinds.%s.cross_slope: a number, 0 to %d" % [kind, MAX_CROSS_SLOPE]
 	if recipe.has("sites"):
 		var kinds: Dictionary = recipe["sites"]["kinds"]
 		if kinds.size() > MAX_SITE_KINDS:
@@ -138,6 +146,9 @@ static func check(recipe: Dictionary) -> String:
 			var count: Array = kinds[kind]["count"]
 			if count.size() != 2 or not (count[1] is float or count[1] is int) or float(count[1]) > MAX_SITES:
 				return "sites.kinds.%s.count: [least, most], most at most %d" % [kind, MAX_SITES]
+			var rule: Dictionary = kinds[kind]
+			if rule.has("max_track") and not ((rule["max_track"] is float or rule["max_track"] is int) and float(rule["max_track"]) > 0.0):
+				return "sites.kinds.%s.max_track: metres, more than 0" % kind
 	for path: String in LIMITS:
 		var value: Variant = _at(recipe, path)
 		var limit: Vector2 = LIMITS[path]
@@ -219,11 +230,28 @@ static func build(recipe: Dictionary, seed_value: int) -> Dictionary:
 			var feet: Array[Rect2] = []
 			for site in sites.sites():
 				feet.append(site["footprint"])
+			var kinds: Dictionary = sites_cfg["kinds"]
+			var dropped: Array[int] = []
 			for i in sites.sites().size():
 				var others := feet.duplicate()
 				others.remove_at(i)
 				var site: Dictionary = sites.sites()[i]
-				net.add_track(site, "%s %d" % [site["kind"], i], others)
+				var name := "%s %d" % [site["kind"], i]
+				var rule: Dictionary = kinds[site["kind"]]
+				# A site placed by another (a water tower by its farm) goes when that one has.
+				if rule.has("near") and str(rule["near"]) != "town" and not _near_kept(sites.sites(), dropped, i, str(rule["near"]), float(rule.get("near_distance", 80.0))):
+					dropped.append(i)
+					continue
+				net.add_track(site, name, others)
+				# A site whose track winds further than its kind allows is dropped with it,
+				# before any later track can join it.
+				var limit := float(rule.get("max_track", INF))
+				var roads := net.roads()
+				if not roads.is_empty() and roads.back()["from"] == name and track_length(roads.back()) > limit:
+					roads.pop_back()
+					dropped.append(i)
+			if not dropped.is_empty():
+				_renumber_tracks(net, sites, dropped)
 	# Earthworks last: they shape the land under every road, track, settlement and site.
 	var works: Earthworks = null
 	var works_cfg: Variant = recipe.get("earthworks")
@@ -242,6 +270,42 @@ static func build(recipe: Dictionary, seed_value: int) -> Dictionary:
 	world["high"] = high
 	world["built_ms"] = Time.get_ticks_msec() - started
 	return world
+
+
+## Metres along a road or track.
+static func track_length(road: Dictionary) -> float:
+	var points: PackedVector2Array = road["points"]
+	var length := 0.0
+	for k in range(1, points.size()):
+		length += points[k].distance_to(points[k - 1])
+	return length
+
+
+## Whether a site of `kind` other than `i` and not `dropped` stands within `within` metres
+## of site `i`.
+static func _near_kept(placed: Array[Dictionary], dropped: Array[int], i: int, kind: String, within: float) -> bool:
+	var centre: Vector2 = placed[i]["centre"]
+	for j in placed.size():
+		if j != i and not dropped.has(j) and placed[j]["kind"] == kind and (placed[j]["centre"] as Vector2).distance_to(centre) <= within:
+			return true
+	return false
+
+
+## Drops the sites at `dropped` and renames the remaining tracks after the sites' new places
+## in the list (a track is named "<kind> <index>").
+static func _renumber_tracks(net: RoadNetwork, sites: MapSites, dropped: Array[int]) -> void:
+	var renamed: Dictionary[String, String] = {}
+	var kept := 0
+	for i in sites.sites().size():
+		if dropped.has(i):
+			continue
+		var kind := str(sites.sites()[i]["kind"])
+		renamed["%s %d" % [kind, i]] = "%s %d" % [kind, kept]
+		kept += 1
+	for road: Dictionary in net.roads():
+		if road["kind"] == "track" and renamed.has(str(road["from"])):
+			road["from"] = renamed[str(road["from"])]
+	sites.drop(dropped)
 
 
 ## A built map drawn `pixels` square: `region` of it (all of it when empty) with `layers`.

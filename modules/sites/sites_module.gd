@@ -43,7 +43,13 @@ func _on_world_ready(p: Dictionary) -> void:
 		return
 	_planned = true
 	_near = p.get("spawn", Vector3.ZERO)
-	_queue = SiteLayout.plan(ground.call(&"map_site_list"), config)
+	var sites: Array = ground.call(&"map_site_list")
+	_queue = SiteLayout.plan(sites, config)
+	# The world draws the yards (packed dirt from the track up to the buildings) like its
+	# tracks; only this module knows where the buildings stand.
+	var scenery := get_tree().get_first_node_in_group(&"scenery")
+	if scenery != null and scenery.has_method(&"set_yards_for"):
+		scenery.call(&"set_yards_for", &"sites", SiteLayout.yards(sites, config))
 	if all_at_once:
 		build_all()
 

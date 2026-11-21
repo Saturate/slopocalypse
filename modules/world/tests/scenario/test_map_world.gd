@@ -178,3 +178,25 @@ func test_a_map_name_that_is_not_a_recipe_plays_the_default() -> void:
 	assert_str(WorldMaps.recipe_name()).is_equal(str(cfg["recipe"]))
 	assert_int(WorldMaps.seed_value()).is_equal(3)
 	WorldMaps.clear()
+
+
+## Another module's yards (a site's packed dirt) are cut into pieces like the tracks and kept
+## clear of grass, and setting them again replaces them.
+func test_yards_are_laid_like_tracks_and_replaced() -> void:
+	_shape()
+	var s := SceneryScatter.new()
+	s.set(&"_visual", false)
+	add_child(s)
+	s.set_process(false)
+	var lines: Array = s.get(&"_lines")
+	var roads := lines.size()
+	var c := s.home
+	var yard := {"from": Vector2(c.x - 10.0, c.z), "to": Vector2(c.x + 10.0, c.z), "width": 6.0, "level": c.y}
+	s.set_yards_for(&"test", [yard])
+	assert_int((s.get(&"_lines") as Array).size()).is_equal(roads + 1)
+	assert_bool(s.call(&"_on_yard", c.x + 9.0, c.z + 2.5, 0.0)).is_true()
+	assert_bool(s.call(&"_on_yard", c.x, c.z + 4.0, 0.5)).is_false()
+	s.set_yards_for(&"test", [])
+	assert_int((s.get(&"_lines") as Array).size()).is_equal(roads)
+	assert_bool(s.call(&"_on_yard", c.x, c.z, 0.0)).is_false()
+	s.queue_free()

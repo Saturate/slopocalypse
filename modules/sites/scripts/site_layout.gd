@@ -24,14 +24,64 @@ static func plan(sites: Array, cfg: Dictionary) -> Array[Dictionary]:
 			continue
 		var layout: Dictionary = kinds[kind]
 		var centre: Vector3 = site["centre"]
-		var rng := RandomNumberGenerator.new()
-		rng.seed = hash([kind, roundi(centre.x * 10.0), roundi(centre.z * 10.0)])
+		var rng := _site_rng(kind, centre)
 		var frame := Transform3D(Basis(Vector3.UP, site_yaw(site["toward"])), centre + Vector3.DOWN * sink)
-		var mirror := bool(layout.get("mirror", false)) and rng.randf() < 0.5
+		var mirror := _mirrored(layout, rng)
 		for piece: Dictionary in layout.get("pieces", []):
 			var local := piece_transform(piece, mirror)
 			out.append({"kind": kind, "site": i, "generator": str(piece["generator"]), "params": piece_params(piece, rng), "transform": frame * local})
 	return out
+
+
+## Each site's yard (a kind's `yard` in sites.json): packed dirt from where its track
+## arrives up to and between what stands there, as the world draws it (SceneryScatter
+## `set_yards_for`): {site, from, to (x, z: the middles of its two ends), width, level}. Each
+## rectangle of the layout is turned and mirrored with its site's pieces and cut to the
+## footprint, so one reaching far towards the track ends at the pad's edge where the track
+## comes in.
+static func yards(sites: Array, cfg: Dictionary) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var kinds: Dictionary = cfg["kinds"]
+	for i in sites.size():
+		var site: Dictionary = sites[i]
+		var kind := str(site["kind"])
+		if not kinds.has(kind) or not (kinds[kind] as Dictionary).has("yard"):
+			continue
+		var layout: Dictionary = kinds[kind]
+		var centre: Vector3 = site["centre"]
+		var mirror := _mirrored(layout, _site_rng(kind, centre))
+		var basis := Basis(Vector3.UP, site_yaw(site["toward"]))
+		var foot: Rect2 = site["footprint"]
+		for r: Array in layout["yard"]:
+			var x0 := float(r[0])
+			var x1 := float(r[2])
+			if mirror:
+				var flipped := -x0
+				x0 = -x1
+				x1 = flipped
+			var a := centre + basis * Vector3(x0, 0.0, float(r[1]))
+			var b := centre + basis * Vector3(x1, 0.0, float(r[3]))
+			var rect := Rect2(Vector2(a.x, a.z), Vector2.ZERO).expand(Vector2(b.x, b.z)).intersection(foot)
+			if rect.size.x <= 0.0 or rect.size.y <= 0.0:
+				continue
+			# Along the site's front-to-back axis, whichever world axis that is.
+			var along_x := absf(basis.z.x) > 0.5
+			var mid := rect.get_center()
+			var from := Vector2(rect.position.x, mid.y) if along_x else Vector2(mid.x, rect.position.y)
+			var to := Vector2(rect.end.x, mid.y) if along_x else Vector2(mid.x, rect.end.y)
+			out.append({"site": i, "from": from, "to": to, "width": rect.size.y if along_x else rect.size.x, "level": centre.y, "rect": rect})
+	return out
+
+
+static func _site_rng(kind: String, centre: Vector3) -> RandomNumberGenerator:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([kind, roundi(centre.x * 10.0), roundi(centre.z * 10.0)])
+	return rng
+
+
+## Whether the site's layout is flipped left to right: the first draw of its seed.
+static func _mirrored(layout: Dictionary, rng: RandomNumberGenerator) -> bool:
+	return bool(layout.get("mirror", false)) and rng.randf() < 0.5
 
 
 ## The yaw that turns a site's front (-z) toward `toward` (the side its track leaves by).
@@ -91,6 +141,9 @@ static func check(cfg: Dictionary) -> Array[String]:
 				out.append("%s: no voxel generator named %s" % [where, piece["generator"]])
 			if (piece["at"] as Array).size() != 3:
 				out.append("%s: `at` must be [x, y, z]" % where)
+		var yard: Variant = (layout as Dictionary).get("yard", [])
+		if not yard is Array or not (yard as Array).all(func(r: Variant) -> bool: return r is Array and (r as Array).size() == 4 and (r as Array).all(func(v: Variant) -> bool: return v is float or v is int)):
+			out.append("%s: `yard` must be a list of [x0, z0, x1, z1]" % kind)
 	return out
 
 
