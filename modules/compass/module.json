@@ -1,0 +1,6 @@
+{
+  "id": "compass",
+  "depends_on": ["player"],
+  "flag": "compass",
+  "entry": "compass_module.gd"
+}

@@ -179,7 +179,9 @@ func _server_spawn(peer: int) -> void:
 	var taken: Array[Vector3] = []
 	for p: PlayerController in _players.values():
 		taken.append(p.global_position if p.is_inside_tree() else p.position)
-	_spawner.spawn({"peer": peer, "position": free_spawn_point(_spawn, taken, _spawn_spacing(), _car_at)})
+	# The name rides along so clients can label other players (the compass, #455).
+	var who := str(Net.identity_of(peer).get("name", ""))
+	_spawner.spawn({"peer": peer, "position": free_spawn_point(_spawn, taken, _spawn_spacing(), _car_at), "name": who})
 
 
 ## How far apart players who join together start, from player.json, read once; 0 (everyone
@@ -241,6 +243,7 @@ func _spawn_player(data: Variant) -> Node:
 	player.name = str(peer)
 	player.position = info["position"]
 	player.set_meta(&"peer_id", peer)
+	player.set_meta(&"player_name", str(info.get("name", "")))
 	player.add_to_group(&"players")
 	_players[peer] = player
 	var local := Net.has_local_player() and peer == Net.local_peer_id()
