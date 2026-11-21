@@ -35,8 +35,9 @@
     "lods": [[48.0, 0.25], [110.0, 0.5], [200.0, 1.0], [300.0, 2.0]]
   },
   "scatter": {
-    "_comment": "Trees, rocks and grass (TWEAKING.md lists the rest). site_clearance: metres round each map site's pad, by site kind, kept free of trees and rocks so they don't crowd what stands there; default for kinds not listed.",
+    "_comment": "Trees, rocks and grass (TWEAKING.md lists the rest). site_clearance: metres round each map site's pad, by site kind, kept free of trees and rocks so they don't crowd what stands there; default for kinds not listed. power_clearance: metres either side of a high-voltage line and of a pole line (at most 32) kept free of trees and rocks, so no crown grows into the wires.",
     "site_clearance": {"default": 3.0, "farm": 6.0, "water_tower": 3.0, "town_tower": 3.0, "antenna": 14.0, "lookout": 14.0, "cabin": 4.0},
+    "power_clearance": {"high_voltage": 14.0, "low_voltage": 5.0},
     "seed": 2024.0,
     "trees_per_hectare": 80.0,
     "rocks_per_hectare": 18.0,

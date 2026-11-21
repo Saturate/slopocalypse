@@ -208,6 +208,16 @@ func map_site_list() -> Array[Dictionary]:
 	return (heights as MapShape).site_list() if heights is MapShape else ([] as Array[Dictionary])
 
 
+## The map's power lines and substation (see MapShape.power_lines, power_substation); empty
+## off the map.
+func map_power_lines() -> Array[Dictionary]:
+	return (heights as MapShape).power_lines() if heights is MapShape else ([] as Array[Dictionary])
+
+
+func map_power_substation() -> Dictionary:
+	return (heights as MapShape).power_substation() if heights is MapShape else {}
+
+
 ## Height of the untouched ground (ignores digging) for placing spawns and scenery.
 func ground_height(x: float, z: float) -> float:
 	return heights.height_at(x, z) if heights != null else 0.0
@@ -258,6 +268,9 @@ func set_pads_for(owner: StringName, pads: Array) -> void:
 func is_claimed(at: Vector3, radius: float, owner: StringName) -> bool:
 	# A map site's pad is held by what stands on it (sites, towers) for everyone.
 	if heights is MapShape and (heights as MapShape).site_within(at.x, at.z, radius):
+		return true
+	# So is ground under a power line's towers and the substation's yard.
+	if heights is MapShape and (heights as MapShape).power_within(at.x, at.z, radius):
 		return true
 	for key: StringName in _pad_sets:
 		if key == owner:

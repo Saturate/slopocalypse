@@ -3,7 +3,8 @@ extends VoxGenerator
 ## A radio mast: a square lattice of thin steel members on a concrete footing, four corner
 ## legs tapering upward with a ring and crossed diagonals at every bay, a whip on top and
 ## dishes and panel antennas clamped near the top. Galvanised grey or painted in red and white
-## bands. Centred on its footing, standing on the origin.
+## bands. Centred on its footing, standing on the origin. The lattice is VoxLattice's, shared
+## with the power pylon.
 
 const PAINTS: Array[String] = ["Galvanised", "Red and white"]
 const STEEL := Color(0.52, 0.54, 0.55)
@@ -87,23 +88,11 @@ func build(values: Dictionary) -> VoxelModel:
 	var foot := base / 2.0 + FOOTING_MARGIN
 	m.fill_box(Vector3(-foot, 0.0, -foot), Vector3(foot, FOOTING, foot), CONCRETE, 0.08, seed)
 	m.set_material(VoxMaterials.index_of("sheet_metal"))
-	var corners: Array[Vector2] = [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]
-	# Members are drawn in short pieces so each takes the band colour at its height.
 	var leg_r := maxf(LEG / 2.0, v * 0.75)
 	var brace_r := maxf(BRACE / 2.0, v * 0.75)
-	for c in corners:
-		_bar(m, _at(c, base, top, h, FOOTING), _at(c, base, top, h, h), leg_r, banded, seed)
-	var y := FOOTING
-	while y < h - 0.01:
-		var y1 := minf(y + bay, h)
-		for k in 4:
-			var a := corners[k]
-			var b := corners[(k + 1) % 4]
-			_bar(m, _at(a, base, top, h, y1), _at(b, base, top, h, y1), brace_r, banded, seed)
-			# Crossed diagonals on each face of the bay.
-			_bar(m, _at(a, base, top, h, y), _at(b, base, top, h, y1), brace_r, banded, seed)
-			_bar(m, _at(b, base, top, h, y), _at(a, base, top, h, y1), brace_r, banded, seed)
-		y = y1
+	var size := func(y: float) -> Vector2: return Vector2.ONE * half_width(base, top, h, y) * 2.0
+	var paint := func(y: float) -> Color: return _paint(y, banded)
+	VoxLattice.body(m, FOOTING, h, size, bay, leg_r, brace_r, paint, seed)
 	# The whip: a thin pole above the top.
 	m.fill_box(Vector3(-v * 0.5, h, -v * 0.5), Vector3(v * 0.5, h + WHIP, v * 0.5), STEEL.darkened(0.2), 0.02, seed)
 	# Dishes round the top, each looking out from its own face (opposite faces first), the
@@ -141,18 +130,12 @@ func build(values: Dictionary) -> VoxelModel:
 	return m
 
 
-static func _at(corner: Vector2, base: float, top: float, h: float, y: float) -> Vector3:
-	var half := half_width(base, top, h, y)
-	return Vector3(corner.x * half, y, corner.y * half)
+static func _paint(y: float, banded: bool) -> Color:
+	if not banded:
+		return STEEL
+	return RED if int(floorf(y / BAND)) % 2 == 0 else WHITE
 
 
-## A straight member from `a` to `b`, in pieces short enough to follow the bands.
+## A straight steel member from `a` to `b`.
 func _bar(m: VoxelModel, a: Vector3, b: Vector3, r: float, banded: bool, seed: int) -> void:
-	var pieces := maxi(ceili(a.distance_to(b) / 0.5), 1)
-	for k in pieces:
-		var p0 := a.lerp(b, float(k) / pieces)
-		var p1 := a.lerp(b, float(k + 1) / pieces)
-		var colour := STEEL
-		if banded:
-			colour = RED if int(floorf((p0.y + p1.y) * 0.5 / BAND)) % 2 == 0 else WHITE
-		m.fill_capsule(p0, p1, r, r, colour, 0.04, seed)
+	VoxLattice.bar(m, a, b, r, func(y: float) -> Color: return _paint(y, banded), seed)

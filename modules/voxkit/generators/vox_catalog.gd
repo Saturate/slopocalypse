@@ -4,7 +4,7 @@ extends RefCounted
 
 
 static func all() -> Array[VoxGenerator]:
-	return [VoxRoad.new(), VoxPineTree.new(), VoxLeafTree.new(), VoxRock.new(), VoxShed.new(), VoxApartment.new(), VoxSupplyCrate.new(), VoxBarrel.new(), VoxTunnel.new(), VoxCar.new(), VoxGear.new(), VoxWall.new(), VoxStreetLamp.new(), VoxWaterTower.new(), VoxLatticeMast.new(), VoxLookoutTower.new(), VoxBoltRifle.new()]
+	return [VoxRoad.new(), VoxPineTree.new(), VoxLeafTree.new(), VoxRock.new(), VoxShed.new(), VoxApartment.new(), VoxSupplyCrate.new(), VoxBarrel.new(), VoxTunnel.new(), VoxCar.new(), VoxGear.new(), VoxWall.new(), VoxStreetLamp.new(), VoxWaterTower.new(), VoxLatticeMast.new(), VoxLatticePylon.new(), VoxPowerPole.new(), VoxTerminalGantry.new(), VoxSubstation.new(), VoxLookoutTower.new(), VoxBoltRifle.new()]
 
 
 ## The roadside scene as [generator, params, transform] entries, laid out from a seed so it
