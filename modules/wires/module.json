@@ -1,0 +1,6 @@
+{
+  "id": "wires",
+  "depends_on": [],
+  "flag": "wires",
+  "entry": "wires_module.gd"
+}
