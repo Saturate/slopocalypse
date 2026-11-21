@@ -1,6 +1,7 @@
 extends GdUnitTestSuite
-## Street lamps stand along the road with their arms over it; a round on the bulb puts the
-## lamp out for good (and only the bulb does), and someone joining later sees it out too.
+## Street lamps stand along the highway out of the camp with their arms over it; a round on
+## the bulb puts the lamp out for good (and only the bulb does), and someone joining later
+## sees it out too.
 
 const MODULE := "res://modules/lights/lights_module.gd"
 

@@ -19,7 +19,7 @@ const REQUIRED := {
 	"hearing_range": TYPE_FLOAT, "reaction_seconds": TYPE_FLOAT, "aim_error_degrees": TYPE_ARRAY,
 	"aim_settle_seconds": TYPE_FLOAT, "turn_speed": TYPE_FLOAT, "burst_shots": TYPE_ARRAY,
 	"burst_pause_seconds": TYPE_ARRAY, "chase_seconds": TYPE_FLOAT, "forget_seconds": TYPE_FLOAT,
-	"damage_scale": TYPE_FLOAT, "uniform_tint": TYPE_ARRAY,
+	"damage_scale": TYPE_FLOAT, "uniform_tint": TYPE_ARRAY, "camp_margin": TYPE_FLOAT,
 }
 ## Enemy peer ids count down from here so they never collide with real peers.
 const FIRST_ID := -1000
@@ -33,6 +33,9 @@ var _spawn := Vector3.ZERO
 var _world_ready := false
 ## The open side of the spawn (zero when every direction is open).
 var _forward := Vector3.ZERO
+## The players' camp: no squad lands within `camp_margin` of its fence, and no soldier walks
+## in through its gate. Null until the world is ready.
+var _camp: CampLayout
 var _next_squad_in := -1.0
 var _rng := RandomNumberGenerator.new()
 ## Server: filling up to `max_alive` a soldier a tick, once `first_spawn_seconds` have passed.
@@ -84,10 +87,11 @@ func enemies() -> Array[Node]:
 
 
 func _on_world_ready(payload: Dictionary) -> void:
-	# Squads live on the open side of the start: around and ahead of the road out of the
-	# start tunnel, spread over `spawn_area`.
+	# Squads live on the open side of the start: around and ahead of the highway out of the
+	# camp's gate, spread over `spawn_area`.
 	_spawn = payload.get("front", payload.get("spawn", Vector3.ZERO))
 	_forward = payload.get("forward", Vector3.ZERO)
+	_camp = CampLayout.of_ready(payload)
 	_world_ready = true
 	if multiplayer.is_server():
 		_next_squad_in = float(config["first_spawn_seconds"])
@@ -145,8 +149,9 @@ func _physics_tick(delta: float) -> void:
 
 
 ## A spot for a squad: somewhere in `spawn_area` (metres out from the start, on its open
-## side), and at least `spawn_clear` from every player so nobody sees them appear. After a
-## few tries it takes the last spot.
+## side), at least `spawn_clear` from every player so nobody sees them appear, and never
+## within `camp_margin` of the camp's fence. After a few tries it takes the last spot, moved
+## out past the camp's margin if it fell inside it.
 func _spread_spot() -> Vector3:
 	var area: Array = config["spawn_area"]
 	var clear := float(config["spawn_clear"])
@@ -159,9 +164,28 @@ func _spread_spot() -> Vector3:
 		# Even over the area, not bunched near its inner edge.
 		var r := sqrt(_rng.randf_range(pow(float(area[0]), 2.0), pow(float(area[1]), 2.0)))
 		spot = _spawn + Vector3(cos(a), 0.0, sin(a)) * r
-		if players.all(func(p: Node) -> bool: return (p as Node3D).global_position.distance_to(spot) >= clear):
+		if not near_camp(spot) and players.all(func(p: Node) -> bool: return (p as Node3D).global_position.distance_to(spot) >= clear):
 			break
-	return spot
+	return clear_of_camp(spot)
+
+
+## Whether `at` is within `camp_margin` of the camp's fence (or inside it).
+func near_camp(at: Vector3) -> bool:
+	return _camp != null and _camp.distance(at) < float(config["camp_margin"])
+
+
+## `at`, or where it is moved straight out from the camp's middle to past its margin.
+func clear_of_camp(at: Vector3) -> Vector3:
+	if not near_camp(at):
+		return at
+	var away := Vector3(at.x - _camp.centre.x, 0.0, at.z - _camp.centre.z)
+	if away.length() < 0.01:
+		away = _camp.out
+	# From the middle, the fence's corners are its furthest points.
+	var reach := _camp.half * sqrt(2.0) + float(config["camp_margin"]) + 1.0
+	var out := _camp.centre + away.normalized() * reach
+	out.y = at.y
+	return out
 
 
 ## Server: a squad of `size` around `centre`, or around a spread spot (`_spread_spot`), all
@@ -303,6 +327,7 @@ func _set_up(enemy: PlayerController, home: Vector3, info: Dictionary = {}) -> v
 		brain.body = enemy
 		brain.config = _leaning(faction)
 		brain.home = home
+		brain.keep_out = _camp
 		if info.has("post_yaw"):
 			brain.post_yaw = float(info["post_yaw"])
 			brain.has_post = true
@@ -423,7 +448,7 @@ func _on_ground(at: Vector3) -> Vector3:
 	if world == null:
 		return at
 	# From just over the ground (or over `at` when that is higher, e.g. on a roof), not from
-	# high above: under a roof, like in the start tunnel, that would land on the roof.
+	# high above: under a roof, like a building's, that would land on the roof.
 	var from_y := at.y + 30.0
 	var ground_node := get_tree().get_first_node_in_group(&"ground")
 	if ground_node != null and ground_node.has_method(&"ground_height"):

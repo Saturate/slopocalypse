@@ -52,7 +52,7 @@ const SECTIONS := {
 	"zones": {"cell": "n", "slope_grade": "n", "flat_grade": "n", "forest_cutoff": "n", "wet_distance": "n", "hilltop_rise": "n",
 		"hilltop_ring": "n", "spawn_margin": "n", "spawn_edge": "n", "uses": "d"},
 	"settlements": {"city": {"use": "s", "size": "n"}, "town": {"use": "s", "size": "n", "spacing": "n", "max": "n"},
-		"camp": {"clearance": "n"}, "edge_margin": "n"},
+		"camp": {"clearance": "n", "size": "n"}, "edge_margin": "n"},
 	"roads": {"kinds": "d", "cost": {"forest": "n", "slope": "n", "wetland": "n", "hilltop": "n", "over_grade": "n"},
 		"sample": "n", "profile_window": "n"},
 	"earthworks": {"bank_grade": "n", "shoulder": "n", "reach": "n"},
@@ -74,6 +74,9 @@ const LIMITS := {
 	"zones.hilltop_ring": Vector2(0, 400),
 	"biomes.map_metres_per_texel": Vector2(1, 32),
 	"settlements.town.max": Vector2(0, 16),
+	# At least the camp's fence (world.json camp.fence, 12 m from the middle) and a metre
+	# round it; WorldRoot also says so when the two disagree.
+	"settlements.camp.size": Vector2(28, 96),
 	"roads.sample": Vector2(1, 32),
 	"roads.profile_window": Vector2(0, 500),
 	"earthworks.bank_grade": Vector2(0.1, 3),
@@ -544,7 +547,7 @@ static func draw_zones(image: Image, zones: LandZones, region := Rect2()) -> voi
 
 
 ## The city's square in red, towns' in orange (drawn twice as thick as zone lines), the
-## camp as a white dot.
+## camp as a white dot in its pad's white square.
 static func draw_settlements(image: Image, places: Settlements, region := Rect2()) -> void:
 	var b := region if region.size.x > 0.0 else places.zones.land.bounds()
 	var pixels := image.get_width()
@@ -554,6 +557,8 @@ static func draw_settlements(image: Image, places: Settlements, region := Rect2(
 		squares.append([places.city()["footprint"], CITY])
 	for t: Dictionary in places.towns():
 		squares.append([t["footprint"], TOWN])
+	if not places.camp_place().is_empty():
+		squares.append([places.camp_place()["footprint"], SPAWN])
 	for entry: Array in squares:
 		var foot: Rect2 = entry[0]
 		var colour: Color = entry[1]

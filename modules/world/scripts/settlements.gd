@@ -2,16 +2,22 @@ class_name Settlements
 extends RefCounted
 ## Where people live on a map (#428, decision 0010): the city on the largest square of flat
 ## ground its zone holds, a few towns on other flat ground apart from it, and the players'
-## camp outside them all near an edge. Each settlement is a compact square footprint (later
-## stages lay out streets and terraces inside it, #430), a level (the ground's middle height
-## there) and a connector in the middle of each side where roads may arrive. Pure and seeded
-## through its zones; no autoloads.
+## camp outside them all near an edge, on a square pad of its own (#420, decision 0014).
+## Each settlement is a compact square footprint (later stages lay out streets and terraces
+## inside it, #430), a level (the ground's middle height there) and a connector in the
+## middle of each side where roads may arrive. Pure and seeded through its zones; no
+## autoloads.
+
+## Metres the camp pad's level is rounded to, and how far over that it stands (see _init).
+const CAMP_LEVEL_STEP := 2.0
+const CAMP_LEVEL_LIFT := 0.01
 
 var zones: LandZones
 
 var _city: Dictionary = {}
 var _towns: Array[Dictionary] = []
 var _camp := Vector2.ZERO
+var _camp_place: Dictionary = {}
 var _edge_margin := 0
 
 
@@ -41,7 +47,20 @@ func _init(map_zones: LandZones, config: Dictionary) -> void:
 		if places.any(func(p: Dictionary) -> bool: return centre.distance_to(p["centre"]) < float(town_cfg["spacing"])):
 			continue
 		_towns.append(_settlement(&"town", found))
-	_camp = _pick_camp(float((config["camp"] as Dictionary)["clearance"]))
+	var camp_cfg: Dictionary = config["camp"]
+	_camp = _pick_camp(float(camp_cfg["clearance"]))
+	var side := float(camp_cfg["size"])
+	var zone: Dictionary = zones.zone_at(_camp.x, _camp.y)
+	_camp_place = _settlement(&"camp", {"zone": int(zone.get("id", -1)), "footprint": Rect2(_camp - Vector2.ONE * side / 2.0, Vector2.ONE * side)})
+	# The visible ground's voxel columns are floored to their size (0.25 to 2 m, all of which
+	# divide CAMP_LEVEL_STEP): a pad on a whole step, a hair above it, shows its top exactly
+	# at its level, so the yards drawn at that level lie on it rather than over a drop.
+	var level := roundf(float(_camp_place["level"]) / CAMP_LEVEL_STEP) * CAMP_LEVEL_STEP + CAMP_LEVEL_LIFT
+	_camp_place["level"] = level
+	var moved: Array[Vector3] = []
+	for c: Vector3 in _camp_place["connectors"]:
+		moved.append(Vector3(c.x, level, c.z))
+	_camp_place["connectors"] = moved
 
 
 ## The city: {kind, centre, footprint (Rect2 on x, z), level, connectors (Vector3 per side),
@@ -54,9 +73,25 @@ func towns() -> Array[Dictionary]:
 	return _towns
 
 
-## Where the players' camp stands (x, z).
+## Where the players' camp stands (x, z): the middle of its pad.
 func camp() -> Vector2:
 	return _camp
+
+
+## The camp's pad as a settlement ({kind, centre, footprint, level, connectors, zone, half}):
+## the earthworks level it, the highway leaves from its side nearest the city.
+func camp_place() -> Dictionary:
+	return _camp_place
+
+
+## The city, the towns and the camp: every footprint roads and sites keep out of.
+func all_places() -> Array[Dictionary]:
+	var out: Array[Dictionary] = _towns.duplicate()
+	if not _city.is_empty():
+		out.append(_city)
+	if not _camp_place.is_empty():
+		out.append(_camp_place)
+	return out
 
 
 func _use_kinds(use: StringName) -> Array:

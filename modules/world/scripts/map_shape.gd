@@ -119,6 +119,31 @@ func camp() -> Vector3:
 	return Vector3(c.x, height_at(c.x, c.y), c.y)
 
 
+## The camp's levelled pad (#420): {centre (on its level), footprint (Rect2 on x, z), out
+## (unit, on the ground plane: from the centre to the side the highway leaves by)}; empty
+## on a map without one.
+func camp_pad() -> Dictionary:
+	var places: Settlements = map["places"]
+	if places == null or places.camp_place().is_empty():
+		return {}
+	var c: Dictionary = places.camp_place()
+	var foot: Rect2 = c["footprint"]
+	var centre := Vector3(foot.get_center().x, float(c["level"]), foot.get_center().y)
+	var out := forward()
+	var points := highway()
+	if not points.is_empty():
+		# The highway starts in the middle of that side, square to it.
+		var d := points[0] - foot.get_center()
+		if d.length() > 0.01:
+			out = Vector3(d.x, 0.0, d.y).normalized()
+	return {"centre": centre, "footprint": foot, "out": out}
+
+
+func near_camp(x: float, z: float, margin: float) -> bool:
+	var places: Settlements = map["places"]
+	return places != null and not places.camp_place().is_empty() and (places.camp_place()["footprint"] as Rect2).grow(margin).has_point(Vector2(x, z))
+
+
 ## The city as the map places it (#472): {centre (on its level), size (metres a side), toward
 ## (unit, on the ground plane: the side the highway arrives at)}; empty without a city.
 func city() -> Dictionary:

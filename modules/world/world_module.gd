@@ -12,7 +12,7 @@ const CONFIG := "res://modules/world/data/world.json"
 const READY_TIMEOUT_SECONDS := 30.0
 const BULLET_CRATER_RADIUS := 0.35
 const SPAWN_AREA_RADIUS := 16.0
-const MAP_REQUIRED := {"recipe": TYPE_STRING, "seed": TYPE_FLOAT, "kill_depth": TYPE_FLOAT, "car_ahead": TYPE_FLOAT, "car_side": TYPE_FLOAT}
+const MAP_REQUIRED := {"recipe": TYPE_STRING, "seed": TYPE_FLOAT, "kill_depth": TYPE_FLOAT}
 
 var _voxels: VoxelWorld
 var _scenery: SceneryScatter
@@ -148,6 +148,9 @@ func _load_world() -> void:
 		"kill_y": kill_y,
 		"rescue_depth": data["rescue_depth"],
 	}
+	# The players' camp (CampLayout): the map's, or on the flat world one round its spawn.
+	var camp: Variant = world.get("camp")
+	_announcement["camp"] = camp if camp is CampLayout else CampLayout.of_ready(_announcement)
 
 
 ## Server to a joining client, before anything else about the world: which world it plays

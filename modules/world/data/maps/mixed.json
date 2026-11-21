@@ -115,7 +115,8 @@
       "max": 2
     },
     "camp": {
-      "clearance": 250.0
+      "clearance": 250.0,
+      "size": 32.0
     },
     "edge_margin": 200.0
   },

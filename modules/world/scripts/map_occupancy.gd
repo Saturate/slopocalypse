@@ -25,10 +25,7 @@ func _init(map_zones: LandZones, places: Settlements, net: RoadNetwork, clearanc
 			if str(map_zones.zone_at(c.x, c.y).get("kind", "")) == "water":
 				_mark(Rect2(c - Vector2.ONE * zone_cell / 2.0, Vector2.ONE * zone_cell))
 	if places != null:
-		var all: Array[Dictionary] = places.towns().duplicate()
-		if not places.city().is_empty():
-			all.append(places.city())
-		for place in all:
+		for place in places.all_places():
 			_mark((place["footprint"] as Rect2).grow(clearance))
 	if net != null:
 		for road: Dictionary in net.roads():
