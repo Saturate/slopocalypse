@@ -1,5 +1,5 @@
 {
-  "_comment": "The mixed recipe: hillier country with more woods, dry grass and rock than grassland. Fields as in grassland.json. earthworks: the land shaped by the roads and settlements: each road's width plus shoulder metres either side is cut or filled to the road's height, each settlement's footprint (plus shoulder) to its level, with banks rising bank_grade per metre (0.7 is about 35 degrees) out to where they meet the land, at most reach metres out (a track's banks rise track_bank_grade per metre, at most track_reach out); tunnels and bridges leave the land alone. remoteness: how far a place is from people, 0 to 1: the way from the nearest settlement or the camp, counting metres along a road once and off_road times over open land (water cannot be crossed); reach metres of way makes 1. sites: what stands out in the land, placed after the roads (#429): clearance metres kept free round roads, settlement_clearance round settlements, edge_margin in from the map's edge, spacing_any between any two sites; per kind in kinds, tried in this order, count [least, most], the zone kinds it may stand on, its remoteness [low, high], road: [nearest, furthest] metres from a road, spacing: metres from another of its kind, size: its footprint [x, z] in metres, max_grade: the steepest ground it stands on, prefer_high: try the highest spots first, min_height: the least share of the map's height range it stands at, and near / near_distance: within that many metres of a kind placed before it, or of a town's or the city's edge ('town'); max_track: the longest track the kind may have, in metres (a spot whose straight way to a road is too far for it is passed over, and a site whose track still runs longer is dropped); roads.kinds.track.cross_slope: extra cost per metre per unit of the land's slope across the way.",
+  "_comment": "The mixed recipe: hillier country with more woods, dry grass and rock than grassland. Fields as in grassland.json. earthworks: the land shaped by the roads and settlements: each road's width plus shoulder metres either side is cut or filled to the road's height, each settlement's footprint (plus shoulder) to its level, with banks rising bank_grade per metre (0.7 is about 35 degrees) out to where they meet the land, at most reach metres out (a track's banks rise track_bank_grade per metre, at most track_reach out); tunnels and bridges leave the land alone. remoteness: how far a place is from people, 0 to 1: the way from the nearest settlement or the camp, counting metres along a road once and off_road times over open land (water cannot be crossed); reach metres of way makes 1. sites: what stands out in the land, placed after the roads (#429): clearance metres kept free round roads, settlement_clearance round settlements, edge_margin in from the map's edge, spacing_any between any two sites; per kind in kinds, tried in this order, count [least, most], the zone kinds it may stand on, its remoteness [low, high], road: [nearest, furthest] metres from a road, spacing: metres from another of its kind, size: its footprint [x, z] in metres, max_grade: the steepest ground it stands on, prefer_high: try the highest spots first, min_height: the least share of the map's height range it stands at, and near / near_distance: within that many metres of a kind placed before it, or of a town's or the city's edge ('town'); max_track: the longest track the kind may have, in metres (a spot whose straight way to a road is too far for it is passed over, and a site whose track still runs longer is dropped); roads.kinds.track.cross_slope: extra cost per metre per unit of the land's slope across the way. power: the lines placed last (#494), every foot at least edge_margin metres in from the map's edge and camp_clearance from the camp; where two lines cross, one's lowest wire must clear the other's highest by crossing_clearance metres. poles (placed first): wooden poles span [shortest, longest] metres apart beside the roads and tracks from a town or the city to up to count sites of the kinds in sites (the nearest along the roads first, no further than max_length metres), setback metres off the road's edge and never nearer than min_setback, on ground no steeper than max_grade; a pole line that comes within a span of an earlier one ends on one of its poles, leaving at least branch_angle degrees off that line. high_voltage: a fenced substation yard yard metres a side, substation [nearest, furthest] metres out from the city's edge, on ground rising at most yard_rise across it; a line from a terminal of its own in the yard (terminal_inset metres in from its fence, terminal_gap metres apart) to each town (the nearest towns first, at most towns of them), ending town_reach metres out from the town's edge, lattice pylons span [shortest, longest] metres apart, each foot foot metres round and keep_clear metres off roads, settlements, sites and other lines, on ground no steeper than max_grade; the route turns at most max_turn degrees at a pylon and is the cheapest by its length, turn_cost metres a degree turned and tower_cost metres a pylon. For both, the lowest wire hangs wire_height metres and the highest top_height over each foot (kept at least what the towers in modules/power/data/power.json give, the tests hold them to it), dips sag of a span's length at its middle, and must clear the ground by clearance metres all along.",
   "size": 2048.0,
   "relief": 520.0,
   "layers": [
@@ -330,5 +330,55 @@
         "max_grade": 0.2
       }
     }
+  },
+  "power": {
+    "edge_margin": 60.0,
+    "camp_clearance": 80.0,
+    "high_voltage": {
+      "span": [
+        150.0,
+        300.0
+      ],
+      "max_grade": 0.25,
+      "foot": 4.0,
+      "keep_clear": 8.0,
+      "substation": [
+        40.0,
+        120.0
+      ],
+      "town_reach": 40.0,
+      "max_turn": 60.0,
+      "turn_cost": 1.5,
+      "towns": 8.0,
+      "wire_height": 18.0,
+      "sag": 0.02,
+      "clearance": 5.0,
+      "yard": 36.0,
+      "yard_rise": 2.0,
+      "terminal_inset": 5.0,
+      "terminal_gap": 14.0,
+      "tower_cost": 150.0,
+      "top_height": 30.0
+    },
+    "poles": {
+      "span": [
+        30.0,
+        50.0
+      ],
+      "max_grade": 0.35,
+      "setback": 4.0,
+      "min_setback": 2.0,
+      "sites": [
+        "farm"
+      ],
+      "count": 4.0,
+      "max_length": 1600.0,
+      "wire_height": 7.0,
+      "sag": 0.025,
+      "clearance": 4.0,
+      "branch_angle": 30.0,
+      "top_height": 10.0
+    },
+    "crossing_clearance": 2.0
   }
 }

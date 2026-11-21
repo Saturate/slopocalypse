@@ -12,7 +12,7 @@ extends Node3D
 
 @export_file("*.json") var config_path: String = "res://modules/world/data/world.json"
 
-const REQUIRED := {"seed": TYPE_FLOAT, "trees_per_hectare": TYPE_FLOAT, "rocks_per_hectare": TYPE_FLOAT, "grass_per_m2": TYPE_FLOAT, "clear_radius": TYPE_FLOAT, "max_steepness": TYPE_FLOAT, "road_clearance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "grass_distance": TYPE_FLOAT, "tree_detail_distance": TYPE_FLOAT, "variants": TYPE_FLOAT, "tree_hits": TYPE_FLOAT, "tree_blast_reach": TYPE_FLOAT, "tree_fall_seconds": TYPE_FLOAT, "tree_collapse": TYPE_FLOAT, "tree_wither_seconds": TYPE_FLOAT, "site_clearance": TYPE_DICTIONARY}
+const REQUIRED := {"seed": TYPE_FLOAT, "trees_per_hectare": TYPE_FLOAT, "rocks_per_hectare": TYPE_FLOAT, "grass_per_m2": TYPE_FLOAT, "clear_radius": TYPE_FLOAT, "max_steepness": TYPE_FLOAT, "road_clearance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "grass_distance": TYPE_FLOAT, "tree_detail_distance": TYPE_FLOAT, "variants": TYPE_FLOAT, "tree_hits": TYPE_FLOAT, "tree_blast_reach": TYPE_FLOAT, "tree_fall_seconds": TYPE_FLOAT, "tree_collapse": TYPE_FLOAT, "tree_wither_seconds": TYPE_FLOAT, "site_clearance": TYPE_DICTIONARY, "power_clearance": TYPE_DICTIONARY}
 
 const CHUNK := 64.0
 ## Chunks split across the width into cells, so distance culling works per cell.
@@ -450,6 +450,8 @@ func _spot(rng: RandomNumberGenerator, area: Rect2, weight: Callable, clearings:
 		if _heights.in_water(x, z):
 			continue
 		if _heights.near_site(x, z, _cfg["site_clearance"]):
+			continue
+		if _heights.near_power(x, z, float(_cfg["power_clearance"]["high_voltage"]), float(_cfg["power_clearance"]["low_voltage"])):
 			continue
 		if _in_clearing(x, z, clearings):
 			continue

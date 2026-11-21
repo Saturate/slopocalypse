@@ -20,7 +20,7 @@ const KEEP_RENDERS := 24
 const KEEP_WORLDS := 3
 ## The smallest region drawn, metres a side (half a metre a pixel at the most pixels).
 const MIN_REGION := 32.0
-const LAYERS: Array[String] = ["zones", "settlements", "roads", "earthworks", "sites", "remoteness"]
+const LAYERS: Array[String] = ["zones", "settlements", "roads", "earthworks", "sites", "power", "remoteness"]
 
 ## key -> {png (PackedByteArray), stats, region}
 var _renders: Dictionary[String, Dictionary] = {}

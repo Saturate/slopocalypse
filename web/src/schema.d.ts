@@ -254,7 +254,7 @@ export interface components {
             map: string;
             seed?: number;
             pixels?: number;
-            layers?: ("zones" | "settlements" | "roads" | "earthworks" | "sites" | "remoteness")[];
+            layers?: ("zones" | "settlements" | "roads" | "earthworks" | "sites" | "power" | "remoteness")[];
             /** @description An edited recipe to render instead of the stored one (not saved). */
             recipe?: {
                 [key: string]: unknown;

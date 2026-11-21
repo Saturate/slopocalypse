@@ -225,6 +225,51 @@ func _track_mouth(track: Dictionary, net: RoadNetwork) -> Dictionary:
 		"along": along.normalized() if along.length() > 0.01 else Vector3.RIGHT, "width": width, "length": MapRender.track_length(track)}
 
 
+## The map's power lines (#494), each {kind ("high_voltage" or "low_voltage"), from
+## ("substation", a settlement, or "line N": a tap off line N of this list), to, points (each
+## tower's foot, on the ground there, from the line's source out; a high-voltage line's first
+## is its terminal in the substation yard, on the yard's level), sag (the wires' dip as a
+## share of a span's length). Empty on a map without them.
+func power_lines() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var power: MapPower = map.get("power")
+	if power == null:
+		return out
+	for line: Dictionary in power.lines():
+		var feet: Array[Vector3] = []
+		var station := power.substation()
+		for p: Vector2 in line["points"]:
+			var on_yard := not station.is_empty() and (station["yard"] as Rect2).has_point(p)
+			feet.append(Vector3(p.x, float(station["level"]) if on_yard else height_at(p.x, p.y), p.y))
+		out.append({"kind": line["kind"], "from": line["from"], "to": line["to"], "points": feet, "sag": line["sag"]})
+	return out
+
+
+## The substation the high-voltage lines start from: {centre (on its pad's level), size
+## (metres a side), base (the lowest ground under it)}; empty without one.
+func power_substation() -> Dictionary:
+	var power: MapPower = map.get("power")
+	if power == null or power.substation().is_empty():
+		return {}
+	var station := power.substation()
+	var c: Vector2 = station["centre"]
+	return {"centre": Vector3(c.x, float(station["level"]), c.y), "size": (station["yard"] as Rect2).size.x, "base": float(station["base"])}
+
+
+## Whether a circle of `radius` at (x, z) reaches a power tower's feet or the substation yard.
+func power_within(x: float, z: float, radius: float) -> bool:
+	var power: MapPower = map.get("power")
+	return power != null and power.tower_within(Vector2(x, z), radius)
+
+
+## The map's power lines are map data like its roads, there whether or not the power module
+## that puts up their towers is on, so their corridors are kept clear either way: the world
+## cannot ask which modules are loaded without depending on them.
+func near_power(x: float, z: float, high_voltage: float, low_voltage: float) -> bool:
+	var power: MapPower = map.get("power")
+	return power != null and power.near(x, z, high_voltage, low_voltage)
+
+
 ## The highway from the camp: its points from the camp's end.
 func highway() -> PackedVector2Array:
 	var net: RoadNetwork = map["net"]

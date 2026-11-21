@@ -41,3 +41,9 @@ func on_site(_x: float, _z: float) -> bool:
 ## `default`), close enough to keep trees and rocks off so they don't crowd what stands there.
 func near_site(_x: float, _z: float, _clearance: Dictionary) -> bool:
 	return false
+
+
+## Whether (x, z) is within `high` metres of a high-voltage line or `low` of a pole line:
+## ground kept free of trees.
+func near_power(_x: float, _z: float, _high: float, _low: float) -> bool:
+	return false

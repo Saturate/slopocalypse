@@ -1,9 +1,9 @@
 // Pure parts of tools/map-viewer.ts: reading a render request and naming its cache entry.
 
-export const LAYERS = ["zones", "settlements", "roads", "earthworks", "sites", "remoteness"] as const;
+export const LAYERS = ["zones", "settlements", "roads", "earthworks", "sites", "power", "remoteness"] as const;
 export type Layer = (typeof LAYERS)[number];
 // Drawn when a request names none: everything but the remoteness tint, which hides the land.
-export const DEFAULT_LAYERS: readonly Layer[] = ["zones", "settlements", "roads", "earthworks", "sites"];
+export const DEFAULT_LAYERS: readonly Layer[] = ["zones", "settlements", "roads", "earthworks", "sites", "power"];
 
 export type RenderRequest = { map: string; seed: number; pixels: number; layers: Layer[] };
 

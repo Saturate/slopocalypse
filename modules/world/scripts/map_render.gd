@@ -24,7 +24,11 @@ const ROAD := Color(0.18, 0.18, 0.2)
 const TRACK := Color(0.45, 0.36, 0.25)
 const TUNNEL := Color(0.62, 0.3, 0.75)
 const BRIDGE := Color(0.55, 0.85, 1.0)
-const ALL_LAYERS := "zones,settlements,roads,earthworks,sites"
+## Power lines: high-voltage in bright yellow with a dark dot per pylon, pole lines in pink.
+const HIGH_VOLTAGE := Color(1.0, 0.9, 0.15)
+const POLE_LINE := Color(0.95, 0.45, 0.85)
+const TOWER := Color(0.1, 0.1, 0.1)
+const ALL_LAYERS := "zones,settlements,roads,earthworks,sites,power"
 ## Each site kind's colour on the map; kinds not listed are drawn white.
 const SITE_COLOURS := {"farm": Color(0.55, 0.36, 0.18), "water_tower": Color(0.95, 0.85, 0.2), "town_tower": Color(0.95, 0.85, 0.2),
 	"antenna": Color(0.85, 0.85, 0.9), "lookout": Color(0.75, 0.45, 0.85), "cabin": Color(0.6, 0.12, 0.12)}
@@ -54,6 +58,7 @@ const SECTIONS := {
 	"earthworks": {"bank_grade": "n", "shoulder": "n", "reach": "n"},
 	"remoteness": {"reach": "n", "off_road": "n"},
 	"sites": MapSites.SECTION,
+	"power": MapPower.SECTION,
 }
 const ROAD_KIND := {"width": "n", "max_grade": "n", "min_radius": "n", "max_cut": "n", "max_fill": "n"}
 ## Kinds the road network builds; an edited recipe must still have them.
@@ -79,7 +84,18 @@ const LIMITS := {
 	"sites.clearance": Vector2(0, 50),
 	"sites.settlement_clearance": Vector2(0, 300),
 	"sites.edge_margin": Vector2(0, 500),
+	"power.edge_margin": Vector2(0, 500),
+	"power.high_voltage.towns": Vector2(0, 16),
+	"power.high_voltage.foot": Vector2(0, 20),
+	"power.high_voltage.max_turn": Vector2(0, 90),
+	"power.high_voltage.yard": Vector2(20, 48),
+	"power.poles.branch_angle": Vector2(0, 90),
+	"power.poles.count": Vector2(0, 32),
+	"power.poles.max_length": Vector2(0, 5000),
 }
+## Ranges a power line's [shortest, longest] span must keep to, metres: a short span makes a
+## route search try thousands of spots, and wires refuse spans past their max_span (400 m).
+const POWER_SPANS := {"high_voltage": Vector2(50, 400), "poles": Vector2(10, 100)}
 ## Most site kinds, and most of one kind, a recipe may ask for.
 const MAX_SITE_KINDS := 24
 const MAX_SITES := 64
@@ -149,6 +165,17 @@ static func check(recipe: Dictionary) -> String:
 			var rule: Dictionary = kinds[kind]
 			if rule.has("max_track") and not ((rule["max_track"] is float or rule["max_track"] is int) and float(rule["max_track"]) > 0.0):
 				return "sites.kinds.%s.max_track: metres, more than 0" % kind
+	if recipe.has("power"):
+		for kind: String in POWER_SPANS:
+			var span: Array = recipe["power"][kind]["span"]
+			var limit: Vector2 = POWER_SPANS[kind]
+			if span.size() != 2 or not (span[0] is float or span[0] is int) or not (span[1] is float or span[1] is int) \
+					or float(span[0]) < limit.x or float(span[1]) > limit.y or float(span[0]) > float(span[1]):
+				return "power.%s.span: [shortest, longest], %d to %d" % [kind, limit.x, limit.y]
+		var reach: Array = recipe["power"]["high_voltage"]["substation"]
+		if reach.size() != 2 or not (reach[0] is float or reach[0] is int) or not (reach[1] is float or reach[1] is int) \
+				or float(reach[0]) < 0.0 or float(reach[1]) > 500.0 or float(reach[0]) > float(reach[1]):
+			return "power.high_voltage.substation: [nearest, furthest], 0 to 500"
 	for path: String in LIMITS:
 		var value: Variant = _at(recipe, path)
 		var limit: Vector2 = LIMITS[path]
@@ -257,7 +284,17 @@ static func build(recipe: Dictionary, seed_value: int) -> Dictionary:
 	var works_cfg: Variant = recipe.get("earthworks")
 	if works_cfg is Dictionary and places != null:
 		works = Earthworks.new(land, places, net, works_cfg, sites)
-	var world := {"land": land, "zones": zones, "places": places, "net": net, "works": works, "remoteness": far, "sites": sites}
+	# Power lines after everything that shapes the land: they keep off it all.
+	var power: MapPower = null
+	var power_cfg: Variant = recipe.get("power")
+	var power_ms := 0.0
+	if power_cfg is Dictionary and works != null:
+		# Timed here, not with Prof: the map is built on a worker thread, and Prof's zones
+		# are only for the main one.
+		var power_started := Time.get_ticks_usec()
+		power = MapPower.new(works, places, net, sites, power_cfg, seed_value)
+		power_ms = float(Time.get_ticks_usec() - power_started) / 1000.0
+	var world := {"land": land, "zones": zones, "places": places, "net": net, "works": works, "remoteness": far, "sites": sites, "power": power, "power_ms": power_ms}
 	var b := land.bounds()
 	var low := INF
 	var high := -INF
@@ -326,6 +363,8 @@ static func draw(world: Dictionary, pixels: int, layers: PackedStringArray, regi
 		draw_roads(image, world["net"], layers.has("earthworks"), region)
 	if world["sites"] != null and layers.has("sites"):
 		draw_sites(image, world["sites"], region)
+	if world.get("power") != null and layers.has("power"):
+		draw_power(image, world["power"], region)
 	if world["places"] != null and layers.has("settlements"):
 		draw_settlements(image, world["places"], region)
 	return image
@@ -343,6 +382,13 @@ static func world_stats(world: Dictionary, layers: PackedStringArray) -> Diction
 			var c: Vector2i = counts[kind]
 			parts.append("%s %d%s" % [kind.replace("_", " "), c.x, "" if c.x >= c.y else " (<%d)" % c.y])
 		(out["summary"] as Dictionary)["sites"] = ", ".join(parts)
+	if world.get("power") != null:
+		var power: MapPower = world["power"]
+		var lines := {"high_voltage": 0, "low_voltage": 0}
+		for line: Dictionary in power.lines():
+			lines[line["kind"]] += 1
+		var counts := {"high_voltage": Vector2i(lines["high_voltage"], power.towers("high_voltage").size()), "low_voltage": Vector2i(lines["low_voltage"], power.towers("low_voltage").size())}
+		(out["summary"] as Dictionary)["power"] = "%d high-voltage lines, %d pylons; %d pole lines, %d poles; %.0f ms" % [counts["high_voltage"].x, counts["high_voltage"].y, counts["low_voltage"].x, counts["low_voltage"].y, float(world.get("power_ms", 0.0))]
 	return out
 
 
@@ -434,6 +480,49 @@ static func draw_sites(image: Image, placed: MapSites, region := Rect2()) -> voi
 		var inside := box.intersection(view)
 		if inside.size.x > 0 and inside.size.y > 0:
 			image.fill_rect(inside, SITE_COLOURS.get(str(site["kind"]), Color.WHITE))
+
+
+## Each power line as a line between its towers with a dark dot at each, high-voltage
+## thicker; the substation yard as a yellow square edged dark. Only the part of a span inside
+## the region drawn is stepped along, so a close-up does not walk whole spans off it.
+static func draw_power(image: Image, power: MapPower, region := Rect2()) -> void:
+	var b := region if region.size.x > 0.0 else power.land.bounds()
+	var pixels := image.get_width()
+	var step := b.size.x / pixels
+	var view := Rect2i(0, 0, pixels, pixels)
+	var dot := func(p: Vector2, half: int, colour: Color) -> void:
+		var c := Vector2i(((p - b.position) / step).floor())
+		var box := Rect2i(c - Vector2i(half, half), Vector2i(half * 2 + 1, half * 2 + 1)).intersection(view)
+		if box.size.x > 0 and box.size.y > 0:
+			image.fill_rect(box, colour)
+	for line: Dictionary in power.lines():
+		var high: bool = line["kind"] == "high_voltage"
+		var colour := HIGH_VOLTAGE if high else POLE_LINE
+		var points: PackedVector2Array = line["points"]
+		for k in range(1, points.size()):
+			var shown := MapPower.clip(b.grow(step * 2.0), points[k - 1], points[k])
+			if is_nan(shown.x):
+				continue
+			var from := points[k - 1].lerp(points[k], shown.x)
+			var to := points[k - 1].lerp(points[k], shown.y)
+			var steps := maxi(ceili(from.distance_to(to) / step), 1)
+			for s in steps + 1:
+				dot.call(from.lerp(to, float(s) / steps), 1 if high else 0, colour)
+		for p in points:
+			if b.grow(step * 4.0).has_point(p):
+				dot.call(p, 2 if high else 1, TOWER)
+	var station := power.substation()
+	if not station.is_empty():
+		var yard: Rect2 = station["yard"]
+		var from := Vector2i(((yard.position - b.position) / step).floor())
+		var size := Vector2i(maxi(ceili(yard.size.x / step), 5), maxi(ceili(yard.size.y / step), 5))
+		var box := Rect2i(from, size)
+		var edge := box.grow(1).intersection(view)
+		if edge.size.x > 0 and edge.size.y > 0:
+			image.fill_rect(edge, TOWER)
+		var inside := box.intersection(view)
+		if inside.size.x > 0 and inside.size.y > 0:
+			image.fill_rect(inside, HIGH_VOLTAGE)
 
 
 ## Thin dark lines where one zone meets another.

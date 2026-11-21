@@ -1,0 +1,6 @@
+{
+  "id": "power",
+  "depends_on": ["world", "voxkit"],
+  "flag": "power",
+  "entry": "power_module.gd"
+}
