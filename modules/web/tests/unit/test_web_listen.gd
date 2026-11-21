@@ -7,7 +7,7 @@ const WEB := "res://modules/web/web_module.gd"
 const GAME_PORT := 7777
 
 
-func _options(args: Array[String], env: Dictionary = {}) -> Dictionary:
+func _options(args: Array, env: Dictionary = {}) -> Dictionary:
 	return (load(WEB) as GDScript).call(&"listen_options", PackedStringArray(args), env, GAME_PORT)
 
 
@@ -36,6 +36,6 @@ func test_the_environment_sets_them_when_the_command_line_does_not() -> void:
 
 
 func test_a_bad_address_or_port_keeps_the_page_off() -> void:
-	for args: Array[String] in [["--web-bind=localhost:80"], ["--web-bind=my server"], ["--web-port=0"], ["--web-port=70000"], ["--web-port=http"]]:
+	for args: Array in [["--web-bind=localhost:80"], ["--web-bind=my server"], ["--web-port=0"], ["--web-port=70000"], ["--web-port=http"]]:
 		assert_str(str(_options(args)["error"])).override_failure_message("%s was accepted" % [args]).is_not_empty()
 	assert_str(str(_options([], {"WEB_BIND": "everywhere"})["error"])).is_not_empty()
