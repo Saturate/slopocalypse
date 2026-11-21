@@ -45,13 +45,16 @@ func params() -> Array[Dictionary]:
 		seed_param(),
 		choice("paint", "Paint", PAINTS, 1),
 		choice("material", "Walls", MATERIALS, 0),
-		param("width", "Width (m)", 2.0, 9.0, 0.25, 4.5),
-		param("depth", "Depth (m)", 2.0, 7.0, 0.25, 3.5),
-		param("wall_height", "Wall height (m)", 2.2, 4.0, 0.1, 2.6),
+		param("width", "Width (m)", 2.0, 14.0, 0.25, 4.5),
+		param("depth", "Depth (m)", 2.0, 10.0, 0.25, 3.5),
+		param("wall_height", "Wall height (m)", 2.2, 5.0, 0.1, 2.6),
 		param("pitch", "Roof pitch", 0.0, 1.2, 0.05, 0.55),
 		choice("door", "Door", ["No", "Yes"], 1),
+		param("door_width", "Door width (m)", 0.8, 4.0, 0.1, DOOR_WIDTH),
+		param("door_height", "Door height (m)", 1.8, 4.0, 0.1, DOOR_HEIGHT),
 		choice("glass", "Panes", ["Window glass", "Security glass"], 0),
-		param("windows", "Windows", 0.0, 4.0, 1.0, 2.0),
+		param("windows", "Windows", 0.0, 6.0, 1.0, 2.0),
+		choice("back_windows", "Back windows", ["No", "Yes"], 1),
 		voxel_param(0.05, 0.25, 0.1),
 	]
 
@@ -120,11 +123,12 @@ func build(values: Dictionary) -> VoxelModel:
 	_roof(m, w, d, wh, rise, v, seed)
 	m.set_material(wood)
 	if int(p["door"]) == 1:
-		var top := minf(slab + DOOR_HEIGHT, wh - 0.2)
-		m.carve_box(Vector3(-DOOR_WIDTH / 2, slab, -d / 2 - v), Vector3(DOOR_WIDTH / 2, top, -d / 2 + t + v))
-		m.fill_box(Vector3(-DOOR_WIDTH / 2 - v, top, -d / 2 - v), Vector3(DOOR_WIDTH / 2 + v, top + v * 1.5, -d / 2 + v), TRIM, 0.04, seed)
+		var door_w := minf(float(p["door_width"]), w - 0.6)
+		var top := minf(slab + float(p["door_height"]), wh - 0.2)
+		m.carve_box(Vector3(-door_w / 2, slab, -d / 2 - v), Vector3(door_w / 2, top, -d / 2 + t + v))
+		m.fill_box(Vector3(-door_w / 2 - v, top, -d / 2 - v), Vector3(door_w / 2 + v, top + v * 1.5, -d / 2 + v), TRIM, 0.04, seed)
 	var glass := VoxMaterials.index_of(GLASS_TYPES[clampi(int(p.get("glass", 0)), 0, GLASS_TYPES.size() - 1)])
-	var spots := _window_spots(w, d, int(p["windows"]))
+	var spots := _window_spots(w, d, int(p["windows"]), int(p["back_windows"]) == 1)
 	for spot in spots:
 		_window(m, spot, d, w, v, t, slab, wood, glass)
 	return m
@@ -196,13 +200,17 @@ func _roof(m: VoxelModel, w: float, d: float, wh: float, rise: float, v: float, 
 		row += 1
 
 
-## Where windows go, as [wall, along]: wall 0 back, 1 left, 2 right; along is a share of that
-## wall's length.
-func _window_spots(w: float, d: float, count: int) -> Array[Vector2]:
-	var order: Array[Vector2] = [Vector2(1, 0.5), Vector2(2, 0.5), Vector2(0, 0.3), Vector2(0, 0.7)]
+## Where windows go, as [wall, along]: wall 0 back, 1 left, 2 right, 3 front; along is a share
+## of that wall's length.
+func _window_spots(w: float, d: float, count: int, back := true) -> Array[Vector2]:
+	# The fifth and sixth flank the door, either side of it on the front.
+	var order: Array[Vector2] = [Vector2(1, 0.5), Vector2(2, 0.5), Vector2(0, 0.3), Vector2(0, 0.7), Vector2(3, 0.2), Vector2(3, 0.8)]
 	var out: Array[Vector2] = []
-	for i in mini(count, order.size()):
-		out.append(order[i])
+	for spot in order:
+		# Without back windows the inside reads dark through the door, not lit from behind.
+		if out.size() >= count or (not back and int(spot.x) == 0):
+			continue
+		out.append(spot)
 	return out
 
 
@@ -212,14 +220,15 @@ func _window(m: VoxelModel, spot: Vector2, d: float, w: float, v: float, t: floa
 	var y1 := y0 + WINDOW.y
 	var half := WINDOW.x / 2
 	var frame := v * 1.5
-	if wall == 0:
+	if wall == 0 or wall == 3:
 		var cx := lerpf(-w / 2, w / 2, spot.y)
-		var z := d / 2
+		var z := d / 2 if wall == 0 else -d / 2
+		var inward := -t if wall == 0 else t
 		m.set_material(wood)
 		m.fill_box(Vector3(cx - half - frame, y0 - frame, z - v), Vector3(cx + half + frame, y1 + frame, z + v), TRIM, 0.04, 0)
-		m.carve_box(Vector3(cx - half, y0, z - t - v), Vector3(cx + half, y1, z + v * 2.0))
+		m.carve_box(Vector3(cx - half, y0, minf(z - v * 2.0, z + inward)), Vector3(cx + half, y1, maxf(z + v * 2.0, z + inward)))
 		m.set_material(glass)
-		m.fill_box(Vector3(cx - half, y0, z - t * 0.5 - v * 0.5), Vector3(cx + half, y1, z - t * 0.5 + v * 0.5), GLASS, 0.0, 0)
+		m.fill_box(Vector3(cx - half, y0, z + inward * 0.5 - v * 0.5), Vector3(cx + half, y1, z + inward * 0.5 + v * 0.5), GLASS, 0.0, 0)
 	else:
 		var cz := lerpf(-d / 2, d / 2, spot.y)
 		var x := -w / 2 if wall == 1 else w / 2

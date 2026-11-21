@@ -14,6 +14,8 @@ var land: WorldLand
 var works: Earthworks
 ## Every site's footprint (see on_site).
 var _site_feet: Array[Rect2] = []
+## Each footprint's site kind, in the same order.
+var _site_kinds: Array[String] = []
 
 
 func _init(built: Dictionary, water_config: Dictionary) -> void:
@@ -22,6 +24,7 @@ func _init(built: Dictionary, water_config: Dictionary) -> void:
 	if all != null:
 		for site: Dictionary in all.sites():
 			_site_feet.append(site["footprint"])
+			_site_kinds.append(str(site["kind"]))
 	land = built["land"]
 	works = built["works"]
 	water = MapWater.new({"bodies": [], "shore": water_config.get("shore", 4.0), "bank": water_config.get("bank", 8.0)}, height_at)
@@ -71,6 +74,27 @@ func on_site(x: float, z: float) -> bool:
 	var p := Vector2(x, z)
 	for foot in _site_feet:
 		if foot.has_point(p):
+			return true
+	return false
+
+
+## Whether (x, z) is on a site's pad or within `clearance` of it: metres by site kind, with a
+## `default` for kinds not listed.
+func near_site(x: float, z: float, clearance: Dictionary) -> bool:
+	var p := Vector2(x, z)
+	var fallback := float(clearance.get("default", 0.0))
+	for i in _site_feet.size():
+		if _site_feet[i].grow(float(clearance.get(_site_kinds[i], fallback))).has_point(p):
+			return true
+	return false
+
+
+## Whether a circle of `radius` at (x, z) reaches onto a site's pad: ground what stands there
+## (a farm, a mast) already holds.
+func site_within(x: float, z: float, radius: float) -> bool:
+	var p := Vector2(x, z)
+	for foot in _site_feet:
+		if foot.grow(radius).has_point(p):
 			return true
 	return false
 
@@ -129,6 +153,40 @@ func sites(kind: String) -> Array[Vector3]:
 		if s["kind"] == kind:
 			var c: Vector2 = s["centre"]
 			out.append(Vector3(c.x, height_at(c.x, c.y), c.y))
+	return out
+
+
+## Every site, in the order the map placed them: {kind, centre (on the pad's level),
+## footprint (Rect2 on x, z), connectors (Vector3, the middle of each side), toward (unit, on
+## the ground plane: from the centre to the side its track leaves by, or to the side nearest
+## a road when it has no track)}.
+func site_list() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var all: MapSites = map.get("sites")
+	if all == null:
+		return out
+	# A site's track is named after its kind and its place in the list (MapRender.build).
+	var starts: Dictionary[String, Vector2] = {}
+	var net: RoadNetwork = map.get("net")
+	if net != null:
+		for road: Dictionary in net.roads():
+			var points: PackedVector2Array = road["points"]
+			if road["kind"] == "track" and not points.is_empty():
+				starts[str(road["from"])] = points[0]
+	var sites := all.sites()
+	for i in sites.size():
+		var s: Dictionary = sites[i]
+		var c: Vector2 = s["centre"]
+		var centre := Vector3(c.x, height_at(c.x, c.y), c.y)
+		var name := "%s %d" % [s["kind"], i]
+		var best := INF
+		var toward := Vector3.FORWARD
+		for k: Vector3 in s["connectors"]:
+			var d := Vector2(k.x, k.z).distance_to(starts[name]) if starts.has(name) else road_edge_distance(k.x, k.z)
+			if d < best:
+				best = d
+				toward = Vector3(k.x - c.x, 0.0, k.z - c.y).normalized()
+		out.append({"kind": s["kind"], "centre": centre, "footprint": s["footprint"], "connectors": s["connectors"], "toward": toward})
 	return out
 
 

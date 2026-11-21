@@ -1,8 +1,8 @@
 class_name PlayerController
 extends CharacterBody3D
 ## First-person movement driven only by PlayerIntent: walk, sprint with momentum, crouch,
-## slide, hop, vault low cover and mantle onto ledges. Cosmetic camera feel (FOV, bob)
-## lives in PlayerCameraFeel on clients; nothing here depends on rendering.
+## slide, hop, vault low cover, mantle onto ledges and climb ladders. Cosmetic camera feel
+## (FOV, bob) lives in PlayerCameraFeel on clients; nothing here depends on rendering.
 
 ## A standing person, for checking where one can be put (#406): a little slimmer than the
 ## body so touching a car door does not count.
@@ -18,6 +18,10 @@ const REQUIRED := {
 	"swim_depth": TYPE_FLOAT,
 	"swim_speed": TYPE_FLOAT,
 	"step_height": TYPE_FLOAT,
+	"climb_speed": TYPE_FLOAT,
+	"climb_move_share": TYPE_FLOAT,
+	"climb_aim": TYPE_FLOAT,
+	"climb_top_margin": TYPE_FLOAT,
 	"shove_fade": TYPE_FLOAT,
 	"acceleration": TYPE_FLOAT,
 	"sprint_acceleration": TYPE_FLOAT,
@@ -99,6 +103,8 @@ var _slide_cooldown := 0.0
 ## A push from outside (a car driving through, #409), on top of the body's own walking; it
 ## fades at player.json's `shove_fade` metres a second per second, whatever the body does.
 var _shove := Vector3.ZERO
+## The way into the ladder being climbed (level, unit).
+var _ladder_into := Vector3.ZERO
 
 
 ## A copy of someone else's body on a client: it shows what the server sends and runs no
@@ -250,7 +256,24 @@ func _step_normal(delta: float) -> void:
 
 	var depth := water_depth()
 	_set_swimming(depth > float(config["swim_depth"]))
-	if swimming:
+	var ladder := {} if swimming else Ladders.at(global_position, _capsule.height, _capsule.radius)
+	var climbing := false
+	if not ladder.is_empty():
+		var into: Vector3 = ladder["into"]
+		var aim := float(config["climb_aim"])
+		var push := (transform.basis * Vector3(_intent.move.x, 0.0, -_intent.move.y)).limit_length(1.0).dot(into)
+		var top := float(ladder["top"])
+		# Onto it from the ground only heading into it and below its top (not from the deck it
+		# leads to); off the ground beside it, holding on.
+		climbing = not is_on_floor() or (push > aim and global_position.y < top - float(config["climb_top_margin"]))
+		if climbing:
+			# Into the ladder climbs, away from it climbs down, sideways holds on; never past its top.
+			var up := float(config["climb_speed"]) * signf(push) if absf(push) > aim else 0.0
+			velocity.y = minf(up, (top - global_position.y) / maxf(delta, 0.0001))
+			_ladder_into = into
+	if climbing:
+		_intent.consume_jump()
+	elif swimming:
 		# Afloat: held with the head out, the feet `swim_depth` under the surface.
 		var surface := float(_ground.call(&"water_level_at", global_position))
 		velocity.y = (surface - float(config["swim_depth"]) - global_position.y) * SWIM_SETTLE
@@ -279,7 +302,9 @@ func _step_normal(delta: float) -> void:
 		speed = float(config["walk_speed"]) * float(config["swim_speed"])
 	elif depth > float(config["wade_depth"]):
 		speed *= float(config["wade_speed"])
-	if not is_on_floor() and not swimming:
+	if climbing and not is_on_floor():
+		speed *= float(config["climb_move_share"])
+	elif not is_on_floor() and not swimming:
 		accel *= float(config["air_control"])
 		build *= float(config["air_control"])
 	var wish := transform.basis * Vector3(_intent.move.x, 0.0, -_intent.move.y)
@@ -295,6 +320,11 @@ func _step_normal(delta: float) -> void:
 		horizontal = horizontal.move_toward(goal, accel * delta)
 	velocity.x = horizontal.x
 	velocity.z = horizontal.y
+	if climbing and not is_on_floor():
+		# Held to the ladder: pushing away from it climbs down rather than letting go.
+		var away := -Vector3(velocity.x, 0.0, velocity.z).dot(_ladder_into)
+		if away > 0.0:
+			velocity += _ladder_into * away
 	_move_with_steps(delta)
 	_be_shoved(delta)
 

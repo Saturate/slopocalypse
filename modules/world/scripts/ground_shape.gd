@@ -35,3 +35,9 @@ func road_edge_distance(_x: float, _z: float) -> float:
 ## trees and rocks.
 func on_site(_x: float, _z: float) -> bool:
 	return false
+
+
+## Whether (x, z) is on a site's pad or within `clearance` of it (metres by site kind, with a
+## `default`), close enough to keep trees and rocks off so they don't crowd what stands there.
+func near_site(_x: float, _z: float, _clearance: Dictionary) -> bool:
+	return false
