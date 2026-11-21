@@ -13,10 +13,10 @@ var _ticks := 0
 
 func _ready() -> void:
 	# Voxel terrain streams in; wait for the spawn area before dropping anything onto it.
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
 	_player = (load(PLAYER) as PackedScene).instantiate()
 	add_child(_player)
-	_player.global_position = Vector3(0.0, 1.0, 0.0)
+	_player.global_position = VoxelWorld.spawn_of(world, Vector3(0.0, 1.0, 0.0))
 	add_child(_camera)
 	_camera.current = true
 

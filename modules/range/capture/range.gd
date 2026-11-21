@@ -4,7 +4,7 @@ extends Node3D
 ## glass), held for a moment, then on to the next. `--frames 320 --sheet 6` gives about one
 ## panel per building, after its rounds.
 
-const WORLD := "res://modules/world/scenes/world.tscn"
+const WORLD := "res://modules/world/scenes/flat_world.tscn"
 const PLAYER := "res://modules/player/scenes/player.tscn"
 const MODULES: Array[String] = [
 	"res://modules/weapons/weapons_module.gd",
@@ -25,7 +25,7 @@ var _ticks := 0
 
 func _ready() -> void:
 	Net.extra_args = PackedStringArray(["--range"])
-	await VoxelWorld.add_and_wait(self, WORLD)
+	add_child((load(WORLD) as PackedScene).instantiate())
 	for path in MODULES:
 		add_child((load(path) as GDScript).new())
 	_missions = get_tree().get_first_node_in_group(&"missions_api")

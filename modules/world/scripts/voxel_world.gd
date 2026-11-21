@@ -147,6 +147,16 @@ static func add_and_wait(parent: Node, scene_path: String, max_frames: int = 900
 	return world
 
 
+## For captures and harnesses: the point `offset` across the ground from `world`'s spawn (the
+## map's camp, far from the origin), `offset.y` above the untouched ground there.
+static func spawn_of(world: Node, offset := Vector3.ZERO) -> Vector3:
+	var voxels: VoxelWorld = world.get_node("Terrain")
+	var spawn := world.get_node_or_null("SpawnPoint") as Node3D
+	var at := (spawn.global_position if spawn != null else voxels.home) + Vector3(offset.x, 0.0, offset.z)
+	at.y = voxels.ground_height(at.x, at.z) + offset.y
+	return at
+
+
 ## True once the ground around `point` has collision.
 func is_ready_at(point: Vector3, radius: float = 8.0) -> bool:
 	if heights == null:

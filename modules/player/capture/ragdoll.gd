@@ -12,7 +12,7 @@ const VICTIMS := [
 	[2.5, 100, Vector3(0.0, 0.0, 1.0)],
 ]
 const CAMERA_AT := Vector3(0.0, 1.9, 5.0)
-## Ticks for the soldiers to land; then they hold still (the road slopes, and nobody steers).
+## Ticks for the soldiers to land; then they hold still (nobody steers).
 const LANDED := 12
 
 var _soldiers: Array[PlayerController] = []
@@ -21,12 +21,13 @@ var _ticks := 0
 
 
 func _ready() -> void:
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
+	var origin := VoxelWorld.spawn_of(world)
 	Corpse.enabled = true
 	for v: Array in VICTIMS:
 		var soldier: PlayerController = (load(PLAYER) as PackedScene).instantiate()
 		add_child(soldier)
-		soldier.global_position = Vector3(float(v[0]), 0.5, 0.0)
+		soldier.global_position = VoxelWorld.spawn_of(world, Vector3(float(v[0]), 0.5, 0.0))
 		var animator := PlayerBodyAnimator.new()
 		animator.name = "BodyAnimator"
 		animator.player = soldier
@@ -34,8 +35,8 @@ func _ready() -> void:
 		_soldiers.append(soldier)
 	add_child(_camera)
 	_camera.current = true
-	_camera.global_position = CAMERA_AT
-	_camera.look_at(Vector3(0.0, 0.8, 0.0))
+	_camera.global_position = origin + CAMERA_AT
+	_camera.look_at(origin + Vector3(0.0, 0.8, 0.0))
 
 
 func _physics_process(_delta: float) -> void:

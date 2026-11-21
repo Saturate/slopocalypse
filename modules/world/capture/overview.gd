@@ -19,4 +19,4 @@ func _ready() -> void:
 	_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	_camera.size = 260.0
 	_camera.far = 400.0
-	_camera.global_transform = Transform3D(Basis.from_euler(Vector3(-PI / 2.0, 0.0, 0.0)), Vector3(0, 150, 0))
+	_camera.global_transform = Transform3D(Basis.from_euler(Vector3(-PI / 2.0, 0.0, 0.0)), VoxelWorld.spawn_of(world, Vector3(0.0, 150.0, 0.0)))
