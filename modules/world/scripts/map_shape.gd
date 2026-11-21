@@ -12,10 +12,16 @@ const POND_REACH := 1.0
 var map: Dictionary
 var land: WorldLand
 var works: Earthworks
+## Every site's footprint (see on_site).
+var _site_feet: Array[Rect2] = []
 
 
 func _init(built: Dictionary, water_config: Dictionary) -> void:
 	map = built
+	var all: MapSites = built.get("sites")
+	if all != null:
+		for site: Dictionary in all.sites():
+			_site_feet.append(site["footprint"])
 	land = built["land"]
 	works = built["works"]
 	water = MapWater.new({"bodies": [], "shore": water_config.get("shore", 4.0), "bank": water_config.get("bank", 8.0)}, height_at)
@@ -55,6 +61,14 @@ func in_water(x: float, z: float) -> bool:
 
 func near_road(x: float, z: float, margin: float) -> bool:
 	return works != null and works.road_distance(x, z) < margin
+
+
+func on_site(x: float, z: float) -> bool:
+	var p := Vector2(x, z)
+	for foot in _site_feet:
+		if foot.has_point(p):
+			return true
+	return false
 
 
 func biomes() -> GroundBiomes:
@@ -98,6 +112,20 @@ func city() -> Dictionary:
 				best = d
 				toward = Vector3(k.x - centre.x, 0.0, k.z - centre.z).normalized()
 	return {"centre": centre, "size": foot.size.x, "toward": toward}
+
+
+## The centres of every site of `kind` (a key of the recipe's `sites.kinds`), on the
+## ground there: the earthworks level each site's pad, so this is the pad's height.
+func sites(kind: String) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	var all: MapSites = map.get("sites")
+	if all == null:
+		return out
+	for s: Dictionary in all.sites():
+		if s["kind"] == kind:
+			var c: Vector2 = s["centre"]
+			out.append(Vector3(c.x, height_at(c.x, c.y), c.y))
+	return out
 
 
 ## The highway from the camp: its points from the camp's end.

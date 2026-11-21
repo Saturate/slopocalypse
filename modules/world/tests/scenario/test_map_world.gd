@@ -102,3 +102,42 @@ func test_the_city_footprint_is_the_size_the_city_module_builds_and_faces_the_hi
 	var centre: Vector3 = city["centre"]
 	var to_end := Vector3(end.x - centre.x, 0.0, end.y - centre.z).normalized()
 	assert_float(to_end.dot(city["toward"])).is_greater(0.7)
+
+
+func test_sites_of_a_kind_stand_on_their_levelled_pad() -> void:
+	var map := _shape()
+	var wanted := (map.map["sites"] as MapSites).sites().filter(func(s: Dictionary) -> bool: return s["kind"] == "water_tower")
+	var found := map.sites("water_tower")
+	assert_int(found.size()).is_equal(wanted.size())
+	assert_int(found.size()).is_greater(0)
+	for i in found.size():
+		var centre: Vector2 = wanted[i]["centre"]
+		assert_float(found[i].x).is_equal(centre.x)
+		assert_float(found[i].z).is_equal(centre.y)
+		assert_float(found[i].y).is_equal_approx(map.height_at(centre.x, centre.y), 0.01)
+	assert_array(map.sites("no such kind")).is_empty()
+
+
+func test_no_tree_or_rock_grows_on_a_site_pad() -> void:
+	var map := _shape()
+	var s := SceneryScatter.new()
+	s.set(&"_visual", false)
+	add_child(s)
+	s.set_process(false)
+	var all := (map.map["sites"] as MapSites).sites()
+	assert_int(all.size()).is_greater(0)
+	for site: Dictionary in all:
+		var foot: Rect2 = site["footprint"]
+		assert_bool(map.on_site(foot.get_center().x, foot.get_center().y)).is_true()
+		# Every chunk the pad reaches into: a farm can straddle a chunk edge.
+		var chunks := {}
+		for corner: Vector2 in [foot.position, foot.end, Vector2(foot.position.x, foot.end.y), Vector2(foot.end.x, foot.position.y)]:
+			chunks[s.chunk_at(corner.x, corner.y)] = true
+		for chunk: int in chunks:
+			var plan := s.plan_chunk(chunk, [] as Array[Vector3])
+			for kind: String in ["trees", "rocks"]:
+				for thing: Dictionary in plan[kind]:
+					var at: Vector3 = (thing["xform"] as Transform3D).origin
+					assert_bool(foot.has_point(Vector2(at.x, at.z))).override_failure_message("%s on a %s" % [kind, site["kind"]]).is_false()
+	assert_bool(map.on_site(map.camp().x, map.camp().z)).is_false()
+	s.queue_free()
