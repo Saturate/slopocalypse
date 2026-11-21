@@ -39,6 +39,12 @@ func near_road(_x: float, _z: float, _margin: float) -> bool:
 	return false
 
 
+## Whether (x, z) is on a site's levelled pad (a farm, a water tower...), kept free of
+## trees and rocks.
+func on_site(_x: float, _z: float) -> bool:
+	return false
+
+
 func z_max() -> float:
 	return extent().end.y
 

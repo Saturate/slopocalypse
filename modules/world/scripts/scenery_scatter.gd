@@ -453,6 +453,8 @@ func _spot(rng: RandomNumberGenerator, area: Rect2, weight: Callable, clearings:
 			continue
 		if _heights.in_water(x, z):
 			continue
+		if _heights.on_site(x, z):
+			continue
 		if _in_clearing(x, z, clearings):
 			continue
 		if rng.randf() > float(weight.call(x, z)):

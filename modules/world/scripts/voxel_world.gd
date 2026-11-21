@@ -187,6 +187,17 @@ func map_city() -> Dictionary:
 	return (heights as MapShape).city() if heights is MapShape else {}
 
 
+## Whether this is a generated map (not the old strip or the flat test world).
+func on_map() -> bool:
+	return heights is MapShape
+
+
+## On a generated map, the centres of its sites of `kind` (see MapShape.sites); none on
+## the strip.
+func map_sites(kind: String) -> Array[Vector3]:
+	return (heights as MapShape).sites(kind) if heights is MapShape else ([] as Array[Vector3])
+
+
 ## Height of the untouched ground (ignores digging) for placing spawns and scenery.
 func ground_height(x: float, z: float) -> float:
 	return heights.height_at(x, z) if heights != null else 0.0

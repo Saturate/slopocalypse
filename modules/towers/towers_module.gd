@@ -39,6 +39,14 @@ func _on_world_ready(_p: Dictionary) -> void:
 	if ground == null or not ground.has_method(&"road_point"):
 		return
 	var spots: Array[Transform3D] = []
+	# A generated map has water-tower sites by its farms and towns (#472); kinds in the
+	# order the data lists them, so every machine numbers the towers alike.
+	if ground.has_method(&"on_map") and bool(ground.call(&"on_map")):
+		for kind: Variant in config.get("sites", []):
+			for at: Vector3 in ground.call(&"map_sites", str(kind)):
+				spots.append(Transform3D(Basis.IDENTITY, at))
+		place(spots)
+		return
 	for s: Dictionary in config["spots"]:
 		var m := float(s["at"])
 		var centre: Vector3 = ground.call(&"road_point", m)
