@@ -4,7 +4,7 @@ extends RefCounted
 
 
 static func all() -> Array[VoxGenerator]:
-	return [VoxRoad.new(), VoxPineTree.new(), VoxLeafTree.new(), VoxRock.new(), VoxShed.new(), VoxApartment.new(), VoxSupplyCrate.new(), VoxBarrel.new(), VoxTunnel.new(), VoxCar.new(), VoxGear.new(), VoxWall.new(), VoxStreetLamp.new(), VoxWaterTower.new(), VoxBoltRifle.new()]
+	return [VoxRoad.new(), VoxPineTree.new(), VoxLeafTree.new(), VoxRock.new(), VoxShed.new(), VoxApartment.new(), VoxSupplyCrate.new(), VoxBarrel.new(), VoxTunnel.new(), VoxCar.new(), VoxGear.new(), VoxWall.new(), VoxStreetLamp.new(), VoxWaterTower.new(), VoxLatticeMast.new(), VoxLookoutTower.new(), VoxBoltRifle.new()]
 
 
 ## The roadside scene as [generator, params, transform] entries, laid out from a seed so it
@@ -30,3 +30,14 @@ static func roadside(seed: int) -> Array[Array]:
 		var side := -1.0 if rng.randf() < 0.5 else 1.0
 		out.append([VoxRock.new(), {"seed": seed + 30 + i, "width": rng.randf_range(0.6, 2.4)}, Transform3D(Basis(Vector3.UP, rng.randf() * TAU), Vector3(side * rng.randf_range(6.5, 16.0), 0, rng.randf_range(-22.0, 22.0)))])
 	return out
+
+
+static var _by_name: Dictionary[String, VoxGenerator] = {}
+
+
+## The generator whose class is named `class_title` (`VoxShed`), or null.
+static func by_name(class_title: String) -> VoxGenerator:
+	if _by_name.is_empty():
+		for g in all():
+			_by_name[str(g.get_script().get_global_name())] = g
+	return _by_name.get(class_title)

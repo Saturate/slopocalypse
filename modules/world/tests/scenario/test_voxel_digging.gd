@@ -144,6 +144,19 @@ func test_ground_levelled_by_one_owner_is_claimed_for_everyone_else() -> void:
 	assert_bool(_voxels.is_claimed(at, 1.0, &"city")).is_false()
 
 
+func test_a_map_sites_pad_is_claimed_for_everyone() -> void:
+	var sites := _voxels.map_site_list()
+	assert_int(sites.size()).is_greater(0)
+	for site in sites:
+		var foot: Rect2 = site["footprint"]
+		var centre: Vector3 = site["centre"]
+		# Missions put nothing on a farm, mast or tower, nor just off its edge.
+		assert_bool(_voxels.is_claimed(centre, 1.0, &"")).is_true()
+		assert_bool(_voxels.is_claimed(centre, 1.0, &"city")).is_true()
+		var edge := Vector3(foot.end.x + 2.0, centre.y, centre.z)
+		assert_bool(_voxels.is_claimed(edge, 3.0, &"")).is_true()
+
+
 func test_a_pad_can_slope_from_one_end_to_the_other() -> void:
 	# A ramp 20 m long along z (yaw 0): 2 m up at -z, level with 0 at +z.
 	var at := _out + Vector3(-30, 0, 0)

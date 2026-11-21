@@ -1,0 +1,35 @@
+{
+  "_comment": "What stands on each kind of map site (#493). Per kind (a key of the map recipe's sites.kinds), its pieces: generator (a voxel kit generator's class name), at (metres from the site's centre: -z is the side the site's track leaves by, +x to its right), yaw (degrees, turning the piece from facing the track: 0 keeps its front, -z, toward the track; 90 turns it to face -x), params (the generator's own), and optionally choices (per parameter, a list the site's seed picks one from) and ranges (per parameter, [low, high] the seed picks between). mirror: the seed may flip the layout left to right. A kind with no pieces is built by another module (water towers: towers). sink: metres every piece is set into its pad, so no gap shows where the pad's edge blends into the land. builds_per_frame: pieces put up each frame on a client while the map loads, nearest first (a server puts them all up at once). Every piece must stay inside its kind's footprint whichever side the track leaves by.",
+  "sink": 0.05,
+  "kinds": {
+    "farm": {
+      "mirror": true,
+      "pieces": [
+        {"generator": "VoxShed", "at": [-9.5, 0.0, -4.0], "yaw": 0.0, "params": {"material": 0, "width": 6.5, "depth": 5.0, "wall_height": 2.6, "pitch": 0.6, "door": 1, "windows": 6}, "choices": {"paint": [3, 3, 1]}},
+        {"generator": "VoxShed", "at": [7.0, 0.0, -3.0], "yaw": 0.0, "params": {"paint": 0, "material": 0, "width": 14.0, "depth": 10.0, "wall_height": 5.0, "pitch": 1.1, "door": 1, "door_width": 4.0, "door_height": 4.0, "windows": 0}}
+      ]
+    },
+    "cabin": {
+      "pieces": [
+        {"generator": "VoxShed", "at": [0.0, 0.0, 0.0], "yaw": 0.0, "params": {"paint": 1, "material": 0, "width": 5.0, "depth": 4.0, "wall_height": 2.4, "pitch": 0.7, "door": 1, "windows": 6, "back_windows": 0}}
+      ]
+    },
+    "antenna": {
+      "pieces": [
+        {"generator": "VoxLatticeMast", "at": [0.0, 0.0, 0.0], "yaw": 0.0, "params": {"dishes": 2, "panels": 3}, "choices": {"paint": [0, 1]}, "ranges": {"height": [15.0, 25.0]}}
+      ]
+    },
+    "lookout": {
+      "pieces": [
+        {"generator": "VoxLookoutTower", "at": [0.0, 0.0, 0.0], "yaw": 0.0, "params": {"width": 3.0, "roof": 1}, "ranges": {"height": [6.0, 8.0]}}
+      ]
+    },
+    "water_tower": {
+      "pieces": []
+    },
+    "town_tower": {
+      "pieces": []
+    }
+  },
+  "builds_per_frame": 1.0
+}

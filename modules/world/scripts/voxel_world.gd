@@ -202,6 +202,12 @@ func map_sites(kind: String) -> Array[Vector3]:
 	return (heights as MapShape).sites(kind) if heights is MapShape else ([] as Array[Vector3])
 
 
+## Every site of the map with its footprint and the way its track leaves (see
+## MapShape.site_list); empty off the map.
+func map_site_list() -> Array[Dictionary]:
+	return (heights as MapShape).site_list() if heights is MapShape else ([] as Array[Dictionary])
+
+
 ## Height of the untouched ground (ignores digging) for placing spawns and scenery.
 func ground_height(x: float, z: float) -> float:
 	return heights.height_at(x, z) if heights != null else 0.0
@@ -236,8 +242,12 @@ func set_pads_for(owner: StringName, pads: Array) -> void:
 
 
 ## Whether a circle of `radius` at `at` reaches onto a pad of an owner other than `owner`
-## (its blend included): ground someone else has levelled for what stands there.
+## (its blend included), or onto a map site's pad: ground someone else has levelled for what
+## stands there.
 func is_claimed(at: Vector3, radius: float, owner: StringName) -> bool:
+	# A map site's pad is held by what stands on it (sites, towers) for everyone.
+	if heights is MapShape and (heights as MapShape).site_within(at.x, at.z, radius):
+		return true
 	for key: StringName in _pad_sets:
 		if key == owner:
 			continue

@@ -118,7 +118,7 @@ func test_sites_of_a_kind_stand_on_their_levelled_pad() -> void:
 	assert_array(map.sites("no such kind")).is_empty()
 
 
-func test_no_tree_or_rock_grows_on_a_site_pad() -> void:
+func test_no_tree_or_rock_grows_on_or_beside_a_site_pad() -> void:
 	var map := _shape()
 	var s := SceneryScatter.new()
 	s.set(&"_visual", false)
@@ -126,19 +126,24 @@ func test_no_tree_or_rock_grows_on_a_site_pad() -> void:
 	s.set_process(false)
 	var all := (map.map["sites"] as MapSites).sites()
 	assert_int(all.size()).is_greater(0)
+	var clearance: Dictionary = (Data.load_json("res://modules/world/data/world.json") as Dictionary)["scatter"]["site_clearance"]
 	for site: Dictionary in all:
 		var foot: Rect2 = site["footprint"]
 		assert_bool(map.on_site(foot.get_center().x, foot.get_center().y)).is_true()
-		# Every chunk the pad reaches into: a farm can straddle a chunk edge.
+		# Nor within the kind's clearance round it, so nothing crowds what stands there.
+		var clear := float(clearance.get(site["kind"], clearance["default"]))
+		assert_float(clear).is_greater(0.0)
+		var area := foot.grow(clear)
+		# Every chunk the area reaches into: a farm can straddle a chunk edge.
 		var chunks := {}
-		for corner: Vector2 in [foot.position, foot.end, Vector2(foot.position.x, foot.end.y), Vector2(foot.end.x, foot.position.y)]:
+		for corner: Vector2 in [area.position, area.end, Vector2(area.position.x, area.end.y), Vector2(area.end.x, area.position.y)]:
 			chunks[s.chunk_at(corner.x, corner.y)] = true
 		for chunk: int in chunks:
 			var plan := s.plan_chunk(chunk, [] as Array[Vector3])
 			for kind: String in ["trees", "rocks"]:
 				for thing: Dictionary in plan[kind]:
 					var at: Vector3 = (thing["xform"] as Transform3D).origin
-					assert_bool(foot.has_point(Vector2(at.x, at.z))).override_failure_message("%s on a %s" % [kind, site["kind"]]).is_false()
+					assert_bool(area.has_point(Vector2(at.x, at.z))).override_failure_message("%s by a %s" % [kind, site["kind"]]).is_false()
 	assert_bool(map.on_site(map.camp().x, map.camp().z)).is_false()
 	s.queue_free()
 
