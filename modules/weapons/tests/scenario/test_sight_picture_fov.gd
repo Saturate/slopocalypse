@@ -1,12 +1,14 @@
 extends GdUnitTestSuite
-## The held gun's sight covers the same share of the screen at any field of view (#376): a
-## wider view (the FOV setting, the sprint widening) brings the gun nearer the eye instead of
-## shrinking the sight picture, at the hip and aimed.
+## The held gun's sight covers the same share of the screen at any wider field of view (#376):
+## a wider view (the FOV setting, the sprint widening) brings the gun nearer the eye instead
+## of shrinking the sight picture, at the hip and aimed. A narrower one never pushes it further
+## than it was set up to sit (the arms can't reach), so there it only looks bigger.
 
 const PLAYER := "res://modules/player/scenes/player.tscn"
 const MODULE := "res://modules/weapons/weapons_module.gd"
-## Field-of-view settings checked against the default view.
-const OFFSETS: Array[float] = [-10.0, 20.0]
+## Wider field-of-view settings, checked against the default view.
+const WIDER: Array[float] = [20.0, 30.0]
+const NARROWER := -15.0
 ## Share of the default sight picture's size the others may differ by.
 const TOLERANCE := 0.03
 
@@ -65,13 +67,25 @@ func _expect_same(build: String, aim: bool) -> void:
 	var player := _spawn(build)
 	Settings.set_value("fov_offset", 0.0)
 	var base := await _settle(player, aim)
-	for offset in OFFSETS:
+	var designed := _sight_distance(player)
+	for offset in WIDER:
 		Settings.set_value("fov_offset", offset)
 		var seen := await _settle(player, aim)
 		var what := "%s %s at FOV %+d" % [build, "aimed" if aim else "hip", int(offset)]
 		assert_float(seen.z / base.z).override_failure_message("%s: sight is %.2fx its default size" % [what, seen.z / base.z]).is_between(1.0 - TOLERANCE, 1.0 + TOLERANCE)
 		assert_float(absf(seen.x - base.x) + absf(seen.y - base.y)).override_failure_message("%s: sight moved on screen from %s to %s" % [what, base, seen]).is_less(TOLERANCE)
+	Settings.set_value("fov_offset", NARROWER)
+	var narrow := await _settle(player, aim)
+	assert_float(narrow.z / base.z).override_failure_message("%s narrower: sight shrank to %.2fx" % [build, narrow.z / base.z]).is_greater_equal(1.0 - TOLERANCE)
+	assert_float(_sight_distance(player)).override_failure_message("%s narrower: the gun went further than the arms reach" % build).is_less_equal(designed + 0.005)
 	player.queue_free()
+
+
+## How far in front of the eye the sight is now.
+func _sight_distance(player: PlayerController) -> float:
+	var camera := player.get_node("Head/Camera") as Camera3D
+	var sight := ShotEffects.held_rifle(player).find_child("Sight", true, false) as Node3D
+	return -(camera.global_transform.affine_inverse() * sight.global_position).z
 
 
 func test_rifle_sight_keeps_its_size_aimed() -> void:

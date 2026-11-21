@@ -1,8 +1,10 @@
 extends Node3D
 ## Capture setup (#376): first person at three field-of-view settings, -10, 0 and +20 degrees,
 ## at the hip, then the same three aimed down the sight. Run it with --frames 180 --sheet 6:
-## the top row is the hip, the bottom row aimed, and the gun and sight should look the same
-## size and sit in the same place across each row while the world around them widens.
+## the top row is the hip, the bottom row aimed. From the default view (middle) to the wider
+## one (right) the gun and sight should look the same size and sit in the same place while the
+## world around them widens; the narrower view (left) keeps the gun where it was set up to sit
+## (the arms reach no further), so there it looks a little bigger.
 ## `-- --gun=pistol` holds the pistol instead of the rifle.
 
 const WORLD := "res://modules/world/scenes/world.tscn"
