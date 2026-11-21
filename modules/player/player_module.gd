@@ -371,12 +371,16 @@ func _setup_local(player: PlayerController) -> void:
 	hud.name = "Hud"
 	hud.player = player
 	player.add_child(hud)
-	var input := PlayerInput.new()
-	input.name = "Input"
-	input.intent = player.intent()
-	input.player = player
-	input.sensitivity = player.config["mouse_sensitivity"]
-	player.add_child(input)
+	# A bot drives this player (the benchmark): no keyboard or mouse, so whoever sits at the
+	# machine can't steer, look or shoot, the mouse is never captured and the window runs on
+	# without focus. Every run is then the same (#377).
+	if _bot_behaviour().is_empty():
+		var input := PlayerInput.new()
+		input.name = "Input"
+		input.intent = player.intent()
+		input.player = player
+		input.sensitivity = player.config["mouse_sensitivity"]
+		player.add_child(input)
 	var feel := PlayerCameraFeel.new()
 	feel.name = "CameraFeel"
 	feel.player = player
@@ -414,9 +418,10 @@ func _on_car_exited(payload: Dictionary) -> void:
 		_camera(player).current = true
 
 
-## `--bot=NAME` after `--` makes this instance's own player drive itself (tests, soak).
+## `--bot=NAME` makes this instance's own player drive itself (tests, soak, benchmarks): from
+## the command line after `--`, or added by a menu choice (the Benchmark adds `--bot=city`).
 func _bot_behaviour() -> String:
-	for arg in OS.get_cmdline_user_args():
+	for arg in Net.session_args():
 		if arg.begins_with("--bot="):
 			return arg.trim_prefix("--bot=")
 	return ""
