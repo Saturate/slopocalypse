@@ -37,10 +37,13 @@ const flagValue = (args: readonly string[], name: string): string | undefined =>
 	return i >= 0 ? args[i + 1] : undefined;
 };
 
+const isPort = (n: number): boolean => Number.isInteger(n) && n >= 1 && n <= 65535;
+
 // The web page's port: the game's own unless one is given, and only a real port number.
 const webPort = (text: string | undefined, gamePort: number): number => {
-	const port = text === undefined ? gamePort : Number(text);
-	if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad --web-port ${text ?? ""}`);
+	if (text === undefined) return gamePort;
+	const port = Number(text);
+	if (!isPort(port)) throw new Error(`bad --web-port ${text}`);
 	return port;
 };
 
