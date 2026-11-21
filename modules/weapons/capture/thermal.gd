@@ -11,18 +11,19 @@ const SMOKE := "res://modules/smoke/smoke_module.gd"
 
 var _player: PlayerController
 var _smoke: Node
+var _plume_at := Vector3.ZERO
 var _ticks := 0
 
 
 func _ready() -> void:
 	GunAssembly.override_build = "ar_thermal"
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
 	add_child((load(MODULE) as GDScript).new())
 	_smoke = (load(SMOKE) as GDScript).new()
 	add_child(_smoke)
 	_player = (load(PLAYER) as PackedScene).instantiate()
 	add_child(_player)
-	_player.global_position = Vector3(0.0, 0.1, 0.0)
+	_player.global_position = VoxelWorld.spawn_of(world, Vector3(0.0, 0.1, 0.0))
 	EventBus.publish(&"player.spawned", {"player": _player, "local": true})
 	var animator := PlayerBodyAnimator.new()
 	animator.name = "BodyAnimator"
@@ -38,14 +39,15 @@ func _ready() -> void:
 		var soldier: Node3D = (load(PLAYER) as PackedScene).instantiate()
 		soldier.add_to_group(&"enemies")
 		add_child(soldier)
-		soldier.global_position = at
+		soldier.global_position = VoxelWorld.spawn_of(world, at)
 		soldier.set_physics_process(false)
 	var wall := MeshInstance3D.new()
 	var box := BoxMesh.new()
 	box.size = Vector3(2.5, 3.0, 0.4)
 	wall.mesh = box
 	add_child(wall)
-	wall.global_position = Vector3(4.0, 1.5, -19.5)
+	_plume_at = VoxelWorld.spawn_of(world, Vector3(0.5, 1.0, -24.0))
+	wall.global_position = VoxelWorld.spawn_of(world, Vector3(4.0, 1.5, -19.5))
 
 
 func _physics_process(_delta: float) -> void:
@@ -54,6 +56,6 @@ func _physics_process(_delta: float) -> void:
 	_ticks += 1
 	if _ticks == 5:
 		var field := _smoke.get_node("Field")
-		field.call(&"server_spawn", "blast", Vector3(0.5, 1.0, -24.0))
+		field.call(&"server_spawn", "blast", _plume_at)
 	var intent := _player.intent()
 	intent.aim = _ticks > 200

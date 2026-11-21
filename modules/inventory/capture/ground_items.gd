@@ -13,14 +13,13 @@ func _ready() -> void:
 	add_child((load(WEAPONS) as GDScript).new())
 	var inventory: Node = (load(INVENTORY) as GDScript).new()
 	add_child(inventory)
-	var spawn := (world.get_node("SpawnPoint") as Marker3D).global_position
 	# Where the loot capture's pile lies: flat, open ground.
-	var centre := Vector3(3.0, spawn.y, -4.2)
+	var centre := VoxelWorld.spawn_of(world, Vector3(3.0, 0.0, -4.2))
 	var first: LootItem = null
 	for i in ITEMS.size():
 		var x := centre.x + (i - 2) * 0.55
 		var z := centre.z + (0.25 if i % 2 == 0 else -0.25)
-		var at: Vector3 = inventory.call(&"_on_ground", Vector3(x, spawn.y, z))
+		var at: Vector3 = inventory.call(&"_on_ground", Vector3(x, centre.y, z))
 		var loot: LootItem = inventory.call(&"server_spawn_loot", ITEMS[i], at)
 		if first == null:
 			first = loot

@@ -9,7 +9,7 @@ const XS: Array[float] = [-2.0, 0.0, 2.0]
 const WALL_Z := -2.2
 ## Physics ticks between shots, taking the soldiers in turn.
 const EVERY := 8
-## Ticks for the soldiers to land on their feet; then they hold still (the road slopes).
+## Ticks for the soldiers to land on their feet; then they hold still.
 const LANDED := 45
 
 var _soldiers: Array[PlayerController] = []
@@ -19,27 +19,26 @@ var _shot := 0
 
 
 func _ready() -> void:
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
+	var origin := VoxelWorld.spawn_of(world)
 	for x in XS:
 		var soldier: PlayerController = (load(PLAYER) as PackedScene).instantiate()
 		soldier.add_to_group(&"enemies")
 		add_child(soldier)
-		soldier.global_position = Vector3(x, 0.5, 0.0)
+		soldier.global_position = VoxelWorld.spawn_of(world, Vector3(x, 0.5, 0.0))
 		var animator := PlayerBodyAnimator.new()
 		animator.name = "BodyAnimator"
 		animator.player = soldier
 		soldier.add_child(animator)
 		_soldiers.append(soldier)
-	# The road at the world's origin is level with y = 0 (the ragdoll capture stands there too).
-	var ground_y := 0.0
-	_wall(Vector3(0.0, ground_y + 1.5, WALL_Z - 0.2), Vector3(8.0, 3.0, 0.4))
+	_wall(origin + Vector3(0.0, 1.5, WALL_Z - 0.2), Vector3(8.0, 3.0, 0.4))
 	var effects := BloodEffects.new()
 	add_child(effects)
 	add_child(_camera)
 	_camera.current = true
 	# From the side, so drops flying from the bodies to the wall are seen crossing the gap.
-	_camera.global_position = Vector3(5.5, ground_y + 1.8, 1.2)
-	_camera.look_at(Vector3(-0.3, ground_y + 1.0, -1.1))
+	_camera.global_position = origin + Vector3(5.5, 1.8, 1.2)
+	_camera.look_at(origin + Vector3(-0.3, 1.0, -1.1))
 
 
 func _wall(at: Vector3, size: Vector3) -> void:

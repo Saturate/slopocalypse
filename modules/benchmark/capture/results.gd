@@ -6,11 +6,11 @@ const WORLD := "res://modules/world/scenes/world.tscn"
 
 
 func _ready() -> void:
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
 	var camera := Camera3D.new()
 	add_child(camera)
-	camera.global_position = Vector3(0.0, 2.0, 6.0)
-	camera.look_at(Vector3(0.0, 1.0, 0.0))
+	camera.global_position = VoxelWorld.spawn_of(world, Vector3(0.0, 2.0, 6.0))
+	camera.look_at(VoxelWorld.spawn_of(world, Vector3(0.0, 1.0, 0.0)))
 	camera.current = true
 	var frames := PackedFloat32Array()
 	for i in 3000:
