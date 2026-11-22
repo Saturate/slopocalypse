@@ -24,6 +24,9 @@ const MAP_PART_VERSION := 1
 
 ## Only a real server saves; scenes run without Boot (tests) switch it on by hand.
 var enabled := Net.mode == NetSession.Mode.SERVER
+## Whether the saved world has been put back (`server_load_world`); until then there is
+## nothing of this session's world to save.
+var _world_loaded := false
 var store: SaveStore
 var config: Dictionary = {}
 ## The save's file as opened (`user://...`, an OS path, or MEMORY).
@@ -127,6 +130,7 @@ func _on_world_ready(_p: Dictionary) -> void:
 
 
 func server_load_world() -> void:
+	_world_loaded = true
 	_check_map()
 	server_load_parts()
 	var inventory := _inventory()
@@ -327,6 +331,11 @@ func _standing_spot(player: Node3D) -> Vector3:
 
 
 func server_save_world() -> bool:
+	# The world's map builds before it is loaded (#515); saving in between (the only player
+	# cancels while it builds) would write an empty world over the saved one.
+	if not _world_loaded and get_tree().get_first_node_in_group(&"world_map") != null:
+		Log.info(&"persistence", "the world is not loaded yet; not saving it")
+		return true
 	var ok := server_save_parts()
 	var inventory := _inventory()
 	if inventory == null:

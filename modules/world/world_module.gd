@@ -133,6 +133,7 @@ func _build_world() -> void:
 		return
 	if not WorldMaps.start_build():
 		Log.error(&"world", "no playable map %s; no world loaded" % WorldMaps.recipe_name())
+		_no_world()
 		return
 	_building = true
 	_build_started = Time.get_ticks_msec()
@@ -145,13 +146,20 @@ func _poll_build() -> void:
 		return
 	_building = false
 	if WorldMaps.shape() == null:
-		_show_loading(false)
 		Log.error(&"world", "the map %s did not build; no world loaded" % WorldMaps.recipe_name())
+		_no_world()
 		return
 	Log.info(&"world", "map built in %d ms on a worker thread" % (Time.get_ticks_msec() - _build_started))
 	var prof := Prof.start()
 	_load_world()
 	Prof.stop(&"world/load", prof)
+
+
+## No world after all: nothing waits for one, and a save is left alone (an empty `map_key`).
+func _no_world() -> void:
+	_kind = &""
+	_held.clear()
+	_show_loading(false)
 
 
 ## The card stays up through loading the scene (a long frame) until the world is announced.
@@ -232,6 +240,9 @@ func _receive_map(kind: String, recipe: String, seed_value: int) -> void:
 			return
 		WorldMaps.select(recipe, seed_value)
 		_kind = &"map"
+	# The digs and felled trees sent right after this cover every crater and tree that came
+	# before it; replaying those too would dig them twice.
+	_held.clear()
 	Log.info(&"world", "the server plays %s" % ("map %s, seed %d" % [recipe, seed_value] if _kind == &"map" else String(_kind)))
 	_build_world()
 

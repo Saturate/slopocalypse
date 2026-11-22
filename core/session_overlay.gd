@@ -82,7 +82,7 @@ func _process(delta: float) -> void:
 	_waited = 0.0 if up else _waited + delta
 	_connecting.visible = (not up and _waited > CONNECTING_DELAY) or (up and not _loading.is_empty())
 	_connecting_label.text = _loading if up else "Connecting to %s:%d..." % [Net.host, Net.port]
-	_pause.visible = _paused and up
+	_pause.visible = _paused and up and _loading.is_empty()
 	if Net.hosting_port > 0:
 		var mine := MainMenu.rank_addresses(IP.get_local_addresses())
 		_host_info.text = "Hosting. Friends join at %s:%d" % [mine[0] if not mine.is_empty() else "your address", Net.hosting_port]

@@ -24,6 +24,7 @@ func _until_loaded() -> void:
 		if _world.get(&"_voxels") != null:
 			return
 		await get_tree().process_frame
+	assert_object(_world.get(&"_voxels")).override_failure_message("the world did not load").is_not_null()
 
 
 ## Craters that arrive while the map is still building (a late joiner's list, an explosion

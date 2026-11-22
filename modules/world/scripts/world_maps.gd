@@ -19,12 +19,15 @@ static var _shape: MapShape
 ## writes `result`, a key that exists before it starts; this thread reads it only after
 ## waiting for the task.
 static var _job: Dictionary = {}
+## The selected map's build gave nothing: `shape()` answers null rather than build it again.
+static var _broken := false
 
 
 static func select(recipe_name: String, seed_value: int) -> void:
 	if recipe_name != _recipe_name or seed_value != _seed:
 		_drop_job()
 		_shape = null
+		_broken = false
 	_recipe_name = recipe_name
 	_seed = seed_value
 
@@ -56,6 +59,7 @@ static func clear() -> void:
 	_drop_job()
 	_recipe_name = ""
 	_shape = null
+	_broken = false
 
 
 static func is_selected() -> bool:
@@ -81,6 +85,8 @@ static func is_playable(name: String) -> bool:
 static func start_build() -> bool:
 	if _shape != null or not _job.is_empty():
 		return true
+	if _broken:
+		return false
 	var recipe: Variant = _recipe(_recipe_name)
 	if recipe == null:
 		return false
@@ -107,7 +113,7 @@ static func is_building() -> bool:
 static func shape() -> MapShape:
 	if not _job.is_empty():
 		_collect()
-	if _shape != null or _recipe_name.is_empty():
+	if _shape != null or _recipe_name.is_empty() or _broken:
 		return _shape
 	var recipe: Variant = _recipe(_recipe_name)
 	# Said once by whoever selected it (the world module).
@@ -141,6 +147,8 @@ static func _collect() -> void:
 	_job = {}
 	if built is MapShape:
 		_shape = built
+	else:
+		_broken = true
 
 
 static func _drop_job() -> void:
