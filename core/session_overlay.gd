@@ -1,7 +1,8 @@
 class_name SessionOverlay
 extends CanvasLayer
 ## Over a running session: a "connecting" card until the server answers (with Cancel, since
-## a wrong address can take a while to time out), and the Esc panel to resume, go back to the
+## a wrong address can take a while to time out), the same card while a module says the
+## session is loading (`session.loading` with its `text`, empty when done), and the Esc panel to resume, go back to the
 ## spawn, leave to the menu or quit. Only added for a player at the keyboard.
 
 ## Solo connects in a blink; the card only shows if it takes longer than this.
@@ -11,6 +12,8 @@ var _waited := 0.0
 var _paused := false
 var _connecting: Control
 var _connecting_label: Label
+## What `session.loading` last said is going on; empty when nothing is.
+var _loading := ""
 var _pause: Control
 var _host_info: Label
 var _settings: SettingsScreen
@@ -49,6 +52,15 @@ func _ready() -> void:
 	_pause.visible = false
 	_settings = SettingsScreen.new()
 	add_child(_settings)
+	EventBus.subscribe(&"session.loading", _on_loading)
+
+
+func _exit_tree() -> void:
+	EventBus.unsubscribe(&"session.loading", _on_loading)
+
+
+func _on_loading(p: Dictionary) -> void:
+	_loading = str(p.get("text", ""))
 
 
 ## Esc opens this only when no other screen is open; another screen on top takes Esc
@@ -68,8 +80,8 @@ func _input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	var up := Net.is_session_connected()
 	_waited = 0.0 if up else _waited + delta
-	_connecting.visible = not up and _waited > CONNECTING_DELAY
-	_connecting_label.text = "Connecting to %s:%d..." % [Net.host, Net.port]
+	_connecting.visible = (not up and _waited > CONNECTING_DELAY) or (up and not _loading.is_empty())
+	_connecting_label.text = _loading if up else "Connecting to %s:%d..." % [Net.host, Net.port]
 	_pause.visible = _paused and up
 	if Net.hosting_port > 0:
 		var mine := MainMenu.rank_addresses(IP.get_local_addresses())
