@@ -24,6 +24,7 @@ Running notes: playtest feedback, findings, known issues and ideas for later. De
 
 - Car chase camera is rigidly parented to the car, so speed and turns are hard to read (visual review, #8). A smoothed follow camera with lag and FOV kick is a candidate after the Checkpoint A playtest.
 - The box car has no front or back shape, so its heading is hard to read from outside.
+- Steep ground (#509, blind review): seen from below, the far half of a steep slope still reads as a dense comb of thin fins, as the 0.5 m detail level keeps single steps and every column on a contour that runs across the grid shows its own lit side. Ledges only apply on the finest level. Wall light is emission, so a wall in a tree's or bridge's shadow is lit as if in the open.
 - Trees and rocks stay floating where the ground was dug away (grass now goes, and dug ground shows as dirt).
 - Dust puffs are hard-edged spheres; soft particles come with the art pass (#38).
 - Cover blocks are plain boxes: no bevels, planks or concrete detail (visual review, #34). Replace with proper prop meshes when the generated map adds buildings (#32).

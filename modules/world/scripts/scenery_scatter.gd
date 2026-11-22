@@ -12,7 +12,7 @@ extends Node3D
 
 @export_file("*.json") var config_path: String = "res://modules/world/data/world.json"
 
-const REQUIRED := {"seed": TYPE_FLOAT, "trees_per_hectare": TYPE_FLOAT, "rocks_per_hectare": TYPE_FLOAT, "grass_per_m2": TYPE_FLOAT, "clear_radius": TYPE_FLOAT, "max_steepness": TYPE_FLOAT, "road_clearance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "grass_distance": TYPE_FLOAT, "tree_detail_distance": TYPE_FLOAT, "variants": TYPE_FLOAT, "tree_hits": TYPE_FLOAT, "tree_blast_reach": TYPE_FLOAT, "tree_fall_seconds": TYPE_FLOAT, "tree_collapse": TYPE_FLOAT, "tree_wither_seconds": TYPE_FLOAT, "site_clearance": TYPE_DICTIONARY, "power_clearance": TYPE_DICTIONARY, "camp_clearance": TYPE_FLOAT}
+const REQUIRED := {"seed": TYPE_FLOAT, "trees_per_hectare": TYPE_FLOAT, "rocks_per_hectare": TYPE_FLOAT, "grass_per_m2": TYPE_FLOAT, "clear_radius": TYPE_FLOAT, "max_steepness": TYPE_FLOAT, "grass_max_steepness": TYPE_FLOAT, "road_clearance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "grass_distance": TYPE_FLOAT, "tree_detail_distance": TYPE_FLOAT, "variants": TYPE_FLOAT, "tree_hits": TYPE_FLOAT, "tree_blast_reach": TYPE_FLOAT, "tree_fall_seconds": TYPE_FLOAT, "tree_collapse": TYPE_FLOAT, "tree_wither_seconds": TYPE_FLOAT, "site_clearance": TYPE_DICTIONARY, "power_clearance": TYPE_DICTIONARY, "camp_clearance": TYPE_FLOAT}
 
 const CHUNK := 64.0
 ## Chunks split across the width into cells, so distance culling works per cell.
@@ -638,6 +638,11 @@ func _add_grass(node: Node3D, rng: RandomNumberGenerator, area: Rect2) -> void:
 			continue
 		var at := Vector3(x, _heights.height_at(x, z), z)
 		if _in_old_dig(at):
+			continue
+		# Ground this steep is drawn in ledges up to half one off the ground walked on: a
+		# tuft there would stand out of a ledge's side.
+		var rise := Vector2(_heights.height_at(x + 1.0, z) - at.y, _heights.height_at(x, z + 1.0) - at.y)
+		if rise.length() > float(_cfg["grass_max_steepness"]):
 			continue
 		var s := rng.randf_range(0.5, 1.1)
 		var xform := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.7, 1.4), s)), at)

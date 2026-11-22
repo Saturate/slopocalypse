@@ -113,3 +113,24 @@ func test_a_frayed_dirt_road_wanders_in_at_its_edges_only() -> void:
 		assert_float(absf(f - last)).is_less(0.06)
 		last = f
 	assert_float(VoxRoad._fray(12.34, 0.3, 4)).is_equal(VoxRoad._fray(12.34, 0.3, 4))
+
+
+## A pothole is one shallow level with a flat bottom (#509): only the asphalt's cells go, the
+## gravel bed under them stays, so the hole never steps down in ledges with dark walls.
+func test_a_pothole_takes_only_the_asphalt() -> void:
+	var road := VoxRoad.new()
+	var v := 0.1
+	var worn := {"seed": 3, "length": 16.0, "voxel": v, "wear": 0.0, "potholes": 8, "tear_size": 2.0}
+	var plain := worn.duplicate()
+	plain["potholes"] = 0
+	var a := road.build(worn)
+	var b := road.build(plain)
+	var size := a.cells()
+	var removed := 0
+	for x in size.x:
+		for y in size.y:
+			for z in size.z:
+				if b.is_filled(x, y, z) and not a.is_filled(x, y, z):
+					removed += 1
+					assert_float((y + 0.5) * v).override_failure_message("a pothole reaches the bed at cell %s" % Vector3i(x, y, z)).is_greater(VoxRoad.BED)
+	assert_int(removed).is_greater(50)

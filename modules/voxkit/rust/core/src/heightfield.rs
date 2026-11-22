@@ -48,6 +48,11 @@ pub struct Tile<'a> {
     pub band: f32,
     pub pad_band: f32,
     pub band_grade: f32,
+    /// Stepped ground at least `ledge_grade` steep, away from ways, steps in ledges this many
+    /// metres tall (whole voxels; one voxel or less keeps single steps), so a steep slope
+    /// reads as a few rock ledges rather than a pegboard of one-voxel steps.
+    pub ledge: f32,
+    pub ledge_grade: f32,
     /// Ways over the tile, `ways::WAY_STRIDE` floats each, in tile-local metres.
     pub ways: &'a [f32],
     pub look: Look,
@@ -59,6 +64,71 @@ pub struct Tile<'a> {
 impl Tile<'_> {
     fn size(&self) -> f32 {
         self.n as f32 * self.voxel
+    }
+
+    /// Voxels per ledge: 1 where ledges are off or no taller than a voxel.
+    fn ledge_voxels(&self) -> i32 {
+        if self.ledge > self.voxel {
+            (self.ledge / self.voxel).round() as i32
+        } else {
+            1
+        }
+    }
+
+    /// The stepped top (in voxels) for ground at height `h` this steep: whole voxels rounded
+    /// down, or on ledge ground the nearest ledge. Ledges are `k` and `k + 1` voxels tall
+    /// (`k` from `ledge`) in an order set by the height alone, so they read as uneven rock
+    /// strata rather than even terraces, and neighbouring tiles of one detail agree on them.
+    /// Rounded down a ledge would leave the ground walked on up to a whole ledge over the
+    /// drawn top; to the nearest, never more than half of one either way, and nothing stands
+    /// on ground that steep (the scatter keeps trees and rocks to gentler ground, ways tilt
+    /// the ground beside them).
+    fn step_top(&self, h: f32, ledge: bool) -> i32 {
+        let k = self.ledge_voxels();
+        if !ledge || k <= 1 {
+            return (h / self.voxel).floor() as i32;
+        }
+        // A period of two ledges, k + 1 then k or k then k + 1.
+        let period = 2 * k + 1;
+        let u = h / self.voxel;
+        let g = (u / period as f32).floor() as i32;
+        let base = g * period;
+        let split = base + k + i32::from(hash(g as u32, 0, 41, 0) < 0.5);
+        [base, split, base + period]
+            .into_iter()
+            .min_by(|&p, &q| (p as f32 - u).abs().total_cmp(&(q as f32 - u).abs()))
+            .unwrap_or(base)
+    }
+
+    /// Whether the ground at (x, z) is steep enough for ledges, judged over the whole height
+    /// sample cell it lies in (the nearest cell for a point past the tile's edge): judged per
+    /// column, ground near `ledge_grade` would mix ledges and single steps column by column
+    /// and leave one-column pits between them.
+    fn ledge_ground(&self, x: f32, z: f32) -> bool {
+        if self.ledge_voxels() <= 1 {
+            return false;
+        }
+        let s = self.spacing;
+        let top = (self.cn - 2) as f32;
+        let (ix, iz) = (
+            (x / s).floor().clamp(0.0, top) as usize,
+            (z / s).floor().clamp(0.0, top) as usize,
+        );
+        let h = |dx: usize, dz: usize| self.heights[(iz + dz) * self.cn + ix + dx];
+        let gx = (h(1, 0) + h(1, 1) - h(0, 0) - h(0, 1)) / (2.0 * s);
+        let gz = (h(0, 1) + h(1, 1) - h(0, 0) - h(1, 0)) / (2.0 * s);
+        (gx * gx + gz * gz).sqrt() >= self.ledge_grade
+    }
+
+    /// The grade of the ground over column (a, b) from the samples at its corners; columns
+    /// past the tile's edge too.
+    fn grade_at(&self, a: i64, b: i64) -> f32 {
+        let v = self.voxel;
+        let (x0, z0) = (a as f32 * v, b as f32 * v);
+        let c = |dx: f32, dz: f32| self.sample(x0 + dx * v, z0 + dz * v);
+        let gx = (c(1.0, 0.0) + c(1.0, 1.0) - c(0.0, 0.0) - c(0.0, 1.0)) / (2.0 * v);
+        let gz = (c(0.0, 1.0) + c(1.0, 1.0) - c(0.0, 0.0) - c(1.0, 0.0)) / (2.0 * v);
+        (gx * gx + gz * gz).sqrt()
     }
 
     fn sample(&self, x: f32, z: f32) -> f32 {
@@ -224,6 +294,8 @@ fn shape(t: &Tile, mut tops: Vec<i32>, centre: &[f32], colours: &mut [Colour]) -
     }
     let mut tilted = vec![false; n * n];
     let mut painted = vec![false; n * n];
+    // Stepped columns that step in ledges: steep enough and clear of every way's band.
+    let mut ledged = vec![false; n * n];
     for b in 0..n {
         for a in 0..n {
             let i = b * n + a;
@@ -232,6 +304,7 @@ fn shape(t: &Tile, mut tops: Vec<i32>, centre: &[f32], colours: &mut [Colour]) -
             let gz = (c(0, 1) + c(1, 1) - c(0, 0) - c(1, 0)) / (2.0 * v);
             let grade = (gx * gx + gz * gz).sqrt();
             let mut tilt = grade < t.tilt_grade;
+            let mut clear = true;
             if !ways.is_empty() {
                 let (x, z) = ((a as f32 + 0.5) * v, (b as f32 + 0.5) * v);
                 let scan = ways.scan(&t.look, x, z, ways::HOLD);
@@ -243,6 +316,9 @@ fn shape(t: &Tile, mut tops: Vec<i32>, centre: &[f32], colours: &mut [Colour]) -
                     .is_some_and(|r| r.edge < 0.0 || (r.edge < t.band && gentle));
                 tilt |= scan.lane.is_some_and(|r| r.edge < paint_reach && gentle);
                 tilt |= scan.pad.is_some_and(|r| r.edge < t.pad_band && gentle);
+                clear = scan.strip.is_none_or(|r| r.edge >= t.band)
+                    && scan.lane.is_none_or(|r| r.edge >= paint_reach)
+                    && scan.pad.is_none_or(|r| r.edge >= t.pad_band);
                 if let Some(r) = scan.paint().filter(|r| r.edge < paint_reach) {
                     let col = Column {
                         a,
@@ -259,13 +335,31 @@ fn shape(t: &Tile, mut tops: Vec<i32>, centre: &[f32], colours: &mut [Colour]) -
                 }
             }
             tilted[i] = tilt;
+            // A crater keeps its own shape: ledges are set by height alone and would lift
+            // its rim or fill it in.
+            let (x, z) = ((a as f32 + 0.5) * v, (b as f32 + 0.5) * v);
+            ledged[i] = !tilt && clear && t.ledge_ground(x, z) && !t.dug_at(x, z);
+        }
+    }
+    // A ledge beside tilted ground could round down under their shared edge (a crevice) or
+    // up over a plateau (a lip): it steps one voxel at a time, met by the rounding below.
+    for i in 0..n * n {
+        let (a, b) = (i % n, i / n);
+        let beside_tilt = (a > 0 && tilted[i - 1])
+            || (a + 1 < n && tilted[i + 1])
+            || (b > 0 && tilted[i - n])
+            || (b + 1 < n && tilted[i + n]);
+        if ledged[i] && !beside_tilt {
+            tops[i] = t.step_top(centre[i], true);
+        } else {
+            ledged[i] = false;
         }
     }
     // A step beside tilted ground whose middle stands over the tilted edge they share is
     // rounded up: rounded down it would sit below that edge, a dark crevice along the slope.
     let rounded: Vec<i32> = (0..n * n)
         .map(|i| {
-            if tilted[i] {
+            if tilted[i] || ledged[i] {
                 return tops[i];
             }
             let (a, b) = (i % n, i / n);
@@ -409,7 +503,8 @@ fn step_levels(t: &Tile, s: &Shape) -> Vec<[u8; 4]> {
         if (0..n as i64).contains(&a) && (0..n as i64).contains(&b) {
             level(b as usize * n + a as usize)
         } else {
-            (t.sample((a as f32 + 0.5) * v, (b as f32 + 0.5) * v) / v).floor() as i32
+            let (x, z) = ((a as f32 + 0.5) * v, (b as f32 + 0.5) * v);
+            t.step_top(t.sample(x, z), t.ledge_ground(x, z))
         }
     };
     (0..n * n)
@@ -437,12 +532,11 @@ fn tilt_levels(t: &Tile, s: &Shape, a: usize, b: usize) -> [u8; 4] {
         if !(0..n as i64).contains(&ca) || !(0..n as i64).contains(&cb) {
             // Past the tile's edge, sampled as `step_levels` does: a step if its ground is
             // too steep to tilt.
-            let (x0, z0) = (ca as f32 * v, cb as f32 * v);
-            let c = |dx: f32, dz: f32| t.sample(x0 + dx * v, z0 + dz * v);
-            let gx = (c(1.0, 0.0) + c(1.0, 1.0) - c(0.0, 0.0) - c(0.0, 1.0)) / (2.0 * v);
-            let gz = (c(0.0, 1.0) + c(1.0, 1.0) - c(0.0, 0.0) - c(1.0, 0.0)) / (2.0 * v);
-            let top = (c(0.5, 0.5) / v).floor() * v;
-            return (gx * gx + gz * gz).sqrt() >= t.tilt_grade && top >= h + v * 0.5;
+            let grade = t.grade_at(ca, cb);
+            let mid = t.sample((ca as f32 + 0.5) * v, (cb as f32 + 0.5) * v);
+            let ledge = t.ledge_ground((ca as f32 + 0.5) * v, (cb as f32 + 0.5) * v);
+            let top = t.step_top(mid, ledge) as f32 * v;
+            return grade >= t.tilt_grade && top >= h + v * 0.5;
         }
         let j = cb as usize * n + ca as usize;
         !s.tilted[j] && s.tops[j] as f32 * v >= h + v * 0.5
@@ -768,10 +862,11 @@ fn wall(out: &mut Mesh, t: &Tile, e: &Edge, h: [[f32; 2]; 2], c: [Colour; 2]) {
     }
     let (p0, p1, toward_b) = (e.p0, e.p1, e.toward_b);
     let back = toward_b.map(|x| -x);
-    // Small steps are the ground's own colour in shade; only real walls show soil, or every
-    // gentle slope would read brown from a distance.
+    // Small steps and ledges are the ground's own colour in shade; only real walls show
+    // soil, or every slope would read brown from a distance.
+    let small = 2.max(t.ledge_voxels() + 1) as f32 * t.voxel;
     let colour = |higher: Colour, step: f32| {
-        if step <= 2.0 * t.voxel + 1e-4 {
+        if step <= small + 1e-4 {
             shade(higher)
         } else {
             t.side
@@ -956,6 +1051,8 @@ mod tests {
             band: 4.0,
             pad_band: 6.0,
             band_grade: 1.3,
+            ledge: 0.0,
+            ledge_grade: 0.6,
             ways: &[],
             look: Look::default(),
             dug: &[],
@@ -1531,5 +1628,180 @@ mod tests {
         t.tilt_grade = 0.34;
         t.ways = &track;
         assert_no_t_junctions(&mesh(&t));
+    }
+
+    /// The heights of every stepped top in the mesh, and how many walls face each way.
+    fn step_heights(m: &Mesh) -> Vec<f32> {
+        triangles(m)
+            .filter(|(_, n)| *n == [0.0, 1.0, 0.0])
+            .flat_map(|(p, _)| p.map(|q| q[1]))
+            .collect()
+    }
+
+    fn ledge_tile<'a>(heights: &'a [f32], colours: &'a [Colour]) -> Tile<'a> {
+        let mut t = tile(heights, 3, colours);
+        t.voxel = 0.25;
+        t.n = 32;
+        t.tilt_grade = 0.34;
+        t.ledge = 0.5;
+        t.ledge_grade = 0.6;
+        t.corners = true;
+        t
+    }
+
+    #[test]
+    fn a_steep_slope_steps_in_ledges() {
+        // Grade 0.75 along x and 0.25 along z: one-voxel steps would be a pegboard.
+        let heights = [0.0, 3.0, 6.0, 1.0, 4.0, 7.0, 2.0, 5.0, 8.0];
+        let colours = [0x00FF00; 4];
+        let t = ledge_tile(&heights, &colours);
+        let m = mesh(&t);
+        // Ledges two and three voxels tall, both kinds.
+        let mut levels: Vec<i32> = step_heights(&m)
+            .iter()
+            .map(|y| (y / 0.25).round() as i32)
+            .collect();
+        levels.sort_unstable();
+        levels.dedup();
+        let gaps: Vec<i32> = levels.windows(2).map(|w| w[1] - w[0]).collect();
+        assert!(gaps.iter().all(|&g| g == 2 || g == 3), "{levels:?}");
+        assert!(gaps.contains(&2) && gaps.contains(&3), "{levels:?}");
+        assert_front_faces_match_normals(&m);
+        assert_closed(&t, &m);
+        assert_walls_face_down_the_step(&m);
+        // Never more than half a ledge off the ground walked on.
+        for k in 0..32 {
+            let (x, z) = ((k as f32 + 0.5) * 0.25, (31 - k) as f32 * 0.25 + 0.125);
+            let top = top_at(&m, x, z).unwrap();
+            let h = t.sample(x, z);
+            assert!((top - h).abs() <= 0.375 + 1e-4, "{top} over ground at {h}");
+        }
+        // Fewer than half as many risers as single steps.
+        let mut single = ledge_tile(&heights, &colours);
+        single.ledge = 0.0;
+        let walls = |m: &Mesh| triangles(m).filter(|(_, n)| n[1] == 0.0).count();
+        let (ledged, stepped) = (walls(&m), walls(&mesh(&single)));
+        assert!(ledged * 2 < stepped, "{ledged} against {stepped}");
+    }
+
+    #[test]
+    fn ledges_only_where_steeper_than_their_grade_and_finer_than_the_voxel() {
+        // Grade 0.5: single steps.
+        let heights = [0.0, 2.0, 4.0, 0.0, 2.0, 4.0, 0.0, 2.0, 4.0];
+        let colours = [0x00FF00; 4];
+        let t = ledge_tile(&heights, &colours);
+        let m = mesh(&t);
+        let mut levels: Vec<i32> = step_heights(&m)
+            .iter()
+            .map(|y| (y / 0.25).round() as i32)
+            .collect();
+        levels.sort_unstable();
+        levels.dedup();
+        assert!(levels.windows(2).all(|w| w[1] - w[0] == 1), "{levels:?}");
+        // Voxels as big as a ledge: as before.
+        let steep = [0.0, 3.0, 6.0, 0.0, 3.0, 6.0, 0.0, 3.0, 6.0];
+        let mut coarse = tile(&steep, 3, &colours);
+        coarse.tilt_grade = 0.34;
+        let plain = mesh(&coarse);
+        coarse.ledge = 0.5;
+        assert_eq!(mesh(&coarse).positions, plain.positions);
+    }
+
+    #[test]
+    fn a_steep_bank_beside_a_strip_keeps_single_steps_under_the_ground() {
+        // Grade 1.0 across a road strip along z at x = 4, too steep for the band to tilt.
+        let heights = [0.0, 4.0, 8.0, 0.0, 4.0, 8.0, 0.0, 4.0, 8.0];
+        let colours = [0x00FF00; 4];
+        let road = [4.0, -1.0, 4.0, 4.0, 9.0, 4.0, 1.0, 1.0];
+        let mut t = ledge_tile(&heights, &colours);
+        t.band = 1.5;
+        t.band_grade = 0.4;
+        t.ways = &road;
+        let m = mesh(&t);
+        assert_closed(&t, &m);
+        assert_walls_face_down_the_step(&m);
+        // Within the band: single steps, under the ground.
+        for z in [0.6, 4.1, 7.4] {
+            for x in [1.9, 2.4, 5.6, 6.1] {
+                let top = top_at(&m, x, z).unwrap();
+                assert!(
+                    top <= t.sample(x, z) + 1e-4,
+                    "{top} over the ground at ({x}, {z})"
+                );
+            }
+        }
+        // Past it, ledges.
+        let mut rounded_up = false;
+        for a in 0..5 {
+            let (x, z) = ((a as f32 + 0.5) * 0.25, 4.125);
+            let top = (top_at(&m, x, z).unwrap() / 0.25).round() as i32;
+            let h = t.sample(x, z);
+            assert_eq!(top, t.step_top(h, true), "at {x}");
+            rounded_up |= top > (h / 0.25).floor() as i32;
+        }
+        assert!(rounded_up);
+    }
+
+    #[test]
+    fn ledges_beside_tilted_ground_leave_no_crevice_or_lip() {
+        // Gentle on the left, ledge-steep on the right, rising away; and the other way.
+        let colours = [0x00FF00; 4];
+        let shapes = [
+            [0.0, 0.6, 6.0, 0.0, 0.6, 6.0, 0.0, 0.6, 6.0],
+            [6.0, 5.4, 0.0, 6.0, 5.4, 0.0, 6.0, 5.4, 0.0],
+        ];
+        // Lifted a little each time, so the ledges fall differently against the edge.
+        for (k, shape) in (0..16).flat_map(|k| shapes.map(|s| (k, s))) {
+            let heights = shape.map(|h| h + k as f32 * 0.07);
+            let t = ledge_tile(&heights, &colours);
+            let m = mesh(&t);
+            assert_closed(&t, &m);
+            assert_walls_face_down_the_step(&m);
+            let rising = shape[2] > shape[0];
+            // The first stepped column past the tilted ones (x under 4) meets their edge:
+            // no lower going up, no higher going down.
+            for z in [0.125, 3.875, 7.625] {
+                let (step, edge) = (top_at(&m, 4.125, z).unwrap(), t.sample(4.0, z));
+                if rising {
+                    assert!(step >= edge - 1e-3, "crevice at {z}: {step} under {edge}");
+                } else {
+                    assert!(step <= edge + 1e-3, "lip at {z}: {step} over {edge}");
+                }
+            }
+            // Elsewhere ledges meet single steps within a voxel.
+            let mut z = 0.125;
+            while z < 8.0 {
+                let mut x = 0.125;
+                while x < 7.75 {
+                    let here = top_at(&m, x, z).unwrap();
+                    let next = top_at(&m, x + 0.25, z).unwrap();
+                    if rising {
+                        assert!(next >= here - 0.3, "dip at ({x}, {z}): {here} then {next}");
+                    } else {
+                        assert!(next <= here + 0.3, "lip at ({x}, {z}): {here} then {next}");
+                    }
+                    x += 0.25;
+                }
+                z += 0.25;
+            }
+        }
+    }
+
+    #[test]
+    fn a_crater_keeps_its_shape_on_ledge_ground() {
+        let heights = [0.0, 3.0, 6.0, 1.0, 4.0, 7.0, 2.0, 5.0, 8.0];
+        let colours = [0x00FF00; 4];
+        let dug = [0, 0, 0, 0, 1, 0, 0, 0, 0];
+        for k in 0..8 {
+            let lifted = heights.map(|h| h + k as f32 * 0.09);
+            let mut t = ledge_tile(&lifted, &colours);
+            t.dug = &dug;
+            let m = mesh(&t);
+            // Columns nearest the dug sample keep single steps, rounded down.
+            for (x, z) in [(4.125, 4.125), (3.875, 4.375), (4.375, 3.875)] {
+                let top = (top_at(&m, x, z).unwrap() / 0.25).round() as i32;
+                assert_eq!(top, (t.sample(x, z) / 0.25).floor() as i32, "at ({x}, {z})");
+            }
+        }
     }
 }
