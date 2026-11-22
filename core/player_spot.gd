@@ -15,9 +15,5 @@ static func cars_api(tree: SceneTree) -> Node:
 
 
 static func of(player: Node3D, cars: Node) -> Vector3:
-	# Seated players are parked out of processing; only then is asking the cars worth it.
-	if cars != null and not player.can_process():
-		var seat: Variant = cars.call(&"car_spot_of", player)
-		if seat is Vector3:
-			return seat
-	return player.global_position
+	var seat: Variant = cars.call(&"car_spot_of", player) if cars != null else null
+	return seat if seat is Vector3 else player.global_position

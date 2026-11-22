@@ -87,6 +87,9 @@ class FakeCars:
 	func exit_spot_of(_player: Node3D) -> Variant:
 		return spot
 
+	func car_spot_of(_player: Node3D) -> Variant:
+		return spot
+
 
 func test_a_driver_is_saved_beside_the_car_not_where_they_got_in() -> void:
 	var cars: FakeCars = auto_free(FakeCars.new())

@@ -134,6 +134,7 @@ func test_both_seats_count_where_the_car_is_and_getting_out_ends_it() -> void:
 	car.enter(passenger)
 	assert_object(car.passenger).is_same(passenger)
 	# Driven off: the driver's body stays parked where they got in, the answer follows the car.
+	var got_in := driver.global_position
 	car.global_position += Vector3(30.0, 0.0, 0.0)
 	for who: Node3D in [driver, passenger]:
 		var spot: Variant = _cars.call(&"car_spot_of", who)
@@ -145,4 +146,6 @@ func test_both_seats_count_where_the_car_is_and_getting_out_ends_it() -> void:
 	await _frames(2)
 	assert_object(_cars.call(&"car_spot_of", driver)).is_null()
 	assert_object(_cars.call(&"car_spot_of", passenger)).is_null()
-	assert_vector(PlayerSpot.of(driver, _cars)).is_equal(driver.global_position)
+	# Out beside the car, not back where they got in.
+	assert_float(PlayerSpot.of(driver, _cars).distance_to(car.global_position)).is_less(6.0)
+	assert_float(PlayerSpot.of(driver, _cars).distance_to(got_in)).is_greater(20.0)
