@@ -30,6 +30,12 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"car.exited", _on_car_exited)
 
 
+## Client: the partner markers as last drawn ({name, distance, in_sight, alpha, shown, ahead,
+## at}, see CoopMarkers.items), empty before the local player spawns. Read by tools.
+func markers() -> Array[Dictionary]:
+	return _markers.drawn() if _markers != null else [] as Array[Dictionary]
+
+
 func _on_car_entered(payload: Dictionary) -> void:
 	var who := payload.get("player") as Node
 	var car := payload.get("car") as Node3D

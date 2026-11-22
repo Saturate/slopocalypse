@@ -27,6 +27,12 @@ const TOOLS: Tool[] = [
 		description: "Set a node property from a Godot value string, e.g. Vector3(0, 5, 0) or true.",
 		inputSchema: { type: "object", properties: { path: { type: "string" }, property: { type: "string" }, value: { type: "string" }, target: TARGET }, required: ["path", "property", "value"] },
 	},
+	{ name: "get_property", description: "One property of a node, script variables too, as a Godot value string and as plain JSON.", inputSchema: { type: "object", properties: { path: { type: "string" }, property: { type: "string" }, target: TARGET }, required: ["path", "property"] } },
+	{
+		name: "call_method",
+		description: "Call one of the module methods the debug API allows (its error lists them), e.g. inventory:server_give with args [\"2\", \"\\\"glowstick\\\"\"]. Args are Godot value strings; a NodePath arrives as the node.",
+		inputSchema: { type: "object", properties: { target_method: { type: "string" }, args: { type: "array", items: { type: "string" } }, target: TARGET }, required: ["target_method"] },
+	},
 	{
 		name: "publish_event",
 		description: "Publish an EventBus event in the game (topics are module.event, e.g. admin.set_hour). Server-side events go to the server target.",
@@ -36,7 +42,7 @@ const TOOLS: Tool[] = [
 	{ name: "tail_log", description: "The last lines of the game's log file.", inputSchema: { type: "object", properties: { lines: { type: "number" }, target: TARGET } } },
 ];
 
-const METHOD: Record<string, string> = { game_state: "state", game_perf: "perf", find_nodes: "find_nodes", get_node: "node", set_property: "set", publish_event: "publish", tail_log: "log" };
+const METHOD: Record<string, string> = { game_state: "state", game_perf: "perf", find_nodes: "find_nodes", get_node: "node", get_property: "get", set_property: "set", publish_event: "publish", tail_log: "log" };
 
 function text(value: unknown): CallResult {
 	return { content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }] };
@@ -74,6 +80,8 @@ async function call(name: string, args: Record<string, unknown>): Promise<CallRe
 		if (typeof path !== "string") throw new ApiError("the game did not return a screenshot path");
 		return { content: [{ type: "image", data: readFileSync(path).toString("base64"), mimeType: "image/png" }, { type: "text", text: path }] };
 	}
+	// `target` already names the game, so the method to call goes under another name.
+	if (name === "call_method") return text(await rpc(game(args), "call", { target: args["target_method"], args: args["args"] ?? [] }));
 	const { target: _drop, ...params } = args;
 	return text(await rpc(game(args), METHOD[name] ?? name, params));
 }

@@ -110,6 +110,14 @@ func _ready() -> void:
 	_build_world()
 
 
+## Whether the world is loaded and announced here, and its ground built (meshes and
+## collision) within `radius` of `point`. Tools (playtest screenshots) wait on this.
+func is_ready_at(point: Vector3, radius: float) -> bool:
+	if not _loaded or _building or not _announcement.is_empty() or _loading_shown:
+		return false
+	return _voxels == null or _voxels.is_ready_at(point, radius)
+
+
 ## Which world this instance plays, as a save keys it (#472): "flat", or the map's recipe, a
 ## hash of the recipe file (an edited recipe moves things) and its seed.
 func map_key() -> String:
