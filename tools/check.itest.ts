@@ -55,3 +55,17 @@ test("type error in a script fails the parse check", async () => {
 	const r = await checkScripts(godot, root, [file]);
 	assert.equal(r.ok, false);
 });
+
+test("a failure in one of several parallel runs fails the gate", async () => {
+	const ok = suite("shard_ok", "func test_ok() -> void:\n\tassert_bool(true).is_true()");
+	const bad = suite("shard_bad", 'func test_bad() -> void:\n\tpush_error("only in one shard")\n\tassert_bool(true).is_true()');
+	const r = await runGdUnit(godot, root, [ok, bad]);
+	assert.equal(r.ok, false);
+	assert.match(r.detail, /only in one shard/);
+});
+
+test("test runs get a user folder of their own, not the player's", async () => {
+	const body = 'func test_user_dir() -> void:\n\tassert_str(OS.get_user_data_dir()).contains("slopocalypse-gdunit-")';
+	const r = await runGdUnit(godot, root, [suite("user_dir", body)]);
+	assert.equal(r.ok, true, r.detail);
+});

@@ -15,13 +15,13 @@ func test_a_different_protocol_on_the_same_version_is_refused() -> void:
 	assert_str(Net.build_mismatch("0.9.2", 4, "0.9.2", 3)).is_not_empty()
 
 
-func test_the_version_claim_sorts_after_every_other_net_rpc() -> void:
-	# Godot numbers a node's RPCs in name order: a new one sorting before `_hello` or
-	# `_kicked` would shift them and older clients could not be told to update.
+func test_the_version_claim_keeps_its_place_among_the_net_rpcs() -> void:
+	# Godot numbers a node's RPCs in name order: a new one sorting before `_version`, `_hello`
+	# or `_kicked` would shift them and older clients could not be told to update.
 	var rpcs: Dictionary = (load("res://core/net.gd") as Script).get_rpc_config()
 	# As text: StringNames themselves do not sort alphabetically.
 	var names: Array[String] = []
 	for key: Variant in rpcs.keys():
 		names.append(str(key))
 	names.sort()
-	assert_str(names.back()).is_equal("_version")
+	assert_array(names.slice(0, 4)).contains_exactly(["_hello", "_kicked", "_replay", "_version"])

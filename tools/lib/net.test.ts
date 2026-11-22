@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseReport, parseSoloServer } from "./net.ts";
+import { createSocket } from "node:dgram";
+import { freeUdpPort, parseReport, parseSoloServer } from "./net.ts";
 
 test("reads the solo server line, Windows path and CRLF included", () => {
 	const out = "[INFO] net: solo server pid=1234 port=7800 log=C:/Users/me/AppData/Roaming/Godot/app_userdata/Slopocalypse/logs/solo-server.log\r\n[INFO] boot: loaded";
@@ -14,4 +15,17 @@ test("no solo server line means undefined", () => {
 test("reads a net report", () => {
 	const rep = parseReport("NET-REPORT mode=SOLO peer=55 peers=1 players=1 local_players=1 moved=12.5 shots=4 driven=7.0 ammo=17 parked=1 drivers=1");
 	assert.deepEqual(rep, { mode: "SOLO", peer: 55, peers: 1, players: 1, localPlayers: 1, moved: 12.5, shots: 4, driven: 7, ammo: 17, parked: 1, drivers: 1 });
+});
+
+test("a taken UDP port is skipped for the next free one", async () => {
+	const socket = createSocket("udp4");
+	await new Promise<void>((resolve) => socket.bind(0, "0.0.0.0", resolve));
+	const taken = socket.address().port;
+	try {
+		const port = await freeUdpPort(taken);
+		assert.notEqual(port, taken);
+		assert.ok(port > taken);
+	} finally {
+		socket.close();
+	}
 });
