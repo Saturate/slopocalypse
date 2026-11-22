@@ -1,8 +1,8 @@
 extends Node3D
-## Capture setup (#447): from eye height, a co-op player, a civilian, a soldier of the guard
-## faction and a militia soldier stand in a row about 30 m away, turning slowly so their
-## armbands are seen from every side; noon first, then night. `-- --hour=H` holds one hour
-## instead (for a full-size single frame).
+## Capture setup (#447): from eye height, a co-op player, a civilian, a regular, a militia
+## soldier and a scavenger stand in a row about 30 m away, turning slowly so their armbands
+## are seen from every side; noon first, then night. `-- --hour=H` holds one hour instead
+## (for a full-size single frame); `-- --colour-blind` shows the colour-blind colours.
 
 const WORLD := "res://modules/world/scenes/world.tscn"
 const PLAYER := "res://modules/player/scenes/player.tscn"
@@ -29,6 +29,7 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--hour="):
 			_hour = float(arg.trim_prefix("--hour="))
+	Settings.set_value(Armband.SETTING, OS.get_cmdline_user_args().has("--colour-blind"))
 	var world := await VoxelWorld.add_and_wait(self, WORLD)
 	var terrain := world.get_node("Terrain") as VoxelWorld
 	var scenery := find_child("Scenery", true, false) as Node3D
@@ -64,8 +65,8 @@ func _ready() -> void:
 	camera.add_child(terrain.make_viewer())
 
 	var spots: Array[Vector3] = []
-	for i in 4:
-		spots.append(VoxelWorld.spawn_of(world, Vector3((float(i) - 1.5) * SPACING, 0.1, -DISTANCE)))
+	for i in 5:
+		spots.append(VoxelWorld.spawn_of(world, Vector3((float(i) - 2.0) * SPACING, 0.1, -DISTANCE)))
 	# A co-op partner: someone else's player body, as a client sees it.
 	var partner: PlayerController = (load(PLAYER) as PackedScene).instantiate()
 	partner.name = "Partner"
@@ -77,8 +78,9 @@ func _ready() -> void:
 	partner.add_child(animator)
 	_people.append(partner)
 	_people.append(enemies.call(&"server_spawn_civilian", spots[1], 0.0, []))
-	_people.append(enemies.call(&"server_spawn_guard", spots[2], 0.0, [], ""))
+	_people.append(enemies.call(&"server_spawn_guard", spots[2], 0.0, [], "regulars"))
 	_people.append(enemies.call(&"server_spawn_guard", spots[3], 0.0, [], "militia"))
+	_people.append(enemies.call(&"server_spawn_guard", spots[4], 0.0, [], "scavengers"))
 	# They stand for the picture: no brain walks them off or turns them to fight.
 	await get_tree().process_frame
 	for person in _people:

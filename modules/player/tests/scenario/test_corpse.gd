@@ -192,3 +192,9 @@ func test_a_corpse_keeps_its_armband() -> void:
 	assert_object(material).is_not_null()
 	var green: Array = Armband.config()["civilians"]
 	assert_that(material.albedo_color).is_equal(Color(float(green[0]), float(green[1]), float(green[2])))
+	# A corpse shares the living body's band, so a switch to colour-blind colours reaches it.
+	Settings.set_value(Armband.SETTING, true)
+	Armband.repaint()
+	assert_that(material.albedo_color).is_equal(Armband.colour_of("civilians"))
+	Settings.set_value(Armband.SETTING, false)
+	Armband.repaint()

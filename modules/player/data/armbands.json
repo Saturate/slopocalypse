@@ -1,5 +1,5 @@
 {
-  "_comment": "Armband colours (#447): everyone wears a coloured band on both upper arms so you can tell who is who in a fight. players: co-op players (you and your friends); civilians; enemies: soldiers with no faction, and any faction not listed under factions; factions: a colour per soldier faction id (modules/factions/data/factions.json). Colours are [r, g, b] from 0 to 1. glow: how much the band lights itself so it still reads at night (0 none; past about 1 it starts to bloom like a lamp).",
+  "_comment": "Armband colours (#447): everyone wears a coloured band on both upper arms so you can tell who is who in a fight. players: co-op players (you and your friends); civilians; enemies: soldiers with no faction, and any faction not listed under factions; factions: a colour per soldier faction id (modules/factions/data/factions.json). Colours are [r, g, b] from 0 to 1. glow: how much the band lights itself so it still reads at night (0 none; past about 1 it starts to bloom like a lamp). colour_blind: the same table, used instead when a player turns on 'Colour-blind colours' in Settings. Against the dark uniforms only light colours stand out, and red-green colour blind eyes see just blue against yellow plus lightness, and sunlight lifts every band towards white, so pale blue and white are the one pair that stays close; it is spent on two friends. players sky blue (the partner marker's blue), civilians off-white, regulars amber (bright yellow to red-green colour blind eyes), militia deep blue (much darker and stronger than the players' sky blue), scavengers deep red (dark olive to red-green colour blind eyes, the weakest against its uniform).",
   "players": [0.05, 0.28, 1.0],
   "civilians": [0.1, 0.75, 0.12],
   "enemies": [0.85, 0.02, 0.02],
@@ -8,5 +8,15 @@
     "regulars": [0.85, 0.02, 0.02],
     "scavengers": [0.98, 0.85, 0.05]
   },
-  "glow": 0.2
+  "glow": 0.2,
+  "colour_blind": {
+    "players": [0.25, 0.69, 1.0],
+    "civilians": [0.95, 0.95, 0.95],
+    "enemies": [1.0, 0.63, 0.0],
+    "factions": {
+      "militia": [0.1, 0.19, 1.0],
+      "regulars": [1.0, 0.63, 0.0],
+      "scavengers": [0.75, 0.13, 0.0]
+    }
+  }
 }
