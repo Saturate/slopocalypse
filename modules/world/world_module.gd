@@ -4,6 +4,9 @@ extends Node
 ## plain plane: no terrain, scenery or road; the test range uses it). Also owns terrain-side
 ## reactions: shots that hit the ground dig a small crater, and explosions a big one. The
 ## ground follows players, enemies and vehicles on its own.
+##
+## The map builds on a worker thread (#515): the scene loads once it is done, and what arrives
+## for the world meanwhile (craters, felled trees) waits in `_held` until then.
 
 const SCENE := "res://modules/world/scenes/world.tscn"
 const FLAT_SCENE := "res://modules/world/scenes/flat_world.tscn"
@@ -22,6 +25,16 @@ var _data: Dictionary = {}
 ## map could not be built.
 var _kind := &""
 var _waited := 0.0
+## While the map builds on a worker thread; the world scene loads when it is done.
+var _building := false
+## Whether this player's screen says the world is loading (`session.loading`), until it is
+## announced.
+var _loading_shown := false
+var _build_started := 0
+## Whether the world scene is in; until then world events wait in `_held`.
+var _loaded := false
+## World events that came before the world was loaded, applied in order once it is.
+var _held: Array[Callable] = []
 
 
 ## The generated map is the world (#472, decision 0012): its recipe and seed from
@@ -40,12 +53,11 @@ static func _select_map(args: PackedStringArray, cfg: Dictionary) -> bool:
 	if not recipe.is_valid_filename() or recipe.contains("."):
 		Log.warn(&"world", "--map=%s is not a recipe name; playing %s" % [recipe, cfg["recipe"]])
 		recipe = str(cfg["recipe"])
-	WorldMaps.select(recipe, seed_value)
-	if WorldMaps.shape() == null and recipe != str(cfg["recipe"]):
+	if not WorldMaps.is_playable(recipe) and recipe != str(cfg["recipe"]):
 		Log.warn(&"world", "no playable map %s; playing %s" % [recipe, cfg["recipe"]])
 		recipe = str(cfg["recipe"])
-		WorldMaps.select(recipe, seed_value)
-	if WorldMaps.shape() == null:
+	WorldMaps.select(recipe, seed_value)
+	if not WorldMaps.is_playable(recipe):
 		Log.error(&"world", "no playable map %s (%s); no world loaded" % [recipe, WorldMaps.MAPS_DIR])
 		WorldMaps.clear()
 		return false
@@ -95,7 +107,7 @@ func _ready() -> void:
 		_kind = &"map"
 	else:
 		return
-	_load_world()
+	_build_world()
 
 
 ## Which world this instance plays, as a save keys it (#472): "flat", or the map's recipe, a
@@ -111,6 +123,51 @@ func map_key() -> String:
 func _waits_for_server() -> bool:
 	var peer := multiplayer.multiplayer_peer
 	return peer != null and not peer is OfflineMultiplayerPeer and not multiplayer.is_server()
+
+
+## Starts the chosen world: the flat one loads at once, a map once its build on a worker
+## thread is done (`_poll_build`).
+func _build_world() -> void:
+	if _kind != &"map":
+		_load_world()
+		return
+	if not WorldMaps.start_build():
+		Log.error(&"world", "no playable map %s; no world loaded" % WorldMaps.recipe_name())
+		_no_world()
+		return
+	_building = true
+	_build_started = Time.get_ticks_msec()
+	_show_loading(true)
+
+
+## Each frame while the map builds: loads the world once it is done.
+func _poll_build() -> void:
+	if WorldMaps.is_building():
+		return
+	_building = false
+	if WorldMaps.shape() == null:
+		Log.error(&"world", "the map %s did not build; no world loaded" % WorldMaps.recipe_name())
+		_no_world()
+		return
+	Log.info(&"world", "map built in %d ms on a worker thread" % (Time.get_ticks_msec() - _build_started))
+	var prof := Prof.start()
+	_load_world()
+	Prof.stop(&"world/load", prof)
+
+
+## No world after all: nothing waits for one, and a save is left alone (an empty `map_key`).
+func _no_world() -> void:
+	_kind = &""
+	_held.clear()
+	_show_loading(false)
+
+
+## The card stays up through loading the scene (a long frame) until the world is announced.
+func _show_loading(on: bool) -> void:
+	if on == _loading_shown or not Net.has_local_player():
+		return
+	_loading_shown = on
+	EventBus.publish(&"session.loading", {"text": "Loading the world..." if on else ""})
 
 
 ## Builds the chosen world (`_kind`, and the map WorldMaps has selected) and gets its
@@ -151,29 +208,49 @@ func _load_world() -> void:
 	# The players' camp (CampLayout): the map's, or on the flat world one round its spawn.
 	var camp: Variant = world.get("camp")
 	_announcement["camp"] = camp if camp is CampLayout else CampLayout.of_ready(_announcement)
+	_loaded = true
+	var held := _held
+	_held = []
+	for apply in held:
+		apply.call()
+
+
+## Until the world is loaded, `apply` waits its turn; true when it was held. A server whose
+## map could not be built never loads one, so nothing waits there.
+func _hold(apply: Callable) -> bool:
+	if _loaded or (_kind == &"" and not _waits_for_server()):
+		return false
+	_held.append(apply)
+	return true
 
 
 ## Server to a joining client, before anything else about the world: which world it plays
 ## (`kind` flat or map) and, for a map, its recipe and seed. The client builds the same.
 @rpc("authority", "call_remote", "reliable")
 func _receive_map(kind: String, recipe: String, seed_value: int) -> void:
-	if _voxels != null or not _waits_for_server():
+	if _kind != &"" or not _waits_for_server():
 		return
 	WorldMaps.clear()
 	if kind == "flat":
 		_kind = &"flat"
 	else:
-		WorldMaps.select(recipe, seed_value)
-		if kind != "map" or WorldMaps.shape() == null:
+		# A recipe name only, never a path.
+		if kind != "map" or not recipe.is_valid_filename() or recipe.contains(".") or not WorldMaps.is_playable(recipe):
 			Net.leave("This server plays the map %s, which this game does not have." % recipe)
 			return
+		WorldMaps.select(recipe, seed_value)
 		_kind = &"map"
+	# The digs and felled trees sent right after this cover every crater and tree that came
+	# before it; replaying those too would dig them twice.
+	_held.clear()
 	Log.info(&"world", "the server plays %s" % ("map %s, seed %d" % [recipe, seed_value] if _kind == &"map" else String(_kind)))
-	_load_world()
+	_build_world()
 
 
 func _exit_tree() -> void:
-	# The selection is static: the next session (or test) picks its own world.
+	_show_loading(false)
+	# The selection is static: the next session (or test) picks its own world. Waits for a
+	# build still running.
 	WorldMaps.clear()
 	for monitor: StringName in MONITORS:
 		if Performance.has_custom_monitor(monitor):
@@ -186,7 +263,7 @@ func _exit_tree() -> void:
 
 
 func _on_explosion(p: Dictionary) -> void:
-	if _voxels == null:
+	if _hold(_on_explosion.bind(p)) or _voxels == null:
 		return
 	_voxels.server_dig(p["position"], float(p["radius"]))
 	if _is_server() and _scenery != null:
@@ -205,7 +282,7 @@ func _broadcast_fell(id: Vector2i, direction: Vector3, cut: float, blast: Vector
 
 
 func _on_tree_felled(p: Dictionary) -> void:
-	if _scenery == null:
+	if _hold(_on_tree_felled.bind(p)) or _scenery == null:
 		return
 	_scenery.fell_tree(Vector2i(int(p["chunk"]), int(p["index"])), p["direction"], float(p.get("cut", 1.0)), p.get("blast", Vector4.ZERO))
 
@@ -228,6 +305,8 @@ func _on_peer_joined(peer: int) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func _receive_digs(list: Array) -> void:
+	if _hold(_receive_digs.bind(list)) or _voxels == null:
+		return
 	for d: Array in list:
 		_voxels.replay_dig(Vector4(float(d[0]), float(d[1]), float(d[2]), float(d[3])))
 
@@ -274,10 +353,22 @@ func server_restore_world_state(version: int, data: Variant) -> void:
 		_receive_digs(d.get("digs", []))
 	if _scenery != null:
 		_receive_felled(d.get("felled", []))
+	# Someone who joined while this server's map was still building was sent no damage then.
+	if not _is_server() or multiplayer.multiplayer_peer is OfflineMultiplayerPeer:
+		return
+	for peer in multiplayer.get_peers():
+		if Net.identity_of(peer).is_empty():
+			continue
+		if not (d.get("digs", []) as Array).is_empty():
+			_receive_digs.rpc_id(peer, d["digs"])
+		if not (d.get("felled", []) as Array).is_empty():
+			_receive_felled.rpc_id(peer, d["felled"])
 
 
 @rpc("authority", "call_remote", "reliable")
 func _receive_felled(list: Array) -> void:
+	if _hold(_receive_felled.bind(list)) or _scenery == null:
+		return
 	for entry: Array in list:
 		# At least a moment old, so it lies still instead of falling again.
 		var seconds_ago := maxf(float(entry[5]) if entry.size() > 5 else 0.0, 0.01)
@@ -291,6 +382,10 @@ func _process(delta: float) -> void:
 
 
 func _process_tick(delta: float) -> void:
+	if _building:
+		# Loading the world is a long frame of its own; the spawn check waits for the next.
+		_poll_build()
+		return
 	if _announcement.is_empty():
 		return
 	_waited += delta
@@ -303,6 +398,7 @@ func _process_tick(delta: float) -> void:
 			Log.warn(&"world", "spawn terrain not ready after %.0f s, announcing anyway" % READY_TIMEOUT_SECONDS)
 		var payload := _announcement
 		_announcement = {}
+		_show_loading(false)
 		EventBus.publish(&"world.ready", payload)
 
 

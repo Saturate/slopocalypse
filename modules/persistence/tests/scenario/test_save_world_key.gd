@@ -15,6 +15,18 @@ class FakeWorld extends Node:
 	func map_key() -> String:
 		return key
 
+	func world_state_owner() -> String:
+		return "world"
+
+	func world_state_version() -> int:
+		return 3
+
+	func server_world_state() -> Dictionary:
+		return {"digs": []}
+
+	func server_restore_world_state(_version: int, _data: Variant) -> void:
+		pass
+
 
 func before_test() -> void:
 	_dir = "user://test_save_world_key_%d" % Time.get_ticks_usec()
@@ -75,3 +87,18 @@ func test_a_fresh_save_just_records_its_world() -> void:
 	var saves := _saves(_dir.path_join("world.db"), "flat")
 	saves.call(&"_check_map")
 	assert_str(str(bytes_to_var((saves.get(&"store") as SaveStore).load_part("map")["data"]))).is_equal("flat")
+
+
+## The map builds on a worker thread before the world loads (#515): a save in between (the
+## only player cancels while it builds) must not write an empty world over the saved one.
+func test_nothing_is_saved_before_the_world_is_loaded() -> void:
+	var saves := _saves(_dir.path_join("world.db"), "map:grassland:abc:1")
+	_world.add_to_group(&"world_state")
+	var store: SaveStore = saves.get(&"store")
+	var digs := {"digs": [[1.0, 2.0, 3.0, 2.0]]}
+	assert_bool(store.save_part("world", 3, var_to_bytes(digs))).is_true()
+	assert_bool(saves.call(&"server_save_world")).is_true()
+	assert_dict(bytes_to_var(store.load_part("world")["data"])).is_equal(digs)
+	saves.call(&"server_load_world")
+	saves.call(&"server_save_world")
+	assert_dict(bytes_to_var(store.load_part("world")["data"])).is_equal({"digs": []})
