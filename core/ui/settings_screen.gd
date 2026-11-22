@@ -19,6 +19,7 @@ var _sliders: Dictionary[String, HSlider] = {}
 var _fullscreen: Button
 var _blood: Button
 var _compass: Button
+var _coop_marker: Button
 
 
 func _init() -> void:
@@ -37,6 +38,9 @@ func _init() -> void:
 	# Read by the compass module each frame; offered only with it.
 	_compass = _toggle("Compass", "compass")
 	_compass.visible = Features.is_enabled(&"compass")
+	# Read by the coop_marker module each frame; offered only with it.
+	_coop_marker = _toggle("Partner marker", "coop_marker")
+	_coop_marker.visible = Features.is_enabled(&"coop_marker")
 	var keys_head := Label.new()
 	keys_head.theme_type_variation = &"HeadingLabel"
 	keys_head.text = "KEYS"
@@ -136,7 +140,7 @@ func _refresh() -> void:
 	for key: String in _sliders:
 		_sliders[key].set_value_no_signal(float(Settings.value(key)))
 		_sliders[key].value_changed.emit(_sliders[key].value)
-	for toggle: Button in [_fullscreen, _blood, _compass]:
+	for toggle: Button in [_fullscreen, _blood, _compass, _coop_marker]:
 		toggle.set_pressed_no_signal(bool(Settings.value(String(toggle.get_meta(&"setting")))))
 		_show_toggle(toggle)
 	var keys := content.get_node(^"Keys") as GridContainer
