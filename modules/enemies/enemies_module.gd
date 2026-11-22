@@ -100,6 +100,12 @@ func _on_world_ready(payload: Dictionary) -> void:
 			bot.name = "DeathsBot"
 			bot.enemies = self
 			add_child(bot)
+		# Only in a real server session (dedicated, or solo's local server): tests and harnesses
+		# drive brains with no player around and expect them to think.
+		if Net.mode == Net.Mode.SERVER and get_node_or_null("BrainSleep") == null:
+			var sleep := BrainSleep.new()
+			sleep.name = "BrainSleep"
+			add_child(sleep)
 		var crowd := crowd_arg(OS.get_cmdline_user_args())
 		if crowd > 0:
 			config = config.duplicate()
