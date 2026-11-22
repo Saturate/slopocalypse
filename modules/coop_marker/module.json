@@ -1,0 +1,6 @@
+{
+  "id": "coop_marker",
+  "depends_on": ["player"],
+  "flag": "coop_marker",
+  "entry": "coop_marker_module.gd"
+}

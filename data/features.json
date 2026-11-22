@@ -33,6 +33,7 @@
     "wires": true,
     "power": true,
     "camp": true,
-    "compass": true
+    "compass": true,
+    "coop_marker": true
   }
 }
