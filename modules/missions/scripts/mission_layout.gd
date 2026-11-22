@@ -72,8 +72,10 @@ static func buildings(cfg: Dictionary, seed_value: int, place: Dictionary, block
 ## building in `entries`, each side cut into as few equal runs as keep them within
 ## `cfg.segment` metres (so a side's runs are alike and share one mesh). The runs where
 ## the ray from the footprint's middle along `place.toward` (the way its track leaves) meets
-## the fence are left out, `cfg.gate` metres wide, and so is every run `blocked(middle,
-## half_length) -> bool` turns down (a road or track, water, another site), and a share
+## the fence are left out, `cfg.gate` metres wide, its two leaves (`gate_leaf` metres long,
+## `gate`: true) standing open `gate_swing` degrees outward from the posts either side; so
+## is every run or leaf `blocked(at, cfg.post_clear) -> bool` turns down anywhere along it
+## (a road or track, water, another site), and a share
 ## `cfg.gaps` of the rest, rolled from `seed_value` (never a side's end runs, so the corners
 ## stand). Returns `{from, to (on the place's level; the caller puts them on the ground),
 ## tall_ends (the run starts or ends a side or a stretch: corner and gate posts)}`, in order
@@ -99,6 +101,7 @@ static func fence(cfg: Dictionary, place: Dictionary, entries: Array, seed_value
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	var gaps := float(cfg.get("gaps", 0.0))
+	var clear := float(cfg.get("post_clear", 0.3))
 	var level := (place["centre"] as Vector3).y
 	var corners: Array[Vector2] = [bounds.position, Vector2(bounds.end.x, bounds.position.y), bounds.end, Vector2(bounds.position.x, bounds.end.y)]
 	for side in 4:
@@ -106,12 +109,14 @@ static func fence(cfg: Dictionary, place: Dictionary, entries: Array, seed_value
 		var b := corners[(side + 1) % 4]
 		var n := ceili(a.distance_to(b) / step - 0.001)
 		var keep: Array[bool] = []
+		var gate_runs: Array[int] = []
 		for k in n:
 			var ra := a.lerp(b, float(k) / n)
 			var rb := a.lerp(b, float(k + 1) / n)
-			var mid := (ra + rb) / 2.0
 			var ok := Geometry2D.get_closest_point_to_segment(gate_at, ra, rb).distance_to(gate_at) >= gate_half
-			ok = ok and not (blocked.is_valid() and bool(blocked.call(Vector3(mid.x, level, mid.y), step / 2.0)))
+			if not ok:
+				gate_runs.append(k)
+			ok = ok and not _run_blocked(ra, rb, level, clear, blocked)
 			# Every run draws, so one blocked run never shifts which others break.
 			var broken := rng.randf() < gaps
 			keep.append(ok and (k == 0 or k == n - 1 or not broken))
@@ -122,7 +127,35 @@ static func fence(cfg: Dictionary, place: Dictionary, entries: Array, seed_value
 			var rb := a.lerp(b, float(k + 1) / n)
 			var ends := k == 0 or k == n - 1 or not keep[k - 1] or not keep[k + 1]
 			out.append({"from": Vector3(ra.x, level, ra.y), "to": Vector3(rb.x, level, rb.y), "tall_ends": ends})
+		if gate_runs.is_empty():
+			continue
+		# The gate's two leaves, hinged on the posts either side of it and swung out.
+		var along := (b - a).normalized()
+		var outward := Vector2(-along.y, along.x)
+		if outward.dot((a + b) / 2.0 - bounds.get_center()) < 0.0:
+			outward = -outward
+		var swing := deg_to_rad(float(cfg.get("gate_swing", 70.0)))
+		var leaf := float(cfg.get("gate_leaf", 2.4))
+		for hinge_side: Array in [[a.lerp(b, float(gate_runs[0]) / n), along], [a.lerp(b, float(gate_runs[-1] + 1) / n), -along]]:
+			var hinge: Vector2 = hinge_side[0]
+			var shut: Vector2 = hinge_side[1]
+			var tip := hinge + (shut * cos(swing) + outward * sin(swing)) * leaf
+			if not _run_blocked(hinge, tip, level, clear, blocked):
+				out.append({"from": Vector3(hinge.x, level, hinge.y), "to": Vector3(tip.x, level, tip.y), "tall_ends": true, "gate": true})
 	return out
+
+
+## Whether a run from `a` to `b` is turned down: `blocked` asked every metre or so along it
+## (a road beside a run but clear of it leaves it standing; one across it does not).
+static func _run_blocked(a: Vector2, b: Vector2, level: float, radius: float, blocked: Callable) -> bool:
+	if not blocked.is_valid():
+		return false
+	var steps := maxi(ceili(a.distance_to(b)), 1)
+	for i in steps + 1:
+		var p := a.lerp(b, float(i) / steps)
+		if bool(blocked.call(Vector3(p.x, level, p.y), radius)):
+			return true
+	return false
 
 
 ## Where the ray from `from` (inside `rect`) along `dir` leaves it.

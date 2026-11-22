@@ -66,6 +66,15 @@ func test_the_fence_leaves_a_gate_where_the_track_leaves() -> void:
 		var a := minf((r["from"] as Vector3).x, (r["to"] as Vector3).x)
 		var b := maxf((r["from"] as Vector3).x, (r["to"] as Vector3).x)
 		assert_bool(b <= -gate / 2.0 + 0.01 or a >= gate / 2.0 - 0.01).override_failure_message("a run across the gate, %.1f to %.1f" % [a, b]).is_true()
+	# Its two leaves stand open outward (north), hinged at the gate's edges, clear of its middle.
+	var leaves := runs.filter(func(r: Dictionary) -> bool: return r.get("gate", false))
+	assert_int(leaves.size()).is_equal(2)
+	for r: Dictionary in leaves:
+		var hinge: Vector3 = r["from"]
+		var tip: Vector3 = r["to"]
+		assert_float(hinge.z).is_equal_approx(ring.position.y, 0.01)
+		assert_float(tip.z).is_less(hinge.z - 1.0)
+		assert_float(absf(tip.x)).is_greater(1.0)
 	var south := runs.filter(func(r: Dictionary) -> bool: return absf((r["from"] as Vector3).z - ring.end.y) < 0.01 and minf((r["from"] as Vector3).x, (r["to"] as Vector3).x) <= 0.0 and maxf((r["from"] as Vector3).x, (r["to"] as Vector3).x) >= 0.0)
 	assert_int(south.size()).is_greater(0)
 
@@ -77,16 +86,16 @@ func test_no_fence_run_stands_where_it_is_blocked() -> void:
 	var runs := MissionLayout.fence(cfg["compound"], _place(), _buildings(cfg, 5), 5, road)
 	assert_int(runs.size()).is_greater(4)
 	for r: Dictionary in runs:
-		var mid := ((r["from"] as Vector3) + (r["to"] as Vector3)) / 2.0
-		var half := (r["from"] as Vector3).distance_to(r["to"]) / 2.0
-		assert_bool(bool(road.call(mid, half))).is_false()
+		for t: float in [0.0, 0.25, 0.5, 0.75, 1.0]:
+			var at := (r["from"] as Vector3).lerp(r["to"], t)
+			assert_bool(bool(road.call(at, float(cfg["compound"]["post_clear"])))).override_failure_message("a run on the road at %s" % at).is_false()
 
 
 func test_runs_come_in_two_lengths_so_their_meshes_are_shared() -> void:
 	var cfg := _config()
 	var step := float(cfg["compound"]["segment"])
 	var lengths := {}
-	for r: Dictionary in MissionLayout.fence(cfg["compound"], _place(), _buildings(cfg, 8), 8):
+	for r: Dictionary in MissionLayout.fence(cfg["compound"], _place(), _buildings(cfg, 8), 8).filter(func(r: Dictionary) -> bool: return not r.get("gate", false)):
 		var length := (r["from"] as Vector3).distance_to(r["to"])
 		assert_float(length).is_less_equal(step + 0.001)
 		lengths[snappedf(length, 0.001)] = true
@@ -110,7 +119,7 @@ func test_a_roadside_spot_gets_no_fence() -> void:
 static func _ring(runs: Array) -> Rect2:
 	var a: Vector3 = (runs[0] as Dictionary)["from"]
 	var rect := Rect2(Vector2(a.x, a.z), Vector2.ZERO)
-	for r: Dictionary in runs:
+	for r: Dictionary in runs.filter(func(r: Dictionary) -> bool: return not r.get("gate", false)):
 		for p: Vector3 in [r["from"], r["to"]]:
 			rect = rect.expand(Vector2(p.x, p.z))
 	return rect

@@ -104,10 +104,14 @@ func test_the_farm_mission_is_one_fenced_place_with_its_track_through_the_gate()
 	var ring := Rect2(Vector2((fence[0] as Node3D).global_position.x, (fence[0] as Node3D).global_position.z), Vector2.ZERO)
 	for node: VoxPiece in fence:
 		var at := node.global_position
+		if node.get_meta(&"gate", false):
+			continue
 		ring = ring.expand(Vector2(at.x, at.z))
 		var half := float(node.params["length"]) / 2.0
 		# No run on a road or track: where the farm's track leaves, the fence has its gate.
-		assert_bool(_voxels.near_road(at, half, 0.0)).override_failure_message("a fence run on a road at %s" % at).is_false()
+		for t: float in [-1.0, -0.5, 0.0, 0.5, 1.0]:
+			var p := node.global_transform * Vector3(half * t, 0.0, 0.0)
+			assert_bool(_voxels.near_road(p, 0.0, 0.0)).override_failure_message("a fence run on a road at %s" % p).is_false()
 		# Standing on the ground, not in the air.
 		assert_float(at.y).is_less_equal(_voxels.surface_height(at.x, at.z))
 	assert_bool(ring.encloses(foot)).is_true()

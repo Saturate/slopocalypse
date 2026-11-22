@@ -1288,5 +1288,6 @@ func _put_up_fence(runs: Array[Dictionary]) -> void:
 		# A side's runs are alike, so they draw one mesh between them.
 		piece.shared = true
 		piece.transform = Transform3D(Basis(x, Vector3.UP, x.cross(Vector3.UP)), Vector3(mid.x, y, mid.z))
+		piece.set_meta(&"gate", run.get("gate", false))
 		add_child(piece)
 		_fence_nodes.append(piece)
