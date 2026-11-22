@@ -198,3 +198,13 @@ func test_a_corpse_keeps_its_armband() -> void:
 	assert_that(material.albedo_color).is_equal(Armband.colour_of("civilians"))
 	Settings.set_value(Armband.SETTING, false)
 	Armband.repaint()
+
+
+func test_a_corpse_drops_what_only_the_living_wear() -> void:
+	var lit := Node3D.new()
+	lit.name = "Glowstick"
+	lit.set_meta(Corpse.LIVING_ONLY, true)
+	_player.get_node("Body/Skeleton").add_child(lit)
+	var corpse := Corpse.from_body(_player, Vector3.ZERO)
+	assert_object(corpse.get_node_or_null("Body/Skeleton/Glowstick")).is_null()
+	assert_object(corpse.get_node_or_null("Body/Skeleton/Band")).is_not_null()

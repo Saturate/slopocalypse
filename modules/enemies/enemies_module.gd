@@ -264,6 +264,13 @@ func server_spawn_civilian(at: Vector3, yaw: float, refuges: Array) -> Node:
 	return _spawner.spawn({"index": _spawned, "position": at + Vector3.UP * 0.3, "home": at, "post_yaw": yaw, "civilian": true, "refuges": refuges})
 
 
+## Server: is `soldier` on patrol or at its post with nobody in mind (not fighting, chasing or
+## pinned)? False for anyone without a brain.
+func is_patrolling(soldier: Node) -> bool:
+	var brain := soldier.get_node_or_null("Brain") as EnemyBrain
+	return brain != null and brain.is_patrolling()
+
+
 func civilians() -> Array[Node]:
 	return get_tree().get_nodes_in_group(&"civilians").filter(func(n: Node) -> bool: return not n.get_meta(&"dead", false))
 

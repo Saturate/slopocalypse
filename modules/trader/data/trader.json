@@ -28,6 +28,10 @@
       "price": 10
     },
     {
+      "item": "glowstick",
+      "price": 5
+    },
+    {
       "item": "mag_ar_30",
       "price": 10
     },

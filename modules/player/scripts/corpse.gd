@@ -20,6 +20,9 @@ const REQUIRED := {
 const BONE_REQUIRED := {"size": TYPE_ARRAY, "centre": TYPE_ARRAY, "mass": TYPE_FLOAT, "swing": TYPE_FLOAT, "twist": TYPE_FLOAT}
 ## Parts of the living body a corpse has no use for: what animates it, aims it and holds the gun.
 const STRIP: Array[String] = ["AnimationTree", "AnimationPlayer", "Skeleton/Aim", "Skeleton/HandIK", "Skeleton/WeaponAttachment"]
+## Meta on anything another module hangs on the living skeleton that the dead do not keep (a
+## lit glowstick: the server lays its own on the ground).
+const LIVING_ONLY := &"living_only"
 const GROUP := &"corpses"
 ## The LootBody this corpse stands in for, as meta on both.
 const LINK := &"corpse_link"
@@ -71,6 +74,10 @@ static func from_body(player: Node3D, push: Vector3, velocity := Vector3.ZERO) -
 		var part := copy.get_node_or_null(path)
 		if part != null:
 			part.get_parent().remove_child(part)
+			part.free()
+	for part in copy.get_node("Skeleton").get_children():
+		if part.has_meta(LIVING_ONLY):
+			copy.get_node("Skeleton").remove_child(part)
 			part.free()
 	copy.transform = Transform3D.IDENTITY
 	copy.visible = true

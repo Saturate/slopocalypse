@@ -70,6 +70,8 @@
     "charge": ["G"],
     "detonate": ["T"],
     "weapon_1": ["1"],
-    "weapon_2": ["2"]
+    "weapon_2": ["2"],
+    "glowstick": ["L"],
+    "glowstick_drop": ["K"]
   }
 }
