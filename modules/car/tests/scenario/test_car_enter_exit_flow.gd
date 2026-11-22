@@ -122,3 +122,27 @@ func test_a_new_player_does_not_spawn_inside_a_parked_car() -> void:
 			joined = p
 	assert_object(joined).is_not_null()
 	assert_bool(_clear_of_cars(joined.global_position, joined.get_rid())).is_true()
+
+
+func test_both_seats_count_where_the_car_is_and_getting_out_ends_it() -> void:
+	var driver: PlayerController = _players.players()[0]
+	var car: CarController = _cars.cars()[0]
+	await _drive(driver, car)
+	var passenger := Node3D.new()
+	add_child(auto_free(passenger))
+	passenger.global_position = car.global_position + Vector3(1.0, 0.0, 0.0)
+	car.enter(passenger)
+	assert_object(car.passenger).is_same(passenger)
+	# Driven off: the driver's body stays parked where they got in, the answer follows the car.
+	car.global_position += Vector3(30.0, 0.0, 0.0)
+	for who: Node3D in [driver, passenger]:
+		var spot: Variant = _cars.call(&"car_spot_of", who)
+		assert_bool(spot is Vector3).is_true()
+		assert_vector(spot as Vector3).is_equal_approx(car.global_position, Vector3.ONE * 0.01)
+	assert_vector(PlayerSpot.of(driver, _cars)).is_equal_approx(car.global_position, Vector3.ONE * 0.01)
+	car.exit_car(passenger)
+	car.exit_car(driver)
+	await _frames(2)
+	assert_object(_cars.call(&"car_spot_of", driver)).is_null()
+	assert_object(_cars.call(&"car_spot_of", passenger)).is_null()
+	assert_vector(PlayerSpot.of(driver, _cars)).is_equal(driver.global_position)

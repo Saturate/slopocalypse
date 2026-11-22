@@ -6,7 +6,8 @@ extends Node
 ## peer's player, and hidden again past `relevance_distance + relevance_margin`, so it doesn't
 ## flicker at the edge. A node spawned by a MultiplayerSpawner is spawned on a peer when it
 ## becomes visible to it, with its current state, and despawned when it stops being visible.
-## Players and cars are few and always visible; anything else keeps Godot's default.
+## Players and cars are few and always visible; anything else keeps Godot's default. A player
+## in a car counts where the car is (`PlayerSpot`).
 ##
 ## Checked every `relevance_seconds` (data/net.json), and at once for a new node, so nothing
 ## far away is ever spawned on a client first.
@@ -73,13 +74,14 @@ func _update() -> void:
 			_apply(sync, spots)
 
 
-## Peer -> where its player is.
+## Peer -> where its player is, or the car they sit in.
 func _player_spots() -> Dictionary[int, Vector3]:
 	var out: Dictionary[int, Vector3] = {}
+	var cars := PlayerSpot.cars_api(get_tree())
 	for p: Node in get_tree().get_nodes_in_group(&"players"):
 		var id := int(p.get_meta(&"peer_id", 0))
 		if id > 0 and p is Node3D and p.multiplayer == multiplayer:
-			out[id] = (p as Node3D).global_position
+			out[id] = PlayerSpot.of(p as Node3D, cars)
 	return out
 
 
