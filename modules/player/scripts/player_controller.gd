@@ -123,6 +123,8 @@ func _ready() -> void:
 	_head = get_node(head_path)
 	_shape_node = get_node(shape_path)
 	_capsule = _shape_node.shape
+	# The spawner sets who this is (metas) before it enters the tree, on every copy.
+	Armband.apply(self)
 	var data: Variant = Data.load_json(CONFIG)
 	if data is Dictionary and Data.require(CONFIG, data, REQUIRED):
 		config = data

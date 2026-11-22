@@ -25,6 +25,7 @@ func before_test() -> void:
 
 
 func after_test() -> void:
+	Armband.enabled = DisplayServer.get_name() != "headless"
 	Corpse.enabled = DisplayServer.get_name() != "headless"
 	for node in get_tree().get_nodes_in_group(Corpse.GROUP):
 		node.free()
@@ -178,3 +179,16 @@ func test_it_says_where_it_lies_while_falling_and_once_settled() -> void:
 	# Near the ground where the bones lie, not the spot it fell from.
 	assert_float(lying.y).is_less(0.6)
 	assert_float(Vector2(lying.x - hips_at.x, lying.z - hips_at.z).length()).is_less(1.0)
+
+
+func test_a_corpse_keeps_its_armband() -> void:
+	Armband.enabled = true
+	_player.set_meta(&"civilian", true)
+	Armband.apply(_player)
+	var corpse := Corpse.from_body(_player, Vector3.ZERO)
+	var band := corpse.get_node_or_null("Body/Skeleton/Band") as GeometryInstance3D
+	assert_object(band).is_not_null()
+	var material := band.material_override as StandardMaterial3D
+	assert_object(material).is_not_null()
+	var green: Array = Armband.config()["civilians"]
+	assert_that(material.albedo_color).is_equal(Color(float(green[0]), float(green[1]), float(green[2])))

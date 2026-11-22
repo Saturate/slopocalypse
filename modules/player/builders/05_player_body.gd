@@ -57,6 +57,12 @@ const R_SHOULDER := Vector3(0.2, 0.17, 0)
 const L_SHOULDER := Vector3(-0.2, 0.17, -0.03)
 const UPPER_ARM := 0.31
 const FOREARM := 0.31
+## The armband (#447): a chunky ring over the shoulder and most of the upper arm, in bone
+## space along the arm. A person is about 25 pixels tall at 30 m, so anything slimmer than
+## this shrinks to a pixel and its colour is lost by day.
+const BAND_FROM := 0.0
+const BAND_TO := 0.26
+const BAND_WIDTH := 0.17
 const R_ELBOW_POLE := Vector3(1.0, -1.0, 0.3)
 const L_ELBOW_POLE := Vector3(-0.6, -1.0, 0.0)
 
@@ -191,6 +197,13 @@ func _build_mesh() -> void:
 		_weight(arms, "Hand_" + side)
 		_box(arms, "Hand_" + side, Vector3(0.09, 0.11, 0.06), 0.014, Vector3(0, 0.02, 0), GLOVE)
 
+	# The armband is its own mesh so a uniform tint (a material override on Mesh and Arms)
+	# leaves it alone, and each body colours it by side (Armband).
+	var band := LowPoly.begin()
+	for side in ["R", "L"]:
+		_weight(band, "UpperArm_" + side)
+		_box(band, "UpperArm_" + side, Vector3(BAND_WIDTH, BAND_TO - BAND_FROM, BAND_WIDTH), 0.012, Vector3(0, (BAND_FROM + BAND_TO) * 0.5, 0), Color.WHITE)
+
 	for side in [["L", -1.0], ["R", 1.0]]:
 		var upper: String = "UpperLeg_" + side[0]
 		var lower: String = "LowerLeg_" + side[0]
@@ -208,7 +221,7 @@ func _build_mesh() -> void:
 
 	var skin := _skel.create_skin_from_rest_transforms()
 	var material := LowPoly.material(0.85)
-	for part in [["Mesh", st], ["Arms", arms]]:
+	for part in [["Mesh", st], ["Arms", arms], ["Band", band]]:
 		var inst := MeshInstance3D.new()
 		inst.name = part[0]
 		inst.mesh = LowPoly.finish(part[1], material)

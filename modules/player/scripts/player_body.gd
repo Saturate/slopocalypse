@@ -13,6 +13,10 @@ static func first_person(body: Node) -> void:
 	var torso := body.get_node_or_null("Skeleton/Mesh") as GeometryInstance3D
 	if torso != null:
 		torso.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	# Your own band would sit at the edge of the view as a coloured smear; others see it.
+	var band := body.get_node_or_null("Skeleton/Band") as GeometryInstance3D
+	if band != null:
+		band.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 	# Right in front of the camera the arms catch the hidden torso's shadow as grainy acne
 	# and full sun; first-person arms in most shooters skip shadows for the same reason.
 	var arms := body.get_node_or_null("Skeleton/Arms") as MeshInstance3D
