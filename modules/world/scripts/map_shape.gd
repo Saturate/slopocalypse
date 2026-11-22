@@ -90,11 +90,11 @@ func near_site(x: float, z: float, clearance: Dictionary) -> bool:
 
 
 ## Whether a circle of `radius` at (x, z) reaches onto a site's pad: ground what stands there
-## (a farm, a mast) already holds.
-func site_within(x: float, z: float, radius: float) -> bool:
+## (a farm, a mast) already holds. The pad `except` (a mission's own site) does not count.
+func site_within(x: float, z: float, radius: float, except := Rect2()) -> bool:
 	var p := Vector2(x, z)
 	for foot in _site_feet:
-		if foot.grow(radius).has_point(p):
+		if foot != except and foot.grow(radius).has_point(p):
 			return true
 	return false
 

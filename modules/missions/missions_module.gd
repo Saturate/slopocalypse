@@ -74,6 +74,10 @@ var _dropoff_car: TransportCar
 ## own broadcast, so compare with this instead).
 var _placed_for: Dictionary = {}
 var _building_nodes: Array[MissionBuilding] = []
+## Everywhere: the fence round a mission at a site (MissionLayout.fence), and which mission
+## and layout it was put up for, so a broadcast of the same buildings leaves it standing.
+var _fence_nodes: Array[VoxPiece] = []
+var _fenced_for := ""
 ## Everywhere while a run is on: the kind of mission being run.
 var _type: MissionType
 ## Server: peers out on the mission; how many runs have ended (rolls the next offers);
@@ -648,12 +652,19 @@ func _open_zone() -> void:
 	# A mission can override the layout (by the cabin: one shed close to it).
 	var layout: Dictionary = (config["buildings"] as Dictionary).duplicate()
 	layout.merge(current.get("buildings", {}), true)
-	buildings = MissionLayout.buildings(layout, int(config["seed"]) * 7919 + _runs, place, _blocked)
+	buildings = MissionLayout.buildings(layout, int(config["seed"]) * 7919 + _runs, place, _blocked.bind(place))
+	var at_site := _at_site(place)
 	for entry: Dictionary in buildings:
 		var at: Vector3 = entry["position"]
-		# On the average ground under its footprint (the pad levels to it: dug in uphill, built
-		# up downhill), a little sunk so the slab never floats.
-		at.y = footprint_ground(at, float(entry["width"]), float(entry["depth"]), float(entry["yaw"])) - 0.05
+		if at_site:
+			# Round a site, on the site's own level: their pads then meet its pad without
+			# reshaping it, so the buildings can stand at its edge and read as one place.
+			entry["level"] = (place["centre"] as Vector3).y
+			at.y = float(entry["level"]) - 0.05
+		else:
+			# On the average ground under its footprint (the pad levels to it: dug in uphill,
+			# built up downhill), a little sunk so the slab never floats.
+			at.y = footprint_ground(at, float(entry["width"]), float(entry["depth"]), float(entry["yaw"])) - 0.05
 		entry["position"] = at
 	_build_buildings()
 	_sync_type()
@@ -1058,6 +1069,15 @@ func footprint_ground(at: Vector3, width: float, depth: float, yaw: float) -> fl
 	return total / 9.0
 
 
+## The ground's height with the pads levelled but no craters: what a fence stands on, alike
+## on a client that joins after blasts.
+func _levelled_y(x: float, z: float) -> float:
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	if ground != null and ground.has_method(&"levelled_height"):
+		return float(ground.call(&"levelled_height", x, z))
+	return ground_y(x, z)
+
+
 ## The ground's height as it is now (0 without a world, as in tests).
 func ground_y(x: float, z: float) -> float:
 	var ground := get_tree().get_first_node_in_group(&"ground")
@@ -1071,27 +1091,59 @@ func ground_y(x: float, z: float) -> float:
 
 ## Whether ground at `at` within `radius` is levelled for someone else (a map site's pad and
 ## yard, the city): no mission building, mine or patrol stop goes there.
-func claimed(at: Vector3, radius: float) -> bool:
+## `except_site` is a site pad that does not count (the one the mission builds round).
+func claimed(at: Vector3, radius: float, except_site := Rect2()) -> bool:
 	var ground := get_tree().get_first_node_in_group(&"ground")
-	return ground != null and ground.has_method(&"is_claimed") and bool(ground.call(&"is_claimed", at, radius, &""))
+	return ground != null and ground.has_method(&"is_claimed") and bool(ground.call(&"is_claimed", at, radius, &"", except_site))
 
 
-## Whether a mission building of `radius` at `at` would be too near claimed ground (its pad
-## and the blend round it must not reshape a site's pad), too near a road or track
-## (`buildings.road_clear` metres from its edge) or in water at its middle or corners.
-func _blocked(at: Vector3, radius: float) -> bool:
+## Whether `place` is a map site (it has a footprint), not a roadside spot.
+static func _at_site(place: Dictionary) -> bool:
+	var foot: Rect2 = place["footprint"]
+	return foot.size.x > 0.0 and foot.size.y > 0.0
+
+
+## Whether a mission building of `radius` at `at` round `place` would be too near claimed
+## ground (its pad and the blend round it must not reshape anyone else's), too near a road
+## or track (`buildings.road_clear` metres from its edge) or in water at its middle or
+## corners. Round a site its pad is at the site's level, so the site's own pad does not
+## count, but ground more than `buildings.level_step` metres off that level does: the pad
+## would stand on a mound or in a pit.
+func _blocked(at: Vector3, radius: float, place: Dictionary) -> bool:
 	var cfg: Dictionary = config["buildings"]
-	if claimed(at, radius + float(cfg.get("pad_margin", 1.5)) + float(cfg.get("pad_blend", 4.0))):
+	var at_site := _at_site(place)
+	var own: Rect2 = place["footprint"] if at_site else Rect2()
+	if claimed(at, radius + float(cfg.get("pad_margin", 1.5)) + float(cfg.get("pad_blend", 4.0)), own):
 		return true
 	var ground := get_tree().get_first_node_in_group(&"ground")
 	if ground == null:
 		return false
 	if ground.has_method(&"near_road") and bool(ground.call(&"near_road", at, radius, float(cfg.get("road_clear", 3.0)))):
 		return true
+	var level := (place["centre"] as Vector3).y
+	var step := float(cfg.get("level_step", INF))
 	for corner: Vector3 in [Vector3.ZERO, Vector3(1, 0, 1), Vector3(1, 0, -1), Vector3(-1, 0, 1), Vector3(-1, 0, -1)]:
-		if _wet(at + corner * radius * 0.71):
+		var p := at + corner * radius * 0.71
+		if _wet(p):
+			return true
+		if at_site and ground.has_method(&"ground_height") and absf(float(ground.call(&"ground_height", p.x, p.z)) - level) > step:
 			return true
 	return false
+
+
+## Whether a fence run of `half` length either side of `at` round `place` would stand on a
+## road or track (`compound.road_clear` metres from its edge), in water, or on another
+## site's pad or a power line's ground. Asks only what every machine builds alike from the
+## map (the only levelled pads besides those are the mission's own, which do not count), so
+## clients put up the same fence the server does.
+func _fence_blocked(at: Vector3, half: float, place: Dictionary) -> bool:
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	if ground == null:
+		return false
+	var clear := float((config.get("compound", {}) as Dictionary).get("road_clear", 1.0))
+	if ground.has_method(&"near_road") and bool(ground.call(&"near_road", at, half, clear)):
+		return true
+	return claimed(at, half, place["footprint"]) or _wet(at)
 
 
 ## Whether a mine, sign or patrol stop may go at `at`: off claimed ground, roads and tracks,
@@ -1134,12 +1186,14 @@ func _build_buildings() -> void:
 	_building_nodes.clear()
 	if not is_inside_tree():
 		return
+	var runs := _fence_runs()
 	var scenery := get_tree().get_first_node_in_group(&"scenery")
 	if scenery != null:
 		var circles := []
 		for entry: Dictionary in buildings:
 			# An entry may ask for more open ground round it (the test range's row).
 			circles.append({"at": entry["position"], "radius": float(entry.get("radius", 4.0)) + float(entry.get("clear", CLEARING_MARGIN))})
+		circles.append_array(_compound_clearings(runs))
 		scenery.call(&"set_clearings", circles)
 	# Level the ground under each building and a little round it, so none sits half in a slope.
 	var ground := get_tree().get_first_node_in_group(&"ground")
@@ -1148,8 +1202,12 @@ func _build_buildings() -> void:
 		var margin := float(cfg.get("pad_margin", 1.5))
 		var pads := []
 		for entry: Dictionary in buildings:
-			# Entries sit 0.05 m sunk (see _open_zone); the pad is the ground they stand on.
-			pads.append({"at": (entry["position"] as Vector3) + Vector3.UP * 0.05, "yaw": float(entry["yaw"]), "blend": float(cfg.get("pad_blend", 4.0)),
+			# Entries sit 0.05 m sunk (see _open_zone); the pad is the ground they stand on. One
+			# round a site is exactly at the site's level, so it leaves the site's pad as it is.
+			var at: Vector3 = (entry["position"] as Vector3) + Vector3.UP * 0.05
+			if entry.has("level"):
+				at.y = float(entry["level"])
+			pads.append({"at": at, "yaw": float(entry["yaw"]), "blend": float(cfg.get("pad_blend", 4.0)),
 				"half": Vector2(float(entry["width"]) / 2.0 + float(entry.get("pad_margin", margin)), float(entry["depth"]) / 2.0 + float(entry.get("pad_margin", margin)))})
 		ground.call(&"set_pads", pads)
 	for i in buildings.size():
@@ -1167,3 +1225,114 @@ func _build_buildings() -> void:
 		b.global_position = entry["position"]
 		b.rotation.y = float(entry["yaw"])
 		_building_nodes.append(b)
+	_put_up_fence(runs)
+
+
+## The compound settings for the current mission's site kind: `compound` with the kind's
+## `kinds` entry laid over it (its `fence` merged into the shared one).
+func _compound_config() -> Dictionary:
+	var cfg: Dictionary = (config.get("compound", {}) as Dictionary).duplicate(true)
+	var kind := str((current.get("site", {}) as Dictionary).get("kind", ""))
+	var own: Dictionary = (cfg.get("kinds", {}) as Dictionary).get(kind, {})
+	var fence: Dictionary = cfg.get("fence", {})
+	fence.merge(own.get("fence", {}), true)
+	cfg.merge(own, true)
+	cfg["fence"] = fence
+	return cfg
+
+
+## Everywhere: the fence runs round the current mission's site and buildings, worked out
+## from the offer and the buildings alike on every machine (nothing about it is sent);
+## none without buildings, at a roadside spot or without a `compound` in the config.
+func _fence_runs() -> Array[Dictionary]:
+	if buildings.is_empty() or current.is_empty() or not config.has("compound"):
+		return [] as Array[Dictionary]
+	var place := place_of(current)
+	# Clients know the map's sites too (from its seed), so the gate goes where the track
+	# really crosses the fence on every machine.
+	var index := int((current.get("site", {}) as Dictionary).get("index", -1))
+	if index >= 0 and index < sites.size():
+		var track: Dictionary = (sites[index] as Dictionary).get("track", {})
+		place["track_points"] = track.get("points", PackedVector2Array())
+	var centre: Vector3 = place["centre"]
+	var seed_value := hash([roundi(centre.x * 10.0), roundi(centre.z * 10.0), buildings.size()])
+	return MissionLayout.fence(_compound_config(), place, buildings, seed_value, _fence_blocked.bind(place))
+
+
+## Trees cleared from the whole fenced ground and `compound.tree_clear` metres past it, so
+## the compound is one open yard: circles on a grid of `compound.tree_cell` metre squares,
+## each just covering its square (far fewer than one per run, and every scenery sample
+## checks them all).
+func _compound_clearings(runs: Array[Dictionary]) -> Array:
+	var out := []
+	var ring := Rect2()
+	var first := true
+	for run: Dictionary in runs:
+		if run.get("gate", false):
+			continue
+		for p: Vector3 in [run["from"], run["to"]]:
+			if first:
+				ring = Rect2(Vector2(p.x, p.z), Vector2.ZERO)
+				first = false
+			ring = ring.expand(Vector2(p.x, p.z))
+	if first:
+		return out
+	var cfg := _compound_config()
+	ring = ring.grow(float(cfg.get("tree_clear", 1.5)))
+	var cell := maxf(float(cfg.get("tree_cell", 12.0)), 1.0)
+	var nx := ceili(ring.size.x / cell)
+	var nz := ceili(ring.size.y / cell)
+	var size := Vector2(ring.size.x / nx, ring.size.y / nz)
+	for i in nx:
+		for j in nz:
+			var c := ring.position + size * Vector2(i + 0.5, j + 0.5)
+			out.append({"at": Vector3(c.x, 0.0, c.y), "radius": size.length() / 2.0})
+	return out
+
+
+## Everywhere: stands the fence runs on the ground as voxel kit fences, planks outward. Left
+## standing while the same mission's same layout is broadcast again.
+func _put_up_fence(runs: Array[Dictionary]) -> void:
+	var key := "%s@%d@%d" % [_key(current), buildings.size(), runs.size()] if not runs.is_empty() else ""
+	if key == _fenced_for:
+		return
+	_fenced_for = key
+	for node in _fence_nodes:
+		if is_instance_valid(node):
+			node.queue_free()
+	_fence_nodes.clear()
+	if runs.is_empty():
+		return
+	var cfg := _compound_config()
+	var middle: Vector3 = place_of(current)["centre"]
+	var sink := float(cfg.get("sink", 0.1))
+	for i in runs.size():
+		var run: Dictionary = runs[i]
+		var a: Vector3 = run["from"]
+		var b: Vector3 = run["to"]
+		a.y = _levelled_y(a.x, a.z)
+		b.y = _levelled_y(b.x, b.z)
+		var mid := (a + b) / 2.0
+		# Tilted to the ground from end to end (a fill bank round a shed on a hilltop would
+		# bury a level run), and sunk to the ground at its middle where that lies lower.
+		mid.y = minf(mid.y, _levelled_y(mid.x, mid.z)) - sink
+		var x := (b - a).normalized()
+		# x cross up is the basis' z; it must point into the compound, so the planks (-z)
+		# face out.
+		if x.cross(Vector3.UP).dot(Vector3(middle.x - mid.x, 0.0, middle.z - mid.z)) < 0.0:
+			x = -x
+		var up := (Vector3.UP - x * x.dot(Vector3.UP)).normalized()
+		var params: Dictionary = (cfg["fence"] as Dictionary).duplicate()
+		# To a tenth of a metre, so runs that tilt alike still share a mesh.
+		params["length"] = snappedf(a.distance_to(b), 0.1)
+		params["tall_ends"] = 1 if bool(run["tall_ends"]) else 0
+		var piece := VoxPiece.new()
+		piece.name = "Fence%d" % i
+		piece.generator = "VoxFence"
+		piece.params = params
+		# Runs of one length draw one mesh between them.
+		piece.shared = true
+		piece.transform = Transform3D(Basis(x, up, x.cross(up)), mid)
+		piece.set_meta(&"gate", run.get("gate", false))
+		add_child(piece)
+		_fence_nodes.append(piece)

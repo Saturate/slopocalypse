@@ -318,6 +318,12 @@ func surface_height(x: float, z: float) -> float:
 	return _dig_into(_pad_into(ground_height(x, z), x, z, _pads_in.get(key, [])), x, z, _digs_in.get(key, []))
 
 
+## The ground with levelled pads but without craters: for what is put up on it alike on
+## every machine whenever it joins.
+func levelled_height(x: float, z: float) -> float:
+	return _pad_into(ground_height(x, z), x, z, _pads_in.get(_tile_of(Vector3(x, 0.0, z)), []))
+
+
 ## Pad sets by who owns them (missions, the city...): each owner replaces only its own.
 var _pad_sets: Dictionary[StringName, Array] = {}
 
@@ -334,10 +340,11 @@ func set_pads_for(owner: StringName, pads: Array) -> void:
 
 ## Whether a circle of `radius` at `at` reaches onto a pad of an owner other than `owner`
 ## (its blend included), or onto a map site's pad: ground someone else has levelled for what
-## stands there.
-func is_claimed(at: Vector3, radius: float, owner: StringName) -> bool:
+## stands there. The site pad `except_site` (the one a mission builds round at its level)
+## does not count.
+func is_claimed(at: Vector3, radius: float, owner: StringName, except_site := Rect2()) -> bool:
 	# A map site's pad is held by what stands on it (sites, towers) for everyone.
-	if heights is MapShape and (heights as MapShape).site_within(at.x, at.z, radius):
+	if heights is MapShape and (heights as MapShape).site_within(at.x, at.z, radius, except_site):
 		return true
 	# So is ground under a power line's towers and the substation's yard.
 	if heights is MapShape and (heights as MapShape).power_within(at.x, at.z, radius):

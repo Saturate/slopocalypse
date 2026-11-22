@@ -52,7 +52,8 @@ func _patrol_route(rng: RandomNumberGenerator) -> Array:
 			route.append(missions.call(&"random_spot", 0.6))
 			continue
 		var b: Dictionary = buildings[rng.randi_range(0, buildings.size() - 1)]
-		var r := float(b.get("radius", 4.0)) + 3.0
+		# Inside the compound's fence where there is one: it keeps this much round each building.
+		var r := float(b.get("radius", 4.0)) + float(((missions.get(&"config") as Dictionary).get("compound", {}) as Dictionary).get("patrol_reach", 3.0))
 		var at: Vector3 = b["position"]
 		for _try in PATROL_TRIES:
 			var a := rng.randf() * TAU
