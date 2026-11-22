@@ -121,6 +121,12 @@ func busy() -> bool:
 	return not surrendered and (is_instance_valid(target) or suppression > 0.0)
 
 
+## Walking its patrol or holding its post with nobody in mind: the opposite of fighting or
+## stalking someone, when a soldier keeps quiet (glowsticks).
+func is_patrolling() -> bool:
+	return state == State.PATROL and not is_instance_valid(target) and not surrendered
+
+
 ## Wakes it if it was asleep (BrainSleep): something happened to it.
 func _stir() -> void:
 	if BrainSleep.is_asleep(body):

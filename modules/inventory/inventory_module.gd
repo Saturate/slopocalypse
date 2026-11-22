@@ -997,12 +997,20 @@ func _after_move(peer: int, uid: int, why: String, touched_theirs: bool) -> bool
 
 
 ## Server: H (or a right click on it in the backpack) uses an item: a medkit heals over a
-## few seconds. Returns false if there is none or nothing to heal.
+## few seconds. Returns false if there is none or nothing to heal. An item whose `use` names
+## an `event` belongs to another module: it gets `{peer, item, used}` on that topic, takes the
+## item itself if it accepts, and sets `used`.
 func server_use(peer: int, item: String) -> bool:
 	var use: Dictionary = item_info(item).get("use", {})
 	var player := _player_of(peer)
 	if use.is_empty() or player == null or player.get_meta(&"dead", false):
 		return false
+	if use.has("event"):
+		if count(peer, item) <= 0:
+			return false
+		var ask := {"peer": peer, "item": item, "used": false}
+		EventBus.publish(StringName(str(use["event"])), ask)
+		return bool(ask["used"])
 	var health := player.get_node_or_null("Health") as HealthComponent
 	if health == null or health.health >= health.max_health or _healing.has(player):
 		return false

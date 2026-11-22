@@ -46,12 +46,28 @@ var weapon_slot: int = 0
 
 ## One-shot: take me back to the spawn (the Esc menu).
 var back_to_spawn := false
-const ONE_SHOTS := [&"jump", &"interact", &"reload", &"throw", &"detonate", &"weapon_1", &"weapon_2", &"back_to_spawn"]
+## One-shots for a glowstick (the glowsticks module reads them): crack one, or stow or show
+## the lit one; drop the lit one at your feet.
+var glowstick := false
+var glowstick_drop := false
+const ONE_SHOTS := [&"jump", &"interact", &"reload", &"throw", &"detonate", &"weapon_1", &"weapon_2", &"back_to_spawn", &"glowstick", &"glowstick_drop"]
 
 
 func consume_back_to_spawn() -> bool:
 	var out := back_to_spawn
 	back_to_spawn = false
+	return out
+
+
+func consume_glowstick() -> bool:
+	var out := glowstick
+	glowstick = false
+	return out
+
+
+func consume_glowstick_drop() -> bool:
+	var out := glowstick_drop
+	glowstick_drop = false
 	return out
 
 
