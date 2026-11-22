@@ -34,11 +34,11 @@ static func plan(sites: Array, cfg: Dictionary) -> Array[Dictionary]:
 
 
 ## Each site's yard (a kind's `yard` in sites.json): packed dirt from where its track
-## arrives up to and between what stands there, as the world draws it (SceneryScatter
-## `set_yards_for`): {site, from, to (x, z: the middles of its two ends), width, level}. Each
-## rectangle of the layout is turned and mirrored with its site's pieces and cut to the
-## footprint, so one reaching far towards the track ends at the pad's edge where the track
-## comes in.
+## arrives up to and between what stands there, as the world paints it into the ground
+## (SceneryScatter `set_yards_for`): {site, from, to (x, z: the middles of its two ends),
+## width, level}. Each rectangle of the layout is turned and mirrored with its site's pieces
+## and cut to the footprint, so one reaching far towards the track ends at the pad's edge
+## where the track comes in.
 static func yards(sites: Array, cfg: Dictionary) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var kinds: Dictionary = cfg["kinds"]

@@ -169,7 +169,7 @@ func _piece_box(p: Dictionary) -> Rect2:
 	return box
 
 
-## Each farm, cabin and lookout's yard (packed dirt the world draws like a track) starts where
+## Each farm, cabin and lookout's yard (packed dirt painted into the ground) starts where
 ## its track arrives, reaches every building on it and runs under none of them (#470).
 func test_a_sites_yard_joins_its_track_to_its_buildings_without_running_under_them() -> void:
 	var shape := _default_shape()

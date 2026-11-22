@@ -8,9 +8,6 @@ extends RefCounted
 ## middle of each side where roads may arrive. Pure and seeded through its zones; no
 ## autoloads.
 
-## Metres the camp pad's level is rounded to, and how far over that it stands (see _init).
-const CAMP_LEVEL_STEP := 2.0
-const CAMP_LEVEL_LIFT := 0.01
 
 var zones: LandZones
 
@@ -52,15 +49,6 @@ func _init(map_zones: LandZones, config: Dictionary) -> void:
 	var side := float(camp_cfg["size"])
 	var zone: Dictionary = zones.zone_at(_camp.x, _camp.y)
 	_camp_place = _settlement(&"camp", {"zone": int(zone.get("id", -1)), "footprint": Rect2(_camp - Vector2.ONE * side / 2.0, Vector2.ONE * side)})
-	# The visible ground's voxel columns are floored to their size (0.25 to 2 m, all of which
-	# divide CAMP_LEVEL_STEP): a pad on a whole step, a hair above it, shows its top exactly
-	# at its level, so the yards drawn at that level lie on it rather than over a drop.
-	var level := roundf(float(_camp_place["level"]) / CAMP_LEVEL_STEP) * CAMP_LEVEL_STEP + CAMP_LEVEL_LIFT
-	_camp_place["level"] = level
-	var moved: Array[Vector3] = []
-	for c: Vector3 in _camp_place["connectors"]:
-		moved.append(Vector3(c.x, level, c.z))
-	_camp_place["connectors"] = moved
 
 
 ## The city: {kind, centre, footprint (Rect2 on x, z), level, connectors (Vector3 per side),
