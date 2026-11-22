@@ -10,7 +10,7 @@ extends Node3D
 
 const SHADER := "res://modules/world/shaders/voxel_ground.gdshader"
 const VOXEL_REQUIRED := {"max_dig_depth": TYPE_FLOAT, "crater_depth_share": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "lods": TYPE_ARRAY, "builds_per_frame": TYPE_FLOAT}
-const GROUND_REQUIRED := {"tilt_grade": TYPE_FLOAT, "band": TYPE_FLOAT, "pad_band": TYPE_FLOAT, "band_grade": TYPE_FLOAT, "tilt_variation": TYPE_FLOAT, "track_fray": TYPE_FLOAT, "track_verge": TYPE_FLOAT, "yard_fray": TYPE_FLOAT, "yard_round": TYPE_FLOAT, "lane_soil": TYPE_ARRAY, "lane_mix": TYPE_FLOAT, "verge_mix": TYPE_FLOAT, "rut_dark": TYPE_FLOAT}
+const GROUND_REQUIRED := {"tilt_grade": TYPE_FLOAT, "band": TYPE_FLOAT, "pad_band": TYPE_FLOAT, "band_grade": TYPE_FLOAT, "ledge": TYPE_FLOAT, "ledge_grade": TYPE_FLOAT, "wall_light": TYPE_FLOAT, "tilt_variation": TYPE_FLOAT, "track_fray": TYPE_FLOAT, "track_verge": TYPE_FLOAT, "yard_fray": TYPE_FLOAT, "yard_round": TYPE_FLOAT, "lane_soil": TYPE_ARRAY, "lane_mix": TYPE_FLOAT, "verge_mix": TYPE_FLOAT, "rut_dark": TYPE_FLOAT}
 const TILE := 32.0
 ## Collision height maps sample the ground every metre.
 const COLLISION_SPACING := 1.0
@@ -75,6 +75,10 @@ var _pads_in: Dictionary[Vector2i, Array] = {}
 ## Untouched ground heights per collision tile, so a crater only re-applies craters.
 var _base_heights: Dictionary[Vector2i, PackedFloat32Array] = {}
 var _material: ShaderMaterial
+## The light whose bounce the ground's walls show, and what the shader was last told of it.
+var _sun: DirectionalLight3D
+var _daylight := Vector3(-1.0, -1.0, -1.0)
+var _to_sun := Vector3.ZERO
 ## The focus tiles last time, and whether the build budget ran out then (work left to do).
 var _last_focus: Array[Vector2i] = []
 var _pending := true
@@ -140,6 +144,7 @@ func _ready() -> void:
 		_material = ShaderMaterial.new()
 		_material.shader = load(SHADER)
 		_material.set_shader_parameter(&"tilt_variation", float(_look["tilt_variation"]))
+		_material.set_shader_parameter(&"wall_light", float(_look["wall_light"]))
 		_material.set_shader_parameter(&"paint_grain", SceneryScatter.ROAD_VOXEL)
 		_material.set_shader_parameter(&"paint_jitter", VoxRoad.DIRT_JITTER)
 		# Always there, even with no ponds: others pour puddles on the ground through it.
@@ -163,6 +168,31 @@ func _process_tick(_delta: float) -> void:
 	if heights == null:
 		return
 	update_around(_focus_points(), float(_cfg["builds_per_frame"]), true)
+	_follow_sun()
+
+
+## The ground's walls take bounced light from the world's sun (the day cycle moves and dims
+## it), so the shader is told its light and where it is.
+func _follow_sun() -> void:
+	if _material == null:
+		return
+	if _sun == null or not is_instance_valid(_sun):
+		# A scene with no sun (some captures) would be searched every frame otherwise.
+		if Engine.get_process_frames() % 60 != 0:
+			return
+		_sun = get_tree().get_first_node_in_group(&"sun") as DirectionalLight3D
+		if _sun == null:
+			return
+	var light := Vector3(_sun.light_color.r, _sun.light_color.g, _sun.light_color.b) * _sun.light_energy
+	if not _sun.visible:
+		light = Vector3.ZERO
+	var toward := _sun.global_basis.z.normalized()
+	if light.is_equal_approx(_daylight) and toward.is_equal_approx(_to_sun):
+		return
+	_daylight = light
+	_to_sun = toward
+	_material.set_shader_parameter(&"daylight", light)
+	_material.set_shader_parameter(&"to_sun", toward)
 
 
 ## A marker that keeps the ground built around it (for cameras in captures and harnesses;

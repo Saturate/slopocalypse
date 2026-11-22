@@ -46,11 +46,14 @@
     "lods": [[48.0, 0.25], [110.0, 0.5], [200.0, 1.0], [300.0, 2.0]]
   },
   "ground": {
-    "_comment": "How the visible voxel ground is drawn (#498, decision 0015; drawing only, collision is the smooth ground either way). tilt_grade: a column on ground gentler than this (rise over run) tilts its top to the true height; steeper ground keeps flat steps. band: metres past a road's or track's edge (its earthworks shoulder included) where the ground tilts to meet the strip, and pad_band past a levelled pad's (a site's, a town's), unless steeper than band_grade (a steep bank keeps its steps). tilt_variation: per-voxel brightness variation on tilted tops (flat tops have 0.07). track_fray: metres the ground's ragged edge comes in over a dirt track's strip (near tiles draw it a few millimetres over the strip); track_verge: share of the cells just past its edge drawn as a verge. yard_fray: metres a yard's edge wanders out, yard_round: how round its corners are (metres). Lanes (site yards) are painted into the ground: lane_soil [r, g, b], toned lane_mix of the way toward the ground under it; verge_mix: a verge cell's colour lies that far from the soil toward the ground; rut_dark: how much darker a lane's wheel ruts are (as a track strip's worn ruts).",
+    "_comment": "How the visible voxel ground is drawn (#498, decision 0015; drawing only, collision is the smooth ground either way). tilt_grade: a column on ground gentler than this (rise over run) tilts its top to the true height; steeper ground keeps flat steps. band: metres past a road's or track's edge (its earthworks shoulder included) where the ground tilts to meet the strip, and pad_band past a levelled pad's (a site's, a town's), unless steeper than band_grade (a steep bank keeps its steps). ledge: on ground at least ledge_grade steep, clear of those bands, steps are this many metres tall (whole voxels, rounded to the nearest ledge; no finer than a voxel), so a steep slope reads as rock ledges; keep ledge_grade no lower than the scatter's max_steepness, so no tree or rock stands where a ledge may bury its foot. wall_light: the share of the sun's light that step sides facing away from it get, bounced off the lit ground, so they stay their colour in shade. tilt_variation: per-voxel brightness variation on tilted tops (flat tops have 0.07). track_fray: metres the ground's ragged edge comes in over a dirt track's strip (near tiles draw it a few millimetres over the strip); track_verge: share of the cells just past its edge drawn as a verge. yard_fray: metres a yard's edge wanders out, yard_round: how round its corners are (metres). Lanes (site yards) are painted into the ground: lane_soil [r, g, b], toned lane_mix of the way toward the ground under it; verge_mix: a verge cell's colour lies that far from the soil toward the ground; rut_dark: how much darker a lane's wheel ruts are (as a track strip's worn ruts).",
     "tilt_grade": 0.34,
     "band": 4.0,
     "pad_band": 6.0,
     "band_grade": 1.3,
+    "ledge": 0.5,
+    "ledge_grade": 0.5,
+    "wall_light": 0.35,
     "tilt_variation": 0.16,
     "track_fray": 0.3,
     "track_verge": 0.6,
@@ -62,7 +65,7 @@
     "rut_dark": 0.06
   },
   "scatter": {
-    "_comment": "Trees, rocks and grass (TWEAKING.md lists the rest). site_clearance: metres round each map site's pad, by site kind, kept free of trees and rocks so they don't crowd what stands there; default for kinds not listed. power_clearance: metres either side of a high-voltage line and of a pole line (at most 32) kept free of trees and rocks, so no crown grows into the wires. camp_clearance: metres round the players' camp pad kept free of trees and rocks.",
+    "_comment": "Trees, rocks and grass (TWEAKING.md lists the rest). site_clearance: metres round each map site's pad, by site kind, kept free of trees and rocks so they don't crowd what stands there; default for kinds not listed. power_clearance: metres either side of a high-voltage line and of a pole line (at most 32) kept free of trees and rocks, so no crown grows into the wires. camp_clearance: metres round the players' camp pad kept free of trees and rocks. max_steepness: no tree or rock on ground steeper than this (rise over run); grass_max_steepness: no grass on ground steeper than this, which the ground draws in ledges (keep both at or under ground.ledge_grade).",
     "site_clearance": {"default": 3.0, "farm": 6.0, "water_tower": 3.0, "town_tower": 3.0, "antenna": 14.0, "lookout": 14.0, "cabin": 4.0},
     "power_clearance": {"high_voltage": 14.0, "low_voltage": 5.0},
     "camp_clearance": 8.0,
@@ -72,6 +75,7 @@
     "grass_per_m2": 0.5,
     "clear_radius": 14.0,
     "max_steepness": 0.45,
+    "grass_max_steepness": 0.45,
     "road_clearance": 2.5,
     "load_distance": 260.0,
     "collision_distance": 96.0,

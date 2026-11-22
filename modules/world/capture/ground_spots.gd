@@ -1,6 +1,6 @@
 extends Node3D
 ## Capture setup for reviewing how the ground meets roads, tracks and yards (#498): one fixed
-## spot on the map, picked with `--spot=farm|cabin|climb|hillside|wide|steep`, lit from behind
+## spot on the map, picked with `--spot=farm|cabin|climb|pothole|hillside|wide|steep`, lit from behind
 ## and to one side of the camera so tilted slopes and steps both show.
 ##   node tools/capture.ts --setup res://modules/world/capture/ground_spots.gd --out x.png
 ##     --frames 90 --sheet 1 -- --spot=climb
@@ -66,6 +66,8 @@ func _view(spot: String) -> Array:
 			return [at, centre + Vector3.UP * 1.0]
 		"climb":
 			return _climb_view()
+		"pothole":
+			return _climb_view(true)
 		"hillside":
 			return _hillside_view()
 		"steep":
@@ -119,8 +121,9 @@ func _track_view(kind: String) -> Array:
 
 
 ## The steepest stretch of the highway in its first 1.5 km (bridges and tunnels left out),
-## seen from below and to one side, looking up it.
-func _climb_view() -> Array:
+## seen from below and to one side, looking up it; `close`: standing on it, looking down at
+## the asphalt a few metres ahead (the worn road's potholes).
+func _climb_view(close := false) -> Array:
 	var net: RoadNetwork = (_terrain.heights as MapShape).map["net"]
 	for road: Dictionary in net.roads():
 		if road["kind"] != "highway":
@@ -146,7 +149,9 @@ func _climb_view() -> Array:
 		var side := line.across_at(from)
 		# Over the road's edge, clear of the trees kept off it.
 		var at := Vector3(p.x + side.x * 3.0, line.height_at(from) + 4.5, p.y + side.y * 3.0)
-		var to := best_s + up * 30.0
+		if close:
+			at = Vector3(p.x - side.x * 1.5, line.height_at(from) + 1.8, p.y - side.y * 1.5)
+		var to := from + up * 7.0 if close else best_s + up * 30.0
 		var q := line.point_at(to)
 		print("ground_spots: steepest highway grade %.3f at %.0f m" % [best, best_s])
 		return [at, Vector3(q.x, line.height_at(to), q.y)]
