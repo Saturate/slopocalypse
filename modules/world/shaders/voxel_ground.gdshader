@@ -12,8 +12,15 @@ uniform float tilt_variation : hint_range(0.0, 0.5) = 0.16;
 // size and its dirt's brightness jitter.
 uniform float paint_grain = 0.1;
 uniform float paint_jitter : hint_range(0.0, 0.5) = 0.14;
-// How much of a wall's own colour shows when the sun is behind it.
-uniform float wall_glow : hint_range(0.0, 0.5) = 0.12;
+// Light bounced off the sunlit ground onto walls: a step's side facing away from the sun
+// gets this share of the sun's light (`daylight`, its colour times its energy, kept up to
+// date by VoxelWorld), so shaded sides stay their colour instead of going black, and fade
+// with the sun at dusk. Contact shadows darken every step's foot on a steep slope; this is
+// not affected by them.
+uniform float wall_light : hint_range(0.0, 1.0) = 0.3;
+uniform vec3 daylight = vec3(1.4);
+// Toward the sun (or the moon by night), in world space.
+uniform vec3 to_sun = vec3(0.0, 1.0, 0.0);
 
 varying vec3 world_pos;
 varying vec3 world_normal;
@@ -55,8 +62,9 @@ void fragment() {
 		ROUGHNESS = 0.92;
 		SPECULAR = 0.5;
 	}
-	// Walls facing away from the sun would be black: a little of their own colour shows.
+	// Walls facing away from the sun get the bounce; those facing it are lit already.
 	if (abs(world_normal.y) < 0.1) {
-		EMISSION = ALBEDO * wall_glow;
+		float away = 1.0 - clamp(dot(world_normal, to_sun), 0.0, 1.0);
+		EMISSION = ALBEDO * daylight * wall_light * away;
 	}
 }

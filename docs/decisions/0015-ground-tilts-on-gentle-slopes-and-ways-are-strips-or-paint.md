@@ -20,6 +20,19 @@ lip. Collision was already a smooth 1 m height map, so this is a drawing questio
   (split into two triangles where the two profiles cross). A step beside tilted ground
   whose middle stands over their shared edge is rounded up, so the two meet in a riser and
   not in a crevice.
+- **Steep ground and shaded walls (#509):** stepped ground at least `ledge_grade` steep (0.5,
+  a margin over the 0.45 the scatter keeps trees, rocks and grass under, as the two measure
+  slope over different spans), clear of every way's band, not dug and not beside tilted
+  ground steps in ledges `ledge` (0.5 m) and one voxel more tall, in an order set by the
+  height alone so neighbouring tiles agree and the ledges read as uneven strata, rounded to
+  the nearest ledge (at most 0.375 m off the ground walked on at a column's middle). Where
+  ledges meet single steps the two can differ by a voxel. Detail levels whose voxel is
+  already a ledge tall keep single steps, so the pattern changes at the first detail
+  boundary. Wall faces get a share (`wall_light`, 0.35) of the sun's light as emission,
+  less the more they face the sun, which `VoxelWorld` reads off the world's sun so it fades
+  at dusk; screen-space occlusion had turned every riser on a steep slope near black
+  (sampled RGB 9, 23, 0). Emission ignores shadows, so a wall in a tree's or a bridge's
+  shadow still gets it.
 - **Level ground stays cheap:** a tilted column whose four corners are equal is drawn with
   the steps and merged in two directions, so a level tile is still one quad. Sloping tilted
   tops merge into rectangles inside one height sample cell while every corner they cover
@@ -39,7 +52,8 @@ lip. Collision was already a smooth 1 m height map, so this is a drawing questio
   depth. On coarse tiles the ground along a track's edge comes up to 1 cm under its
   surface.
 - **Road kinds:** highway and two-lane roads stay strips with kerbs and lines; potholes keep
-  clear of the edge lines, have a dark bed and a lighter rim of broken asphalt. Where a way
+  clear of the edge lines, go through the asphalt only (one flat level, #509), have a dark
+  bed and a lighter rim of broken asphalt. Where a way
   ends, its strip ends square and the ground under it stops there. A track is a strip with
   no kerb and a straight edge; on fine tiles the ground comes up a few millimetres over
   that edge by a wandering amount (`track_fray`) and is painted as verge, so the ground

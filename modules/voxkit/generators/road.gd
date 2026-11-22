@@ -27,8 +27,8 @@ const BED := 0.2
 ## A tear's bites reach out to this many times its width; the bed at its bottom, and the
 ## broken asphalt round it.
 const TEAR_BITE := 1.1
-const TEAR_BED := Color(0.25, 0.23, 0.2)
-const TEAR_EDGE := Color(0.33, 0.32, 0.3)
+const TEAR_BED := Color(0.16, 0.15, 0.13)
+const TEAR_EDGE := Color(0.42, 0.41, 0.38)
 const SURFACE := 0.08
 
 
@@ -217,7 +217,9 @@ func _crack(m: VoxelModel, rng: RandomNumberGenerator, surface: Callable, x_off:
 
 ## A tear: a ragged rip through the asphalt down to the gravel bed, a chain of uneven bites
 ## along a wandering line, with cracks running off its ends. Kept clear of the edge lines and
-## the shoulders; the bed at its bottom is darker, wet and dirty, so it reads as a hole.
+## the shoulders. Only the asphalt goes, so it is one shallow level with a flat bottom (a
+## bite as deep as it is wide stepped down in ledges with dark walls); the bed at its bottom
+## is wet and dirty, so it reads as a hole.
 func _tear(m: VoxelModel, p: Dictionary, rng: RandomNumberGenerator, surface: Callable, length: float, half_road: float, v: float) -> void:
 	var size := float(p["tear_size"]) * rng.randf_range(0.6, 1.3)
 	var width := clampf(size * rng.randf_range(0.25, 0.5), 0.2, half_road * 0.6)
@@ -234,11 +236,16 @@ func _tear(m: VoxelModel, p: Dictionary, rng: RandomNumberGenerator, surface: Ca
 		var r := width * rng.randf_range(0.6, TEAR_BITE)
 		var long := r * rng.randf_range(0.8, 1.6)
 		var centre: Vector3 = surface.call(at.x, at.y)
-		m.carve_ellipsoid(centre, Vector3(r, SURFACE * 1.8, long))
+		# Flat through the asphalt's cells and no further: an ellipsoid thinner than the
+		# voxels under it reaches only the cells whose middles lie in the asphalt.
+		var asphalt_mid := centre + Vector3.DOWN * SURFACE * 0.5
+		var layer := SURFACE * 0.5 + v * 0.49
+		m.carve_ellipsoid(asphalt_mid, Vector3(r, layer, long))
 		m.paint_ellipsoid(centre + Vector3.DOWN * (SURFACE + v * 0.5), Vector3(r, v * 0.6, long), TEAR_BED, 0.1, b)
 		# The broken asphalt round it is lighter, so the hole's walls read as its edge and
-		# not as black slits.
-		m.paint_ellipsoid(centre, Vector3(r + v * 1.5, SURFACE * 2.0, long + v * 1.5), TEAR_EDGE, 0.12, b + 50)
+		# not as black slits: one cell wide and in the asphalt only, so the next bite's rim
+		# never recolours this one's bed into a second level.
+		m.paint_ellipsoid(asphalt_mid, Vector3(r + v, layer, long + v), TEAR_EDGE, 0.12, b + 50)
 		heading += rng.randf_range(-0.6, 0.6)
 		at += Vector2(cos(heading), sin(heading)) * step
 		at.x = clampf(at.x, -keep, keep)

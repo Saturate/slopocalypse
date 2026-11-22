@@ -754,7 +754,7 @@ impl VoxelGround {
     /// `cc` x `cc` over the same tile; the tile is `n` columns of `voxel` metres a side.
     /// `look` holds the ground's settings: `steep_slope` (rise over run past which `steep`
     /// shows), `side` (the colour of tall walls), `skirt`, `tilt_grade`, `band`, `pad_band`,
-    /// `band_grade` (see `voxkit_core::heightfield::Tile`) and how ways are drawn (see
+    /// `band_grade`, `ledge`, `ledge_grade` (see `voxkit_core::heightfield::Tile`) and how ways are drawn (see
     /// `look_of`). `ways` holds the roads, tracks, lanes and pads over the tile
     /// (`voxkit_core::ways::WAY_STRIDE` floats each, tile-local); `dug` is non-zero per
     /// height sample where a crater was dug (or empty). Returns mesh arrays in tile-local
@@ -806,6 +806,8 @@ impl VoxelGround {
             band: number("band", 0.0),
             pad_band: number("pad_band", 0.0),
             band_grade: number("band_grade", 0.0),
+            ledge: number("ledge", 0.0),
+            ledge_grade: number("ledge_grade", f32::INFINITY),
             ways: &ws,
             look: look_of(&look),
             dug: &dg,
