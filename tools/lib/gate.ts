@@ -226,7 +226,11 @@ export async function runGdUnit(godot: string, root: string, testDirs: readonly 
 	const localDurations = join(root, LOCAL_DURATIONS);
 	const known = { ...readDurations(join(root, COMMITTED_DURATIONS)), ...readDurations(localDurations) };
 	const suites = files.map((path) => ({ path, seconds: guessSeconds(toRes(root, path), known) }));
-	const shards = planShards(suites, shardCount(availableParallelism(), suites.length));
+	// GATE_SHARDS caps the parallel runs where memory, not cores, is the limit: each run grows to
+	// about 4 GB, and four of them filled a 16 GB Linux runner until it was killed.
+	const cap = Number.parseInt(process.env["GATE_SHARDS"] ?? "", 10);
+	const cpus = Number.isFinite(cap) && cap > 0 ? Math.min(cap, availableParallelism()) : availableParallelism();
+	const shards = planShards(suites, shardCount(cpus, suites.length));
 	const runs = await Promise.all(shards.map((paths, i) => runShard(godot, root, paths, i)));
 
 	const lines: string[] = [];

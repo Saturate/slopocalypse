@@ -301,7 +301,12 @@ export async function saveSmoke(godot: string, root: string, preferredPort = 779
 		// The server reports in the same frame it stops and saves; the bot keeps walking
 		// until then, so its own report is from earlier.
 		const walked = parseReport(firstServer.output)?.moved ?? 0;
-		if (walked < 3.0) problems.push(`first server: Saver did not get 3 m from the spawn (moved=${walked})`);
+		if (walked < 3.0) {
+			problems.push(`first server: Saver did not get 3 m from the spawn (moved=${walked})`);
+			// Both sides' last lines say whether the bot never walked or the server never saw it.
+			for (const [name, r] of [["first server", firstServer], ["walking client", walker]] as const)
+				for (const line of r.output.trim().split("\n").slice(-8)) problems.push(`  ${name}> ${line}`);
+		}
 
 		const second = watch(godot, [...base, `--server=${port}`, "--net-report-after=700", save], { cwd: root, timeoutMs: 240_000 });
 		const secondNotReady = await serverReady(second, "second server");
