@@ -19,12 +19,18 @@ func _json(reply: Variant) -> Dictionary:
 	return parsed if parsed is Dictionary else {}
 
 
+## The server's own limit on a waiting answer; a frame count was too short on a busy CI
+## runner, where a build sometimes takes over 4 s.
+const WAIT_MS := 60_000
+
+
 ## Polls a waiting answer the way the web module does, a frame at a time.
 func _wait(reply: Variant) -> Array:
 	if reply is Array:
 		return reply
 	var poll: Callable = (reply as Dictionary)["wait"]
-	for i in 600:
+	var deadline := Time.get_ticks_msec() + WAIT_MS
+	while Time.get_ticks_msec() < deadline:
 		var answer: Variant = poll.call()
 		if answer is Array:
 			return answer
