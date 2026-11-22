@@ -1,0 +1,12 @@
+{
+  "_comment": "Armband colours (#447): everyone wears a coloured band on both upper arms so you can tell who is who in a fight. players: co-op players (you and your friends); civilians; enemies: soldiers with no faction, and any faction not listed under factions; factions: a colour per soldier faction id (modules/factions/data/factions.json). Colours are [r, g, b] from 0 to 1. glow: how much the band lights itself so it still reads at night (0 none; past about 1 it starts to bloom like a lamp).",
+  "players": [0.05, 0.28, 1.0],
+  "civilians": [0.1, 0.75, 0.12],
+  "enemies": [0.85, 0.02, 0.02],
+  "factions": {
+    "militia": [1.0, 0.42, 0.0],
+    "regulars": [0.85, 0.02, 0.02],
+    "scavengers": [0.98, 0.85, 0.05]
+  },
+  "glow": 0.2
+}
