@@ -82,6 +82,9 @@ export async function checkScripts(godot: string, root: string, files: readonly 
 // minutes on a 4-core CI runner, so the suites are split across processes. More than this
 // many fight over cores and memory more than they gain.
 const MAX_SHARDS = 6;
+// A gdUnit process grows as it goes (to about 4 GB on Linux over a few hundred suites), so
+// each shard restarts Godot after this many suites; a start costs a few seconds.
+export const SUITES_PER_PROCESS = 20;
 // Estimates for a suite with no recorded time: scenario suites run physics for seconds.
 const GUESS_SCENARIO_SECONDS = 5;
 const GUESS_SECONDS = 1;
@@ -185,7 +188,13 @@ interface ShardRun {
 	times: Record<string, number>;
 }
 
-async function runShard(godot: string, root: string, files: readonly string[], index: number): Promise<ShardRun> {
+export function chunk<T>(items: readonly T[], size: number): T[][] {
+	const out: T[][] = [];
+	for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+	return out;
+}
+
+async function runShard(godot: string, root: string, files: readonly string[], index: string): Promise<ShardRun> {
 	const reports = join(root, "tests", "reports", `shard-${index}`);
 	const userDir = mkdtempSync(join(tmpdir(), "slopocalypse-gdunit-"));
 	const args = [
@@ -231,7 +240,14 @@ export async function runGdUnit(godot: string, root: string, testDirs: readonly 
 	const cap = Number.parseInt(process.env["GATE_SHARDS"] ?? "", 10);
 	const cpus = Number.isFinite(cap) && cap > 0 ? Math.min(cap, availableParallelism()) : availableParallelism();
 	const shards = planShards(suites, shardCount(cpus, suites.length));
-	const runs = await Promise.all(shards.map((paths, i) => runShard(godot, root, paths, i)));
+	const perShard = await Promise.all(
+		shards.map(async (paths, i) => {
+			const out: ShardRun[] = [];
+			for (const [j, part] of chunk(paths, SUITES_PER_PROCESS).entries()) out.push(await runShard(godot, root, part, `${i}-${j}`));
+			return out;
+		}),
+	);
+	const runs = perShard.flat();
 
 	const lines: string[] = [];
 	const failed: string[] = [];
@@ -239,7 +255,7 @@ export async function runGdUnit(godot: string, root: string, testDirs: readonly 
 	const times: Record<string, number> = { ...readDurations(localDurations) };
 	runs.forEach((shard, i) => {
 		const r = shard.result;
-		const name = runs.length > 1 ? `shard ${i + 1}/${runs.length} (${shard.suites} suites): ` : "";
+		const name = runs.length > 1 ? `run ${i + 1}/${runs.length} (${shard.suites} suites): ` : "";
 		const summary = testSummary(r.output);
 		const problems = scanLog(r.output, GODOT_NOISE);
 		const before = lines.length;
@@ -261,7 +277,7 @@ export async function runGdUnit(godot: string, root: string, testDirs: readonly 
 	mkdirSync(join(root, "tests", "reports"), { recursive: true });
 	writeFileSync(localDurations, JSON.stringify(Object.fromEntries(Object.entries(times).sort(([a], [b]) => a.localeCompare(b))), null, "\t") + "\n");
 	if (lines.length > 0) return { ok: false, detail: [...lines, ...failed.slice(0, 60)].join("\n") };
-	return { ok: true, detail: `${cases} test case(s) passed${runs.length > 1 ? ` in ${runs.length} parallel runs` : ""}` };
+	return { ok: true, detail: `${cases} test case(s) passed${shards.length > 1 ? ` in ${shards.length} parallel shards, ${runs.length} Godot runs` : ""}` };
 }
 
 // Directories named "tests" anywhere outside addons/ and hidden folders; "unit" subfolders for the fast check.

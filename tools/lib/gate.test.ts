@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { guessSeconds, listSuites, planShards, retryOnce, shardCount, suiteTimes, userDirEnv, type StepResult } from "./gate.ts";
+import { chunk, guessSeconds, listSuites, planShards, retryOnce, shardCount, suiteTimes, userDirEnv, type StepResult } from "./gate.ts";
 
 test("a step that passes runs once", async () => {
 	let runs = 0;
@@ -95,4 +95,9 @@ test("finds test_*.gd suites only, in a stable order", () => {
 test("suites that take no time still spread across shards", () => {
 	const suites = ["a", "b", "c", "d"].map((path) => ({ path, seconds: 0 }));
 	assert.deepEqual(planShards(suites, 2).map((s) => s.length), [2, 2]);
+});
+
+test("chunk splits suites into runs of at most the given size", () => {
+	assert.deepEqual(chunk([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);
+	assert.deepEqual(chunk([], 3), []);
 });

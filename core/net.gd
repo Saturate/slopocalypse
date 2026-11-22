@@ -46,6 +46,8 @@ const ENET_TIMEOUT_MIN_MS := 5000
 const ENET_TIMEOUT_MAX_MS := 30000
 ## How long a connected peer has to say who they are before the server drops them.
 const HELLO_SECONDS := 10.0
+## A gap between physics ticks this long is logged in tool runs (see `_note_stall`).
+const STALL_LOG_MS := 1500
 ## How long a kicked peer has to receive the reason before the line is cut.
 const KICK_SECONDS := 0.5
 const MAX_NAME_LENGTH := 32
@@ -80,6 +82,7 @@ var _connect_tries := 0
 var _waited_for_first := 0.0
 
 var _report_after := -1
+var _last_tick_ms := 0
 var _frames := 0
 ## Client or solo: this instance's own player is in the world, so its report clock runs.
 var _in_play := false
@@ -492,6 +495,7 @@ func _physics_process(delta: float) -> void:
 
 
 func _physics_tick(delta: float) -> void:
+	_note_stall()
 	_watch_empty(delta)
 	_drop_silent(delta)
 	# Counted from when the session has someone in it, not from launch: a slow machine can
@@ -508,6 +512,17 @@ func _physics_tick(delta: float) -> void:
 			_stop()
 		elif is_session_connected():
 			_wrote_report.rpc_id(1)
+
+
+## Tool runs only: a stall near ENet's 5 s timeout drops the connection, and on a slow CI
+## runner that shows up as a smoke test whose player vanished; this names it in the log.
+func _note_stall() -> void:
+	if _report_after < 0:
+		return
+	var now := Time.get_ticks_msec()
+	if _last_tick_ms > 0 and now - _last_tick_ms >= STALL_LOG_MS:
+		Log.info(&"net", "stalled %d ms between physics ticks" % (now - _last_tick_ms))
+	_last_tick_ms = now
 
 
 ## Server: the connected peers that have not said their report is out.
