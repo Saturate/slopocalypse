@@ -17,6 +17,8 @@ const EASE_PASSES := 6
 ## spent getting it there.
 const MAX_TRACK_TURN := 0.8
 const UNKINK_PASSES := 48
+## Radians short of pi a corner's turn is held to (see `half_turn_tangent`).
+const REVERSAL_MARGIN := 1e-6
 ## Metres between points drawn along a corner's arc.
 const ARC_STEP := 2.0
 ## Metres between checks along a straight run.
@@ -556,6 +558,18 @@ static func merge_legs(points: PackedVector2Array, width: float) -> PackedVector
 	return out
 
 
+## tan(|turn| / 2) for a corner turning `turn` radians, kept positive for a full reversal.
+## Vector2.angle_to is a single-precision atan2, and its rounding of a reversal to the float
+## nearest pi differs by C library: glibc (Linux) gives 3.1415927, just past pi, where the
+## tangent of the half angle is about -2.3e7; Apple's gives 3.1415925, just short of it. The
+## negative tangent threw the arc's start hundreds of millions of metres off, and resampling
+## that line every few metres built 10 GB of points and took minutes (#512). Held just short of
+## pi, a reversal gets the same vanishing arc on every platform, so every machine still builds
+## the same map.
+static func half_turn_tangent(turn: float) -> float:
+	return tan(minf(absf(turn), PI - REVERSAL_MARGIN) / 2.0)
+
+
 ## Each corner rounded into a circular arc of `radius` (smaller where the straights either
 ## side are too short for it), drawn every `ARC_STEP` metres; the ends kept. Arcs spread a
 ## turn evenly, so no stretch of road turns sharply.
@@ -574,8 +588,9 @@ static func _round_corners(points: PackedVector2Array, radius: float) -> PackedV
 			out.append(b)
 			continue
 		# How far back from the corner the arc starts, no more than half of either straight.
-		var reach := minf(radius * tan(absf(turn) / 2.0), minf(a.distance_to(b), b.distance_to(c)) / 2.0)
-		var r := reach / tan(absf(turn) / 2.0)
+		var tangent := half_turn_tangent(turn)
+		var reach := minf(radius * tangent, minf(a.distance_to(b), b.distance_to(c)) / 2.0)
+		var r := reach / tangent
 		var from := b - into * reach
 		var centre := from + into.orthogonal() * r * (-signf(turn))
 		var start_angle := (from - centre).angle()
