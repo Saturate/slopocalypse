@@ -153,6 +153,7 @@ func _update_ads(delta: float) -> void:
 	# Smoothstep, so the sight eases onto the eye instead of arriving at full speed.
 	var eased := _ads * _ads * (3.0 - 2.0 * _ads)
 	_aim.set(&"ads", eased)
+	_aim.set(&"lowered", _climb)
 	_aim.set(&"eye", _camera)
 	# Scopes sit closer to the eye than open sights; the optic says how close.
 	var relief := float(player.config["ads_eye_relief"])

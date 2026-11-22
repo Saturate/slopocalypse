@@ -170,8 +170,8 @@ func request_reload() -> void:
 ## (weapons.json). Each stretch of the round's path is replayed as its own `weapon.fired`,
 ## the ones after the first marked `through`.
 func server_fire(origin: Vector3, direction: Vector3) -> void:
-	# Swimming keeps the weapon out of the water (and out of use).
-	if holder != null and (holder.get_meta(&"dead", false) or holder.get_meta(&"swimming", false)):
+	# Swimming keeps the weapon out of the water (and out of use); climbing a ladder takes both hands.
+	if holder != null and (holder.get_meta(&"dead", false) or holder.get_meta(&"swimming", false) or holder.climbing):
 		return
 	if not rules.try_fire():
 		return
