@@ -149,7 +149,11 @@ func refresh() -> void:
 		var person := people.get(int(peer)) as Node3D
 		if bool(c[0]) and person != null and not person.get_meta(&"dead", false):
 			wanted[int(peer)] = true
-			if not is_instance_valid(_sticks.get(int(peer))):
+			var have: Node3D = _sticks.get(int(peer))
+			# Settings may have switched the colour set (colour-blind colours) since.
+			if is_instance_valid(have) and have.get_meta(&"colour") != GlowstickRules.colour_for(person):
+				have.queue_free()
+			if not is_instance_valid(have) or have.is_queued_for_deletion():
 				_sticks[int(peer)] = _attach(person, int(peer) == multiplayer.get_unique_id())
 	for peer: int in _sticks.keys():
 		if not wanted.has(peer) or not is_instance_valid(_sticks[peer]):
@@ -161,8 +165,12 @@ func refresh() -> void:
 		var entry: Array = g
 		var id := int(entry[0])
 		on_ground[id] = true
+		var colour := Armband.colour_of(str(entry[2]))
+		if _ground_nodes.has(id) and _ground_nodes[id].get_meta(&"colour") != colour:
+			_ground_nodes[id].queue_free()
+			_ground_nodes.erase(id)
 		if not _ground_nodes.has(id):
-			_ground_nodes[id] = _lay(entry[1] as Vector3, entry[2] as Color)
+			_ground_nodes[id] = _lay(entry[1] as Vector3, colour)
 	for id: int in _ground_nodes.keys():
 		if not on_ground.has(id):
 			_ground_nodes[id].queue_free()
@@ -185,6 +193,7 @@ func _attach(person: Node3D, own: bool) -> Node3D:
 		person.add_child(holder)
 	holder.name = STICK
 	holder.set_meta(Corpse.LIVING_ONLY, true)
+	holder.set_meta(&"colour", colour)
 	var cfg: Dictionary = config["stick"]
 	var at: Array = cfg["at"]
 	var mesh := stick(config, colour, float(cfg["glow"]))
@@ -210,6 +219,7 @@ func _attach(person: Node3D, own: bool) -> Node3D:
 func _lay(at: Vector3, colour: Color) -> Node3D:
 	var node := Node3D.new()
 	node.name = "Ground%s" % STICK
+	node.set_meta(&"colour", colour)
 	add_child(node)
 	node.global_position = at
 	var mesh := stick(config, colour, float(config["stick"]["glow"]))

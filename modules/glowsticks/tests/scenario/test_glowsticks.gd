@@ -152,7 +152,8 @@ func test_dropping_leaves_it_lit_on_the_ground_in_the_band_colour() -> void:
 	var ground: Array = _module.call(&"server_state")["ground"]
 	assert_int(ground.size()).is_equal(1)
 	assert_float((ground[0][1] as Vector3).distance_to(player.global_position)).is_less(1.0)
-	assert_that(ground[0][2]).is_equal(_band("players"))
+	assert_str(ground[0][2]).is_equal("players")
+	assert_that(Armband.colour_of(ground[0][2])).is_equal(_band("players"))
 
 
 func test_a_player_who_dies_drops_theirs() -> void:
@@ -192,7 +193,8 @@ func test_soldiers_from_the_share_show_one_at_night_on_patrol_only() -> void:
 	assert_bool(_carriers().has(-10)).is_false()
 	var ground: Array = _module.call(&"server_state")["ground"]
 	assert_int(ground.size()).is_equal(1)
-	assert_that(ground[0][2]).is_equal(_band("militia"))
+	assert_str(ground[0][2]).is_equal("factions/militia")
+	assert_that(Armband.colour_of(ground[0][2])).is_equal(_band("militia"))
 
 
 func test_a_carrier_freed_without_dying_leaves_the_others_lit() -> void:

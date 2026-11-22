@@ -52,6 +52,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"session.back_to_spawn", _on_back_to_spawn_asked)
 	EventBus.subscribe(&"admin.teleport", _on_admin_teleport)
 	EventBus.subscribe(&"player.move_requested", _on_admin_teleport)
+	EventBus.subscribe(&"settings.changed", _on_settings_changed)
 	Net.peer_joined.connect(_on_peer_joined)
 	Net.peer_left.connect(_on_peer_left)
 
@@ -65,6 +66,13 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"session.back_to_spawn", _on_back_to_spawn_asked)
 	EventBus.unsubscribe(&"admin.teleport", _on_admin_teleport)
 	EventBus.unsubscribe(&"player.move_requested", _on_admin_teleport)
+	EventBus.unsubscribe(&"settings.changed", _on_settings_changed)
+
+
+## Colour-blind colours switched on or off: every band in the world changes at once.
+func _on_settings_changed(p: Dictionary) -> void:
+	if str(p.get("key", "")) == Armband.SETTING:
+		Armband.repaint()
 
 
 func players() -> Array[PlayerController]:

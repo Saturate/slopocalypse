@@ -11,7 +11,7 @@ func before_test() -> void:
 
 
 func test_the_data_is_complete() -> void:
-	assert_bool(Data.require(GlowstickRules.CONFIG, _cfg, GlowstickRules.REQUIRED)).is_true()
+	assert_bool(GlowstickRules.valid(_cfg)).is_true()
 
 
 func test_the_night_share_of_soldiers_carries_one() -> void:
@@ -50,3 +50,13 @@ func test_the_colour_is_the_carriers_band() -> void:
 		assert_that(GlowstickRules.colour_for(person)).is_equal(Armband.colour_for(person))
 		var rgb: Array = pair[1]
 		assert_that(GlowstickRules.colour_for(person)).is_equal(Color(float(rgb[0]), float(rgb[1]), float(rgb[2])))
+
+
+func test_with_colour_blind_colours_the_stick_follows_the_band() -> void:
+	var militia: Node = auto_free(Node.new())
+	militia.set_meta(&"faction", "militia")
+	Settings.set_value(Armband.SETTING, true)
+	var rgb: Array = (Armband.config()["colour_blind"]["factions"] as Dictionary)["militia"]
+	var colour := GlowstickRules.colour_for(militia)
+	Settings.set_value(Armband.SETTING, false)
+	assert_that(colour).is_equal(Color(float(rgb[0]), float(rgb[1]), float(rgb[2])))

@@ -27,7 +27,8 @@ var _lit: Dictionary[int, Dictionary] = {}
 var _soldiers: Array[Node] = []
 ## Server: peer id of each soldier showing theirs now.
 var _soldiers_shown: Dictionary[int, bool] = {}
-## Server: lit sticks on the ground, oldest first: {id, position, colour, left}.
+## Server: lit sticks on the ground, oldest first: {id, position, band, left}; band is the
+## dropper's band kind (Armband.kind_of), so each client colours it in its own colour set.
 var _ground: Array[Dictionary] = []
 var _next_ground := 1
 var _dirty := false
@@ -117,7 +118,7 @@ func server_drop(peer: int) -> String:
 	if player == null:
 		return _refused(peer, "drop", "no player")
 	var at := player.global_position - player.global_transform.basis.z * float(config["drop_ahead"])
-	_lay(at, GlowstickRules.colour_for(player), float(_lit[peer]["left"]))
+	_lay(at, Armband.kind_of(player), float(_lit[peer]["left"]))
 	_lit.erase(peer)
 	Log.info(&"glowsticks", "peer %d dropped their glowstick" % peer)
 	_changed()
@@ -125,7 +126,7 @@ func server_drop(peer: int) -> String:
 
 
 ## Server: what clients are told. `carriers`: peer id -> [shown, seconds left] (soldiers
-## -1: theirs do not run down); `ground`: [id, position, colour] per stick on the ground.
+## -1: theirs do not run down); `ground`: [id, position, band kind] per stick on the ground.
 func server_state() -> Dictionary:
 	var carriers := {}
 	for peer: int in _lit:
@@ -134,7 +135,7 @@ func server_state() -> Dictionary:
 		carriers[peer] = [true, -1.0]
 	var ground := []
 	for g: Dictionary in _ground:
-		ground.append([int(g["id"]), g["position"], g["colour"]])
+		ground.append([int(g["id"]), g["position"], g["band"]])
 	return {"carriers": carriers, "ground": ground}
 
 
@@ -232,8 +233,8 @@ func _is_night() -> bool:
 	return clock != null and bool(clock.call(&"is_night"))
 
 
-func _lay(at: Vector3, colour: Color, left: float) -> void:
-	_ground.append({"id": _next_ground, "position": at, "colour": colour, "left": left})
+func _lay(at: Vector3, band: String, left: float) -> void:
+	_ground.append({"id": _next_ground, "position": at, "band": band, "left": left})
 	_next_ground += 1
 	while _ground.size() > int(config["ground_max"]):
 		_ground.pop_front()
@@ -274,7 +275,7 @@ func _on_player_died(p: Dictionary) -> void:
 	var peer := int(player.get_meta(&"peer_id", 1))
 	if not _lit.has(peer):
 		return
-	_lay(player.global_position, GlowstickRules.colour_for(player), float(_lit[peer]["left"]))
+	_lay(player.global_position, Armband.kind_of(player), float(_lit[peer]["left"]))
 	_lit.erase(peer)
 	_changed()
 
@@ -287,7 +288,7 @@ func _on_enemy_died(p: Dictionary) -> void:
 	_soldiers.erase(soldier)
 	var peer := int(soldier.get_meta(&"peer_id", 0))
 	if _soldiers_shown.erase(peer):
-		_lay(soldier.global_position, GlowstickRules.colour_for(soldier), float(config["enemy_drop_seconds"]))
+		_lay(soldier.global_position, Armband.kind_of(soldier), float(config["enemy_drop_seconds"]))
 		_changed()
 
 
