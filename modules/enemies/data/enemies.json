@@ -101,10 +101,11 @@
     "pinned_aim_scale": 2.5
   },
   "sleep": {
-    "_comment": "Server: soldiers and civilians far from every player stop moving and thinking until one comes near (#514). They wake within distance metres of a player and sleep again past distance + margin; checked every check_seconds. Keep distance at least data/net.json's relevance_distance + relevance_margin, so nobody a player is sent is asleep. A soldier with a target or under fire and an alarmed civilian stay awake anywhere.",
+    "_comment": "Server: soldiers and civilians far from every player stop moving and thinking until one comes near (#514). They wake within distance metres of a player and sleep again past distance + margin; checked every check_seconds, and at once when a player turns up more than jump_metres from where they were (joining, respawning, getting out of a car). Keep distance at least data/net.json's relevance_distance + relevance_margin, so nobody a player is sent is asleep. A soldier with a target or under fire and an alarmed civilian stay awake anywhere.",
     "distance": 360.0,
     "margin": 40.0,
-    "check_seconds": 0.5
+    "check_seconds": 0.5,
+    "jump_metres": 10.0
   },
   "civilians": {
     "_comment": "Unarmed people in the city (#342): walk_share (share of walking speed when strolling), stroll_radius (metres around home they wander), pause_seconds (how long they stop between strolls), hearing_range (gunfire or a blast this close alarms them), freeze_share (share who crouch where they stand instead of running), calm_seconds (quiet before they stroll again), max_health, clothes (body tints, [r, g, b], picked per person).",

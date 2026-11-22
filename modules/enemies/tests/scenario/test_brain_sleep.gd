@@ -124,7 +124,73 @@ func test_a_sleeping_civilian_wakes_and_runs_at_gunfire() -> void:
 
 func test_a_dead_soldier_is_never_woken() -> void:
 	var enemy := await _soldier()
+	_sleep.update()
+	assert_bool(BrainSleep.is_asleep(enemy)).is_true()
 	(enemy.get_node("Health") as HealthComponent).server_apply_damage(1000.0, null)
 	_player(Vector3(0, 0.1, 5))
 	_sleep.update()
+	EventBus.publish(&"explosion", {"position": enemy.global_position + Vector3(2, 0, 0), "radius": 2.0})
 	assert_bool(enemy.is_physics_processing()).is_false()
+	assert_bool(enemy.get_node("Brain").is_physics_processing()).is_false()
+
+
+func test_a_squad_mates_callout_wakes_a_sleeper() -> void:
+	var enemy := await _soldier()
+	var foe := _player(Vector3(0, 0.1, 1000))
+	_sleep.update()
+	(enemy.get_node("Brain") as EnemyBrain).hear_callout(foe)
+	assert_bool(BrainSleep.is_asleep(enemy)).is_false()
+
+
+func test_falling_asleep_mid_burst_stops_the_gun() -> void:
+	var enemy := await _soldier()
+	enemy.intent().fire = true
+	_sleep.update()
+	var shots: Array = []
+	var listen := func(p: Dictionary) -> void:
+		if p.get("holder") == enemy:
+			shots.append(p)
+	EventBus.subscribe(&"weapon.fired", listen)
+	await _frames(60)
+	EventBus.unsubscribe(&"weapon.fired", listen)
+	assert_array(shots).is_empty()
+
+
+func test_a_brain_stopped_by_something_else_is_not_woken_by_a_shot() -> void:
+	var enemy := await _soldier()
+	var brain := enemy.get_node("Brain") as EnemyBrain
+	brain.set_physics_process(false)
+	EventBus.publish(&"explosion", {"position": enemy.global_position + Vector3(2, 0, 0), "radius": 2.0})
+	assert_bool(brain.is_physics_processing()).is_false()
+
+
+func test_a_player_in_a_car_counts_where_the_car_is() -> void:
+	var enemy := await _soldier()
+	var player := _player(Vector3(0, 0.1, 1000))
+	# Seated: parked out of processing where they got in; the cars know where they are now.
+	player.process_mode = Node.PROCESS_MODE_DISABLED
+	var cars: Node = auto_free(FakeCars.new())
+	cars.add_to_group(&"cars_api")
+	add_child(cars)
+	(cars as FakeCars).spot = Vector3(0, 0, 20)
+	_sleep.update()
+	assert_bool(BrainSleep.is_asleep(enemy)).is_false()
+
+
+func test_a_player_turning_up_nearby_is_checked_at_once() -> void:
+	var enemy := await _soldier()
+	var player := _player(Vector3(0, 0.1, 1000))
+	_sleep.update()
+	assert_bool(BrainSleep.is_asleep(enemy)).is_true()
+	player.global_position = Vector3(0, 0.1, 20)
+	# One tick, well before the next sweep is due.
+	_sleep._physics_process(1.0 / 60.0)
+	assert_bool(BrainSleep.is_asleep(enemy)).is_false()
+
+
+class FakeCars:
+	extends Node
+	var spot := Vector3.ZERO
+
+	func exit_spot_of(_player: Node3D) -> Variant:
+		return spot

@@ -107,7 +107,7 @@ func alarm(at: Vector3) -> void:
 	if body.global_position.distance_to(at) > float(config.get("hearing_range", 60.0)):
 		return
 	_quiet = 0.0
-	if not is_physics_processing():
+	if BrainSleep.is_asleep(body):
 		BrainSleep.wake(body)
 	if state != State.CALM:
 		return

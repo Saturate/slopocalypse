@@ -123,7 +123,7 @@ func busy() -> bool:
 
 ## Wakes it if it was asleep (BrainSleep): something happened to it.
 func _stir() -> void:
-	if not is_physics_processing():
+	if BrainSleep.is_asleep(body):
 		BrainSleep.wake(body)
 
 
