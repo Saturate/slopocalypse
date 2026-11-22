@@ -23,6 +23,8 @@ const SUN_HIGH := 0.75
 
 var kind := "farm"
 var place := "Farm lodge"
+## Which site of `kind` on the map (0 the first), for a second look at another.
+var nth := 0
 ## How high over the zone the second view is, and how far back toward the drop-off.
 var above := 70.0
 var back := 35.0
@@ -70,7 +72,7 @@ func _ready() -> void:
 	template["distance"] = [0.0, 100000.0]
 	cfg["missions"] = [template]
 	cfg["offered"] = 1.0
-	var offers: Array = (load(MISSIONS) as GDScript).call(&"roll_offers", cfg, 1, [first[0]], spawn)
+	var offers: Array = (load(MISSIONS) as GDScript).call(&"roll_offers", cfg, 1, [first[mini(nth, first.size() - 1)]], spawn)
 	_missions.set(&"offers", offers)
 	_missions.call(&"server_choose", 1, 0)
 	_missions.call(&"server_ride_out")
