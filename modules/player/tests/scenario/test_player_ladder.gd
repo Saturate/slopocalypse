@@ -194,3 +194,27 @@ func test_first_person_gun_is_lowered_while_climbing() -> void:
 	await _frames(60)
 	assert_bool(_player.climbing).is_true()
 	assert_float(float(aim.get(&"lowered"))).is_greater(0.9)
+
+
+func test_jumping_backwards_at_its_foot_does_not_grab() -> void:
+	_player.global_position = Vector3(0, 0.05, 0.3)
+	await _frames(5)
+	_player.intent().move = Vector2(0, -1)
+	_player.intent().jump = true
+	var held := false
+	for i in 20:
+		await get_tree().physics_frame
+		held = held or _player.climbing
+	assert_bool(held).is_false()
+
+
+func test_put_somewhere_else_lets_go() -> void:
+	_player.intent().move = Vector2(0, 1)
+	await _frames(40)
+	assert_bool(_player.climbing).is_true()
+	_player.intent().move = Vector2.ZERO
+	# A respawn or back-to-spawn, here into mid-air beside the same ladder.
+	_player.put_at(Vector3(0, 3, 0))
+	assert_bool(_player.climbing).is_false()
+	await _frames(60)
+	assert_float(_player.global_position.y).is_less(0.2)

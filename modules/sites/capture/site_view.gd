@@ -81,3 +81,16 @@ func _light_from_behind(sun: DirectionalLight3D, centre: Vector3) -> void:
 	var flat := ahead.normalized().rotated(Vector3.UP, SUN_SIDE)
 	var shine := (flat * cos(SUN_HIGH) + Vector3.DOWN * sin(SUN_HIGH)).normalized()
 	sun.global_basis = Basis.looking_at(shine, Vector3.UP)
+
+
+## The lookout tower nearest the site's centre (for captures on its ladder), or null.
+func _tower() -> VoxPiece:
+	var centre: Vector3 = _site["centre"]
+	var best: VoxPiece = null
+	for node in find_children("*", "Node3D", true, false):
+		var piece := node as VoxPiece
+		if piece == null or piece.generator != "VoxLookoutTower":
+			continue
+		if best == null or piece.global_position.distance_to(centre) < best.global_position.distance_to(centre):
+			best = piece
+	return best

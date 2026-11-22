@@ -91,3 +91,21 @@ func test_off_the_ladder_the_gun_fires_again() -> void:
 	await _frames(2)
 	_player.intent().fire = false
 	assert_int(_shots.size()).is_greater(0)
+
+
+func test_a_trigger_held_from_the_ladder_needs_a_new_pull_on_a_pistol() -> void:
+	_rifle.semi_auto = true
+	_player.intent().move = Vector2(0, 1)
+	await _frames(30)
+	_player.intent().fire = true
+	_player.intent().move = Vector2(0, -1)
+	for i in 240:
+		await get_tree().physics_frame
+		_player.intent().fire = true
+		if not _player.climbing and _player.is_on_floor():
+			break
+	_player.intent().move = Vector2.ZERO
+	for i in 20:
+		_player.intent().fire = true
+		await get_tree().physics_frame
+	assert_int(_shots.size()).is_equal(0)

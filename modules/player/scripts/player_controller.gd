@@ -292,10 +292,13 @@ func _step_normal(delta: float) -> void:
 			# From the ground only heading into it and below its top (not from the deck it leads to).
 			climbing = push > aim and global_position.y < top - float(config["climb_top_margin"])
 		else:
-			# Off the ground, only heading along it (onto it from a hop, down it backing off its
-			# deck) and falling slowly enough to catch it: put down in mid-air beside one, or
-			# dropping past it fast, nobody hangs on it.
-			climbing = absf(push) > aim and velocity.y > -float(config["climb_grab_fall_speed"])
+			# Off the ground, only heading into it (a hop onto it) or, dropping near its top, away
+			# from it (backing off its deck), and falling slowly enough to catch it: put down in
+			# mid-air beside one, jumping back from its foot or dropping past it fast, nobody
+			# hangs on it.
+			var off_deck := velocity.y <= 0.0 and global_position.y >= top - float(config["climb_top_margin"])
+			var heading := push > aim or (push < -aim and off_deck)
+			climbing = heading and velocity.y > -float(config["climb_grab_fall_speed"])
 		if climbing:
 			# Into the ladder climbs, away from it climbs down, sideways holds on; never past its top.
 			var up := float(config["climb_speed"]) * signf(push) if absf(push) > aim else 0.0
@@ -386,6 +389,22 @@ func shove(push: Vector3) -> void:
 ## Server: drops any push still carrying the body (it was stopped, moved or respawned).
 func clear_shove() -> void:
 	_shove = Vector3.ZERO
+
+
+## Server: lets go of any ladder (put somewhere else, or into a car), so the body doesn't
+## arrive still holding on and a ladder beside where it lands is caught only as any other.
+func let_go() -> void:
+	climbing = false
+	_ladder_into = Vector3.ZERO
+
+
+## Puts the body at `at`, standing still with nothing carrying it and holding on to
+## nothing (a respawn, back to spawn, out of a car, back on top of the ground).
+func put_at(at: Vector3) -> void:
+	global_position = at
+	velocity = Vector3.ZERO
+	clear_shove()
+	let_go()
 
 
 ## `move_and_slide`, but a step no higher than `step_height` in the way (a stair, a kerb, a

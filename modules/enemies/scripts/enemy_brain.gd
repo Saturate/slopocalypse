@@ -283,6 +283,13 @@ func _walk_toward(at: Vector3, delta: float, intent: PlayerIntent, speed: float,
 
 
 func _fight(delta: float, intent: PlayerIntent) -> void:
+	if body.climbing:
+		# No shooting with both hands on a ladder: down it first, away from the rungs.
+		var away := body.global_basis.inverse() * -body.ladder_into()
+		intent.move = Vector2(away.x, -away.z).limit_length(1.0)
+		intent.fire = false
+		intent.aim = false
+		return
 	intent.move = Vector2.ZERO
 	intent.aim = true
 	var eye := _eye()

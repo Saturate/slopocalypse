@@ -112,7 +112,8 @@ func _physics_tick(delta: float) -> void:
 	if intent.consume_reload():
 		request_reload()
 	var pull := intent.fire and not (semi_auto and _trigger_was_down)
-	_trigger_was_down = intent.fire
+	# A trigger held from a ladder (where it does nothing) is not a new pull on stepping off it.
+	_trigger_was_down = intent.fire or holder.climbing
 	if pull and _draw_left <= 0.0:
 		request_fire(global_transform.origin, -global_transform.basis.z)
 	elif not intent.fire:

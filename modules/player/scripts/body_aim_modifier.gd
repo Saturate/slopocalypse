@@ -14,6 +14,10 @@ const LEAN_SHARES := {&"Spine": 0.45, &"Chest": 0.55}
 ## rifle on the shoulders points at the aim while the back only bends a little; the head
 ## (a child of the chest) takes the rest of its own share on top of the back's.
 const SHARES := {&"Spine": 0.1, &"Chest": 0.15, &"Shoulders": 0.75, &"Head": 0.5}
+## First person, on a ladder: where the sight goes, below and a little right of the eye and
+## close in, so the whole gun drops under the screen's bottom edge whatever the field of view
+## (camera space: right, down, forward).
+const LOWERED_SIGHT := Vector3(0.14, -0.5, -0.12)
 
 ## First person only: where the sight sits in the camera's space at the hip (right, down,
 ## forward). The arms and rifle are then held by the view like a view model: they turn with
@@ -24,9 +28,6 @@ var hip_sight := Vector3.ZERO
 ## LOWERED_SIGHT, under the bottom of the screen). The body animator eases it to 1 on a
 ## ladder: the gun can't fire there, and the climb pose others see tips it down the same way.
 var lowered := 0.0
-## Below and a little right of the eye, close in, so the whole gun drops under the screen's
-## bottom edge whatever the field of view (camera space: right, down, forward).
-const LOWERED_SIGHT := Vector3(0.14, -0.5, -0.12)
 
 ## Aiming down sights, 0 (hip) to 1 (sight on the eye). Set by the body animator.
 var ads := 0.0
