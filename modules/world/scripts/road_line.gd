@@ -10,6 +10,8 @@ var points := PackedVector2Array()
 var heights := PackedFloat32Array()
 ## Metres along the road at each point.
 var along := PackedFloat32Array()
+## The box (x, z) its middle line stays in.
+var _bounds := Rect2()
 
 
 func _init(road: Dictionary) -> void:
@@ -20,6 +22,15 @@ func _init(road: Dictionary) -> void:
 	along.resize(points.size())
 	for k in range(1, points.size()):
 		along[k] = along[k - 1] + points[k].distance_to(points[k - 1])
+	if not points.is_empty():
+		_bounds = Rect2(points[0], Vector2.ZERO)
+		for p in points:
+			_bounds = _bounds.expand(p)
+
+
+## The box (x, z) its middle line stays in.
+func bounds() -> Rect2:
+	return _bounds
 
 
 func length() -> float:

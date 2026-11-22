@@ -37,9 +37,9 @@ const ROADS_PER_CHUNK := 64
 const ROAD_LIFT := VoxRoad.BED + VoxRoad.SURFACE - 0.03
 ## Furthest the road's pieces reach sideways from its centre line (lanes, shoulder, kerb).
 const ROAD_REACH := 8.0
-## A generated map's roads: their shoulders, and a track's (one soil-coloured lane, no lines).
+## A generated map's roads: their gravel shoulders, and a track's soil (one lane, no kerb, no
+## lines).
 const ROAD_SHOULDER := 0.8
-const TRACK_SHOULDER := 0.3
 const TRACK_SOIL := Color(0.4, 0.31, 0.21)
 ## Width of the burnt ring round a crater in the road, and its colour.
 const ROAD_SCORCH := 0.35
@@ -99,8 +99,6 @@ var home := Vector3.ZERO
 ## middle is in: chunk -> [Vector2(road, metres along its middle)].
 var _lines: Array[RoadLine] = []
 var _line_pieces: Dictionary[int, Array] = {}
-## How many of `_lines` are the map's roads and tracks; yards other modules lay follow them.
-var _road_lines := 0
 ## Yards by who laid them (see `set_yards_for`), the ground each covers, and the same filed
 ## under every chunk-sized square they reach, so a grass blade looks at the few near it.
 var _yard_sets: Dictionary[StringName, Array] = {}
@@ -897,20 +895,29 @@ func _cut_map_roads(map: MapShape, roads_cfg: Dictionary) -> void:
 	var net: RoadNetwork = map.map["net"]
 	if net == null:
 		return
-	for road: Dictionary in net.roads():
-		_add_line(RoadLine.new(road))
-	_road_lines = _lines.size()
+	var works: Earthworks = map.map.get("works")
+	var roads := net.roads()
+	for i in roads.size():
+		_add_line(RoadLine.new(roads[i]), works.strip_span(i) if works != null else Vector2(0.0, INF))
 
 
-func _add_line(line: RoadLine) -> void:
-	if line.length() < 1.0:
+## Cuts `line` into pieces drawn as strips over `span` (metres along it; the map's
+## earthworks cut a track back where it runs onto another way, see
+## `Earthworks.strip_span`): a lane is painted into the ground instead (VoxelWorld), so it
+## gets none.
+func _add_line(line: RoadLine, span := Vector2(0.0, INF)) -> void:
+	if line.length() < 1.0 or line.kind == "lane":
+		return
+	var from := span.x
+	var drawn := minf(span.y, line.length()) - from
+	if drawn < 1.0:
 		return
 	var index := _lines.size()
 	_lines.append(line)
-	var pieces := maxi(ceili(line.length() / ROAD_PIECE), 1)
-	var step := line.length() / pieces
+	var pieces := maxi(ceili(drawn / ROAD_PIECE), 1)
+	var step := drawn / pieces
 	for p in pieces:
-		var mid := step * (p + 0.5)
+		var mid := from + step * (p + 0.5)
 		var at := line.point_at(mid)
 		var chunk := chunk_at(at.x, at.y)
 		if chunk < 0:
@@ -920,28 +927,28 @@ func _add_line(line: RoadLine) -> void:
 		_line_pieces[chunk].append(Vector3(index, mid, step / 2.0))
 
 
-## `owner`'s yards, replacing its earlier ones: packed dirt drawn like a track and kept clear
-## of grass (a site's yard, laid by the module that knows what stands there). Each is
-## {from: Vector2, to: Vector2 (x, z: the middle of its two ends), width, level (its top's
-## height)}. Every client sets the same yards from the same map; the server draws none.
+## `owner`'s yards, replacing its earlier ones: packed dirt painted into the ground as a
+## lane (VoxelWorld `set_lanes_for`) and kept clear of grass (a site's yard, laid by the
+## module that knows what stands there). Each is {from: Vector2, to: Vector2 (x, z: the
+## middle of its two ends), width, level (its top's height)}. Every client sets the same
+## yards from the same map; the server draws none.
 func set_yards_for(owner: StringName, yards: Array) -> void:
 	var touched := _yard_rects.duplicate()
 	_yard_sets[owner] = yards
-	_lines.resize(_road_lines)
-	for chunk: int in _line_pieces.keys():
-		var kept: Array = (_line_pieces[chunk] as Array).filter(func(piece: Vector3) -> bool: return int(piece.x) < _road_lines)
-		if kept.is_empty():
-			_line_pieces.erase(chunk)
-		else:
-			_line_pieces[chunk] = kept
+	# The ground of this world: the one beside this node, or the only one there is.
+	var grounds: Array[Node] = get_tree().get_nodes_in_group(&"ground") if is_inside_tree() else []
+	var ground: Node = grounds[0] if grounds.size() == 1 else null
+	for g in grounds:
+		if g.get_parent() == get_parent():
+			ground = g
+	if ground != null and ground.has_method(&"set_lanes_for"):
+		ground.call(&"set_lanes_for", owner, yards)
 	_yard_rects.clear()
 	_yards_near.clear()
 	for key: StringName in _yard_sets:
 		for y: Dictionary in _yard_sets[key]:
 			var from: Vector2 = y["from"]
 			var to: Vector2 = y["to"]
-			var level := float(y["level"])
-			_add_line(RoadLine.new({"kind": "yard", "width": float(y["width"]), "points": PackedVector2Array([from, to]), "heights": PackedFloat32Array([level, level])}))
 			var side := (to - from).normalized().orthogonal() * float(y["width"]) / 2.0
 			var rect := Rect2(from + side, Vector2.ZERO).expand(from - side).expand(to + side).expand(to - side)
 			_yard_rects.append(rect)
@@ -985,17 +992,16 @@ func _add_map_roads(node: Node3D, i: int) -> void:
 		var mid := piece.y
 		var half := piece.z
 		var at := line.point_at(mid)
-		var yard := line.kind == "yard"
-		var track := line.kind == "track" or yard
-		# A yard is open ground: no gravel edge, and no ruts across it.
-		var shoulder := 0.0 if yard else TRACK_SHOULDER if track else ROAD_SHOULDER
+		var track := line.kind == "track"
+		# A track has no kerb: the ground draws its frayed edge over the strip's own
+		# (VoxelWorld `ground.track_fray`), so the strip stays straight under it.
+		var shoulder := 0.0 if track else ROAD_SHOULDER
 		var lanes := 1 if track else 2
 		var look := {"seed": hash([_seed, i, p]), "length": half * 2.0, "voxel": ROAD_VOXEL, "z_phase": mid,
 			"lanes": lanes, "lane_width": maxf((line.width - shoulder * 2.0) / lanes, 1.0), "shoulder": shoulder}
 		if track:
 			look["asphalt"] = TRACK_SOIL
 			look["surface"] = VoxRoad.DIRT
-			look["ruts"] = 0 if yard else 1
 			look["centre"] = 0
 			look["edges"] = 0
 		var r := far.at(at.x, at.y) if far != null else 0.0

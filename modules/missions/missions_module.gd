@@ -568,6 +568,12 @@ func _marker(marker_name: StringName, at: Vector3, text: String, show: bool) -> 
 		label.outline_modulate = Color(0, 0, 0, 0.5)
 		label.modulate = Color(MARKER_COLOUR, MARKER_ALPHA)
 		label.add_to_group(&"mission_markers")
+		# The compass strip shows these too (#455): the ride home as a car, the rest as the
+		# objective.
+		label.add_to_group(&"compass_markers")
+		label.set_meta(&"compass_kind", "car" if marker_name == &"CarMarker" else "objective")
+		if marker_name == &"CarMarker":
+			label.set_meta(&"compass_label", "Ride")
 		add_child(label)
 	label.set_meta(&"caption", text.capitalize())
 	label.global_position = at

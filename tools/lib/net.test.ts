@@ -13,8 +13,8 @@ test("no solo server line means undefined", () => {
 });
 
 test("reads a net report", () => {
-	const rep = parseReport("NET-REPORT mode=SOLO peer=55 peers=1 players=1 local_players=1 moved=12.5 shots=4 driven=7.0 ammo=17");
-	assert.deepEqual(rep, { mode: "SOLO", peer: 55, peers: 1, players: 1, localPlayers: 1, moved: 12.5, shots: 4, driven: 7, ammo: 17 });
+	const rep = parseReport("NET-REPORT mode=SOLO peer=55 peers=1 players=1 local_players=1 moved=12.5 shots=4 driven=7.0 ammo=17 parked=1 drivers=1");
+	assert.deepEqual(rep, { mode: "SOLO", peer: 55, peers: 1, players: 1, localPlayers: 1, moved: 12.5, shots: 4, driven: 7, ammo: 17, parked: 1, drivers: 1 });
 });
 
 test("a taken UDP port is skipped for the next free one", async () => {

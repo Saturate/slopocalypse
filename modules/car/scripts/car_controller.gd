@@ -76,6 +76,9 @@ func _ready() -> void:
 	_intent = get_node(intent_path)
 	_exit_point = get_node(exit_point_path)
 	_passenger_exit = get_node_or_null(passenger_exit_path)
+	# On the compass strip (#455); it fades out once you are next to it or in it.
+	add_to_group(&"compass_markers")
+	set_meta(&"compass_kind", "car")
 	var data: Variant = Data.load_json(CONFIG)
 	if not data is Dictionary or not Data.require(CONFIG, data, REQUIRED):
 		set_physics_process(false)
@@ -130,6 +133,15 @@ func enter(who: Node3D) -> void:
 	else:
 		passenger = who
 	Net.server_broadcast(&"car.entered", {"player": who, "car": self, "seat": seat})
+
+
+## Who sits in `seat` (null for nobody), as a replayed `car.entered` or `car.exited` says.
+## Only the server decides seats; this is how a client's copy of the car knows its occupants.
+func show_seat(seat: StringName, who: Node3D) -> void:
+	if seat == DRIVER:
+		driver = who
+	else:
+		passenger = who
 
 
 ## Lets `who` out (the driver when not given) beside their own door.

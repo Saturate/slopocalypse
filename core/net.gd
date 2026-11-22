@@ -576,7 +576,8 @@ func _waited_too_long(delta: float) -> bool:
 ## One line describing the session, for tools and tests. `moved` is the furthest any player
 ## stands from the spawn (group `spawn_point`; the origin without one), `shots` the weapon.fired events seen here,
 ## `driven` the furthest any vehicle is from where it spawned, `ammo` the local player's
-## rounds (group `held_weapons`, method `ammo()`).
+## rounds (group `held_weapons`, method `ammo()`), `parked` the players hidden because they
+## sit in a vehicle and `drivers` the vehicles with someone driving.
 func report() -> String:
 	var players := get_tree().get_nodes_in_group(&"players")
 	# The server owns every player body, so "local" means the player spawned for this peer.
@@ -601,7 +602,11 @@ func report() -> String:
 		var holder: Variant = w.get(&"holder")
 		if mode != Mode.SERVER and holder is Node and int((holder as Node).get_meta(&"peer_id", 0)) == me and w.has_method(&"ammo") and w.get(&"active") != false:
 			ammo = int(w.call(&"ammo"))
-	return "NET-REPORT mode=%s peer=%d peers=%d players=%d local_players=%d moved=%.1f shots=%d driven=%.1f ammo=%d" % [Mode.keys()[mode], me, multiplayer.get_peers().size(), players.size(), local.size(), moved, _shots, driven, ammo]
+	# Players this instance shows as parked in a vehicle, and vehicles it knows a driver for:
+	# both must match the server's on a client that joined after someone got in (#433).
+	var parked := players.filter(func(p: Node) -> bool: return not (p as Node3D).visible).size()
+	var drivers := get_tree().get_nodes_in_group(&"vehicles").filter(func(v: Node) -> bool: return v.get(&"driver") != null).size()
+	return "NET-REPORT mode=%s peer=%d peers=%d players=%d local_players=%d moved=%.1f shots=%d driven=%.1f ammo=%d parked=%d drivers=%d" % [Mode.keys()[mode], me, multiplayer.get_peers().size(), players.size(), local.size(), moved, _shots, driven, ammo, parked, drivers]
 
 
 var _shots := 0

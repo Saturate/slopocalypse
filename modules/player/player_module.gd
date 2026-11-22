@@ -179,7 +179,9 @@ func _server_spawn(peer: int) -> void:
 	var taken: Array[Vector3] = []
 	for p: PlayerController in _players.values():
 		taken.append(p.global_position if p.is_inside_tree() else p.position)
-	_spawner.spawn({"peer": peer, "position": free_spawn_point(_spawn, taken, _spawn_spacing(), _car_at)})
+	# The name rides along so clients can label other players (the compass, #455).
+	var who := str(Net.identity_of(peer).get("name", ""))
+	_spawner.spawn({"peer": peer, "position": free_spawn_point(_spawn, taken, _spawn_spacing(), _car_at), "name": who})
 
 
 ## How far apart players who join together start, from player.json, read once; 0 (everyone
@@ -241,6 +243,7 @@ func _spawn_player(data: Variant) -> Node:
 	player.name = str(peer)
 	player.position = info["position"]
 	player.set_meta(&"peer_id", peer)
+	player.set_meta(&"player_name", str(info.get("name", "")))
 	player.add_to_group(&"players")
 	_players[peer] = player
 	var local := Net.has_local_player() and peer == Net.local_peer_id()
@@ -371,12 +374,16 @@ func _setup_local(player: PlayerController) -> void:
 	hud.name = "Hud"
 	hud.player = player
 	player.add_child(hud)
-	var input := PlayerInput.new()
-	input.name = "Input"
-	input.intent = player.intent()
-	input.player = player
-	input.sensitivity = player.config["mouse_sensitivity"]
-	player.add_child(input)
+	# A bot drives this player (the benchmark): no keyboard or mouse, so whoever sits at the
+	# machine can't steer, look or shoot, the mouse is never captured and the window runs on
+	# without focus. Every run is then the same (#377).
+	if _bot_behaviour().is_empty():
+		var input := PlayerInput.new()
+		input.name = "Input"
+		input.intent = player.intent()
+		input.player = player
+		input.sensitivity = player.config["mouse_sensitivity"]
+		player.add_child(input)
 	var feel := PlayerCameraFeel.new()
 	feel.name = "CameraFeel"
 	feel.player = player
@@ -414,9 +421,10 @@ func _on_car_exited(payload: Dictionary) -> void:
 		_camera(player).current = true
 
 
-## `--bot=NAME` after `--` makes this instance's own player drive itself (tests, soak).
+## `--bot=NAME` makes this instance's own player drive itself (tests, soak, benchmarks): from
+## the command line after `--`, or added by a menu choice (the Benchmark adds `--bot=city`).
 func _bot_behaviour() -> String:
-	for arg in OS.get_cmdline_user_args():
+	for arg in Net.session_args():
 		if arg.begins_with("--bot="):
 			return arg.trim_prefix("--bot=")
 	return ""

@@ -10,6 +10,7 @@ extends Node3D
 
 const SHADER := "res://modules/world/shaders/voxel_ground.gdshader"
 const VOXEL_REQUIRED := {"max_dig_depth": TYPE_FLOAT, "crater_depth_share": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "lods": TYPE_ARRAY, "builds_per_frame": TYPE_FLOAT}
+const GROUND_REQUIRED := {"tilt_grade": TYPE_FLOAT, "band": TYPE_FLOAT, "pad_band": TYPE_FLOAT, "band_grade": TYPE_FLOAT, "tilt_variation": TYPE_FLOAT, "track_fray": TYPE_FLOAT, "track_verge": TYPE_FLOAT, "yard_fray": TYPE_FLOAT, "yard_round": TYPE_FLOAT, "lane_soil": TYPE_ARRAY, "lane_mix": TYPE_FLOAT, "verge_mix": TYPE_FLOAT, "rut_dark": TYPE_FLOAT}
 const TILE := 32.0
 ## Collision height maps sample the ground every metre.
 const COLLISION_SPACING := 1.0
@@ -18,6 +19,13 @@ const COLOUR_SPACING := 4.0
 ## Steeper than this (rise over run) shows bare rock.
 const STEEP_SLOPE := 1.1
 const SKIRT := 2.0
+## A dent this deep counts as dug: lanes and strips leave its earth unpainted.
+const DUG_DEPTH := 0.2
+## Floats per way segment `VoxelGround.tile_arrays` takes, and the kind that paints a lane
+## with square ends (a yard).
+const WAY_STRIDE := 8
+const WAY_YARD := 3
+const WAY_PAD := 4
 ## Focus points closer together than this (metres) count as one.
 const THIN_GRID := 4.0
 const GRASS := Color(0.36, 0.5, 0.22)
@@ -74,6 +82,15 @@ var _pending := true
 ## visible tile -> {task, result, voxel}. Results are an Array the task appends to.
 var _base_jobs: Dictionary[Vector2i, Dictionary] = {}
 var _tile_jobs: Dictionary[Vector2i, Dictionary] = {}
+## How the visible ground tilts and draws roads, tracks and lanes (world.json `ground`, as
+## `VoxelGround.tile_arrays` takes it).
+var _look := {}
+## Lanes painted into the ground by who laid them (`set_lanes_for`), and the same as way
+## segments (world metres, `Earthworks.segments_near`'s layout) under every tile they reach.
+var _lane_sets: Dictionary[StringName, Array] = {}
+var _lanes_in: Dictionary[Vector2i, PackedFloat32Array] = {}
+## How far past a lane's edge it may still change the ground, metres.
+var _lane_margin := 2.0
 
 
 func _ready() -> void:
@@ -88,6 +105,26 @@ func _ready() -> void:
 	crater_depth_share = _cfg["crater_depth_share"]
 	max_dig_log = int(_cfg.get("max_saved_digs", 4000))
 	_lods = _cfg["lods"]
+	if not world.has("ground") or not Data.require(config_path + " ground", world["ground"], GROUND_REQUIRED):
+		return
+	_look = (world["ground"] as Dictionary).duplicate()
+	_look.erase("_comment")
+	var soil: Array = _look["lane_soil"]
+	_look["lane_soil"] = Color(float(soil[0]), float(soil[1]), float(soil[2]))
+	# What shows through a strip where it is worn or shot through: the strip's own bed, and
+	# how far the strip's surface stands over its road's height.
+	_look["paved_bed"] = VoxRoad.GRAVEL
+	_look["track_soil"] = SceneryScatter.TRACK_SOIL
+	# The model fills whole voxels by their centres: its surface is the top of the last cell
+	# whose centre is under BED + SURFACE.
+	var road_v := SceneryScatter.ROAD_VOXEL
+	_look["strip_top"] = (floorf((VoxRoad.BED + VoxRoad.SURFACE) / road_v - 0.5) + 1.0) * road_v - SceneryScatter.ROAD_LIFT
+	_look["steep_slope"] = STEEP_SLOPE
+	_look["steep"] = ROCK
+	_look["side"] = SOIL
+	_look["skirt"] = SKIRT
+	# A lane's verge and frayed edge reach a cell of the coarsest detail past its edge.
+	_lane_margin = float((_lods[-1] as Array)[1]) + float(_look["track_fray"])
 	# The world module selects the map; built on its own (a test, a capture) it is world.json's.
 	var map := WorldMaps.shape_or_default()
 	if map == null:
@@ -102,6 +139,9 @@ func _ready() -> void:
 	if _visual:
 		_material = ShaderMaterial.new()
 		_material.shader = load(SHADER)
+		_material.set_shader_parameter(&"tilt_variation", float(_look["tilt_variation"]))
+		_material.set_shader_parameter(&"paint_grain", SceneryScatter.ROAD_VOXEL)
+		_material.set_shader_parameter(&"paint_jitter", VoxRoad.DIRT_JITTER)
 		# Always there, even with no ponds: others pour puddles on the ground through it.
 		var view := WaterView.new()
 		view.name = "Water"
@@ -553,7 +593,7 @@ func _update_tiles(points: Array[Vector3], budget: float, threaded := false) -> 
 			var result: Array = job["result"]
 			_drop_tile_job(key)
 			if not result.is_empty():
-				_make_tile(key, voxel, result[0], result[1])
+				_make_tile(key, voxel, result[0], result[1], result[2], PackedByteArray())
 				built += 1.0
 				continue
 		_drop_tile_job(key)
@@ -573,9 +613,12 @@ func _update_tiles(points: Array[Vector3], budget: float, threaded := false) -> 
 func _start_tile(key: Vector2i, voxel: float) -> void:
 	var result: Array = []
 	var spacing := _tile_spacing(voxel)
+	# Lanes and pads change on this thread: the task gets its own copy.
+	var lanes := _own_ways(key)
 	var work := func() -> void:
 		result.append(_ground_samples(key, spacing))
 		result.append(_tile_colours(key, false))
+		result.append(_ways(key, lanes))
 	var task := WorkerThreadPool.add_task(work, true, "ground tile")
 	_tile_jobs[key] = {"task": task, "result": result, "voxel": voxel}
 
@@ -724,7 +767,24 @@ func _build_collision(key: Vector2i) -> StaticBody3D:
 
 
 func _replace_tile(key: Vector2i, voxel: float) -> void:
-	_make_tile(key, voxel, _sample(key, _tile_spacing(voxel)), _tile_colours(key, true))
+	var spacing := _tile_spacing(voxel)
+	_make_tile(key, voxel, _sample(key, spacing), _tile_colours(key, true), _ways(key, _own_ways(key)), _dug_mask(key, spacing))
+
+
+## Per height sample of tile `key`, 1 where a crater has been dug (lanes and strips leave
+## its earth unpainted); empty when the tile has none.
+func _dug_mask(key: Vector2i, spacing: float) -> PackedByteArray:
+	var mask := PackedByteArray()
+	if not _digs_in.has(key):
+		return mask
+	var n := int(TILE / spacing) + 1
+	mask.resize(n * n)
+	for j in n:
+		for i in n:
+			var x := key.x * TILE + i * spacing
+			var z := key.y * TILE + j * spacing
+			mask[j * n + i] = 1 if _dig_into(0.0, x, z, _digs_in[key]) < -DUG_DEPTH else 0
+	return mask
 
 
 func _tile_spacing(voxel: float) -> float:
@@ -755,14 +815,14 @@ func _tile_colours(key: Vector2i, digs: bool) -> PackedColorArray:
 	return colours
 
 
-func _make_tile(key: Vector2i, voxel: float, samples: PackedFloat32Array, colours: PackedColorArray) -> void:
+func _make_tile(key: Vector2i, voxel: float, samples: PackedFloat32Array, colours: PackedColorArray, ways: PackedFloat32Array, dug: PackedByteArray) -> void:
 	if _tiles.has(key):
 		_tiles[key].queue_free()
 	var spacing := _tile_spacing(voxel)
 	var cn := int(TILE / spacing) + 1
 	var cc := int(TILE / COLOUR_SPACING) + 1
 	VoxShading.ensure()
-	var arrays := VoxelGround.tile_arrays(samples, cn, spacing, colours, cc, int(TILE / voxel), voxel, STEEP_SLOPE, ROCK, SOIL, SKIRT, hash(key))
+	var arrays := VoxelGround.tile_arrays(samples, cn, spacing, colours, cc, int(TILE / voxel), voxel, hash(key), _look, ways, dug)
 	var inst := MeshInstance3D.new()
 	if not arrays.is_empty():
 		var mesh := ArrayMesh.new()
@@ -774,6 +834,79 @@ func _make_tile(key: Vector2i, voxel: float, samples: PackedFloat32Array, colour
 	add_child(inst)
 	_tiles[key] = inst
 	_tile_voxel[key] = voxel
+
+
+## The ways this world adds over tile `key`, in world metres: the lanes painted into it and
+## the levelled pads (`set_pads_for`, mission buildings), so the ground round a pad tilts
+## into it where gentle enough instead of stepping down at its edge.
+func _own_ways(key: Vector2i) -> PackedFloat32Array:
+	var out: PackedFloat32Array = _lanes_in.get(key, PackedFloat32Array()).duplicate()
+	for p: Dictionary in _pads_in.get(key, []):
+		# Along the pad's own z (see `_pad_into`), from its `from` end to its level.
+		var along := Vector2(float(p["s"]), float(p["c"])) * float(p["hz"])
+		var centre := Vector2(float(p["x"]), float(p["z"]))
+		var a := centre - along
+		var b := centre + along
+		out.append_array(PackedFloat32Array([a.x, a.y, float(p["from"]), b.x, b.y, float(p["h"]), float(p["hx"]), WAY_PAD]))
+	return out
+
+
+## The roads, tracks, lanes and pads the ground over tile `key` draws or makes room for (see
+## `Earthworks.segments_near`), relative to the tile; `lanes` are this world's own (see
+## `_own_ways`) in world metres. Pure: safe on a worker thread.
+func _ways(key: Vector2i, lanes: PackedFloat32Array) -> PackedFloat32Array:
+	var origin := Vector2(key.x * TILE, key.y * TILE)
+	var out := PackedFloat32Array()
+	if heights is MapShape and (heights as MapShape).works != null:
+		out = (heights as MapShape).works.segments_near(Rect2(origin, Vector2.ONE * TILE), maxf(float(_look.get("band", 0.0)), float(_look.get("pad_band", 0.0))) + 2.0)
+	var at := out.size()
+	out.append_array(lanes)
+	for i in range(at, out.size(), WAY_STRIDE):
+		out[i] -= origin.x
+		out[i + 1] -= origin.y
+		out[i + 3] -= origin.x
+		out[i + 4] -= origin.y
+	return out
+
+
+## `owner`'s lanes, replacing its earlier ones: dirt painted into the ground's own voxels
+## (a site's yard), with no model of its own and no edge. Each is {from: Vector2, to: Vector2
+## (x, z: the middles of its two ends), width, level (its height)}; it ends square at both
+## ends. Every client sets the same lanes from the same map; the server draws none.
+func set_lanes_for(owner: StringName, lanes: Array) -> void:
+	var touched: Dictionary[Vector2i, bool] = {}
+	for key: Vector2i in _lanes_in:
+		touched[key] = true
+	_lane_sets[owner] = lanes
+	_lanes_in.clear()
+	for set_owner: StringName in _lane_sets:
+		for lane: Dictionary in _lane_sets[set_owner]:
+			var from: Vector2 = lane["from"]
+			var to: Vector2 = lane["to"]
+			var half := float(lane["width"]) / 2.0
+			var level := float(lane["level"])
+			var way := PackedFloat32Array([from.x, from.y, level, to.x, to.y, level, half, WAY_YARD])
+			# Its verge reaches a voxel past its edge (at most the coarsest's).
+			var reach := Rect2(from, Vector2.ZERO).expand(to).grow(half + _lane_margin)
+			for tz in range(floori(reach.position.y / TILE), floori(reach.end.y / TILE) + 1):
+				for tx in range(floori(reach.position.x / TILE), floori(reach.end.x / TILE) + 1):
+					var key := Vector2i(tx, tz)
+					if not _lanes_in.has(key):
+						_lanes_in[key] = PackedFloat32Array()
+					_lanes_in[key].append_array(way)
+					touched[key] = true
+	for key: Vector2i in touched:
+		# A tile being built on a worker thread started with the old lanes: dropped, so the
+		# next update builds it again with these.
+		_drop_tile_job(key)
+		if _tiles.has(key):
+			_replace_tile(key, _tile_voxel[key])
+	_pending = true
+
+
+## The lanes painted into tile `key`: way segments in world metres (see `set_lanes_for`).
+func lanes_in(key: Vector2i) -> PackedFloat32Array:
+	return _lanes_in.get(key, PackedFloat32Array())
 
 
 ## The colour the ground's top gets at x/z (before steep slopes turn it to bare rock).

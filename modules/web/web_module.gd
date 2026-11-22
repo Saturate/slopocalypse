@@ -1,7 +1,8 @@
 extends Node
 ## A dedicated server's web page, for browsers: started with `--web` on a server (the Docker
 ## image passes it). Listens for HTTP on TCP at the game's port number (the game itself
-## talks UDP there, so they never meet) or at `--web-port=N`, and answers `GET /` (a small
+## talks UDP there, so they never meet) or at `--web-port=N`, on every address or the one
+## `--web-bind=` names (a proxy in front, #448), and answers `GET /` (a small
 ## status page) and `GET /status.json` (the same as JSON, for bots and dashboards): read-only
 ## and public. Under `/admin` are pages other modules add (`add_admin_page`: the map viewer,
 ## the live map), behind a password from `WEB_PASSWORD` in the environment (HTTP basic auth:
@@ -14,6 +15,12 @@ extends Node
 
 const FLAG := "--web"
 const PORT_FLAG := "--web-port="
+## The address to listen on: `*` (every address, the default) or one IP, such as 127.0.0.1
+## so only a proxy on the same host (terminating HTTPS) reaches the page.
+const BIND_FLAG := "--web-bind="
+## The same two for the Docker image, whose command line is fixed: the flags win over these.
+const PORT_ENV := "WEB_PORT"
+const BIND_ENV := "WEB_BIND"
 const PASSWORD_ENV := "WEB_PASSWORD"
 ## A proxy in front (comma-separated IPv4 ranges such as 10.0.0.0/8) whose X-Real-IP header
 ## names the visitor; from anywhere else the header is ignored.
@@ -70,13 +77,40 @@ func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
 	if not args.has(FLAG) or Net.mode != Net.Mode.SERVER:
 		return
-	var port := Net.port
-	for arg in args:
-		if arg.begins_with(PORT_FLAG):
-			port = int(arg.trim_prefix(PORT_FLAG))
-	listen(port, "*")
+	var env := {PORT_ENV: OS.get_environment(PORT_ENV), BIND_ENV: OS.get_environment(BIND_ENV)}
+	var options := listen_options(args, env, Net.port)
+	if not str(options["error"]).is_empty():
+		Log.warn(&"web", "%s; the web page stays off" % options["error"])
+		return
+	listen(int(options["port"]), str(options["bind"]))
 	# Modules with admin pages add them now, whichever of them loaded first.
 	EventBus.publish(&"web.ready", {"web": self})
+
+
+## Where to listen: {port, bind, error}, from the `--web-port=` / `--web-bind=` flags in
+## `args`, else PORT_ENV / BIND_ENV in `env`, else `game_port` on every address. `error` is
+## set when a value makes no sense: then the page stays off, since a mistyped address meant
+## for a proxy on this host must not end up open to everyone.
+static func listen_options(args: PackedStringArray, env: Dictionary, game_port: int) -> Dictionary:
+	var port_text := str(env.get(PORT_ENV, ""))
+	var bind := str(env.get(BIND_ENV, ""))
+	for arg in args:
+		if arg.begins_with(PORT_FLAG):
+			port_text = arg.trim_prefix(PORT_FLAG)
+		elif arg.begins_with(BIND_FLAG):
+			bind = arg.trim_prefix(BIND_FLAG)
+	port_text = port_text.strip_edges()
+	bind = bind.strip_edges()
+	var out := {"port": game_port, "bind": "*" if bind.is_empty() else bind, "error": ""}
+	if not port_text.is_empty():
+		var port := port_text.to_int() if port_text.is_valid_int() else 0
+		if port < 1 or port > 65535:
+			out["error"] = "web port %s is not a port number (1-65535)" % port_text
+			return out
+		out["port"] = port
+	if out["bind"] != "*" and not str(out["bind"]).is_valid_ip_address():
+		out["error"] = "web address %s is not an IP address or *" % bind
+	return out
 
 
 ## Starts listening (tests call this directly). False if the port is taken.
@@ -84,10 +118,11 @@ func listen(port: int, bind: String = "*") -> bool:
 	_server = TCPServer.new()
 	var err := _server.listen(port, bind)
 	if err != OK:
-		Log.warn(&"web", "cannot listen on TCP %d: %s" % [port, error_string(err)])
+		Log.warn(&"web", "cannot listen on TCP %s port %d: %s" % [bind, port, error_string(err)])
 		_server = null
 		return false
-	Log.info(&"web", "status page on http://<this server>:%d/%s" % [_server.get_local_port(), "" if _password.is_empty() else " (admin pages on)"])
+	var host := "<this server>" if bind == "*" else ("[%s]" % bind if bind.contains(":") else bind)
+	Log.info(&"web", "status page on http://%s:%d/%s" % [host, _server.get_local_port(), "" if _password.is_empty() else " (admin pages on)"])
 	return true
 
 

@@ -44,6 +44,8 @@ func _init(ground: WorldLand, places: Settlements, net: RoadNetwork, config: Dic
 	if net != null:
 		for road in net.roads():
 			_add_road(road)
+		for i in _roads.size():
+			_roads[i]["strip"] = _strip_span(i)
 
 
 ## Height of the shaped ground at (x, z), in metres.
@@ -128,6 +130,127 @@ func road_distance(x: float, z: float) -> float:
 	return best
 
 
+## How the voxel ground draws each road kind (`VoxelGround.tile_arrays`' way kinds): paved
+## roads and tracks are strips of their own, lanes are painted into the ground.
+const WAY_PAVED := 0
+const WAY_TRACK := 1
+const WAY_LANE := 2
+## A levelled pad (a settlement's or a site's), given to the ground so the banks round it
+## tilt where gentle enough.
+const WAY_PAD := 4
+## How finely a track's strip is cut back to the edge of a way it runs onto, metres.
+const TRIM_STEP := 0.25
+## Furthest a track's strip is cut back, metres (a track that runs along another for longer
+## than this keeps its strip from there).
+const MAX_TRIM := 30.0
+## Added to a segment's way kind where the way starts or ends at it (voxkit_core::ways).
+const WAY_START_ENDS := 8
+const WAY_END_ENDS := 16
+
+
+## The road segments (tunnels and bridges left out) and levelled pads that come within
+## `margin` metres of `rect`, for the voxel ground: 8 floats each relative to `rect.position`:
+## ax, az, ay, bx, bz, by, half width, way kind (WAY_*); a pad runs along x across its
+## middle. `rect` is one of this index's tiles. Pure: safe on a worker thread.
+func segments_near(rect: Rect2, margin: float) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	var near: Variant = _tiles.get(_tile_of(rect.position.x + 1.0, rect.position.y + 1.0))
+	if near == null:
+		return out
+	for f: Dictionary in near:
+		if f.has("pad"):
+			# Its rectangle (shoulder included) as a segment along x with square ends.
+			var pad: Dictionary = _pads[int(f["pad"])]
+			var r: Rect2 = pad["rect"]
+			if not r.grow(margin).intersects(rect):
+				continue
+			var mid := r.get_center().y - rect.position.y
+			var level := float(pad["level"])
+			out.append_array(PackedFloat32Array([r.position.x - rect.position.x, mid, level, r.end.x - rect.position.x, mid, level, r.size.y / 2.0, WAY_PAD]))
+			continue
+		var road: Dictionary = _roads[int(f["road"])]
+		var k := int(f["segment"])
+		var points: PackedVector2Array = road["points"]
+		var heights: PackedFloat32Array = road["heights"]
+		var edge := float(road["edge"])
+		var a := points[k]
+		var b := points[k + 1]
+		if not Rect2(a, Vector2.ZERO).expand(b).grow(edge + margin).intersects(rect):
+			continue
+		# The part of a track outside its strip (where it runs onto another way) is painted
+		# instead; where a strip ends, the ground meets its model's end square, not round.
+		var along: PackedFloat32Array = road["along"]
+		var span: Vector2 = road["strip"]
+		var cuts: Array[float] = [along[k], clampf(span.x, along[k], along[k + 1]), clampf(span.y, along[k], along[k + 1]), along[k + 1]]
+		for c in 3:
+			var from := cuts[c]
+			var to := cuts[c + 1]
+			if to - from < 0.01:
+				continue
+			var t0 := (from - along[k]) / maxf(along[k + 1] - along[k], 0.0001)
+			var t1 := (to - along[k]) / maxf(along[k + 1] - along[k], 0.0001)
+			var p := a.lerp(b, t0) - rect.position
+			var q := a.lerp(b, t1) - rect.position
+			var code := int(road["way"])
+			if c != 1:
+				code = WAY_LANE
+			else:
+				code += (WAY_START_ENDS if is_equal_approx(from, span.x) else 0) + (WAY_END_ENDS if is_equal_approx(to, span.y) else 0)
+			out.append_array(PackedFloat32Array([p.x, p.y, lerpf(heights[k], heights[k + 1], t0), q.x, q.y, lerpf(heights[k], heights[k + 1], t1), edge, code]))
+	return out
+
+
+## The metres along road `index` its strip is drawn over (VoxRoad pieces): all of it, but a
+## track stops where it runs onto a way before it, at the point its strip clears that
+## one's, so two strips never overlap at their own heights.
+func strip_span(index: int) -> Vector2:
+	return _roads[index]["strip"]
+
+
+func _strip_span(index: int) -> Vector2:
+	var road: Dictionary = _roads[index]
+	var along: PackedFloat32Array = road["along"]
+	var length := along[along.size() - 1]
+	if road["way"] != WAY_TRACK:
+		return Vector2(0.0, length)
+	var line := RoadLine.new({"kind": "track", "width": float(road["edge"]) * 2.0, "points": road["points"], "heights": road["heights"]})
+	return Vector2(_overlap(index, line, false), length - _overlap(index, line, true))
+
+
+## Metres from `line`'s end (or with `at_end` false its start) to where its strip clears the
+## strips of the roads before `index`, in TRIM_STEP steps, at most MAX_TRIM. Each other road
+## is searched only near where the end lies along it: this runs for every track at map
+## load, on the server and every client.
+func _overlap(index: int, line: RoadLine, at_end: bool) -> float:
+	var end := line.point_at(line.length() if at_end else 0.0)
+	var near: Array[RoadLine] = []
+	var around: Array[float] = []
+	for i in index:
+		var other: Dictionary = _roads[i]
+		if other["way"] == WAY_LANE:
+			continue
+		var other_line := RoadLine.new({"kind": "", "width": float(other["edge"]) * 2.0, "points": other["points"], "heights": other["heights"]})
+		if other_line.bounds().grow(other_line.width).has_point(end):
+			near.append(other_line)
+			around.append(other_line.locate(end, 0.0, other_line.length()).x)
+	if near.is_empty():
+		return 0.0
+	var trim := 0.0
+	var most := minf(line.length(), MAX_TRIM)
+	while trim < most:
+		var p := line.point_at(line.length() - trim if at_end else trim)
+		var on := false
+		for k in near.size():
+			var other := near[k]
+			if absf(other.locate(p, around[k] - MAX_TRIM, around[k] + MAX_TRIM).y) < (other.width + line.width) / 2.0:
+				on = true
+				break
+		if not on:
+			return trim
+		trim += TRIM_STEP
+	return trim
+
+
 ## Rise per metre of the shaped ground at (x, z).
 func grade(x: float, z: float) -> float:
 	var d := WorldLand.GRADE_STEP
@@ -148,8 +271,14 @@ func _add_road(road: Dictionary) -> void:
 		for i in range(span.x, span.y + 1):
 			skip[i] = 1
 	var index := _roads.size()
+	var along := PackedFloat32Array()
+	along.resize(points.size())
+	for k in range(1, points.size()):
+		along[k] = along[k - 1] + points[k].distance_to(points[k - 1])
 	var half := float(road["width"]) / 2.0 + _shoulder
-	var track: bool = road["kind"] == "track"
+	# Lanes are dirt ways too: shaped like a track, with its short, steep banks.
+	var way := WAY_TRACK if road["kind"] == "track" else WAY_LANE if road["kind"] == "lane" else WAY_PAVED
+	var track := way != WAY_PAVED
 	var reach := _track_reach if track else _reach
 	# Between a tunnel's or bridge's two mouths the road shapes nothing, not even with the
 	# banks of the cuts leading up to them: each span is kept as the slab between the planes
@@ -163,7 +292,7 @@ func _add_road(road: Dictionary) -> void:
 		var into_b := (points[maxi(span.y, 0)] - b).normalized()
 		slabs.append(PackedVector2Array([a, into_a, b, into_b]))
 	_roads.append({"points": points, "heights": road["heights"], "half": half, "edge": float(road["width"]) / 2.0, "slabs": slabs,
-		"bank": _track_bank if track else _bank, "reach": reach})
+		"bank": _track_bank if track else _bank, "reach": reach, "way": way, "along": along})
 	for k in points.size() - 1:
 		# A segment touching a tunnel or bridge sample is left out: the land stays as it is
 		# over a tunnel and under a bridge.

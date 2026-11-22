@@ -32,6 +32,16 @@
     "bolt_rifle": 0.0,
     "bolt_cycle": -9.0
   },
+  "jitter": {
+    "default": { "pitch": [0.97, 1.03], "volume_db": [-1.0, 1.0] },
+    "footstep": { "pitch": [0.85, 1.15], "volume_db": [-2.0, 2.0] },
+    "impact": { "pitch": [0.92, 1.08] },
+    "hit_*": { "pitch": [0.92, 1.08] },
+    "break_*": { "pitch": [0.9, 1.1] },
+    "collapse": { "pitch": [0.9, 1.05] },
+    "bird": { "pitch": [0.85, 1.2] },
+    "bolt_cycle": { "pitch": [1.0, 1.0] }
+  },
   "surface_families": {
     "wood": "wood",
     "furniture": "wood",
