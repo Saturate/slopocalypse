@@ -95,6 +95,11 @@ func _stroll_spot() -> Vector3:
 	return home + Vector3(cos(a), 0.0, sin(a)) * _rng.randf_range(r * 0.3, r)
 
 
+## Alarmed (running or hiding): it stays awake far from players (BrainSleep).
+func busy() -> bool:
+	return state != State.CALM
+
+
 ## Something loud happened at `at`.
 func alarm(at: Vector3) -> void:
 	if body.get_meta(&"dead", false):
@@ -102,6 +107,8 @@ func alarm(at: Vector3) -> void:
 	if body.global_position.distance_to(at) > float(config.get("hearing_range", 60.0)):
 		return
 	_quiet = 0.0
+	if not is_physics_processing():
+		BrainSleep.wake(body)
 	if state != State.CALM:
 		return
 	if refuges.is_empty() or _rng.randf() < float(config.get("freeze_share", 0.25)):

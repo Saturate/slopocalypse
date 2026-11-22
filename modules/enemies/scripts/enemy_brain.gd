@@ -115,6 +115,18 @@ func _suppression_cfg() -> Dictionary:
 	return config.get("suppression", {})
 
 
+## Something on its mind (a foe, or fire it is still shaking off): it stays awake far from
+## players (BrainSleep).
+func busy() -> bool:
+	return not surrendered and (is_instance_valid(target) or suppression > 0.0)
+
+
+## Wakes it if it was asleep (BrainSleep): something happened to it.
+func _stir() -> void:
+	if not is_physics_processing():
+		BrainSleep.wake(body)
+
+
 func is_pinned() -> bool:
 	return suppression >= float(_suppression_cfg().get("pinned", 1.0))
 
@@ -448,6 +460,7 @@ func _on_shot_heard(p: Dictionary) -> void:
 			target = shooter
 			last_seen = shooter.global_position
 			state = State.CHASE
+		_stir()
 	if body.global_position.distance_to(shooter.global_position) > float(config["hearing_range"]):
 		return
 	if target == null or state == State.PATROL:
@@ -455,6 +468,7 @@ func _on_shot_heard(p: Dictionary) -> void:
 		last_seen = shooter.global_position
 		_lost_for = 0.0
 		state = State.CHASE
+		_stir()
 
 
 ## Blasts nearby build suppression: a lot close in, less further out.
@@ -465,6 +479,7 @@ func _on_explosion(p: Dictionary) -> void:
 	var d := body.global_position.distance_to(p["position"])
 	if d < reach:
 		suppression += float(_suppression_cfg().get("explosion", 1.5)) * (1.0 - d / reach)
+		_stir()
 
 
 ## Whether a shot from the muzzle would reach `who`: nothing solid and no leaves on the way.
@@ -799,6 +814,7 @@ func hear_callout(who: Node3D) -> void:
 	last_seen = who.global_position
 	_lost_for = 0.0
 	state = State.CHASE
+	_stir()
 
 
 func _eye() -> Vector3:
