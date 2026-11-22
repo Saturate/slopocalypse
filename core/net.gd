@@ -40,9 +40,11 @@ const SOLO_CONNECT_TRIES := 5
 const FIRST_JOIN_SECONDS := 30.0
 ## How long joining a server waits before saying it cannot be reached.
 const JOIN_TIMEOUT_MS := 8000
-## ENet's own defaults, restored after joining.
+## After joining, on both ends. ENet's own minimum is 5 s, but building the world after a
+## join stalled a slow machine's frames for 6 s and dropped the connection; a dead peer is
+## still noticed within 15 to 30 s.
 const ENET_TIMEOUT_LIMIT := 32
-const ENET_TIMEOUT_MIN_MS := 5000
+const ENET_TIMEOUT_MIN_MS := 15000
 const ENET_TIMEOUT_MAX_MS := 30000
 ## How long a connected peer has to say who they are before the server drops them.
 const HELLO_SECONDS := 10.0
@@ -140,6 +142,9 @@ func _ready() -> void:
 		Log.info(&"net", "peer %d connected" % id)
 		_had_peers = true
 		if multiplayer.is_server():
+			var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+			if enet != null:
+				enet.get_peer(id).set_timeout(ENET_TIMEOUT_LIMIT, ENET_TIMEOUT_MIN_MS, ENET_TIMEOUT_MAX_MS)
 			_unnamed[id] = 0.0)
 	multiplayer.peer_disconnected.connect(_on_peer_left)
 	multiplayer.connected_to_server.connect(func() -> void:
@@ -199,8 +204,8 @@ func _start_local_server(listen_port: int, bind: String) -> void:
 	_start_client()
 
 
-## Once in, ENet's patient defaults return: loading the world can stall a frame for a
-## second or two, and the short join timeout would drop the connection over it.
+## Once in, the patient timeout returns: loading the world can stall frames for seconds,
+## and the short join timeout would drop the connection over it.
 func _restore_timeout() -> void:
 	var peer := multiplayer.multiplayer_peer as ENetMultiplayerPeer
 	if peer != null and mode == Mode.CLIENT:

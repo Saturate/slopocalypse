@@ -34,12 +34,21 @@ jobs:
 
       - name: Full gate
         env:
-          # Each test run peaks near 4 GB; the 16 GB Linux runner fits three, not its four cores' worth.
+          # Test runs have filled the 16 GB Linux runner; three at a time while that is open.
           GATE_SHARDS: ${{ runner.os == 'Linux' && '3' || '' }}
         run: |
           # Linux runs have died mid-test with SIGTERM and no output; log memory to see why.
           if [ "$RUNNER_OS" = Linux ]; then
-            (while sleep 15; do free -m | awk 'NR==2{print "mem used " $3 " of " $2 " MB"}'; done) &
+            # Past 13 GB the runner itself dies and takes the log with it, so name the biggest
+            # processes (a test run's arguments list its suites) and stop the tests first.
+            (while sleep 15; do
+              used=$(free -m | awk 'NR==2{print $3}')
+              echo "mem used $used MB"
+              if [ "$used" -gt 13000 ]; then
+                ps -eo rss,etime,args --sort=-rss | head -5 | cut -c1-600
+                pkill -f GdUnitCmdTool || true
+              fi
+            done) &
           fi
           node tools/check.ts --full
 
