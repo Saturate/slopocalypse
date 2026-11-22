@@ -33,4 +33,13 @@ jobs:
       - uses: ./.github/actions/setup
 
       - name: Full gate
-        run: node tools/check.ts --full
+        run: |
+          # Linux runs have died mid-test with SIGTERM and no output; log memory to see why.
+          if [ "$RUNNER_OS" = Linux ]; then
+            (while sleep 15; do free -m | awk 'NR==2{print "mem used " $3 " of " $2 " MB"}'; done) &
+          fi
+          node tools/check.ts --full
+
+      - name: Kernel log after a failed Linux run
+        if: failure() && runner.os == 'Linux'
+        run: sudo dmesg | tail -40
