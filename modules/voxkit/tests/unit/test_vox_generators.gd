@@ -89,3 +89,27 @@ func test_a_worn_dirt_road_keeps_every_voxel() -> void:
 	worn["surface"] = 0
 	plain["surface"] = 0
 	assert_int(road.build(worn).voxel_count()).is_less(road.build(plain).voxel_count())
+
+
+## A dirt track's edges fray inward (#498): it loses cells only at its edges, by no more than
+## the fray, and the wander along the way is smooth and the same for every piece that asks.
+func test_a_frayed_dirt_road_wanders_in_at_its_edges_only() -> void:
+	var road := VoxRoad.new()
+	var base := {"seed": 7, "length": 8.0, "lanes": 1, "lane_width": 3.5, "shoulder": 0.0, "voxel": 0.1, "surface": VoxRoad.DIRT, "centre": 0, "edges": 0, "wear": 1.0}
+	var frayed := base.duplicate()
+	frayed["fray"] = 0.3
+	var plain_model := road.build(base)
+	var frayed_model := road.build(frayed)
+	assert_int(frayed_model.voxel_count()).is_less(plain_model.voxel_count())
+	# The middle, ruts included, is all there.
+	var top := VoxRoad.BED + VoxRoad.SURFACE - 0.05
+	for z: float in [-3.5, -1.0, 0.5, 3.0]:
+		for x: float in [-1.3, -0.8, 0.0, 0.8, 1.3]:
+			assert_bool(frayed_model.colour_at(Vector3(x, top, z)).a > 0.0 and plain_model.colour_at(Vector3(x, top, z)) == frayed_model.colour_at(Vector3(x, top, z))).override_failure_message("missing at %s, %s" % [x, z]).is_true()
+	var last := VoxRoad._fray(0.0, 0.3, 4)
+	for i in range(1, 400):
+		var f := VoxRoad._fray(i * 0.05, 0.3, 4)
+		assert_float(f).is_between(0.0, 0.3)
+		assert_float(absf(f - last)).is_less(0.06)
+		last = f
+	assert_float(VoxRoad._fray(12.34, 0.3, 4)).is_equal(VoxRoad._fray(12.34, 0.3, 4))

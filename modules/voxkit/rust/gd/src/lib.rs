@@ -10,6 +10,7 @@ use godot::prelude::*;
 use std::sync::RwLock;
 use voxkit_core::edits::Edit;
 use voxkit_core::heightfield::{self, Tile};
+use voxkit_core::ways::Look;
 use voxkit_core::{Colour, Grid, Mesh, OPEN, Op, Paint};
 
 /// Brightness per corner level (0 tucked in to 3 open) when corner shading is on, for every
@@ -751,7 +752,13 @@ struct VoxelGround {
 impl VoxelGround {
     /// `heights` is `cn` x `cn` (row-major by z), `spacing` metres apart; `colours` is
     /// `cc` x `cc` over the same tile; the tile is `n` columns of `voxel` metres a side.
-    /// Returns mesh arrays in tile-local metres.
+    /// `look` holds the ground's settings: `steep_slope` (rise over run past which `steep`
+    /// shows), `side` (the colour of tall walls), `skirt`, `tilt_grade`, `band`, `pad_band`,
+    /// `band_grade` (see `voxkit_core::heightfield::Tile`) and how ways are drawn (see
+    /// `look_of`). `ways` holds the roads, tracks, lanes and pads over the tile
+    /// (`voxkit_core::ways::WAY_STRIDE` floats each, tile-local); `dug` is non-zero per
+    /// height sample where a crater was dug (or empty). Returns mesh arrays in tile-local
+    /// metres; colour alpha marks sloping tilted tops and painted columns (see below).
     #[func]
     #[allow(clippy::too_many_arguments)]
     fn tile_arrays(
@@ -762,11 +769,10 @@ impl VoxelGround {
         cc: i64,
         n: i64,
         voxel: f32,
-        steep_slope: f32,
-        steep: Color,
-        side: Color,
-        skirt: f32,
         seed: i64,
+        look: VarDictionary,
+        ways: PackedFloat32Array,
+        dug: PackedByteArray,
     ) -> VarArray {
         let (cn, cc, n) = (
             cn.max(2) as usize,
@@ -779,6 +785,9 @@ impl VoxelGround {
         }
         let hs = heights.as_slice().to_vec();
         let cs: Vec<Colour> = colours.as_slice().iter().map(|&c| colour_of(c)).collect();
+        let ws = ways.as_slice().to_vec();
+        let dg = dug.as_slice().to_vec();
+        let number = |key: &str, fallback: f32| look_number(&look, key, fallback);
         let tile = Tile {
             heights: &hs,
             cn,
@@ -787,13 +796,84 @@ impl VoxelGround {
             cc,
             n,
             voxel: voxel.max(0.01),
-            steep_slope,
-            steep: colour_of(steep),
-            side: colour_of(side),
-            skirt,
+            steep_slope: number("steep_slope", f32::INFINITY),
+            steep: look_colour(&look, "steep", 0x77_77_77),
+            side: look_colour(&look, "side", 0x55_33_11),
+            skirt: number("skirt", 0.0),
             seed: seed as u32,
             corners: shading().is_some(),
+            tilt_grade: number("tilt_grade", 0.0),
+            band: number("band", 0.0),
+            pad_band: number("pad_band", 0.0),
+            band_grade: number("band_grade", 0.0),
+            ways: &ws,
+            look: look_of(&look),
+            dug: &dg,
         };
-        arrays_of(&heightfield::mesh(&tile))
+        let (mut mesh, tilted) = heightfield::mesh_marked(&tile);
+        let painted: Vec<bool> = mesh
+            .shade
+            .iter()
+            .map(|&l| l & heightfield::PAINTED != 0)
+            .collect();
+        for l in &mut mesh.shade {
+            *l &= !heightfield::PAINTED;
+        }
+        let mut arrays = arrays_of(&mesh);
+        // Alpha marks how the ground shader draws a vertex: 1 plain, 0.75 painted by a way,
+        // 0.25 a sloping tilted top (varied per column), 0 both.
+        if !arrays.is_empty() && (!tilted.is_empty() || painted.contains(&true)) {
+            let slot = ArrayType::COLOR.ord() as usize;
+            let mut colours: PackedColorArray = arrays.at(slot).to();
+            for (i, &p) in painted.iter().enumerate() {
+                let slope = tilted.contains(&i);
+                if !slope && !p {
+                    continue;
+                }
+                if let Some(c) = colours.get(i) {
+                    let a = match (slope, p) {
+                        (true, true) => 0.0,
+                        (true, false) => 0.25,
+                        _ => 0.75,
+                    };
+                    colours[i] = Color::from_rgba(c.r, c.g, c.b, a);
+                }
+            }
+            arrays.set(slot, &colours.to_variant());
+        }
+        arrays
+    }
+}
+
+fn look_colour(look: &VarDictionary, key: &str, fallback: Colour) -> Colour {
+    look.get(key)
+        .and_then(|v| v.try_to::<Color>().ok())
+        .map_or(fallback, colour_of)
+}
+
+fn look_number(look: &VarDictionary, key: &str, fallback: f32) -> f32 {
+    look.get(key)
+        .and_then(|v| v.try_to::<f32>().ok())
+        .unwrap_or(fallback)
+}
+
+/// How the ground draws ways, from `look` (keys as `voxkit_core::ways::Look`'s fields,
+/// colours as Color); anything missing keeps its default.
+fn look_of(look: &VarDictionary) -> Look {
+    let d = Look::default();
+    let number = |key: &str, fallback: f32| look_number(look, key, fallback);
+    let colour = |key: &str, fallback: Colour| look_colour(look, key, fallback);
+    Look {
+        paved_bed: colour("paved_bed", d.paved_bed),
+        track_soil: colour("track_soil", d.track_soil),
+        strip_top: number("strip_top", d.strip_top),
+        track_fray: number("track_fray", d.track_fray),
+        track_verge: number("track_verge", d.track_verge),
+        yard_fray: number("yard_fray", d.yard_fray),
+        yard_round: number("yard_round", d.yard_round),
+        lane_soil: colour("lane_soil", d.lane_soil),
+        lane_mix: number("lane_mix", d.lane_mix),
+        verge_mix: number("verge_mix", d.verge_mix),
+        rut_dark: number("rut_dark", d.rut_dark),
     }
 }

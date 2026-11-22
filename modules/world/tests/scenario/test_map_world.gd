@@ -84,7 +84,8 @@ func test_every_road_is_cut_into_pieces_filed_under_its_chunks() -> void:
 	var length := 0.0
 	for line: RoadLine in lines:
 		length += line.length()
-	assert_float(total).is_equal_approx(length, 1.0)
+	# A track stops where it runs onto the road or track it joins; the rest is all drawn.
+	assert_float(total).is_between(length * 0.95, length + 1.0)
 	s.queue_free()
 
 
@@ -180,23 +181,46 @@ func test_a_map_name_that_is_not_a_recipe_plays_the_default() -> void:
 	WorldMaps.clear()
 
 
-## Another module's yards (a site's packed dirt) are cut into pieces like the tracks and kept
-## clear of grass, and setting them again replaces them.
-func test_yards_are_laid_like_tracks_and_replaced() -> void:
+## Another module's yards (a site's packed dirt) are painted into the ground as lanes, not
+## laid as strips, and kept clear of grass; setting them again replaces them.
+func test_yards_are_painted_into_the_ground_and_replaced() -> void:
+	_shape()
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
+	var voxels: VoxelWorld = world.get_node("Terrain")
+	var s: SceneryScatter = world.get_node("Scenery")
+	var roads := (s.get(&"_lines") as Array).size()
+	var c := s.home
+	var key := Vector2i(floori(c.x / VoxelWorld.TILE), floori(c.z / VoxelWorld.TILE))
+	var yard := {"from": Vector2(c.x - 10.0, c.z), "to": Vector2(c.x + 10.0, c.z), "width": 6.0, "level": c.y}
+	s.set_yards_for(&"test", [yard])
+	assert_int((s.get(&"_lines") as Array).size()).is_equal(roads)
+	var lanes := voxels.lanes_in(key)
+	assert_int(lanes.size()).is_equal(VoxelWorld.WAY_STRIDE)
+	assert_float(lanes[VoxelWorld.WAY_STRIDE - 1]).is_equal(float(VoxelWorld.WAY_YARD))
+	assert_float(lanes[6]).is_equal(3.0)
+	assert_bool(s.call(&"_on_yard", c.x + 9.0, c.z + 2.5, 0.0)).is_true()
+	assert_bool(s.call(&"_on_yard", c.x, c.z + 4.0, 0.5)).is_false()
+	s.set_yards_for(&"test", [])
+	assert_int(voxels.lanes_in(key).size()).is_equal(0)
+	assert_bool(s.call(&"_on_yard", c.x, c.z, 0.0)).is_false()
+	world.queue_free()
+
+
+## Lanes are painted into the ground: the scenery lays strips for roads and tracks only.
+func test_a_lane_gets_no_strip() -> void:
 	_shape()
 	var s := SceneryScatter.new()
 	s.set(&"_visual", false)
 	add_child(s)
 	s.set_process(false)
-	var lines: Array = s.get(&"_lines")
-	var roads := lines.size()
-	var c := s.home
-	var yard := {"from": Vector2(c.x - 10.0, c.z), "to": Vector2(c.x + 10.0, c.z), "width": 6.0, "level": c.y}
-	s.set_yards_for(&"test", [yard])
-	assert_int((s.get(&"_lines") as Array).size()).is_equal(roads + 1)
-	assert_bool(s.call(&"_on_yard", c.x + 9.0, c.z + 2.5, 0.0)).is_true()
-	assert_bool(s.call(&"_on_yard", c.x, c.z + 4.0, 0.5)).is_false()
-	s.set_yards_for(&"test", [])
-	assert_int((s.get(&"_lines") as Array).size()).is_equal(roads)
-	assert_bool(s.call(&"_on_yard", c.x, c.z, 0.0)).is_false()
+	var lines := (s.get(&"_lines") as Array).size()
+	var way := {"width": 3.0, "points": PackedVector2Array([Vector2(0, 0), Vector2(0, 40)]), "heights": PackedFloat32Array([1.0, 1.0])}
+	var lane := way.duplicate()
+	lane["kind"] = "lane"
+	s.call(&"_add_line", RoadLine.new(lane))
+	assert_int((s.get(&"_lines") as Array).size()).is_equal(lines)
+	var track := way.duplicate()
+	track["kind"] = "track"
+	s.call(&"_add_line", RoadLine.new(track))
+	assert_int((s.get(&"_lines") as Array).size()).is_equal(lines + 1)
 	s.queue_free()

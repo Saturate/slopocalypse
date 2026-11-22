@@ -9,6 +9,7 @@
 
 pub mod edits;
 pub mod heightfield;
+pub mod ways;
 
 /// A cell's colour as 0xRRGGBB; `EMPTY` is air.
 pub type Colour = u32;

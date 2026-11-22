@@ -596,7 +596,7 @@ static func draw_roads(image: Image, net: RoadNetwork, earthworks: bool, region 
 		var points: PackedVector2Array = road["points"]
 		var colours: Array[Color] = []
 		colours.resize(points.size())
-		colours.fill(TRACK if road["kind"] == "track" else ROAD)
+		colours.fill(TRACK if road["kind"] == "track" or road["kind"] == "lane" else ROAD)
 		if earthworks:
 			for span: Vector2i in road["tunnels"]:
 				for i in range(span.x, span.y + 1):

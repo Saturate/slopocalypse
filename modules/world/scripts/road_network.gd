@@ -7,6 +7,8 @@ extends RefCounted
 ## safely can be, its corners rounded into arcs, and sampled evenly. Later slices give the roads a profile and cut them into the land.
 ## Pure and seeded through its settlements; no autoloads.
 
+## Metres past the half width of the road a track joins over which it arrives level.
+const LEVEL_APPROACH := 1.0
 ## Most forward and backward passes holding a profile to its grade (see `_profile`).
 const PROFILE_PASSES := 64
 ## Easing passes after the arcs (see `_ease`).
@@ -152,6 +154,7 @@ func add_track(site: Dictionary, name: String, avoid: Array[Rect2]) -> void:
 		if crosses:
 			_roads.pop_back()
 			continue
+		_level_approach(track, to, float(kind_cfg["max_grade"]))
 		var level := float((track["heights"] as PackedFloat32Array)[0])
 		site["level"] = level
 		var moved: Array[Vector3] = []
@@ -160,6 +163,47 @@ func add_track(site: Dictionary, name: String, avoid: Array[Rect2]) -> void:
 		site["connectors"] = moved
 		break
 	_avoid = []
+
+
+## Levels the end of `track` where it runs onto the road at `to`: across that road's half
+## width and LEVEL_APPROACH metres more it stays at the height it arrives at, so it meets
+## the road's surface flush at its edge instead of climbing or dropping across it; the
+## grade before that is held to `max_grade`.
+func _level_approach(track: Dictionary, to: Vector2, max_grade: float) -> void:
+	var half := _track_half()
+	for road in _roads:
+		if road == track:
+			continue
+		for p: Vector2 in road["points"]:
+			if p.distance_to(to) < 0.01:
+				half = float(road["width"]) / 2.0
+	var points: PackedVector2Array = track["points"]
+	var heights: PackedFloat32Array = track["heights"]
+	var last := points.size() - 1
+	if last < 1:
+		return
+	var reach := half + LEVEL_APPROACH
+	var end := heights[last]
+	var at := points[last]
+	# A point where the level stretch starts, unless one is close to it already.
+	var gone := 0.0
+	var k := last
+	while k > 0 and gone + points[k].distance_to(points[k - 1]) < reach:
+		gone += points[k].distance_to(points[k - 1])
+		k -= 1
+	if k > 0 and gone + points[k].distance_to(points[k - 1]) - reach > LEVEL_APPROACH:
+		var start := points[k] + (points[k - 1] - points[k]).normalized() * (reach - gone)
+		points.insert(k, start)
+		heights.insert(k, end)
+		last += 1
+	for i in range(last, -1, -1):
+		if points[i].distance_to(at) <= reach + 0.01:
+			heights[i] = end
+	for i in range(last - 1, -1, -1):
+		var d := points[i].distance_to(points[i + 1]) * max_grade
+		heights[i] = clampf(heights[i], heights[i + 1] - d, heights[i + 1] + d)
+	track["points"] = points
+	track["heights"] = heights
 
 
 func _nearest_connector(place: Dictionary, to: Vector2) -> Vector2:
