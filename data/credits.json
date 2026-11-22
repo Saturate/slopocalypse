@@ -1,7 +1,9 @@
 {
   "people": [
     {"name": "Allan Kimmer Jensen (Saturate)", "role": "Maintainer: steers the agents, decides what goes in"},
-    {"name": "LOLIVER", "role": "Bug reports and logs"}
+    {"name": "LOLIVER", "role": "Bug reports and logs"},
+    {"name": "flujo-app", "role": "Compass, kill board, benchmark and sight fixes, web proxy support"},
+    {"name": "200msEthan", "role": "Late joiners see who is in a car"}
   ],
   "agents": [
     "Claude Opus 5.5 in Claude Code"
