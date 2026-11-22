@@ -20,8 +20,12 @@ in the world that fits it rather than bring its own.
   is a fade, so the way by road is never felt, and a straight line needs no search over
   the road network.
 - The zone centres on the site; mission buildings, guards, mines and signs stand round it,
-  off its pad and yard, off roads and tracks and out of water. A building keeps its own pad
-  and the blend round it off the site's, so the site's ground is never reshaped.
+  off its pad and yard, off roads and tracks and out of water. The site's ground is never
+  reshaped: since #501 a building's pad is at the site's own level, so it stands right at
+  the pad's edge (where the ground lies within `level_step` of that level), and a fence
+  runs round the site and its buildings with a gate where the track leaves, so the whole
+  reads as one guarded place. Every machine works the fence out from the offer, the
+  buildings and the map; nothing about it is sent.
 - The group is set down on the site's own track, `dropoff.outside` metres outside the zone,
   found by walking down that track from the site. A track too short for that carries on
   along the road it meets. The car parks beside the way there, facing the site. The site,

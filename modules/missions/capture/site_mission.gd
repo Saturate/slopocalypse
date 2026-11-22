@@ -1,8 +1,8 @@
 extends Node3D
 ## Capture base: a mission run at one of the map's sites. The board's template named by
 ## `place` is sent to the first site of `kind`; the group rides out, then the camera looks
-## from the drop-off toward the site for the first half of the frames and from high over the
-## zone for the rest.
+## from the drop-off toward the site, then from a little above and back from the zone's
+## edge on the drop-off's side, then from high over the zone.
 
 const WORLD := "res://modules/world/scenes/world.tscn"
 const PLAYER := "res://modules/player/scenes/player.tscn"
@@ -13,8 +13,10 @@ const WEAPONS := "res://modules/weapons/weapons_module.gd"
 const SITES := "res://modules/sites/sites_module.gd"
 ## The eye over the ground at the drop-off, metres.
 const EYE := 1.8
-## Seconds from the drop-off before the camera goes up over the zone.
-const GROUND_SECONDS := 2.0
+## Seconds at the drop-off, then seconds looking in from the zone's edge, before the camera
+## goes up over the zone.
+const GROUND_SECONDS := 1.3
+const CLOSE_SECONDS := 1.4
 ## The sun this far round from behind the camera (radians) and this high over the horizon.
 const SUN_SIDE := 0.6
 const SUN_HIGH := 0.75
@@ -24,6 +26,9 @@ var place := "Farm lodge"
 ## How high over the zone the second view is, and how far back toward the drop-off.
 var above := 70.0
 var back := 35.0
+## The look in from the edge: this high over the zone's middle and this far back from it.
+var close_above := 18.0
+var close_back := 55.0
 
 var _camera := Camera3D.new()
 var _terrain: VoxelWorld
@@ -110,6 +115,12 @@ func _place() -> void:
 		at.y = _terrain.surface_height(at.x, at.z) + EYE
 		_camera.global_position = at
 		_camera.look_at(Vector3(zone.x, at.y - 1.0, zone.z))
+		return
+	if _t < GROUND_SECONDS + CLOSE_SECONDS:
+		var near := zone + (drop - zone).normalized() * close_back
+		near.y = zone.y + close_above
+		_camera.global_position = near
+		_camera.look_at(zone + Vector3.DOWN * 4.0, Vector3.UP)
 		return
 	var from := zone + (drop - zone).normalized() * back
 	from.y = zone.y + above

@@ -91,6 +91,33 @@ func test_the_zone_centres_on_the_farm_with_buildings_and_guards_off_its_pad() -
 		assert_bool(foot.has_point(Vector2(at.x, at.z))).override_failure_message("a guard stands on the farm's pad at %s" % at).is_false()
 
 
+func test_the_farm_mission_is_one_fenced_place_with_its_track_through_the_gate() -> void:
+	var site: Dictionary = await _ride_out_to_a_farm()
+	var foot: Rect2 = site["footprint"]
+	var cfg: Dictionary = _missions.get(&"config")
+	var off: Array = cfg["buildings"]["off_site"]
+	for entry: Dictionary in _missions.get(&"buildings"):
+		var at: Vector3 = entry["position"]
+		assert_bool(foot.grow(float(off[1]) + float(entry["radius"]) + 0.01).has_point(Vector2(at.x, at.z))).override_failure_message("a building at %s, far out from the farm's pad" % at).is_true()
+	var fence: Array = _missions.get(&"_fence_nodes")
+	assert_int(fence.size()).is_greater(8)
+	var ring := Rect2(Vector2((fence[0] as Node3D).global_position.x, (fence[0] as Node3D).global_position.z), Vector2.ZERO)
+	for node: VoxPiece in fence:
+		var at := node.global_position
+		ring = ring.expand(Vector2(at.x, at.z))
+		var half := float(node.params["length"]) / 2.0
+		# No run on a road or track: where the farm's track leaves, the fence has its gate.
+		assert_bool(_voxels.near_road(at, half, 0.0)).override_failure_message("a fence run on a road at %s" % at).is_false()
+		# Standing on the ground, not in the air.
+		assert_float(at.y).is_less_equal(_voxels.surface_height(at.x, at.z))
+	assert_bool(ring.encloses(foot)).is_true()
+	var track: Dictionary = (_missions.get(&"sites") as Array)[int(site["index"])]["track"]
+	if not track.is_empty():
+		var points: PackedVector2Array = track["points"]
+		var leaves := Array(points).any(func(p: Vector2) -> bool: return not ring.has_point(p))
+		assert_bool(leaves).override_failure_message("the farm's track never leaves the fence").is_true()
+
+
 func test_the_drop_off_is_on_the_farms_track_a_walk_outside_the_zone() -> void:
 	var site: Dictionary = await _ride_out_to_a_farm()
 	var drop: Vector3 = _missions.call(&"dropoff_of", _missions.get(&"current"))

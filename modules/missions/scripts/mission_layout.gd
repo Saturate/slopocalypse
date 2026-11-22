@@ -6,7 +6,8 @@ extends RefCounted
 
 ## `cfg` is the `buildings` block of missions.json; `place` is MissionSites' {centre,
 ## footprint (Rect2 on x, z; empty for a roadside spot), toward (the way its track leaves)}.
-## Each building stands `off_site` metres out from the footprint's edge. Returns layout
+## Each building stands `off_site` metres out from the footprint's edge (`off_roadside`
+## from a roadside spot's centre). Returns layout
 ## entries `{position, yaw, width, depth, wall_height, windows, paint, seed}`; `position` is
 ## on the place's level, the caller puts it on the ground. `blocked(at, radius) -> bool`
 ## turns down a spot someone else holds (the site's own pad and yard, another site, a road,
@@ -21,9 +22,10 @@ static func buildings(cfg: Dictionary, seed_value: int, place: Dictionary, block
 	var width: Array = cfg.get("width", [5.0, 8.0])
 	var depth: Array = cfg.get("depth", [4.0, 6.0])
 	var height: Array = cfg.get("wall_height", [2.7, 3.2])
-	var off: Array = cfg.get("off_site", [4.0, 18.0])
 	var gap := float(cfg.get("gap", 3.0))
 	var foot: Rect2 = place["footprint"]
+	# Round a roadside spot (no pad) they keep further apart: nothing there ties them together.
+	var off: Array = cfg.get("off_site", [4.0, 18.0]) if foot.has_area() else cfg.get("off_roadside", cfg.get("off_site", [4.0, 18.0]))
 	var centre: Vector3 = place["centre"]
 	var middle := Vector3(foot.get_center().x, centre.y, foot.get_center().y)
 	var frame := atan2(-(place["toward"] as Vector3).x, -(place["toward"] as Vector3).z)
@@ -63,6 +65,74 @@ static func buildings(cfg: Dictionary, seed_value: int, place: Dictionary, block
 			"material": str(cfg["material"]) if cfg.has("material") else ("concrete" if rng.randf() < float(cfg.get("concrete_share", 0.0)) else "wood"),
 		})
 	return out
+
+
+## The fence round a mission at a map site, so the site and the buildings round it read as
+## one guarded place: a rectangle `cfg.margin` metres out from the site's footprint and every
+## building in `entries`, each side cut into as few equal runs as keep them within
+## `cfg.segment` metres (so a side's runs are alike and share one mesh). The runs where
+## the ray from the footprint's middle along `place.toward` (the way its track leaves) meets
+## the fence are left out, `cfg.gate` metres wide, and so is every run `blocked(middle,
+## half_length) -> bool` turns down (a road or track, water, another site), and a share
+## `cfg.gaps` of the rest, rolled from `seed_value` (never a side's end runs, so the corners
+## stand). Returns `{from, to (on the place's level; the caller puts them on the ground),
+## tall_ends (the run starts or ends a side or a stretch: corner and gate posts)}`, in order
+## round the fence. A roadside spot (an empty footprint) gets none.
+static func fence(cfg: Dictionary, place: Dictionary, entries: Array, seed_value: int, blocked := Callable()) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var foot: Rect2 = place["footprint"]
+	if foot.size.x <= 0.0 or foot.size.y <= 0.0:
+		return out
+	var bounds := foot
+	for e: Dictionary in entries:
+		var at: Vector3 = e["position"]
+		var basis := Basis(Vector3.UP, float(e["yaw"]))
+		var half := Vector3(float(e["width"]) / 2.0, 0.0, float(e["depth"]) / 2.0)
+		for corner: Vector3 in [Vector3(-1, 0, -1), Vector3(1, 0, -1), Vector3(1, 0, 1), Vector3(-1, 0, 1)]:
+			var p := at + basis * (corner * half)
+			bounds = bounds.expand(Vector2(p.x, p.z))
+	bounds = bounds.grow(float(cfg["margin"]))
+	var step := float(cfg["segment"])
+	var toward: Vector3 = place["toward"]
+	var gate_at := _exit(bounds, foot.get_center(), Vector2(toward.x, toward.z))
+	var gate_half := float(cfg["gate"]) / 2.0
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var gaps := float(cfg.get("gaps", 0.0))
+	var level := (place["centre"] as Vector3).y
+	var corners: Array[Vector2] = [bounds.position, Vector2(bounds.end.x, bounds.position.y), bounds.end, Vector2(bounds.position.x, bounds.end.y)]
+	for side in 4:
+		var a := corners[side]
+		var b := corners[(side + 1) % 4]
+		var n := ceili(a.distance_to(b) / step - 0.001)
+		var keep: Array[bool] = []
+		for k in n:
+			var ra := a.lerp(b, float(k) / n)
+			var rb := a.lerp(b, float(k + 1) / n)
+			var mid := (ra + rb) / 2.0
+			var ok := Geometry2D.get_closest_point_to_segment(gate_at, ra, rb).distance_to(gate_at) >= gate_half
+			ok = ok and not (blocked.is_valid() and bool(blocked.call(Vector3(mid.x, level, mid.y), step / 2.0)))
+			# Every run draws, so one blocked run never shifts which others break.
+			var broken := rng.randf() < gaps
+			keep.append(ok and (k == 0 or k == n - 1 or not broken))
+		for k in n:
+			if not keep[k]:
+				continue
+			var ra := a.lerp(b, float(k) / n)
+			var rb := a.lerp(b, float(k + 1) / n)
+			var ends := k == 0 or k == n - 1 or not keep[k - 1] or not keep[k + 1]
+			out.append({"from": Vector3(ra.x, level, ra.y), "to": Vector3(rb.x, level, rb.y), "tall_ends": ends})
+	return out
+
+
+## Where the ray from `from` (inside `rect`) along `dir` leaves it.
+static func _exit(rect: Rect2, from: Vector2, dir: Vector2) -> Vector2:
+	var t := INF
+	if absf(dir.x) > 0.0001:
+		t = minf(t, ((rect.end.x if dir.x > 0.0 else rect.position.x) - from.x) / dir.x)
+	if absf(dir.y) > 0.0001:
+		t = minf(t, ((rect.end.y if dir.y > 0.0 else rect.position.y) - from.y) / dir.y)
+	return from + dir * (t if t < INF else 0.0)
 
 
 ## A fixed row instead of a rolled layout (the test range): `cfg.row` lists the buildings in

@@ -304,10 +304,11 @@ func set_pads_for(owner: StringName, pads: Array) -> void:
 
 ## Whether a circle of `radius` at `at` reaches onto a pad of an owner other than `owner`
 ## (its blend included), or onto a map site's pad: ground someone else has levelled for what
-## stands there.
-func is_claimed(at: Vector3, radius: float, owner: StringName) -> bool:
+## stands there. The site pad `except_site` (the one a mission builds round at its level)
+## does not count.
+func is_claimed(at: Vector3, radius: float, owner: StringName, except_site := Rect2()) -> bool:
 	# A map site's pad is held by what stands on it (sites, towers) for everyone.
-	if heights is MapShape and (heights as MapShape).site_within(at.x, at.z, radius):
+	if heights is MapShape and (heights as MapShape).site_within(at.x, at.z, radius, except_site):
 		return true
 	# So is ground under a power line's towers and the substation's yard.
 	if heights is MapShape and (heights as MapShape).power_within(at.x, at.z, radius):

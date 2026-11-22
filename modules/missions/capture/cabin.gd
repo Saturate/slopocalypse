@@ -8,3 +8,5 @@ func _init() -> void:
 	place = "Cabin in the woods"
 	above = 45.0
 	back = 20.0
+	close_back = 32.0
+	close_above = 12.0

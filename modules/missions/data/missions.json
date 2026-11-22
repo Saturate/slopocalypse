@@ -13,7 +13,9 @@
     "width": [6.5, 11.0],
     "depth": [5.0, 8.0],
     "wall_height": [2.7, 3.2],
-    "off_site": [8.0, 13.0],
+    "off_site": [1.5, 4.0],
+    "off_roadside": [8.0, 13.0],
+    "level_step": 2.0,
     "road_clear": 5.0,
     "gap": 3.0,
     "segment": 1.2,
@@ -29,6 +31,21 @@
     "brick_blast_share": 0.7,
     "pad_margin": 1.5,
     "pad_blend": 6.0
+  },
+  "compound": {
+    "margin": 4.0,
+    "segment": 3.6,
+    "gate": 7.0,
+    "gaps": 0.06,
+    "road_clear": 1.0,
+    "sink": 0.1,
+    "fence": { "height": 1.5, "post_step": 1.8, "planks": 3, "voxel": 0.06 },
+    "kinds": {
+      "farm": { "fence": { "height": 1.3, "planks": 2 } },
+      "cabin": { "gaps": 0.2, "fence": { "height": 1.2, "planks": 2, "post_step": 1.2 } },
+      "antenna": { "margin": 3.0, "fence": { "height": 2.1, "planks": 5 } },
+      "lookout": { "margin": 3.0, "fence": { "height": 2.1, "planks": 5 } }
+    }
   },
   "hazards": {
     "trigger_radius": 0.9,
@@ -151,7 +168,7 @@
       "guards": [2, 3],
       "mines": [10, 16],
       "tripwires": [1, 1],
-      "buildings": { "count": [2, 3], "off_site": [8.0, 12.0], "width": [4.0, 5.5], "depth": [3.5, 4.5], "gap": 2.0 },
+      "buildings": { "count": [2, 3], "width": [4.0, 5.5], "depth": [3.5, 4.5], "gap": 2.0 },
       "payout": [420.0, 600.0]
     },
     {
