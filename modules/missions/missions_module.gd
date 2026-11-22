@@ -1193,10 +1193,7 @@ func _build_buildings() -> void:
 		for entry: Dictionary in buildings:
 			# An entry may ask for more open ground round it (the test range's row).
 			circles.append({"at": entry["position"], "radius": float(entry.get("radius", 4.0)) + float(entry.get("clear", CLEARING_MARGIN))})
-		for run: Dictionary in runs:
-			var a: Vector3 = run["from"]
-			var b: Vector3 = run["to"]
-			circles.append({"at": (a + b) / 2.0, "radius": a.distance_to(b) / 2.0 + float(_compound_config().get("tree_clear", 1.5))})
+		circles.append_array(_compound_clearings(runs))
 		scenery.call(&"set_clearings", circles)
 	# Level the ground under each building and a little round it, so none sits half in a slope.
 	var ground := get_tree().get_first_node_in_group(&"ground")
@@ -1260,6 +1257,37 @@ func _fence_runs() -> Array[Dictionary]:
 	var centre: Vector3 = place["centre"]
 	var seed_value := hash([roundi(centre.x * 10.0), roundi(centre.z * 10.0), buildings.size()])
 	return MissionLayout.fence(_compound_config(), place, buildings, seed_value, _fence_blocked.bind(place))
+
+
+## Trees cleared from the whole fenced ground and `compound.tree_clear` metres past it, so
+## the compound is one open yard: circles on a grid of `compound.tree_cell` metre squares,
+## each just covering its square (far fewer than one per run, and every scenery sample
+## checks them all).
+func _compound_clearings(runs: Array[Dictionary]) -> Array:
+	var out := []
+	var ring := Rect2()
+	var first := true
+	for run: Dictionary in runs:
+		if run.get("gate", false):
+			continue
+		for p: Vector3 in [run["from"], run["to"]]:
+			if first:
+				ring = Rect2(Vector2(p.x, p.z), Vector2.ZERO)
+				first = false
+			ring = ring.expand(Vector2(p.x, p.z))
+	if first:
+		return out
+	var cfg := _compound_config()
+	ring = ring.grow(float(cfg.get("tree_clear", 1.5)))
+	var cell := maxf(float(cfg.get("tree_cell", 12.0)), 1.0)
+	var nx := ceili(ring.size.x / cell)
+	var nz := ceili(ring.size.y / cell)
+	var size := Vector2(ring.size.x / nx, ring.size.y / nz)
+	for i in nx:
+		for j in nz:
+			var c := ring.position + size * Vector2(i + 0.5, j + 0.5)
+			out.append({"at": Vector3(c.x, 0.0, c.y), "radius": size.length() / 2.0})
+	return out
 
 
 ## Everywhere: stands the fence runs on the ground as voxel kit fences, planks outward. Left
