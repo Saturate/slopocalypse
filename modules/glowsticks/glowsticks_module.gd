@@ -39,7 +39,7 @@ var _view: GlowstickView
 func _ready() -> void:
 	add_to_group(&"glowsticks_api")
 	var data: Variant = Data.load_json(GlowstickRules.CONFIG)
-	if not (data is Dictionary and Data.require(GlowstickRules.CONFIG, data, GlowstickRules.REQUIRED)):
+	if not GlowstickRules.valid(data):
 		set_physics_process(false)
 		return
 	config = data
@@ -116,7 +116,7 @@ func server_drop(peer: int) -> String:
 		return _refused(peer, "drop", "nothing lit")
 	if player == null:
 		return _refused(peer, "drop", "no player")
-	var at := player.global_position - player.global_transform.basis.z * 0.4
+	var at := player.global_position - player.global_transform.basis.z * float(config["drop_ahead"])
 	_lay(at, GlowstickRules.colour_for(player), float(_lit[peer]["left"]))
 	_lit.erase(peer)
 	Log.info(&"glowsticks", "peer %d dropped their glowstick" % peer)
@@ -207,12 +207,18 @@ func _burn(delta: float) -> void:
 func _check_soldiers() -> void:
 	var night := _is_night()
 	var shown: Dictionary[int, bool] = {}
-	_soldiers = _soldiers.filter(func(s: Node) -> bool: return is_instance_valid(s) and not s.is_queued_for_deletion())
+	var enemies := get_tree().get_first_node_in_group(&"enemies_api")
+	# A typed filter lambda errors on a freed entry and returns nothing (missions free their
+	# guards without a death), so freed ones are dropped by hand.
+	var alive: Array[Node] = []
+	for soldier: Variant in _soldiers:
+		if is_instance_valid(soldier) and not (soldier as Node).is_queued_for_deletion():
+			alive.append(soldier as Node)
+	_soldiers = alive
 	for soldier: Node in _soldiers:
 		if soldier.get_meta(&"dead", false) or soldier.get_meta(&"surrendered", false):
 			continue
-		var brain := soldier.get_node_or_null("Brain")
-		var patrolling := brain != null and brain.has_method(&"is_patrolling") and bool(brain.call(&"is_patrolling"))
+		var patrolling := enemies != null and bool(enemies.call(&"is_patrolling", soldier))
 		if GlowstickRules.soldier_shows(true, night, patrolling):
 			shown[int(soldier.get_meta(&"peer_id", 0))] = true
 	if shown != _soldiers_shown:
@@ -291,7 +297,7 @@ func _on_use(ask: Dictionary) -> void:
 		ask["used"] = server_crack(int(ask.get("peer", 0))).is_empty()
 
 
-## A spare stick's look, for its tile and on the ground.
+## A spare stick's look, for its tile in the inventory.
 func _on_item_model(ask: Dictionary) -> void:
 	if str(ask.get("item", "")) == ITEM and ask.get("model") == null:
 		ask["model"] = GlowstickView.stick(config, GlowstickRules.colour(config["spare_colour"]), 0.0)

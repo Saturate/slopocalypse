@@ -19,8 +19,6 @@ const TURN := 1.0
 const ROOM := Vector3(30.0, 0.0, 12.0)
 const ROOM_SIZE := Vector3(5.0, 2.6, 5.0)
 const WALL := 0.2
-## Stands in for a soldier's brain: on patrol, so a carrier shows its stick.
-const BRAIN := "extends Node\nfunc is_patrolling() -> bool:\n\treturn true\n"
 
 var _people: Array[Node3D] = []
 var _clock: DayClock
@@ -93,7 +91,7 @@ func _ready() -> void:
 		_people.append(enemies.call(&"server_spawn_guard", at, 0.0, [], "militia"))
 	cfg["enemy_night_share"] = share
 
-	# The room, and someone inside with a lit stick.
+	# Lit from inside only, so any light on its walls is the stick's.
 	# On a plinth over the highest corner, so no grass pokes through the floor.
 	var floor_at := room
 	for corner: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
@@ -106,22 +104,13 @@ func _ready() -> void:
 		_camera.global_position = floor_at + Vector3(ROOM_SIZE.x / 2.0 - 0.7, 1.7, ROOM_SIZE.z / 2.0 - 0.7)
 		_camera.look_at(floor_at + Vector3(-0.6, 0.9, -ROOM_SIZE.z / 2.0))
 
-	# They stand for the picture: the brain that would walk them off is swapped for one that
-	# only says it is on patrol.
+	# They stand for the picture: each brain is paused while still on patrol, so it neither
+	# walks them off nor stops counting as patrolling.
 	await get_tree().process_frame
-	var script := GDScript.new()
-	script.source_code = BRAIN
-	script.reload()
 	for person in _people:
 		var brain := person.get_node_or_null("Brain")
-		if brain == null:
-			continue
-		brain.name = "OldBrain"
-		brain.queue_free()
-		var stand_in := Node.new()
-		stand_in.name = "Brain"
-		stand_in.set_script(script)
-		person.add_child(stand_in)
+		if brain != null:
+			brain.process_mode = Node.PROCESS_MODE_DISABLED
 		(person as PlayerController).intent().move = Vector2.ZERO
 
 

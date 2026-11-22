@@ -10,13 +10,14 @@ var player: Node3D
 var _row: HBoxContainer
 var _main: KeyHint
 var _drop: KeyHint
+var _refresh_in := 0.0
 
 
 func _ready() -> void:
 	layer = UiLayers.PROMPTS
 	_row = HBoxContainer.new()
 	_row.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
-	# Just over the medkit and charge counts.
+	# The inventory's medkit and charge counts sit at -96; this row goes just over them.
 	_row.position += Vector2(32, -132)
 	_row.add_theme_constant_override(&"separation", 18)
 	_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -27,7 +28,21 @@ func _ready() -> void:
 	_row.add_child(_drop)
 
 
-func _process(_delta: float) -> void:
+## A few times a second: the count walks the whole gear and the clock shows whole seconds.
+const REFRESH_SECONDS := 0.2
+
+
+func _process(delta: float) -> void:
+	_refresh_in -= delta
+	if _refresh_in > 0.0:
+		return
+	_refresh_in = REFRESH_SECONDS
+	var prof := Prof.start()
+	_refresh()
+	Prof.stop(&"glowsticks/hud", prof)
+
+
+func _refresh() -> void:
 	if not is_instance_valid(player):
 		_row.visible = false
 		return

@@ -9,14 +9,30 @@ const REQUIRED := {
 	"enemy_night_share": TYPE_FLOAT,
 	"enemy_drop_seconds": TYPE_FLOAT,
 	"ground_max": TYPE_FLOAT,
+	"drop_ahead": TYPE_FLOAT,
 	"check_seconds": TYPE_FLOAT,
 	"send_seconds": TYPE_FLOAT,
 	"stick": TYPE_DICTIONARY,
 	"light": TYPE_DICTIONARY,
 	"spare_colour": TYPE_ARRAY,
 }
+const STICK_REQUIRED := {"size": TYPE_ARRAY, "at": TYPE_ARRAY, "glow": TYPE_FLOAT, "halo": TYPE_FLOAT, "halo_strength": TYPE_FLOAT}
+const LIGHT_REQUIRED := {"energy": TYPE_FLOAT, "range": TYPE_FLOAT, "falloff": TYPE_FLOAT, "max_lights": TYPE_FLOAT}
 ## The inventory item a fresh stick is.
 const ITEM := "glowstick"
+
+
+## `data` has every field the module reads, nested blocks and their sizes included.
+static func valid(data: Variant) -> bool:
+	if not (data is Dictionary and Data.require(CONFIG, data, REQUIRED)):
+		return false
+	var d: Dictionary = data
+	if not (Data.require(CONFIG, d["stick"], STICK_REQUIRED) and Data.require(CONFIG, d["light"], LIGHT_REQUIRED)):
+		return false
+	if (d["stick"]["size"] as Array).size() < 2 or (d["stick"]["at"] as Array).size() < 3 or (d["spare_colour"] as Array).size() < 3:
+		Log.error(&"glowsticks", "%s: stick.size needs 2 numbers, stick.at and spare_colour 3" % CONFIG)
+		return false
+	return true
 
 
 ## A soldier carries one when its spawn roll (0..1) falls inside the share.

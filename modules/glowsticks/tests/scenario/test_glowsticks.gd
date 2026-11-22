@@ -7,7 +7,8 @@ const PLAYER := "res://modules/player/scenes/player.tscn"
 const INVENTORY := "res://modules/inventory/inventory_module.gd"
 const MODULE := "res://modules/glowsticks/glowsticks_module.gd"
 const DAYTIME := "res://modules/daytime/daytime_module.gd"
-const BRAIN := "extends Node\nvar patrolling := true\nfunc is_patrolling() -> bool:\n\treturn patrolling\n"
+## Stands in for the enemies module: a soldier is on patrol while its `patrolling` meta says so.
+const ENEMIES := "extends Node\nfunc _ready() -> void:\n\tadd_to_group(&\"enemies_api\")\nfunc is_patrolling(soldier: Node) -> bool:\n\treturn soldier.get_meta(&\"patrolling\", true)\n"
 
 var _inventory: Node
 var _module: Node
@@ -20,6 +21,12 @@ func before_test() -> void:
 	add_child(_inventory)
 	_module = auto_free((load(MODULE) as GDScript).new())
 	add_child(_module)
+	var script := GDScript.new()
+	script.source_code = ENEMIES
+	script.reload()
+	var enemies: Node = auto_free(Node.new())
+	enemies.set_script(script)
+	add_child(enemies)
 	_states.clear()
 	EventBus.subscribe(&"glowsticks.state", _on_state)
 
@@ -47,13 +54,6 @@ func _soldier(peer: int, faction: String, at: Vector3) -> Node3D:
 	soldier.set_meta(&"faction", faction)
 	soldier.set_meta(&"team", faction)
 	soldier.add_to_group(&"enemies")
-	var script := GDScript.new()
-	script.source_code = BRAIN
-	script.reload()
-	var brain := Node.new()
-	brain.name = "Brain"
-	brain.set_script(script)
-	soldier.add_child(brain)
 	add_child(soldier)
 	soldier.global_position = at
 	EventBus.publish(&"player.spawned", {"player": soldier, "local": false, "npc": true})
@@ -146,7 +146,6 @@ func test_dropping_leaves_it_lit_on_the_ground_in_the_band_colour() -> void:
 	assert_str(_module.call(&"server_drop", 67)).is_equal("nothing lit")
 	_inventory.call(&"server_give", 67, "glowstick")
 	_module.call(&"server_crack", 67)
-	(_module.get(&"config") as Dictionary)["burn_seconds"] = 0.3
 	player.intent().glowstick_drop = true
 	await _frames(2)
 	assert_bool((_module.call(&"lit_of", 67) as Dictionary).is_empty()).is_true()
@@ -183,10 +182,10 @@ func test_soldiers_from_the_share_show_one_at_night_on_patrol_only() -> void:
 	assert_bool(_carriers().has(-10)).override_failure_message("not shown at night").is_true()
 	assert_bool(_carriers().has(-11)).is_false()
 	# Fighting or stalking someone, it keeps quiet.
-	carrier.get_node("Brain").set(&"patrolling", false)
+	carrier.set_meta(&"patrolling", false)
 	await _frames(40)
 	assert_bool(_carriers().has(-10)).override_failure_message("shown while not on patrol").is_false()
-	carrier.get_node("Brain").set(&"patrolling", true)
+	carrier.set_meta(&"patrolling", true)
 	await _frames(40)
 	assert_bool(_carriers().has(-10)).is_true()
 	EventBus.publish(&"enemy.died", {"enemy": carrier, "source": null, "position": carrier.global_position})
@@ -194,3 +193,48 @@ func test_soldiers_from_the_share_show_one_at_night_on_patrol_only() -> void:
 	var ground: Array = _module.call(&"server_state")["ground"]
 	assert_int(ground.size()).is_equal(1)
 	assert_that(ground[0][2]).is_equal(_band("militia"))
+
+
+func test_a_carrier_freed_without_dying_leaves_the_others_lit() -> void:
+	var daytime: Node = auto_free((load(DAYTIME) as GDScript).new())
+	add_child(daytime)
+	daytime.call(&"server_set_hour", 23.0)
+	(_module.get(&"config") as Dictionary)["enemy_night_share"] = 1.0
+	var gone := _soldier(-20, "militia", Vector3(3, 0, 0))
+	_soldier(-21, "militia", Vector3(6, 0, 0))
+	await _frames(40)
+	assert_bool(_carriers().has(-20)).is_true()
+	# A mission closing frees its guards without a death.
+	gone.free()
+	await _frames(40)
+	assert_bool(_carriers().has(-20)).is_false()
+	assert_bool(_carriers().has(-21)).override_failure_message("a freed carrier put out the others").is_true()
+
+
+func test_the_oldest_stick_on_the_ground_goes_out_past_the_cap() -> void:
+	(_module.get(&"config") as Dictionary)["ground_max"] = 2.0
+	for peer in [71, 72, 73]:
+		_spawn(peer)
+		_inventory.call(&"server_give", peer, "glowstick")
+		_module.call(&"server_crack", peer)
+		_module.call(&"server_drop", peer)
+	var ground: Array = _module.call(&"server_state")["ground"]
+	assert_int(ground.size()).is_equal(2)
+	assert_int(int(ground[0][0])).is_greater(1)
+
+
+func test_a_player_who_leaves_takes_theirs_out_of_the_world() -> void:
+	_spawn(74)
+	_inventory.call(&"server_give", 74, "glowstick")
+	_module.call(&"server_crack", 74)
+	Net.peer_left.emit(74)
+	assert_bool(_carriers().has(74)).is_false()
+
+
+func test_without_the_module_a_glowstick_is_not_used_up() -> void:
+	remove_child(_module)
+	_spawn(75)
+	_inventory.call(&"server_give", 75, "glowstick")
+	assert_bool(_inventory.call(&"server_use", 75, "glowstick")).is_false()
+	assert_int(_inventory.call(&"count", 75, "glowstick")).is_equal(1)
+	add_child(_module)

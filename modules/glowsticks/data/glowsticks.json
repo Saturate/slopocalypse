@@ -1,19 +1,23 @@
 {
-  "_comment": "Glowsticks (#447): an item (inventory items.json, id glowstick) you crack for light in your armband's colour, worn on the chest. burn_seconds: how long a cracked stick glows (it keeps burning while stowed, and is gone when spent). enemy_night_share: the share of soldiers that carry one and show it at night while on patrol (never while fighting or chasing). enemy_drop_seconds: how long the lit stick of a soldier who dies keeps glowing where they fell. ground_max: lit sticks on the ground at once (the oldest goes out first). check_seconds: how often the server looks at who shows one; send_seconds: the shortest gap between two updates to clients. stick: the stick's size in metres [width, length], where it sits on the chest (metres, chest space: x right, y up, z back), and glow (how bright it is itself: past about 1 it blooms). light: the small light round it, colour from the band: energy, range (metres; short, so it is seen from afar but does not light a room) and max_lights (only the nearest this many on screen light anything; the rest still glow). spare_colour: an uncracked stick in the backpack or on the ground, [r, g, b].",
+  "_comment": "Glowsticks (#447): an item (inventory items.json, id glowstick) you crack for light in your armband's colour, worn on the chest. burn_seconds: how long a cracked stick glows (it keeps burning while stowed, and is gone when spent). enemy_night_share: the share of soldiers that carry one and show it at night while on patrol (never while fighting or chasing). enemy_drop_seconds: how long the lit stick of a soldier who dies keeps glowing where they fell. ground_max: lit sticks on the ground at once (the oldest goes out first). drop_ahead: how far in front of your feet a dropped stick lands (metres). check_seconds: how often the server looks at who shows one; send_seconds: the shortest gap between two updates to clients. stick: the stick's size in metres [width, length], where it sits on the chest (metres, chest space: x right, y up, z back), glow (how bright it is itself: past about 1 it blooms), halo (metres across of the soft glow round a lit stick, what makes it read from far off) and halo_strength (0 to 1). light: the small light round it, colour from the band: energy, range (metres; short, so it is seen from afar but does not light a room), falloff (how fast it fades inside that range; 1 is even, higher keeps it to the stick and the person) and max_lights (only the nearest this many on screen light anything; the rest still glow). spare_colour: an uncracked stick in the backpack or on the ground, [r, g, b].",
   "burn_seconds": 300.0,
   "enemy_night_share": 0.35,
   "enemy_drop_seconds": 120.0,
   "ground_max": 24.0,
+  "drop_ahead": 0.4,
   "check_seconds": 0.5,
   "send_seconds": 0.25,
   "stick": {
-    "size": [0.04, 0.18],
+    "size": [0.045, 0.2],
     "at": [-0.11, 0.1, -0.175],
-    "glow": 10.0
+    "glow": 10.0,
+    "halo": 0.7,
+    "halo_strength": 0.8
   },
   "light": {
-    "energy": 1.5,
-    "range": 2.5,
+    "energy": 1.0,
+    "range": 1.8,
+    "falloff": 2.0,
     "max_lights": 8.0
   },
   "spare_colour": [0.55, 0.7, 0.5]

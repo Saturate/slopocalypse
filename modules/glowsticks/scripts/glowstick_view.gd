@@ -38,7 +38,7 @@ func _exit_tree() -> void:
 
 ## A stick mesh `colour`ed, glowing `glow` (0: a spare one, not lit).
 static func stick(cfg: Dictionary, colour: Color, glow: float) -> MeshInstance3D:
-	var size: Array = (cfg.get("stick", {}) as Dictionary).get("size", [0.03, 0.15])
+	var size: Array = cfg["stick"]["size"]
 	var box := BoxMesh.new()
 	box.size = Vector3(float(size[0]), float(size[1]), float(size[0]))
 	box.material = _material(colour, glow)
@@ -50,12 +50,46 @@ static func stick(cfg: Dictionary, colour: Color, glow: float) -> MeshInstance3D
 	return mesh
 
 
+## The soft glow round a lit stick: a camera-facing disc, added onto what is behind it. A
+## stick is a few pixels across at fighting distance; this is what reads as "a light" there.
+static func halo(cfg: Dictionary, colour: Color) -> MeshInstance3D:
+	var size := float(cfg["halo"])
+	var quad := QuadMesh.new()
+	quad.size = Vector2(size, size)
+	var key := "halo/%s/%.2f" % [colour.to_html(false), float(cfg["halo_strength"])]
+	if not _materials.has(key):
+		var gradient := Gradient.new()
+		gradient.set_color(0, Color(colour, float(cfg["halo_strength"])))
+		gradient.set_color(1, Color(colour, 0.0))
+		var texture := GradientTexture2D.new()
+		texture.gradient = gradient
+		texture.fill = GradientTexture2D.FILL_RADIAL
+		texture.fill_from = Vector2(0.5, 0.5)
+		texture.fill_to = Vector2(0.5, 0.0)
+		texture.width = 64
+		texture.height = 64
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		m.albedo_texture = texture
+		_materials[key] = m
+	quad.material = _materials[key]
+	var mesh := MeshInstance3D.new()
+	mesh.name = "Halo"
+	mesh.mesh = quad
+	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mesh.layers = RenderLayers.DEFAULT | RenderLayers.NO_DECALS
+	return mesh
+
+
 static func _material(colour: Color, glow: float) -> StandardMaterial3D:
 	var key := "%s/%.2f" % [colour.to_html(false), glow]
 	if _materials.has(key):
 		return _materials[key]
 	var m := StandardMaterial3D.new()
-	m.albedo_color = colour.lightened(0.3) if glow > 0.0 else colour
+	m.albedo_color = colour
 	m.roughness = 0.4
 	if glow > 0.0:
 		# Emission past 1 is what blooms and reads from afar in the dark.
@@ -150,16 +184,22 @@ func _attach(person: Node3D, own: bool) -> Node3D:
 		holder.position.y = CHEST_HEIGHT
 		person.add_child(holder)
 	holder.name = STICK
+	holder.set_meta(Corpse.LIVING_ONLY, true)
 	var cfg: Dictionary = config["stick"]
-	var at: Array = cfg.get("at", [0.0, 0.0, 0.0])
-	var mesh := stick(config, colour, float(cfg.get("glow", 4.0)))
+	var at: Array = cfg["at"]
+	var mesh := stick(config, colour, float(cfg["glow"]))
 	mesh.position = Vector3(float(at[0]), float(at[1]), float(at[2]))
 	# Clipped to the strap at a slant, like it was pushed through a loop.
 	mesh.rotation.z = deg_to_rad(-15.0)
+	holder.add_child(mesh)
+	var glow := halo(cfg, colour)
+	# A little in front of the vest, so the body does not cut it in half.
+	glow.position = mesh.position + Vector3(0.0, 0.0, -0.06)
+	holder.add_child(glow)
 	# Your own would sit at the edge of the view as a bright smear; others see it.
 	if own:
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
-	holder.add_child(mesh)
+		glow.visible = false
 	var light := _light(colour)
 	# Out in front of the vest, so the light falls on the ground and people round them.
 	light.position = mesh.position + Vector3(0.0, 0.0, -0.1)
@@ -172,11 +212,14 @@ func _lay(at: Vector3, colour: Color) -> Node3D:
 	node.name = "Ground%s" % STICK
 	add_child(node)
 	node.global_position = at
-	var mesh := stick(config, colour, float((config["stick"] as Dictionary).get("glow", 4.0)))
-	var size: Array = (config["stick"] as Dictionary).get("size", [0.03, 0.15])
+	var mesh := stick(config, colour, float(config["stick"]["glow"]))
+	var size: Array = config["stick"]["size"]
 	mesh.rotation.x = PI / 2.0
 	mesh.position.y = float(size[0]) / 2.0
 	node.add_child(mesh)
+	var glow := halo(config["stick"], colour)
+	glow.position.y = 0.1
+	node.add_child(glow)
 	var light := _light(colour)
 	light.position.y = 0.2
 	node.add_child(light)
@@ -188,8 +231,9 @@ func _light(colour: Color) -> OmniLight3D:
 	var light := OmniLight3D.new()
 	light.name = "Light"
 	light.light_color = colour
-	light.light_energy = float(cfg.get("energy", 0.6))
-	light.omni_range = float(cfg.get("range", 3.0))
+	light.light_energy = float(cfg["energy"])
+	light.omni_range = float(cfg["range"])
+	light.omni_attenuation = float(cfg["falloff"])
 	light.shadow_enabled = false
 	return light
 
@@ -204,7 +248,7 @@ func _budget_lights() -> void:
 		var l := node.get_node_or_null("Light") as OmniLight3D
 		if l != null:
 			lights.append(l)
-	var limit := int((config["light"] as Dictionary).get("max_lights", 8.0))
+	var limit := int(config["light"]["max_lights"])
 	var camera := get_viewport().get_camera_3d()
 	if lights.size() > limit and camera != null:
 		var eye := camera.global_position
