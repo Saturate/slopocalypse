@@ -6,7 +6,8 @@ extends RefCounted
 
 ## `cfg` is the `buildings` block of missions.json; `place` is MissionSites' {centre,
 ## footprint (Rect2 on x, z; empty for a roadside spot), toward (the way its track leaves)}.
-## Each building stands `off_site` metres out from the footprint's edge. Returns layout
+## Each building stands `off_site` metres out from the footprint's edge (`off_roadside`
+## from a roadside spot's centre). Returns layout
 ## entries `{position, yaw, width, depth, wall_height, windows, paint, seed}`; `position` is
 ## on the place's level, the caller puts it on the ground. `blocked(at, radius) -> bool`
 ## turns down a spot someone else holds (the site's own pad and yard, another site, a road,
@@ -21,9 +22,10 @@ static func buildings(cfg: Dictionary, seed_value: int, place: Dictionary, block
 	var width: Array = cfg.get("width", [5.0, 8.0])
 	var depth: Array = cfg.get("depth", [4.0, 6.0])
 	var height: Array = cfg.get("wall_height", [2.7, 3.2])
-	var off: Array = cfg.get("off_site", [4.0, 18.0])
 	var gap := float(cfg.get("gap", 3.0))
 	var foot: Rect2 = place["footprint"]
+	# Round a roadside spot (no pad) they keep further apart: nothing there ties them together.
+	var off: Array = cfg.get("off_site", [4.0, 18.0]) if foot.has_area() else cfg.get("off_roadside", cfg.get("off_site", [4.0, 18.0]))
 	var centre: Vector3 = place["centre"]
 	var middle := Vector3(foot.get_center().x, centre.y, foot.get_center().y)
 	var frame := atan2(-(place["toward"] as Vector3).x, -(place["toward"] as Vector3).z)
@@ -63,6 +65,128 @@ static func buildings(cfg: Dictionary, seed_value: int, place: Dictionary, block
 			"material": str(cfg["material"]) if cfg.has("material") else ("concrete" if rng.randf() < float(cfg.get("concrete_share", 0.0)) else "wood"),
 		})
 	return out
+
+
+## The fence round a mission at a map site, so the site and the buildings round it read as
+## one guarded place: a rectangle `cfg.margin` metres out from the site's footprint and from
+## every building in `entries` (its radius plus `cfg.patrol_reach` round its middle), each
+## side cut into as few equal runs as keep them within `cfg.segment` metres. The gate is
+## where the site's track first leaves the rectangle (`place.track_points`, when given), or
+## else where the ray from the footprint's middle along `place.toward` does: the runs on
+## that side within `cfg.gate` / 2 of it are left out, and its two leaves (`gate_leaf`
+## metres long, `gate`: true) stand open `gate_swing` degrees outward from the posts either
+## side. Every run or leaf `blocked(at, cfg.post_clear) -> bool` turns down anywhere along
+## it (a road or track, water, another site) is left out too, and a share `cfg.gaps` of the
+## rest, rolled from `seed_value` (never a side's end runs, so the corners stand). Returns
+## `{from, to (on the place's level; the caller puts them on the ground), tall_ends (the run
+## starts or ends a side or a stretch: corner and gate posts), gate?}`, in order round the
+## fence. A roadside spot (an empty footprint) gets none.
+static func fence(cfg: Dictionary, place: Dictionary, entries: Array, seed_value: int, blocked := Callable()) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var foot: Rect2 = place["footprint"]
+	if foot.size.x <= 0.0 or foot.size.y <= 0.0:
+		return out
+	var step := float(cfg["segment"])
+	if step <= 0.0:
+		return out
+	var bounds := foot
+	for e: Dictionary in entries:
+		# The building's whole reach round its middle: guards patrol a few metres past it,
+		# and that ground stays inside the fence too.
+		var at: Vector3 = e["position"]
+		var reach := float(e.get("radius", Vector2(float(e["width"]), float(e["depth"])).length() / 2.0)) + float(cfg.get("patrol_reach", 0.0))
+		bounds = bounds.expand(Vector2(at.x - reach, at.z - reach)).expand(Vector2(at.x + reach, at.z + reach))
+	bounds = bounds.grow(float(cfg["margin"]))
+	var toward: Vector3 = place["toward"]
+	var gate_at := _exit(bounds, foot.get_center(), Vector2(toward.x, toward.z))
+	# Where the site's own track crosses the fence, when the place knows its track: a track
+	# curves, so the straight way out can miss it.
+	var track: PackedVector2Array = place.get("track_points", PackedVector2Array())
+	for k in range(1, track.size()):
+		if bounds.has_point(track[k - 1]) and not bounds.has_point(track[k]):
+			gate_at = _exit(bounds, track[k - 1], (track[k] - track[k - 1]).normalized())
+			break
+	var gate_side := _nearest_side(bounds, gate_at)
+	var gate_half := float(cfg["gate"]) / 2.0
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var gaps := float(cfg.get("gaps", 0.0))
+	var clear := float(cfg.get("post_clear", 0.3))
+	var level := (place["centre"] as Vector3).y
+	var corners: Array[Vector2] = [bounds.position, Vector2(bounds.end.x, bounds.position.y), bounds.end, Vector2(bounds.position.x, bounds.end.y)]
+	for side in 4:
+		var a := corners[side]
+		var b := corners[(side + 1) % 4]
+		var n := ceili(a.distance_to(b) / step - 0.001)
+		var keep: Array[bool] = []
+		var gate_runs: Array[int] = []
+		for k in n:
+			var ra := a.lerp(b, float(k) / n)
+			var rb := a.lerp(b, float(k + 1) / n)
+			var ok := side != gate_side or Geometry2D.get_closest_point_to_segment(gate_at, ra, rb).distance_to(gate_at) >= gate_half
+			if not ok:
+				gate_runs.append(k)
+			ok = ok and not _run_blocked(ra, rb, level, clear, blocked)
+			# Every run draws, so one blocked run never shifts which others break.
+			var broken := rng.randf() < gaps
+			keep.append(ok and (k == 0 or k == n - 1 or not broken))
+		for k in n:
+			if not keep[k]:
+				continue
+			var ra := a.lerp(b, float(k) / n)
+			var rb := a.lerp(b, float(k + 1) / n)
+			var ends := k == 0 or k == n - 1 or not keep[k - 1] or not keep[k + 1]
+			out.append({"from": Vector3(ra.x, level, ra.y), "to": Vector3(rb.x, level, rb.y), "tall_ends": ends})
+		if gate_runs.is_empty():
+			continue
+		# The gate's two leaves, hinged on the posts either side of it and swung out.
+		var along := (b - a).normalized()
+		var outward := Vector2(-along.y, along.x)
+		if outward.dot((a + b) / 2.0 - bounds.get_center()) < 0.0:
+			outward = -outward
+		var swing := deg_to_rad(float(cfg.get("gate_swing", 70.0)))
+		var leaf := float(cfg.get("gate_leaf", 2.4))
+		for hinge_side: Array in [[a.lerp(b, float(gate_runs[0]) / n), along], [a.lerp(b, float(gate_runs[-1] + 1) / n), -along]]:
+			var hinge: Vector2 = hinge_side[0]
+			var shut: Vector2 = hinge_side[1]
+			var tip := hinge + (shut * cos(swing) + outward * sin(swing)) * leaf
+			if not _run_blocked(hinge, tip, level, clear, blocked):
+				out.append({"from": Vector3(hinge.x, level, hinge.y), "to": Vector3(tip.x, level, tip.y), "tall_ends": true, "gate": true})
+	return out
+
+
+## Whether a run from `a` to `b` is turned down: `blocked` asked every metre or so along it
+## (a road beside a run but clear of it leaves it standing; one across it does not).
+static func _run_blocked(a: Vector2, b: Vector2, level: float, radius: float, blocked: Callable) -> bool:
+	if not blocked.is_valid():
+		return false
+	var steps := maxi(ceili(a.distance_to(b)), 1)
+	for i in steps + 1:
+		var p := a.lerp(b, float(i) / steps)
+		if bool(blocked.call(Vector3(p.x, level, p.y), radius)):
+			return true
+	return false
+
+
+## Which side of `rect` (0 north, 1 east, 2 south, 3 west, in the order `fence` walks them)
+## lies nearest `p`.
+static func _nearest_side(rect: Rect2, p: Vector2) -> int:
+	var d: Array[float] = [absf(p.y - rect.position.y), absf(p.x - rect.end.x), absf(p.y - rect.end.y), absf(p.x - rect.position.x)]
+	var best := 0
+	for i in 4:
+		if d[i] < d[best]:
+			best = i
+	return best
+
+
+## Where the ray from `from` (inside `rect`) along `dir` leaves it.
+static func _exit(rect: Rect2, from: Vector2, dir: Vector2) -> Vector2:
+	var t := INF
+	if absf(dir.x) > 0.0001:
+		t = minf(t, ((rect.end.x if dir.x > 0.0 else rect.position.x) - from.x) / dir.x)
+	if absf(dir.y) > 0.0001:
+		t = minf(t, ((rect.end.y if dir.y > 0.0 else rect.position.y) - from.y) / dir.y)
+	return from + dir * (t if t < INF else 0.0)
 
 
 ## A fixed row instead of a rolled layout (the test range): `cfg.row` lists the buildings in
