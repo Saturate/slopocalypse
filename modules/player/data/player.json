@@ -22,6 +22,7 @@
   "climb_move_share": 0.3,
   "climb_aim": 0.5,
   "climb_top_margin": 1.0,
+  "climb_grab_fall_speed": 4.0,
   "shove_fade": 18.0,
   "ads_speed_multiplier": 0.55,
   "ads_seconds": 0.18,

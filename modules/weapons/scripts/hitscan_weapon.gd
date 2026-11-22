@@ -112,7 +112,8 @@ func _physics_tick(delta: float) -> void:
 	if intent.consume_reload():
 		request_reload()
 	var pull := intent.fire and not (semi_auto and _trigger_was_down)
-	_trigger_was_down = intent.fire
+	# A trigger held from a ladder (where it does nothing) is not a new pull on stepping off it.
+	_trigger_was_down = intent.fire or holder.climbing
 	if pull and _draw_left <= 0.0:
 		request_fire(global_transform.origin, -global_transform.basis.z)
 	elif not intent.fire:
@@ -170,8 +171,8 @@ func request_reload() -> void:
 ## (weapons.json). Each stretch of the round's path is replayed as its own `weapon.fired`,
 ## the ones after the first marked `through`.
 func server_fire(origin: Vector3, direction: Vector3) -> void:
-	# Swimming keeps the weapon out of the water (and out of use).
-	if holder != null and (holder.get_meta(&"dead", false) or holder.get_meta(&"swimming", false)):
+	# Swimming keeps the weapon out of the water (and out of use); climbing a ladder takes both hands.
+	if holder != null and (holder.get_meta(&"dead", false) or holder.get_meta(&"swimming", false) or holder.climbing):
 		return
 	if not rules.try_fire():
 		return

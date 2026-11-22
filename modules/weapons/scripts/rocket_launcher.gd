@@ -12,7 +12,7 @@ var rockets_parent: Node
 ## Server only: launches a rocket along the aim, from the eye like a shot, and hurts whoever
 ## stands in the backblast.
 func server_fire(origin: Vector3, direction: Vector3) -> void:
-	if holder != null and (holder.get_meta(&"dead", false) or holder.get_meta(&"swimming", false)):
+	if holder != null and (holder.get_meta(&"dead", false) or holder.get_meta(&"swimming", false) or holder.climbing):
 		return
 	if not rules.try_fire():
 		return

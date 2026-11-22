@@ -22,6 +22,7 @@ const REQUIRED := {
 	"climb_move_share": TYPE_FLOAT,
 	"climb_aim": TYPE_FLOAT,
 	"climb_top_margin": TYPE_FLOAT,
+	"climb_grab_fall_speed": TYPE_FLOAT,
 	"shove_fade": TYPE_FLOAT,
 	"acceleration": TYPE_FLOAT,
 	"sprint_acceleration": TYPE_FLOAT,
@@ -277,15 +278,27 @@ func _step_normal(delta: float) -> void:
 	var depth := water_depth()
 	_set_swimming(depth > float(config["swim_depth"]))
 	var ladder := {} if swimming else Ladders.at(global_position, _capsule.height, _capsule.radius)
+	var was_climbing := climbing
 	climbing = false
 	if not ladder.is_empty():
 		var into: Vector3 = ladder["into"]
 		var aim := float(config["climb_aim"])
 		var push := (transform.basis * Vector3(_intent.move.x, 0.0, -_intent.move.y)).limit_length(1.0).dot(into)
 		var top := float(ladder["top"])
-		# Onto it from the ground only heading into it and below its top (not from the deck it
-		# leads to); off the ground beside it, holding on.
-		climbing = not is_on_floor() or (push > aim and global_position.y < top - float(config["climb_top_margin"]))
+		if was_climbing:
+			# Holding on until the ground or the ladder's end lets go.
+			climbing = not is_on_floor() or (push > aim and global_position.y < top - float(config["climb_top_margin"]))
+		elif is_on_floor():
+			# From the ground only heading into it and below its top (not from the deck it leads to).
+			climbing = push > aim and global_position.y < top - float(config["climb_top_margin"])
+		else:
+			# Off the ground, only heading into it (a hop onto it) or, dropping near its top, away
+			# from it (backing off its deck), and falling slowly enough to catch it: put down in
+			# mid-air beside one, jumping back from its foot or dropping past it fast, nobody
+			# hangs on it.
+			var off_deck := velocity.y <= 0.0 and global_position.y >= top - float(config["climb_top_margin"])
+			var heading := push > aim or (push < -aim and off_deck)
+			climbing = heading and velocity.y > -float(config["climb_grab_fall_speed"])
 		if climbing:
 			# Into the ladder climbs, away from it climbs down, sideways holds on; never past its top.
 			var up := float(config["climb_speed"]) * signf(push) if absf(push) > aim else 0.0
@@ -293,6 +306,10 @@ func _step_normal(delta: float) -> void:
 			_ladder_into = into
 	if climbing:
 		_intent.consume_jump()
+		# Both hands on the rails: the server takes no trigger or sights from a climber, so
+		# whichever weapon reads this intent next stays quiet (#505).
+		_intent.fire = false
+		_intent.aim = false
 	elif swimming:
 		# Afloat: held with the head out, the feet `swim_depth` under the surface.
 		var surface := float(_ground.call(&"water_level_at", global_position))
@@ -372,6 +389,22 @@ func shove(push: Vector3) -> void:
 ## Server: drops any push still carrying the body (it was stopped, moved or respawned).
 func clear_shove() -> void:
 	_shove = Vector3.ZERO
+
+
+## Server: lets go of any ladder (put somewhere else, or into a car), so the body doesn't
+## arrive still holding on and a ladder beside where it lands is caught only as any other.
+func let_go() -> void:
+	climbing = false
+	_ladder_into = Vector3.ZERO
+
+
+## Puts the body at `at`, standing still with nothing carrying it and holding on to
+## nothing (a respawn, back to spawn, out of a car, back on top of the ground).
+func put_at(at: Vector3) -> void:
+	global_position = at
+	velocity = Vector3.ZERO
+	clear_shove()
+	let_go()
 
 
 ## `move_and_slide`, but a step no higher than `step_height` in the way (a stair, a kerb, a

@@ -51,18 +51,6 @@ func _ready() -> void:
 	_light_from_behind(find_child("Sun", true, false) as DirectionalLight3D, foot)
 
 
-func _tower() -> VoxPiece:
-	var centre: Vector3 = _site["centre"]
-	var best: VoxPiece = null
-	for node in find_children("*", "Node3D", true, false):
-		var piece := node as VoxPiece
-		if piece == null or piece.generator != "VoxLookoutTower":
-			continue
-		if best == null or piece.global_position.distance_to(centre) < best.global_position.distance_to(centre):
-			best = piece
-	return best
-
-
 func _physics_process(_delta: float) -> void:
 	if _climber == null:
 		return

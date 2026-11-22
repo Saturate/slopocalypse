@@ -14,12 +14,20 @@ const LEAN_SHARES := {&"Spine": 0.45, &"Chest": 0.55}
 ## rifle on the shoulders points at the aim while the back only bends a little; the head
 ## (a child of the chest) takes the rest of its own share on top of the back's.
 const SHARES := {&"Spine": 0.1, &"Chest": 0.15, &"Shoulders": 0.75, &"Head": 0.5}
+## First person, on a ladder: where the sight goes, below and a little right of the eye and
+## close in, so the whole gun drops under the screen's bottom edge whatever the field of view
+## (camera space: right, down, forward).
+const LOWERED_SIGHT := Vector3(0.14, -0.5, -0.12)
 
 ## First person only: where the sight sits in the camera's space at the hip (right, down,
 ## forward). The arms and rifle are then held by the view like a view model: they turn with
 ## the camera, so looking down never shows the shoulders from above. Other players see the
 ## animated pose. Zero means third person. Set by PlayerBody.first_person().
 var hip_sight := Vector3.ZERO
+## First person only: how far the gun is lowered out of view, 0 (at `hip_sight`) to 1 (at
+## LOWERED_SIGHT, under the bottom of the screen). The body animator eases it to 1 on a
+## ladder: the gun can't fire there, and the climb pose others see tips it down the same way.
+var lowered := 0.0
 
 ## Aiming down sights, 0 (hip) to 1 (sight on the eye). Set by the body animator.
 var ads := 0.0
@@ -67,7 +75,7 @@ func _modify_tick(_delta: float) -> void:
 	var offset := Vector3.ZERO
 	var on_eye := Vector3(0.0, 0.0, -eye_relief)
 	if hip_sight != Vector3.ZERO and is_instance_valid(eye):
-		offset = _sight_to(skeleton, shoulders, hip_sight.lerp(on_eye, ads), 1.0)
+		offset = _sight_to(skeleton, shoulders, hip_sight.lerp(on_eye, ads).lerp(LOWERED_SIGHT, lowered), 1.0)
 	elif ads > 0.0 and is_instance_valid(eye):
 		offset = _sight_to(skeleton, shoulders, on_eye, ads) * ads
 	if offset != Vector3.ZERO:

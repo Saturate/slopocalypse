@@ -119,3 +119,102 @@ func test_climbing_clears_stepping_off_at_the_top() -> void:
 	assert_bool(_player.climbing).is_false()
 	assert_float(_player.global_position.y).is_equal_approx(LADDER_TOP, 0.1)
 	assert_float(_player.global_position.z).is_less(-1.0)
+
+
+func test_put_down_in_mid_air_in_reach_falls_instead_of_hanging() -> void:
+	# Spawned or moved there: nobody heading anywhere, so nothing to grab with.
+	_player.global_position = Vector3(0, 3, 0)
+	var held := false
+	for i in 60:
+		await get_tree().physics_frame
+		held = held or _player.climbing
+	assert_bool(held).is_false()
+	assert_float(_player.global_position.y).is_less(0.2)
+
+
+func test_falling_fast_past_it_does_not_grab() -> void:
+	_player.global_position = Vector3(0, 5, 0)
+	_player.velocity = Vector3(0, -float(_player.config["climb_grab_fall_speed"]) - 2.0, 0)
+	_player.intent().move = Vector2(0, 1)
+	var held := false
+	for i in 300:
+		await get_tree().physics_frame
+		if _player.is_on_floor():
+			break
+		held = held or _player.climbing
+	assert_bool(held).is_false()
+	assert_float(_player.global_position.y).is_less(0.2)
+
+
+func test_dropping_slowly_onto_it_heading_in_grabs() -> void:
+	_player.global_position = Vector3(0, 3, 0)
+	_player.intent().move = Vector2(0, 1)
+	await _frames(5)
+	assert_bool(_player.climbing).is_true()
+	_player.intent().move = Vector2.ZERO
+	await _frames(30)
+	assert_float(_player.global_position.y).is_greater(2.5)
+
+
+func test_backing_off_the_deck_at_the_top_climbs_down() -> void:
+	_box(Vector3(0, LADDER_TOP - 0.25, -2.1), Vector3(4.0, 0.5, 2.8))
+	_player.global_position = Vector3(0, LADDER_TOP + 0.05, -1.4)
+	# Facing the deck, back to the drop: backing off heads away from the ladder's way in.
+	_player.intent().move = Vector2(0, -1)
+	var held := false
+	for i in 120:
+		await get_tree().physics_frame
+		held = held or _player.climbing
+	assert_bool(held).is_true()
+	assert_float(_player.global_position.y).is_less(LADDER_TOP - 1.0)
+	# Down the ladder, not dropped beside it.
+	assert_float(_player.global_position.z).is_less(0.8)
+
+
+func test_climbing_lets_go_of_the_trigger_and_the_sights() -> void:
+	_player.intent().move = Vector2(0, 1)
+	await _frames(30)
+	assert_bool(_player.climbing).is_true()
+	_player.intent().fire = true
+	_player.intent().aim = true
+	await _frames(1)
+	assert_bool(_player.intent().fire).is_false()
+	assert_bool(_player.intent().aim).is_false()
+
+
+func test_first_person_gun_is_lowered_while_climbing() -> void:
+	var animator := PlayerBodyAnimator.new()
+	animator.player = _player
+	_player.add_child(animator)
+	PlayerBody.first_person(_player.get_node("Body"))
+	var aim := _player.get_node("Body/Skeleton/Aim")
+	await _frames(10)
+	assert_float(float(aim.get(&"lowered"))).is_equal_approx(0.0, 0.01)
+	_player.intent().move = Vector2(0, 1)
+	await _frames(60)
+	assert_bool(_player.climbing).is_true()
+	assert_float(float(aim.get(&"lowered"))).is_greater(0.9)
+
+
+func test_jumping_backwards_at_its_foot_does_not_grab() -> void:
+	_player.global_position = Vector3(0, 0.05, 0.3)
+	await _frames(5)
+	_player.intent().move = Vector2(0, -1)
+	_player.intent().jump = true
+	var held := false
+	for i in 20:
+		await get_tree().physics_frame
+		held = held or _player.climbing
+	assert_bool(held).is_false()
+
+
+func test_put_somewhere_else_lets_go() -> void:
+	_player.intent().move = Vector2(0, 1)
+	await _frames(40)
+	assert_bool(_player.climbing).is_true()
+	_player.intent().move = Vector2.ZERO
+	# A respawn or back-to-spawn, here into mid-air beside the same ladder.
+	_player.put_at(Vector3(0, 3, 0))
+	assert_bool(_player.climbing).is_false()
+	await _frames(60)
+	assert_float(_player.global_position.y).is_less(0.2)

@@ -1,7 +1,7 @@
 class_name PlayerIntent
 extends Node
 ## What the player wants to do this tick. Keyboard input, tests, bots and the network all
-## write here; the controller only ever reads it.
+## write here; the controller reads it, only dropping the trigger and sights on a ladder.
 ##
 ## Over the network the owning client sends its intent to the server: continuous state
 ## (move, aim, held buttons) every tick, unreliably, since the next packet supersedes it;
@@ -121,8 +121,11 @@ func submit(new_move: Vector2, yaw: float, pitch: float, new_sprint: bool, new_c
 	remote_look = true
 	sprint = new_sprint
 	crouch = new_crouch
-	fire = new_fire
-	aim = new_aim
+	# A climber's hands are on the rails: refused as it arrives, so nothing on the server
+	# reads a trigger or sights that the controller would only clear on its next tick.
+	var climbing: bool = get_parent().get(&"climbing") == true
+	fire = new_fire and not climbing
+	aim = new_aim and not climbing
 	lean = clampi(new_lean, -1, 1)
 
 

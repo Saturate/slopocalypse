@@ -430,3 +430,21 @@ func test_it_cannot_see_through_whatever_the_sight_blockers_say_hides() -> void:
 	assert_bool(brain.clear_shot(_player)).is_false()
 	smoke.thick = false
 	assert_bool(brain.clear_shot(_player)).is_true()
+
+
+func test_a_soldier_on_a_ladder_climbs_down_to_fight() -> void:
+	# Both hands on the rails it can't shoot, so it doesn't stop on the rungs to try.
+	var owner := RefCounted.new()
+	Ladders.add(owner, Transform3D(Basis.IDENTITY, Vector3(0, 3, 0)), Vector3(0.4, 3, 0.4), Vector3.FORWARD)
+	_player.global_position = Vector3(0, 0.1, -15)
+	var enemy := await _enemy_at(Vector3(0, 0, 0))
+	enemy.global_position = Vector3(0, 3, 0)
+	enemy.climbing = true
+	var down := false
+	for i in 300:
+		await get_tree().physics_frame
+		if enemy.is_on_floor() and not enemy.climbing:
+			down = true
+			break
+	Ladders.remove(owner)
+	assert_bool(down).is_true()

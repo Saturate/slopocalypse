@@ -33,7 +33,8 @@ func _physics_process(delta: float) -> void:
 
 func _physics_tick(delta: float) -> void:
 	_cooldown = maxf(_cooldown - delta, 0.0)
-	if holder.intent().consume_throw() and multiplayer.is_server():
+	# A climber's hands are on the rails: a charge asked for there is dropped, not saved up.
+	if holder.intent().consume_throw() and multiplayer.is_server() and not holder.climbing:
 		var camera: Camera3D = holder.get_node("Head/Camera")
 		server_place(camera.global_position, -camera.global_transform.basis.z)
 	if holder.intent().consume_detonate() and multiplayer.is_server():
