@@ -39,8 +39,6 @@ const MARKER_NEAR := 10.0
 const MARKER_FADE := 8.0
 ## Trees are cleared this far around a building's footprint.
 const CLEARING_MARGIN := 4.0
-## And this far round each fence run past its ends, so no trunk stands in the fence.
-const FENCE_CLEARING := 1.5
 ## Without a camp layout: board and transport this far off the spawn (the trader's stall
 ## stands on the other side), so nothing stands on the spawn or in each other.
 const FALLBACK_SPOTS := {"board": Vector3(0.0, 0.0, 4.0), "transport": Vector3(0.0, 0.0, -6.0)}
@@ -1071,6 +1069,15 @@ func footprint_ground(at: Vector3, width: float, depth: float, yaw: float) -> fl
 	return total / 9.0
 
 
+## The ground's height with the pads levelled but no craters: what a fence stands on, alike
+## on a client that joins after blasts.
+func _levelled_y(x: float, z: float) -> float:
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	if ground != null and ground.has_method(&"levelled_height"):
+		return float(ground.call(&"levelled_height", x, z))
+	return ground_y(x, z)
+
+
 ## The ground's height as it is now (0 without a world, as in tests).
 func ground_y(x: float, z: float) -> float:
 	var ground := get_tree().get_first_node_in_group(&"ground")
@@ -1189,7 +1196,7 @@ func _build_buildings() -> void:
 		for run: Dictionary in runs:
 			var a: Vector3 = run["from"]
 			var b: Vector3 = run["to"]
-			circles.append({"at": (a + b) / 2.0, "radius": a.distance_to(b) / 2.0 + FENCE_CLEARING})
+			circles.append({"at": (a + b) / 2.0, "radius": a.distance_to(b) / 2.0 + float(_compound_config().get("tree_clear", 1.5))})
 		scenery.call(&"set_clearings", circles)
 	# Level the ground under each building and a little round it, so none sits half in a slope.
 	var ground := get_tree().get_first_node_in_group(&"ground")
@@ -1244,6 +1251,12 @@ func _fence_runs() -> Array[Dictionary]:
 	if buildings.is_empty() or current.is_empty() or not config.has("compound"):
 		return [] as Array[Dictionary]
 	var place := place_of(current)
+	# Clients know the map's sites too (from its seed), so the gate goes where the track
+	# really crosses the fence on every machine.
+	var index := int((current.get("site", {}) as Dictionary).get("index", -1))
+	if index >= 0 and index < sites.size():
+		var track: Dictionary = (sites[index] as Dictionary).get("track", {})
+		place["track_points"] = track.get("points", PackedVector2Array())
 	var centre: Vector3 = place["centre"]
 	var seed_value := hash([roundi(centre.x * 10.0), roundi(centre.z * 10.0), buildings.size()])
 	return MissionLayout.fence(_compound_config(), place, buildings, seed_value, _fence_blocked.bind(place))
@@ -1269,25 +1282,29 @@ func _put_up_fence(runs: Array[Dictionary]) -> void:
 		var run: Dictionary = runs[i]
 		var a: Vector3 = run["from"]
 		var b: Vector3 = run["to"]
+		a.y = _levelled_y(a.x, a.z)
+		b.y = _levelled_y(b.x, b.z)
 		var mid := (a + b) / 2.0
-		# On the lowest ground along it, so neither end stands in the air on a slope.
-		var y := minf(minf(ground_y(a.x, a.z), ground_y(b.x, b.z)), ground_y(mid.x, mid.z)) - sink
+		# Tilted to the ground from end to end (a fill bank round a shed on a hilltop would
+		# bury a level run), and sunk to the ground at its middle where that lies lower.
+		mid.y = minf(mid.y, _levelled_y(mid.x, mid.z)) - sink
 		var x := (b - a).normalized()
 		# x cross up is the basis' z; it must point into the compound, so the planks (-z)
 		# face out.
 		if x.cross(Vector3.UP).dot(Vector3(middle.x - mid.x, 0.0, middle.z - mid.z)) < 0.0:
 			x = -x
+		var up := (Vector3.UP - x * x.dot(Vector3.UP)).normalized()
 		var params: Dictionary = (cfg["fence"] as Dictionary).duplicate()
-		params["length"] = a.distance_to(b)
+		# To a tenth of a metre, so runs that tilt alike still share a mesh.
+		params["length"] = snappedf(a.distance_to(b), 0.1)
 		params["tall_ends"] = 1 if bool(run["tall_ends"]) else 0
-		params["seed"] = 1
 		var piece := VoxPiece.new()
 		piece.name = "Fence%d" % i
 		piece.generator = "VoxFence"
 		piece.params = params
-		# A side's runs are alike, so they draw one mesh between them.
+		# Runs of one length draw one mesh between them.
 		piece.shared = true
-		piece.transform = Transform3D(Basis(x, Vector3.UP, x.cross(Vector3.UP)), Vector3(mid.x, y, mid.z))
+		piece.transform = Transform3D(Basis(x, up, x.cross(up)), mid)
 		piece.set_meta(&"gate", run.get("gate", false))
 		add_child(piece)
 		_fence_nodes.append(piece)

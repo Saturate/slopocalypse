@@ -47,9 +47,11 @@ func test_the_fence_rings_every_building_with_room_round_it() -> void:
 		var runs := MissionLayout.fence(cfg["compound"], _place(), out, seed_value)
 		assert_int(runs.size()).is_greater(8)
 		var ring := _ring(runs)
+		# With the ground guards patrol round each building inside it too.
+		var reach := float(cfg["compound"]["patrol_reach"])
 		for entry: Dictionary in out:
 			var at: Vector3 = entry["position"]
-			assert_bool(ring.grow(-float(entry["radius"])).has_point(Vector2(at.x, at.z))).is_true()
+			assert_bool(ring.grow(-float(entry["radius"]) - reach).has_point(Vector2(at.x, at.z))).is_true()
 		assert_bool(ring.encloses(FOOT)).is_true()
 
 
@@ -77,6 +79,27 @@ func test_the_fence_leaves_a_gate_where_the_track_leaves() -> void:
 		assert_float(absf(tip.x)).is_greater(1.0)
 	var south := runs.filter(func(r: Dictionary) -> bool: return absf((r["from"] as Vector3).z - ring.end.y) < 0.01 and minf((r["from"] as Vector3).x, (r["to"] as Vector3).x) <= 0.0 and maxf((r["from"] as Vector3).x, (r["to"] as Vector3).x) >= 0.0)
 	assert_int(south.size()).is_greater(0)
+
+
+func test_the_gate_follows_a_track_that_bends_away() -> void:
+	var cfg := _config()
+	var place := _place()
+	# Out north from the pad's edge, then bending east inside the fence (4 m out, at z = -20).
+	place["track_points"] = PackedVector2Array([Vector2(0, -16), Vector2(0, -17), Vector2(10, -18), Vector2(60, -18), Vector2(120, -18)])
+	var runs := MissionLayout.fence(cfg["compound"], place, [], 2)
+	var ring := _ring(runs)
+	var leaves := runs.filter(func(r: Dictionary) -> bool: return r.get("gate", false))
+	assert_int(leaves.size()).is_equal(2)
+	for r: Dictionary in leaves:
+		# Hinged on the east side, round where the track crosses it.
+		assert_float((r["from"] as Vector3).x).is_equal_approx(ring.end.x, 0.01)
+		assert_float(absf((r["from"] as Vector3).z + 18.0)).is_less(float(cfg["compound"]["gate"]))
+	# The north side is whole: the track never crosses it.
+	var north := runs.filter(func(r: Dictionary) -> bool: return not r.get("gate", false) and absf((r["from"] as Vector3).z - ring.position.y) < 0.01 and absf((r["to"] as Vector3).z - ring.position.y) < 0.01)
+	var length := 0.0
+	for r: Dictionary in north:
+		length += (r["from"] as Vector3).distance_to(r["to"])
+	assert_float(length).is_equal_approx(ring.size.x, 0.01)
 
 
 func test_no_fence_run_stands_where_it_is_blocked() -> void:

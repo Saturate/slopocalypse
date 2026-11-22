@@ -68,35 +68,45 @@ static func buildings(cfg: Dictionary, seed_value: int, place: Dictionary, block
 
 
 ## The fence round a mission at a map site, so the site and the buildings round it read as
-## one guarded place: a rectangle `cfg.margin` metres out from the site's footprint and every
-## building in `entries`, each side cut into as few equal runs as keep them within
-## `cfg.segment` metres (so a side's runs are alike and share one mesh). The runs where
-## the ray from the footprint's middle along `place.toward` (the way its track leaves) meets
-## the fence are left out, `cfg.gate` metres wide, its two leaves (`gate_leaf` metres long,
-## `gate`: true) standing open `gate_swing` degrees outward from the posts either side; so
-## is every run or leaf `blocked(at, cfg.post_clear) -> bool` turns down anywhere along it
-## (a road or track, water, another site), and a share
-## `cfg.gaps` of the rest, rolled from `seed_value` (never a side's end runs, so the corners
-## stand). Returns `{from, to (on the place's level; the caller puts them on the ground),
-## tall_ends (the run starts or ends a side or a stretch: corner and gate posts)}`, in order
-## round the fence. A roadside spot (an empty footprint) gets none.
+## one guarded place: a rectangle `cfg.margin` metres out from the site's footprint and from
+## every building in `entries` (its radius plus `cfg.patrol_reach` round its middle), each
+## side cut into as few equal runs as keep them within `cfg.segment` metres. The gate is
+## where the site's track first leaves the rectangle (`place.track_points`, when given), or
+## else where the ray from the footprint's middle along `place.toward` does: the runs on
+## that side within `cfg.gate` / 2 of it are left out, and its two leaves (`gate_leaf`
+## metres long, `gate`: true) stand open `gate_swing` degrees outward from the posts either
+## side. Every run or leaf `blocked(at, cfg.post_clear) -> bool` turns down anywhere along
+## it (a road or track, water, another site) is left out too, and a share `cfg.gaps` of the
+## rest, rolled from `seed_value` (never a side's end runs, so the corners stand). Returns
+## `{from, to (on the place's level; the caller puts them on the ground), tall_ends (the run
+## starts or ends a side or a stretch: corner and gate posts), gate?}`, in order round the
+## fence. A roadside spot (an empty footprint) gets none.
 static func fence(cfg: Dictionary, place: Dictionary, entries: Array, seed_value: int, blocked := Callable()) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var foot: Rect2 = place["footprint"]
 	if foot.size.x <= 0.0 or foot.size.y <= 0.0:
 		return out
+	var step := float(cfg["segment"])
+	if step <= 0.0:
+		return out
 	var bounds := foot
 	for e: Dictionary in entries:
+		# The building's whole reach round its middle: guards patrol a few metres past it,
+		# and that ground stays inside the fence too.
 		var at: Vector3 = e["position"]
-		var basis := Basis(Vector3.UP, float(e["yaw"]))
-		var half := Vector3(float(e["width"]) / 2.0, 0.0, float(e["depth"]) / 2.0)
-		for corner: Vector3 in [Vector3(-1, 0, -1), Vector3(1, 0, -1), Vector3(1, 0, 1), Vector3(-1, 0, 1)]:
-			var p := at + basis * (corner * half)
-			bounds = bounds.expand(Vector2(p.x, p.z))
+		var reach := float(e.get("radius", Vector2(float(e["width"]), float(e["depth"])).length() / 2.0)) + float(cfg.get("patrol_reach", 0.0))
+		bounds = bounds.expand(Vector2(at.x - reach, at.z - reach)).expand(Vector2(at.x + reach, at.z + reach))
 	bounds = bounds.grow(float(cfg["margin"]))
-	var step := float(cfg["segment"])
 	var toward: Vector3 = place["toward"]
 	var gate_at := _exit(bounds, foot.get_center(), Vector2(toward.x, toward.z))
+	# Where the site's own track crosses the fence, when the place knows its track: a track
+	# curves, so the straight way out can miss it.
+	var track: PackedVector2Array = place.get("track_points", PackedVector2Array())
+	for k in range(1, track.size()):
+		if bounds.has_point(track[k - 1]) and not bounds.has_point(track[k]):
+			gate_at = _exit(bounds, track[k - 1], (track[k] - track[k - 1]).normalized())
+			break
+	var gate_side := _nearest_side(bounds, gate_at)
 	var gate_half := float(cfg["gate"]) / 2.0
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
@@ -113,7 +123,7 @@ static func fence(cfg: Dictionary, place: Dictionary, entries: Array, seed_value
 		for k in n:
 			var ra := a.lerp(b, float(k) / n)
 			var rb := a.lerp(b, float(k + 1) / n)
-			var ok := Geometry2D.get_closest_point_to_segment(gate_at, ra, rb).distance_to(gate_at) >= gate_half
+			var ok := side != gate_side or Geometry2D.get_closest_point_to_segment(gate_at, ra, rb).distance_to(gate_at) >= gate_half
 			if not ok:
 				gate_runs.append(k)
 			ok = ok and not _run_blocked(ra, rb, level, clear, blocked)
@@ -156,6 +166,17 @@ static func _run_blocked(a: Vector2, b: Vector2, level: float, radius: float, bl
 		if bool(blocked.call(Vector3(p.x, level, p.y), radius)):
 			return true
 	return false
+
+
+## Which side of `rect` (0 north, 1 east, 2 south, 3 west, in the order `fence` walks them)
+## lies nearest `p`.
+static func _nearest_side(rect: Rect2, p: Vector2) -> int:
+	var d: Array[float] = [absf(p.y - rect.position.y), absf(p.x - rect.end.x), absf(p.y - rect.end.y), absf(p.x - rect.position.x)]
+	var best := 0
+	for i in 4:
+		if d[i] < d[best]:
+			best = i
+	return best
 
 
 ## Where the ray from `from` (inside `rect`) along `dir` leaves it.

@@ -288,6 +288,12 @@ func surface_height(x: float, z: float) -> float:
 	return _dig_into(_pad_into(ground_height(x, z), x, z, _pads_in.get(key, [])), x, z, _digs_in.get(key, []))
 
 
+## The ground with levelled pads but without craters: for what is put up on it alike on
+## every machine whenever it joins.
+func levelled_height(x: float, z: float) -> float:
+	return _pad_into(ground_height(x, z), x, z, _pads_in.get(_tile_of(Vector3(x, 0.0, z)), []))
+
+
 ## Pad sets by who owns them (missions, the city...): each owner replaces only its own.
 var _pad_sets: Dictionary[StringName, Array] = {}
 

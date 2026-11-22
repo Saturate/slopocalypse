@@ -112,8 +112,8 @@ func test_the_farm_mission_is_one_fenced_place_with_its_track_through_the_gate()
 		for t: float in [-1.0, -0.5, 0.0, 0.5, 1.0]:
 			var p := node.global_transform * Vector3(half * t, 0.0, 0.0)
 			assert_bool(_voxels.near_road(p, 0.0, 0.0)).override_failure_message("a fence run on a road at %s" % p).is_false()
-		# Standing on the ground, not in the air.
-		assert_float(at.y).is_less_equal(_voxels.surface_height(at.x, at.z))
+		# Standing on the ground at its middle, neither in the air nor sunk out of sight.
+		assert_float(at.y).is_between(_voxels.surface_height(at.x, at.z) - 0.5, _voxels.surface_height(at.x, at.z))
 	assert_bool(ring.encloses(foot)).is_true()
 	var track: Dictionary = (_missions.get(&"sites") as Array)[int(site["index"])]["track"]
 	if not track.is_empty():
