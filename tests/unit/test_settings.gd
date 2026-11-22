@@ -107,6 +107,21 @@ func test_blood_is_on_by_default_and_the_screen_turns_it_off() -> void:
 	assert_bool(bool(Settings.value("blood"))).is_false()
 
 
+func test_colour_blind_colours_are_off_by_default_and_the_screen_turns_them_on() -> void:
+	assert_bool(bool(Settings.value("colour_blind"))).is_false()
+	var screen: SettingsScreen = auto_free(SettingsScreen.new())
+	add_child(screen)
+	screen.open()
+	var toggle := screen.find_child("Colour-blind colours", true, false) as Button
+	assert_object(toggle).is_not_null()
+	assert_bool(toggle.button_pressed).is_false()
+	toggle.button_pressed = true
+	assert_bool(bool(Settings.value("colour_blind"))).is_true()
+	Settings.save()
+	Settings.load_from(PATH)
+	assert_bool(bool(Settings.value("colour_blind"))).is_true()
+
+
 func test_a_change_is_announced_once_and_an_unchanged_value_not_at_all() -> void:
 	var heard: Array[Dictionary] = []
 	var listen := func(p: Dictionary) -> void: heard.append(p)
