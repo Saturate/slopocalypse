@@ -238,11 +238,14 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 ## How much of the gun's spread a shot gets: all of it from the hip, `ads_spread_multiplier`
 ## of it aimed (a bolt-action's receiver sets its own, far smaller, so it is only accurate
 ## through the scope), times `braced_spread_multiplier` when braced (a machine gun on its
-## bipod; 1 for guns that gain nothing from it).
+## bipod; 1 for guns that gain nothing from it), times the holder's `aim_spread_multiplier`
+## (wider while rounds are passing close to them).
 func spread_scale(aimed: bool, braced: bool = false) -> float:
 	var scale := float(stats["ads_spread_multiplier"]) if aimed else 1.0
 	if braced:
 		scale *= float(stats["braced_spread_multiplier"])
+	if holder != null:
+		scale *= holder.aim_spread_multiplier
 	return scale
 
 

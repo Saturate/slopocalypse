@@ -35,6 +35,7 @@
     "camp": true,
     "compass": true,
     "coop_marker": true,
-    "glowsticks": true
+    "glowsticks": true,
+    "suppression": true
   }
 }

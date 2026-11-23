@@ -3,6 +3,8 @@ extends RefCounted
 ## CanvasLayer order for everything drawn over the game, lowest first. Named here so a new
 ## overlay finds its place instead of picking a number.
 
+## Full-screen effects over the world and under the HUD, so the HUD stays readable over them.
+const EFFECTS := 2
 const HUD := 3
 ## Interaction prompts and the thermal tint sit just over the HUD.
 const PROMPTS := 4

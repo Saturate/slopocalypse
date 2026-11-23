@@ -113,6 +113,9 @@ var climbing := false
 ## set by whichever module put it there; 1 carries nothing that slows it. Swimming ignores it:
 ## the gun is put away in the water.
 var carry_speed_multiplier := 1.0
+## Server: how much wider than usual this body's own shots spread (being shot at shakes the
+## aim), set by whichever module decides it; 1 is a steady aim.
+var aim_spread_multiplier := 1.0
 
 
 ## A copy of someone else's body on a client: it shows what the server sends and runs no

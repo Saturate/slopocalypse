@@ -168,6 +168,7 @@ static func generated(sound: String) -> AudioStreamWAV:
 		"collapse": samples = _collapse()
 		"launch": samples = _launch()
 		"dive": samples = _dive()
+		"crack": samples = _crack()
 		"wind":
 			samples = _wind()
 			looped = true
@@ -377,6 +378,25 @@ static func _noise_burst(out: PackedFloat32Array, at: float, seconds: float, bri
 		var t := float(i - start) / RATE
 		lp += (rng.randf_range(-1.0, 1.0) - lp) * a
 		out[i] += lp * exp(-t * decay) * gain * 2.0
+
+
+## A round going past close by: the sharp double snap of its shock wave (a jump up, a
+## straight fall through to below, a jump back), then a short hiss of bright noise.
+static func _crack() -> PackedFloat32Array:
+	var rng := _rng(41)
+	var out := PackedFloat32Array()
+	var wave := 0.0012
+	var lp := 0.0
+	var a := _one_pole(7000.0)
+	for i in int(0.09 * RATE):
+		var t := float(i) / RATE
+		var n_wave := 0.0
+		if t < wave:
+			n_wave = 0.95 * (1.0 - 2.0 * t / wave)
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * a
+		var hiss := lp * exp(-t * 70.0) * 0.9
+		out.append(clampf(n_wave + hiss, -1.0, 1.0))
+	return out
 
 
 ## The hit marker: a bright, dry tick.

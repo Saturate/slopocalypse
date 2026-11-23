@@ -3,7 +3,8 @@ extends Node
 ## world. Shots (rifle, pistol, bolt-action, suppressed) at the shooter, the bolt being worked
 ## after a bolt-action's shot, impacts where bullets land, a
 ## tick when your own shot hits, explosions, everyone's footsteps, and for your own player
-## reload clicks, a pickup blip, a thump when hurt, plus quiet wind, birds by day and crickets at night.
+## reload clicks, a pickup blip, a thump when hurt, the crack of a round passing close
+## (`suppression.near_miss`, {position}), plus quiet wind, birds by day and crickets at night.
 ## Things that break say what they are made of (`missions.surface_hit`, `surface_broke`,
 ## `surface_landed`, `{position, material}`): a knock on wood, a ping off metal, glass
 ## shattering, masonry crumbling, a rumble when a building part lands. Never changes game
@@ -52,6 +53,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"weapons.rocket_launched", _on_rocket_launched)
 	EventBus.subscribe(&"missions.surface_broke", _on_surface_broke)
 	EventBus.subscribe(&"missions.surface_landed", _on_surface_landed)
+	EventBus.subscribe(&"suppression.near_miss", _on_near_miss)
 	var wind := AudioStreamPlayer.new()
 	wind.name = "Wind"
 	wind.stream = SoundBank.get_sound("wind")
@@ -82,6 +84,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"weapons.rocket_launched", _on_rocket_launched)
 	EventBus.unsubscribe(&"missions.surface_broke", _on_surface_broke)
 	EventBus.unsubscribe(&"missions.surface_landed", _on_surface_landed)
+	EventBus.unsubscribe(&"suppression.near_miss", _on_near_miss)
 
 
 ## Which shot sound a weapon makes: a suppressor on its build quiets it, a gun whose bolt
@@ -168,6 +171,11 @@ func _on_surface_landed(p: Dictionary) -> void:
 ## A rocket leaving its tube: a deep thump and a long whoosh.
 func _on_rocket_launched(p: Dictionary) -> void:
 	play_at("launch", p.get("from", Vector3.ZERO), float(config.get("shot_range", 300.0)))
+
+
+## Your own near miss: the round's snap from where it passed, so you hear which side.
+func _on_near_miss(p: Dictionary) -> void:
+	play_at("crack", p.get("position", Vector3.ZERO), float(config.get("crack_range", 20.0)))
 
 
 func _on_explosion(p: Dictionary) -> void:

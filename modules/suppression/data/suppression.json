@@ -1,0 +1,16 @@
+{
+  "_comment": "Players pinned by fire (#547). The server counts rounds from anyone on another side passing within near_miss_metres of a player's chest (chest_below_eyes under their eyes, so it follows a crouch); each adds per_near_miss to their suppression (0 to 1), which falls by decay_per_second. While it is up their own spread is multiplied by 1 + suppression * spread_penalty. Their own screen darkens at the edges (vignette: max_alpha at full suppression, clear_share of the way from the middle to a corner stays untouched) and shakes briefly on each near miss (shake: degrees at full suppression, seconds; the 'Screen shake under fire' setting turns it off).",
+  "near_miss_metres": 2.0,
+  "chest_below_eyes": 0.35,
+  "per_near_miss": 0.1,
+  "decay_per_second": 0.25,
+  "spread_penalty": 1.5,
+  "vignette": {
+    "max_alpha": 0.85,
+    "clear_share": 0.25
+  },
+  "shake": {
+    "degrees": 0.6,
+    "seconds": 0.25
+  }
+}
