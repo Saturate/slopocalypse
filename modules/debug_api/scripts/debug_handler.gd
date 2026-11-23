@@ -12,8 +12,8 @@ const METHODS := {
 	"node": "path",
 	"get": "path, property (any property, script variables too)",
 	"set": "path, property, value (a Godot value string, e.g. Vector3(0, 2, 0))",
-	"call": "target (module/node:method, from the allow-list CALLS), args (Godot value strings; a NodePath is passed as the node there)",
-	"setting": "key (from SETTINGS), value (JSON, the setting's own type); this process only, never saved",
+	"call": "target (<module>:<method>, a method in that module's module.json debug_calls), args (Godot value strings; a NodePath is passed as the node there)",
+	"setting": "key (a setting a module that is on registers in its module.json), value (JSON, the setting's own type); this process only, never saved",
 	"publish": "topic, payload (object)",
 	"screenshot": "",
 	"log": "lines",
@@ -25,26 +25,6 @@ const MAX_LIMIT := 500
 const MAX_VALUE_CHARS := 400
 ## Biggest request body accepted.
 const MAX_BODY := 65536
-## The only methods `call` reaches, as "<module>:<method>". Each is a module's own public
-## API that playtests (tools/play.ts) need and no property or event reaches. A
-## list, not any method on any node: `set` already changes anything stored, but a free call
-## would also reach OS, file and network methods through any node.
-const CALLS: Array[String] = [
-	"inventory:server_give",
-	"inventory:count",
-	"player:server_move_to",
-	"player:server_damage",
-	"daytime:server_set_hour",
-	"glowsticks:lit_of",
-	"glowsticks:server_state",
-	"car:occupied_seats",
-	"coop_marker:markers",
-	"world:is_ready_at",
-	"world:ground_height",
-]
-## The player settings `setting` may change (Settings.DEFAULTS keys): the ones playtests turn
-## on and off per client. Window, volume and key settings stay out.
-const SETTINGS: Array[String] = ["colour_blind", "coop_marker", "compass", "blood"]
 ## Values `get` and `call` return are cut to this many elements per container.
 const MAX_ITEMS := 200
 ## Arguments a call takes at most.
@@ -54,9 +34,14 @@ var token := ""
 var role := ""
 ## Where this process logs (for `log`).
 var log_path := ""
-## Where `call` targets are found, and which it may reach; tests point both elsewhere.
+## Where `call` targets are found; tests point it elsewhere.
 var modules_path := "/root/Boot/Modules"
-var calls: Array[String] = CALLS
+## The only methods `call` reaches, as "<module>:<method>": each module lists its own in its
+## module.json (`debug_calls`), so the list goes with the module's folder. Each is a module's
+## public API that playtests (tools/play.ts) need and no property or event reaches. A list,
+## not any method on any node: `set` already changes anything stored, but a free call would
+## also reach OS, file and network methods through any node. Tests set their own.
+var calls: Array[String] = allowed_calls(ModuleLoader.discover(ModuleLoader.ROOT))
 
 
 ## Parses an HTTP request from the bytes received so far. Returns {complete: false} until
@@ -196,7 +181,7 @@ func _get_property(tree: SceneTree, params: Dictionary) -> Dictionary:
 	return {"result": {"text": text if text.length() <= MAX_VALUE_CHARS else text.substr(0, MAX_VALUE_CHARS) + "...", "value": plain(value)}}
 
 
-## Calls an allow-listed module method (CALLS) with arguments given as Godot value strings.
+## Calls an allow-listed module method (`calls`) with arguments given as Godot value strings.
 func _call(tree: SceneTree, params: Dictionary) -> Dictionary:
 	var target := str(params.get("target", ""))
 	if not calls.has(target):
@@ -209,6 +194,10 @@ func _call(tree: SceneTree, params: Dictionary) -> Dictionary:
 		return {"error": "%s runs on the server only; this is a %s" % [target, role]}
 	if node == null or not node.has_method(method):
 		return {"error": "%s is not loaded here (module off, or the other side of the session)" % target}
+	# Only the module's own script methods: a manifest (or a tweaks/ copy of one) naming an
+	# inherited Node method such as `call` or `set_script` would undo the allow-list.
+	if not _declared_by_script(node, method):
+		return {"error": "%s is not a method the module's script declares" % target}
 	var raw: Variant = params.get("args", [])
 	if not raw is Array or (raw as Array).size() > MAX_ARGS:
 		return {"error": "args must be an array of at most %d Godot value strings" % MAX_ARGS}
@@ -231,13 +220,39 @@ func _call(tree: SceneTree, params: Dictionary) -> Dictionary:
 ## settings file.
 func _setting(params: Dictionary) -> Dictionary:
 	var key := str(params.get("key", ""))
-	if not SETTINGS.has(key):
-		return {"error": "%s is not a setting this API changes; allowed: %s" % [key, ", ".join(SETTINGS)]}
+	# Only what the settings screen offers: module settings of modules that are on. Window,
+	# volume and key settings (core's) stay out.
+	var offered: Array[String] = []
+	for entry in Settings.offered():
+		offered.append(str(entry["key"]))
+	if not offered.has(key):
+		return {"error": "%s is not a setting this API changes; allowed: %s" % [key, ", ".join(offered)]}
 	var value: Variant = params.get("value")
-	if typeof(value) != typeof(Settings.DEFAULTS[key]):
-		return {"error": "%s takes a %s, got %s" % [key, type_string(typeof(Settings.DEFAULTS[key])), type_string(typeof(value))]}
+	var expected: int = ModuleLoader.SETTING_TYPES[Settings.registered(key)["type"]]
+	if typeof(value) != expected:
+		return {"error": "%s takes a %s, got %s" % [key, type_string(expected), type_string(typeof(value))]}
 	Settings.set_value(key, value)
 	return {"result": plain(Settings.value(key))}
+
+
+static func _declared_by_script(node: Node, method: String) -> bool:
+	var script := node.get_script() as Script
+	while script != null:
+		for m: Dictionary in script.get_script_method_list():
+			if m["name"] == method:
+				return true
+		script = script.get_base_script()
+	return false
+
+
+## "<module>:<method>" for every method the modules' manifests allow.
+static func allowed_calls(modules: Array[ModuleLoader.ModuleInfo]) -> Array[String]:
+	var out: Array[String] = []
+	for m in modules:
+		for method in m.debug_calls:
+			out.append("%s:%s" % [m.id, method])
+	out.sort()
+	return out
 
 
 func _default_count(node: Object, method: String) -> int:

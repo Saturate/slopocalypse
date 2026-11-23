@@ -2,5 +2,6 @@
   "id": "inventory",
   "depends_on": ["player", "voxkit"],
   "flag": "inventory",
-  "entry": "inventory_module.gd"
+  "entry": "inventory_module.gd",
+  "debug_calls": ["server_give", "count"]
 }

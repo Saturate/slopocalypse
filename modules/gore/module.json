@@ -2,5 +2,8 @@
   "id": "gore",
   "depends_on": ["world", "player", "weapons"],
   "flag": "gore",
-  "entry": "gore_module.gd"
+  "entry": "gore_module.gd",
+  "settings": [
+    {"key": "blood", "type": "bool", "default": true, "label": "Blood", "order": 10}
+  ]
 }

@@ -1,8 +1,8 @@
 class_name SettingsScreen
 extends ScreenFrame
-## Mouse sensitivity, field of view, volume, UI scale, fullscreen, blood, compass, partner
-## marker, colour-blind colours and key bindings. Changes
-## apply at once and are saved when the screen closes. Keys are listed for the actions the
+## Mouse sensitivity, field of view, volume, UI scale, fullscreen, the settings modules
+## register (one toggle each, for modules that are on; see Settings.offered) and key bindings.
+## Changes apply at once and are saved when the screen closes. Keys are listed for the actions the
 ## running game has registered, so the list is full in a session and empty on the title
 ## (modules register their keys when they load).
 ##
@@ -17,11 +17,7 @@ const HIDDEN_PREFIX := "ui_"
 var _waiting_for := ""
 var _key_buttons: Dictionary[String, Button] = {}
 var _sliders: Dictionary[String, HSlider] = {}
-var _fullscreen: Button
-var _blood: Button
-var _compass: Button
-var _coop_marker: Button
-var _colour_blind: Button
+var _toggles: Array[Button] = []
 
 
 func _init() -> void:
@@ -32,20 +28,10 @@ func _init() -> void:
 	_slider("fov_offset", "Field of view", Settings.FOV_MIN, Settings.FOV_MAX, 1.0, func(v: float) -> String: return "%+d°" % int(v))
 	_slider("volume", "Volume", 0.0, 1.0, 0.05, func(v: float) -> String: return "%d %%" % roundi(v * 100.0))
 	_slider("ui_scale", "Interface size", Settings.UI_MIN, Settings.UI_MAX, 0.05, func(v: float) -> String: return "%d %%" % roundi(v * 100.0))
-	_fullscreen = _toggle("Fullscreen", "fullscreen")
-	# Read by the gore module as blood shows; nothing for the engine to apply. Without the
-	# module the toggle would do nothing, so it isn't offered.
-	_blood = _toggle("Blood", "blood")
-	_blood.visible = Features.is_enabled(&"gore")
-	# Read by the compass module each frame; offered only with it.
-	_compass = _toggle("Compass", "compass")
-	_compass.visible = Features.is_enabled(&"compass")
-	# Read by the coop_marker module each frame; offered only with it.
-	_coop_marker = _toggle("Partner marker", "coop_marker")
-	_coop_marker.visible = Features.is_enabled(&"coop_marker")
-	# Read by the player module's armbands, which repaint at once; offered only with it.
-	_colour_blind = _toggle("Colour-blind colours", "colour_blind")
-	_colour_blind.visible = Features.is_enabled(&"player")
+	_toggle("Fullscreen", "fullscreen")
+	# Only bool settings are registered so far (ModuleLoader.SETTING_TYPES).
+	for entry in Settings.offered():
+		_toggle(str(entry["label"]), str(entry["key"]))
 	var keys_head := Label.new()
 	keys_head.theme_type_variation = &"HeadingLabel"
 	keys_head.text = "KEYS"
@@ -145,7 +131,7 @@ func _refresh() -> void:
 	for key: String in _sliders:
 		_sliders[key].set_value_no_signal(float(Settings.value(key)))
 		_sliders[key].value_changed.emit(_sliders[key].value)
-	for toggle: Button in [_fullscreen, _blood, _compass, _coop_marker, _colour_blind]:
+	for toggle in _toggles:
 		toggle.set_pressed_no_signal(bool(Settings.value(String(toggle.get_meta(&"setting")))))
 		_show_toggle(toggle)
 	var keys := content.get_node(^"Keys") as GridContainer
@@ -179,7 +165,7 @@ func _refresh() -> void:
 
 ## An on/off setting as a toggle button named `label` that says its state: the engine's
 ## switch icon is too small to read.
-func _toggle(label: String, key: String) -> Button:
+func _toggle(label: String, key: String) -> void:
 	var button := Button.new()
 	button.name = label
 	button.toggle_mode = true
@@ -191,7 +177,7 @@ func _toggle(label: String, key: String) -> Button:
 		_show_toggle(button)
 		_apply())
 	content.add_child(button)
-	return button
+	_toggles.append(button)
 
 
 func _show_toggle(button: Button) -> void:

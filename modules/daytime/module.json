@@ -2,5 +2,6 @@
   "id": "daytime",
   "depends_on": ["world"],
   "flag": "daytime",
-  "entry": "daytime_module.gd"
+  "entry": "daytime_module.gd",
+  "debug_calls": ["server_set_hour"]
 }

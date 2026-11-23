@@ -2,5 +2,9 @@
   "id": "player",
   "depends_on": ["world"],
   "flag": "player",
-  "entry": "player_module.gd"
+  "entry": "player_module.gd",
+  "debug_calls": ["server_move_to", "server_damage"],
+  "settings": [
+    {"key": "colour_blind", "type": "bool", "default": false, "label": "Colour-blind colours", "order": 40}
+  ]
 }
