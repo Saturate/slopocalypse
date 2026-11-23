@@ -1,7 +1,7 @@
 // Co-op partner marker (#447, PR #526): Ana sees a blue marker with Bo's name and distance
 // through a building when he is out of sight at range, and none when he stands close by.
-import { playtest, type Game, type PlayContext, type Session, type Vec3 } from "../lib/play.ts";
-import type { Region } from "../lib/png.ts";
+import { playtest, type Game, type PlayContext, type Session, type Vec3 } from "../../../tools/lib/play.ts";
+import type { Region } from "../../../tools/lib/png.ts";
 
 // The marker's colour (modules/coop_marker/data/coop_marker.json "colour").
 const MARKER = "#5fb6ff";

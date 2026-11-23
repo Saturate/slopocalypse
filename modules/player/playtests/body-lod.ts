@@ -2,7 +2,7 @@
 // watches Ana at 10, 25 and 60 m and with his back to her, and counts how often his game
 // poses her body against how often it poses his own. Then at night Ana walks across with a
 // lit glowstick and her armband, and dies 25 m off; her ragdoll must fall and come to rest.
-import { parseVec3, playtest, sleep, type Game, type Session, type Vec3 } from "../lib/play.ts";
+import { parseVec3, playtest, sleep, type Game, type Session, type Vec3 } from "../../../tools/lib/play.ts";
 
 // modules/player/data/body_lod.json: every frame within near_distance, then mid_rate, far_rate,
 // off_screen_rate poses a second.

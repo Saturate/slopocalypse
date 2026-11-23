@@ -2,5 +2,6 @@
   "id": "glowsticks",
   "depends_on": ["player", "inventory"],
   "flag": "glowsticks",
-  "entry": "glowsticks_module.gd"
+  "entry": "glowsticks_module.gd",
+  "debug_calls": ["lit_of", "server_state"]
 }

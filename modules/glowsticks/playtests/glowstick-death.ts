@@ -3,7 +3,7 @@
 // stick's light, like the rifle), fires each, then dies with it lit. Dead, her stick should
 // leave her body and lie glowing where she fell, in her own game and Bo's; back at the
 // spawn she has none, and the dropped one still burns.
-import { playtest, type Game, type Session, type Vec3 } from "../lib/play.ts";
+import { playtest, type Game, type Session, type Vec3 } from "../../../tools/lib/play.ts";
 
 // GlowstickView: the holder on a carrier's chest, and a stick lying on the ground.
 const STICK = "Glowstick";

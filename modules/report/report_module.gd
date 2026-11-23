@@ -102,7 +102,7 @@ func save_report(kind: String, description: String, shot: PackedByteArray, extra
 ## report.json: what was asked for, the machine, the game and where the player is.
 func gather(kind: String, description: String) -> Dictionary:
 	var settings := {}
-	for key: String in Settings.DEFAULTS:
+	for key in Settings.keys():
 		settings[key] = Settings.value(key)
 	var perf := get_tree().get_first_node_in_group(&"perf_api")
 	return {

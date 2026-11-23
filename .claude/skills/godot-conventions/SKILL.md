@@ -13,9 +13,11 @@ Architecture rules live in `AGENTS.md`; this skill is the how-to and the list of
 ## Adding a module
 
 1. Copy `modules/example/` to `modules/<id>/`.
-2. Edit `module.json`: `id`, `depends_on` (module ids), `flag` (empty string means always on), `entry` (script extending `Node`).
+2. Edit `module.json`: `id`, `depends_on` (module ids), `flag` (empty string means always on), `entry` (script extending `Node`). Optional, see docs/decisions/0019:
+   - `debug_calls`: methods on the entry node the debug API's `call` may run (`["server_give", "count"]`, reached as `<id>:<method>`).
+   - `settings`: player settings the module reads, `[{"key": "compass", "type": "bool", "default": true, "label": "Compass", "order": 20}]`. The settings screen shows one toggle each while the flag is on, in its toggle list by `order`; read the value with `Settings.value("compass")` and listen for `settings.changed`.
 3. Add the flag to `data/features.json`.
-4. Keep everything for the feature inside the folder: `scenes/`, `builders/`, `data/`, `tests/unit|scenario|net/`, `rust/`.
+4. Keep everything for the feature inside the folder: `scenes/`, `builders/`, `data/`, `tests/unit|scenario|net/`, `rust/`, `playtests/` (scripted playtest scenarios, `node tools/play.ts <name>`). A module owns everything that names it: no allow-list in core or another module names its debug calls, core never names its setting keys, and its scenarios sit in its own `playtests/` (a tool test checks these three).
 5. Talk to other modules only through `EventBus.publish(&"module.event", payload)` / `subscribe`, or a small public API script. Never `get_node` into another module.
 6. Run `npm run check:full`. Then move the folder out of the project and run it again: it must stay green.
 
