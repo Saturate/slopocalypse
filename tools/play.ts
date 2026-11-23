@@ -1,4 +1,4 @@
-// Scripted playtests: runs tools/playtests/<scenario>.ts against a real session (a headless
+// Scripted playtests: runs modules/<id>/playtests/<scenario>.ts against a real session (a headless
 // dedicated server and named windowed clients) and writes what happened to
 // build/play/<scenario>/<time>/: report.json, report.md, review.md, shots/ and logs/.
 //   node tools/play.ts <scenario> [--headless] [--keep] [--port N] [--timeout SECONDS]
@@ -7,34 +7,28 @@
 // --keep: leave the game running after the scenario, for a look through the debug API (MCP),
 // until Ctrl-C. Not part of the gate: it opens windows. Hand review.md to a reviewer that has
 // not seen the code (see .claude/skills/visual-review/SKILL.md).
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { argv, exit } from "node:process";
 import { pathToFileURL } from "node:url";
 import { localGodot } from "./lib/godot.ts";
 import { freeUdpPort } from "./lib/net.ts";
 import { finalStatus, reportMarkdown, reviewMarkdown, type Report, type Status } from "./lib/play-report.ts";
-import { parsePlayArgs, PlayRun, Playtest, PlaytestSkip, preferredPort } from "./lib/play.ts";
+import { findScenarios, parsePlayArgs, PlayRun, Playtest, PlaytestSkip, preferredPort } from "./lib/play.ts";
 
 const root = resolve(import.meta.dirname, "..");
-const scenarios = join(root, "tools", "playtests");
 const DEFAULT_TIMEOUT_S = 600;
-
-function available(): string[] {
-	return readdirSync(scenarios)
-		.filter((f) => f.endsWith(".ts"))
-		.map((f) => f.replace(/\.ts$/, ""))
-		.sort();
-}
 
 async function main(): Promise<number> {
 	const args = parsePlayArgs(argv.slice(2));
+	const scenarios = findScenarios(root);
+	const names = [...scenarios.keys()].sort();
 	if (args.list) {
-		for (const name of available()) console.log(name);
+		for (const name of names) console.log(`${name}  (${relative(root, scenarios.get(name) ?? "")})`);
 		return 0;
 	}
-	const file = join(scenarios, `${args.scenario}.ts`);
-	if (!existsSync(file)) throw new Error(`no scenario ${args.scenario}; there are: ${available().join(", ")}`);
+	const file = scenarios.get(args.scenario);
+	if (file === undefined) throw new Error(`no scenario ${args.scenario}; there are: ${names.join(", ")}`);
 	const loaded: unknown = await import(pathToFileURL(file).href);
 	const test: unknown = typeof loaded === "object" && loaded !== null ? Reflect.get(loaded, "default") : undefined;
 	if (!(test instanceof Playtest)) throw new Error(`${file} must \`export default playtest({...}, async (t) => {...})\``);

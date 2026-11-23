@@ -2,5 +2,8 @@
   "id": "compass",
   "depends_on": ["player", "world"],
   "flag": "compass",
-  "entry": "compass_module.gd"
+  "entry": "compass_module.gd",
+  "settings": [
+    {"key": "compass", "type": "bool", "default": true, "label": "Compass", "order": 20}
+  ]
 }

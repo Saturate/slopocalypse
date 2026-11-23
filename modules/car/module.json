@@ -2,5 +2,6 @@
   "id": "car",
   "depends_on": ["world"],
   "flag": "car",
-  "entry": "car_module.gd"
+  "entry": "car_module.gd",
+  "debug_calls": ["occupied_seats"]
 }

@@ -48,7 +48,7 @@ node tools/play.ts --list
 node tools/play.ts <scenario>            # e.g. partner-marker, glowstick-night
 ```
 
-Scenarios live in `tools/playtests/` (copy one; `tools/lib/play.ts` has the API). Each `screenshot(name, { expect })` carries its expectation, written before looking. The run writes `build/play/<scenario>/<time>/`:
+Scenarios live in `modules/<id>/playtests/` of the module they are about (copy one; `tools/lib/play.ts` has the API; a method the scenario calls goes in that module's `debug_calls`, see docs/decisions/0019). Each `screenshot(name, { expect })` carries its expectation, written before looking. The run writes `build/play/<scenario>/<time>/`:
 
 - `report.md` / `report.json`: steps, state checks, image checks, log errors and warnings, frame times. For you, not the reviewer.
 - `review.md`: only the screenshot paths and their expectations, with the review instructions.

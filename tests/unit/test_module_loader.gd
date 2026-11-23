@@ -54,3 +54,41 @@ func test_bad_manifest_is_an_error() -> void:
 	var info := ModuleLoader.parse_manifest("res://tests/fixtures/modules/alpha", {"id": "alpha"})
 	assert_object(info).is_null()
 	assert_str(LogCapture.text(Log.end_capture())).contains("module.json").contains("'depends_on'")
+
+
+func _manifest(extra: Dictionary) -> Dictionary:
+	return {"id": "alpha", "depends_on": [], "flag": "", "entry": "module.gd"}.merged(extra)
+
+
+func test_debug_calls_and_settings_are_read_from_the_manifest() -> void:
+	var info := ModuleLoader.parse_manifest(ROOT.path_join("alpha"), _manifest({
+		"debug_calls": ["server_poke", "count"],
+		"settings": [{"key": "alpha_lamp", "type": "bool", "default": true, "label": "Lamp", "order": 10.0}],
+	}))
+	assert_array(info.debug_calls).is_equal(["server_poke", "count"])
+	assert_int(info.settings.size()).is_equal(1)
+	assert_str(str(info.settings[0]["key"])).is_equal("alpha_lamp")
+	assert_bool(bool(info.settings[0]["default"])).is_true()
+	# Both are optional.
+	var plain := ModuleLoader.parse_manifest(ROOT.path_join("alpha"), _manifest({}))
+	assert_array(plain.debug_calls).is_empty()
+	assert_array(plain.settings).is_empty()
+
+
+func test_bad_debug_calls_or_settings_are_an_error() -> void:
+	var bad: Array[Dictionary] = [
+		{"debug_calls": "count"},
+		{"debug_calls": ["not a name"]},
+		{"debug_calls": ["_ready"]},
+		{"debug_calls": ["count", "count"]},
+		{"settings": [{"key": "x", "type": "bool", "default": true, "label": "A.b", "order": 1.0}]},
+		{"settings": {}},
+		{"settings": [{"key": "x", "type": "bool", "default": true, "label": "X"}]},
+		{"settings": [{"key": "x", "type": "colour", "default": true, "label": "X", "order": 1.0}]},
+		{"settings": [{"key": "x", "type": "bool", "default": 1.0, "label": "X", "order": 1.0}]},
+		{"settings": [{"key": "has space", "type": "bool", "default": true, "label": "X", "order": 1.0}]},
+	]
+	for extra in bad:
+		assert_object(ModuleLoader.parse_manifest(ROOT.path_join("alpha"), _manifest(extra))).override_failure_message(str(extra)).is_null()
+	var text := LogCapture.text(Log.end_capture())
+	assert_str(text).contains("debug_calls").contains("'order'").contains("colour").contains("default").contains("plain name")

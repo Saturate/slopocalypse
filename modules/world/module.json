@@ -2,5 +2,6 @@
   "id": "world",
   "depends_on": ["voxkit"],
   "flag": "world",
-  "entry": "world_module.gd"
+  "entry": "world_module.gd",
+  "debug_calls": ["is_ready_at", "ground_height"]
 }

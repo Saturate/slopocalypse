@@ -2,5 +2,9 @@
   "id": "coop_marker",
   "depends_on": ["player"],
   "flag": "coop_marker",
-  "entry": "coop_marker_module.gd"
+  "entry": "coop_marker_module.gd",
+  "debug_calls": ["markers"],
+  "settings": [
+    {"key": "coop_marker", "type": "bool", "default": true, "label": "Partner marker", "order": 30}
+  ]
 }

@@ -119,7 +119,7 @@ func test_only_allow_listed_methods_are_called() -> void:
 	add_child(holder)
 	var h := _handler()
 	h.modules_path = str(holder.get_path())
-	h.calls = ["probe:give", "probe:touch", "missing:give", "probe:server_poke"]
+	h.calls = ["probe:give", "probe:touch", "missing:give", "probe:server_poke", "probe:call", "probe:set_script"]
 	var ok := h.call_method("call", {"target": "probe:give", "args": ["2", "\"glowstick\""]}, get_tree())
 	assert_bool(bool(ok["result"])).is_true()
 	assert_array(probe.given).is_equal([[2, "glowstick", {}]])
@@ -128,6 +128,9 @@ func test_only_allow_listed_methods_are_called() -> void:
 	assert_str(str(touched["result"])).is_equal("probe")
 	assert_str(str(h.call_method("call", {"target": "probe:secret"}, get_tree())["error"])).contains("not callable")
 	assert_str(str(h.call_method("call", {"target": "missing:give"}, get_tree())["error"])).contains("not loaded")
+	# Listed but inherited from Node: refused, or the list would reach any method.
+	assert_str(str(h.call_method("call", {"target": "probe:call", "args": ["\"secret\""]}, get_tree())["error"])).contains("declares")
+	assert_str(str(h.call_method("call", {"target": "probe:set_script", "args": ["null"]}, get_tree())["error"])).contains("declares")
 	assert_str(str(h.call_method("call", {"target": "probe:give", "args": ["1"]}, get_tree())["error"])).contains("argument")
 	assert_bool(h.call_method("call", {"target": "probe:touch", "args": ["NodePath(\"/root/NoSuchNode\")"]}, get_tree()).has("error")).is_true()
 
@@ -146,33 +149,61 @@ func test_plain_cuts_long_containers_and_names_freed_objects() -> void:
 
 
 ## Every allowed call names a method its module's entry script really has, so a rename
-## breaks this test, not a playtest an hour later. A deleted module's entries are skipped.
+## breaks this test, not a playtest an hour later. Each module lists its own in module.json.
 func test_every_allowed_call_exists_on_its_module() -> void:
-	for target: String in DebugHandler.CALLS:
-		var at := target.rfind(":")
-		var id := target.substr(0, at)
-		if not FileAccess.file_exists("res://modules/%s/module.json" % id):
-			continue
-		var manifest: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://modules/%s/module.json" % id))
-		assert_bool(manifest is Dictionary).override_failure_message("%s: no module.json" % target).is_true()
+	var modules := ModuleLoader.discover(ModuleLoader.ROOT)
+	for m in modules:
 		# Read as text: loading every module's script here would compile half the game.
-		var source := FileAccess.get_file_as_string("res://modules/%s/%s" % [id, str((manifest as Dictionary).get("entry", ""))])
-		assert_bool(source.contains("\nfunc %s(" % target.substr(at + 1))).override_failure_message("%s: no such method" % target).is_true()
+		var source := FileAccess.get_file_as_string(m.dir.path_join(m.entry))
+		for method in m.debug_calls:
+			assert_bool(source.contains("\nfunc %s(" % method)).override_failure_message("%s:%s: no such method" % [m.id, method]).is_true()
+	assert_array(_handler().calls).is_equal(DebugHandler.allowed_calls(modules))
 
 
-func test_settings_change_this_process_only_from_the_list() -> void:
+func test_the_allow_list_comes_from_the_modules_manifests() -> void:
+	var a := ModuleLoader.ModuleInfo.new()
+	a.id = &"lamp"
+	a.debug_calls.assign(["server_light", "lit"])
+	var b := ModuleLoader.ModuleInfo.new()
+	b.id = &"door"
+	assert_array(DebugHandler.allowed_calls([a, b])).is_equal(["lamp:lit", "lamp:server_light"])
+
+
+## A module setting registered by a fixture module, so this test does not depend on which
+## modules are present.
+func _probe_settings(flag: StringName) -> void:
+	var m := ModuleLoader.ModuleInfo.new()
+	m.id = &"probe"
+	m.flag = flag
+	m.settings.assign([{"key": "test_probe_lamp", "type": "bool", "default": false, "label": "Lamp", "order": 1.0}])
+	Settings.use_modules([m])
+
+
+func test_settings_change_this_process_only_from_the_registered_ones() -> void:
+	_probe_settings(&"")
 	var h := _handler()
-	var before: Variant = Settings.value("colour_blind")
 	var heard: Array = []
 	var on_changed := func(p: Dictionary) -> void: heard.append(p)
 	EventBus.subscribe(&"settings.changed", on_changed)
-	var got := h.call_method("setting", {"key": "colour_blind", "value": not before}, get_tree())
+	var got := h.call_method("setting", {"key": "test_probe_lamp", "value": true}, get_tree())
 	EventBus.unsubscribe(&"settings.changed", on_changed)
-	assert_bool(bool(got["result"])).is_equal(not before)
-	assert_bool(bool(Settings.value("colour_blind"))).is_equal(not before)
-	assert_array(heard.map(func(p: Dictionary) -> String: return str(p["key"]))).contains(["colour_blind"])
-	# Off the list, or the wrong type: refused and left alone.
+	assert_bool(bool(got["result"])).is_true()
+	assert_bool(bool(Settings.value("test_probe_lamp"))).is_true()
+	assert_array(heard.map(func(p: Dictionary) -> String: return str(p["key"]))).contains(["test_probe_lamp"])
+	# Core's own settings, unknown keys, or the wrong type: refused and left alone.
 	assert_str(str(h.call_method("setting", {"key": "fullscreen", "value": true}, get_tree())["error"])).contains("not a setting")
-	assert_str(str(h.call_method("setting", {"key": "colour_blind", "value": "yes"}, get_tree())["error"])).contains("takes a bool")
-	assert_bool(bool(Settings.value("colour_blind"))).is_equal(not before)
-	Settings.set_value("colour_blind", before)
+	assert_str(str(h.call_method("setting", {"key": "no_such_thing", "value": true}, get_tree())["error"])).contains("not a setting")
+	assert_str(str(h.call_method("setting", {"key": "test_probe_lamp", "value": "yes"}, get_tree())["error"])).contains("takes a bool")
+	assert_bool(bool(Settings.value("test_probe_lamp"))).is_true()
+
+
+func test_a_setting_of_a_module_that_is_off_is_refused() -> void:
+	_probe_settings(&"no_such_flag_for_tests")
+	Log.begin_capture()
+	var got := _handler().call_method("setting", {"key": "test_probe_lamp", "value": true}, get_tree())
+	Log.end_capture()
+	assert_str(str(got.get("error", ""))).contains("not a setting")
+
+
+func after_test() -> void:
+	Settings.forget_modules()

@@ -2,8 +2,8 @@
 // lights it, it leaves her gear, and Bo's game shows the stick and its light on her chest.
 // Her own view leaves her gun out of her stick's light; Bo still sees her lit from 30 m; a
 // stick she drops lies on the ground as a stick.
-import { playtest, type Game, type Shot, type Vec3 } from "../lib/play.ts";
-import type { Region } from "../lib/png.ts";
+import { playtest, type Game, type Shot, type Vec3 } from "../../../tools/lib/play.ts";
+import type { Region } from "../../../tools/lib/png.ts";
 
 // GlowstickView names the holder on a carrier's chest "Glowstick", with the light inside it.
 const STICK = "Glowstick";

@@ -2,7 +2,7 @@
 // server and named windowed clients, every one with the debug API on), drives it through
 // that API, checks game state and takes screenshots that a reviewer judges without the code.
 // See docs/decisions/0017-scripted-playtests-over-the-debug-api.md.
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
 import { env, platform } from "node:process";
@@ -48,6 +48,30 @@ export function parsePlayArgs(args: readonly string[]): PlayArgs {
 	if (out.scenario === "" && !out.list) throw new Error("name a scenario (--list shows them)");
 	if (!/^[a-z0-9][a-z0-9-]*$/.test(out.scenario) && !out.list) throw new Error(`scenario names are lower-case words joined by -, got ${out.scenario}`);
 	return out;
+}
+
+// Scenario name -> file, from modules/<id>/playtests/<name>.ts. A scenario belongs to the
+// module it is about, so deleting that module's folder deletes its scenarios; a folder
+// without a module.json is not a module. Two modules with the same scenario name would make
+// `play.ts <name>` ambiguous, so that is an error rather than a silent pick.
+export function findScenarios(root: string): Map<string, string> {
+	const modulesDir = join(root, "modules");
+	const found = new Map<string, string>();
+	const clashes: string[] = [];
+	const modules = existsSync(modulesDir) ? readdirSync(modulesDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort() : [];
+	for (const id of modules) {
+		const dir = join(modulesDir, id, "playtests");
+		if (!existsSync(join(modulesDir, id, "module.json")) || !existsSync(dir)) continue;
+		for (const f of readdirSync(dir).filter((f) => f.endsWith(".ts")).sort()) {
+			const name = f.replace(/\.ts$/, "");
+			const file = join(dir, f);
+			const before = found.get(name);
+			if (before !== undefined) clashes.push(`${name}: ${before} and ${file}`);
+			else found.set(name, file);
+		}
+	}
+	if (clashes.length > 0) throw new Error(`scenario names must be unique across modules:\n  ${clashes.join("\n  ")}`);
+	return found;
 }
 
 // Where a run's port search starts: spread over a band away from the gate's smoke tests
@@ -546,13 +570,13 @@ export class Game {
 		this.run.rec.add("action", `${this.name}: publish ${topic} ${describeValue(payload, 120)}`, true);
 	}
 
-	// An allow-listed module method (DebugHandler.CALLS), e.g. "inventory:server_give".
+	// A method a module allows (its module.json "debug_calls"), e.g. "inventory:server_give".
 	async call(target: string, ...args: GodotValue[]): Promise<unknown> {
 		return this.rpc("call", { target, args: args.map(godotValue) });
 	}
 
-	// One of this process's settings (DebugHandler.SETTINGS: colour_blind, coop_marker,
-	// compass, blood), as the settings screen changes it; never saved to the settings file.
+	// A player setting a loaded module registered (its module.json "settings"), e.g.
+	// "colour_blind", as the settings screen changes it; never saved to the settings file.
 	async setting(key: string, value: boolean): Promise<void> {
 		const got = await this.rpc("setting", { key, value });
 		this.run.rec.add("action", `${this.name}: setting ${key} = ${describeValue(value)}`, got === value, got === value ? undefined : `reads back ${describeValue(got)}`);
