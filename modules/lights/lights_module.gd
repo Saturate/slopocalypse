@@ -25,7 +25,7 @@ func _ready() -> void:
 		var budget := LightBudget.new()
 		budget.name = "Budget"
 		var b: Dictionary = config["budget"]
-		budget.max_shadow = int(b.get("max_shadow_lights", 4))
+		budget.max_shadow = 0 if RenderSwitches.no_shadows(OS.get_cmdline_user_args()) else int(b.get("max_shadow_lights", 4))
 		budget.max_lit = int(b.get("max_lights", 16))
 		budget.fade = float(b.get("fade_seconds", 0.3))
 		add_child(budget)

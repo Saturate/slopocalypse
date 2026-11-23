@@ -43,3 +43,17 @@ test("a benchmark report lists its numbers and each hitch", () => {
 	assert.match(lines, /hitch 148\.7 ms at 31 s: world\/scenery_build 120; shaders compiled/);
 	assert.doesNotMatch(lines, /hitches/);
 });
+
+test("a report shows where the frame went, and says when the GPU was not timed", () => {
+	const budget = { frame_ms: 10, scripts_ms: 3, physics_ms: 1, render_ms: 4, other_ms: 2 };
+	const lines = summariseReport({
+		kind: "benchmark",
+		perf: { fps: 90, budget, gpu_ms: 6, driver: "vulkan", visible: { draw_calls: 400, objects: 300, primitives: 9000 }, shadow: { draw_calls: 600, objects: 500, primitives: 12000 } },
+		benchmark: { fps_mean: 58, driver: "metal", budget, visible: { draw_calls: 1 }, hitches: [] },
+	}).join("\n");
+	assert.match(lines, /frame budget: 10 ms = scripts 3 \+ physics 1 \+ render 4 \+ other 2; GPU 6 ms \(vulkan\)/);
+	assert.match(lines, /passes: visible 400 draws, 300 objects; shadow 600 draws, 500 objects/);
+	assert.match(lines, /benchmark budget: 10 ms = scripts 3 \+ physics 1 \+ render 4 \+ other 2; GPU untimed by metal/);
+	// The nested numbers have lines of their own, not "budget ?" on the numbers line.
+	assert.doesNotMatch(lines, /budget \?|visible \?/);
+});

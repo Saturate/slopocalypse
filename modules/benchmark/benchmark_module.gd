@@ -23,8 +23,8 @@ var out_path := ""
 var _clock := 0.0
 var _last_usec := 0
 var _frames := PackedFloat32Array()
-var _render: Dictionary[String, float] = {}
-var _render_samples := 0
+## The perf module's samples taken while measuring.
+var _samples: Array[Dictionary] = []
 var _status: Label
 var _screen: BenchmarkResults
 ## Quit once the results are written (a tool run), not a test calling `finish`.
@@ -108,16 +108,13 @@ func _on_sampled(record: Dictionary) -> void:
 	var warmup := float(config["warmup_seconds"])
 	if _clock < warmup or not results.is_empty():
 		return
-	_render_samples += 1
-	for key in ["draw_calls", "objects_drawn", "primitives", "gpu_ms", "render_cpu_ms"]:
-		_render[key] = _render.get(key, 0.0) + float(record.get(key, 0.0))
+	_samples.append(record)
 
 
 ## Ends the run with the frames timed so far: results, then the file or the screen.
 func finish() -> void:
 	results = BenchmarkStats.summarise(_frames)
-	for key in _render:
-		results[key] = snappedf(_render[key] / maxi(1, _render_samples), 0.01)
+	results.merge(BenchmarkStats.average_samples(_samples))
 	results["seconds"] = float(config["measure_seconds"])
 	results["hitches"] = _hitches()
 	if _status != null:

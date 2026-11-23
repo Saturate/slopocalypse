@@ -6,6 +6,8 @@ var perf: Node
 
 ## The most expensive zones listed.
 const ZONES_SHOWN := 6
+## The most expensive modules on the module line.
+const MODULES_SHOWN := 6
 
 var _label: Label
 var _key: int = KEY_F3
@@ -47,8 +49,20 @@ func _show(rec: Dictionary) -> void:
 		"physics %.2f ms a tick   peaks: process %.1f, physics %.1f" % [rec.get("physics_nodes_ms", 0.0), rec.get("process_peak_ms", 0.0), rec.get("physics_peak_ms", 0.0)],
 		"nodes %d   objects %d   memory %.0f MB   video %.0f MB" % [rec.get("nodes", 0), rec.get("objects", 0), rec.get("memory_mb", 0.0), rec.get("video_mb", 0.0)],
 		"draw calls %d   primitives %d" % [rec.get("draw_calls", 0), rec.get("primitives", 0)],
-		"gpu %.1f ms   render cpu %.1f ms" % [rec.get("gpu_ms", 0.0), rec.get("render_cpu_ms", 0.0)],
+		"gpu %s   render cpu %.1f ms   driver %s" % ["%.1f ms" % rec["gpu_ms"] if rec.has("gpu_ms") else "untimed", rec.get("render_cpu_ms", 0.0), rec.get("driver", "?")],
 	]
+	if rec.has("budget"):
+		lines.insert(1, PerfBudget.line(rec["budget"], float(rec.get("gpu_ms", -1.0))))
+	for pass_name: String in ["visible", "shadow"]:
+		var counts: Dictionary = rec.get(pass_name, {})
+		if not counts.is_empty():
+			lines.append("%-7s draws %d   objects %d   primitives %d" % [pass_name, counts.get("draw_calls", 0), counts.get("objects", 0), counts.get("primitives", 0)])
+	var modules: Dictionary = rec.get("modules", {})
+	if not modules.is_empty():
+		var parts: Array[String] = []
+		for name: String in modules.keys().slice(0, MODULES_SHOWN):
+			parts.append("%s %.2f" % [name, modules[name]])
+		lines.append("modules ms/frame: " + ", ".join(parts))
 	if rec.has("net_out_bytes"):
 		lines.append("net out %.1f KB/s   in %.1f KB/s   peers %d" % [rec["net_out_bytes"] / 1024.0, rec["net_in_bytes"] / 1024.0, rec.get("peers", 0)])
 	var zones: Dictionary = rec.get("zones", {})

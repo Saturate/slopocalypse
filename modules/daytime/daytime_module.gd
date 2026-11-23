@@ -26,6 +26,7 @@ func _ready() -> void:
 	if DisplayServer.get_name() != "headless":
 		_lighting = DayLighting.new()
 		_lighting.name = "Lighting"
+		_lighting.shadows = not RenderSwitches.no_shadows(OS.get_cmdline_user_args())
 		add_child(_lighting)
 
 
