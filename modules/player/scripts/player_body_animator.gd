@@ -68,6 +68,9 @@ var _slide := 0.0
 var _climb := 0.0
 ## How far through the climb cycle the body is (whole cycles count up the ladder).
 var _climb_phase := 0.0
+## The body's height when last posed. A body posed less often climbs by how far it rose since,
+## not by its speed at one moment times the whole wait, which drifts the hands off the rungs.
+var _climb_y := 0.0
 var _climb_length := 1.0
 var _ads := 0.0
 var _camera: Node3D
@@ -121,6 +124,7 @@ func _ready() -> void:
 	_head = player.get_node("Head")
 	_camera = player.get_node("Head/Camera")
 	_skeleton = body.get_node("Skeleton")
+	_climb_y = player.global_position.y
 	_socket = PlayerBody.weapon_socket(player)
 	if _socket != null:
 		# A gun is built whole before it goes into the hands, so a change of child is a new gun.
@@ -145,7 +149,9 @@ func _process(delta: float) -> void:
 			return
 		var middle := player.global_position + Vector3.UP
 		if not _posed or _since + _lead >= BodyLod.shared().interval_at(get_viewport(), middle):
-			_pose(_since)
+			# Back in view after a long while hidden: one wait's worth, not a jump through every
+			# blend and transition at once.
+			_pose(minf(_since, 1.0 / BodyLod.shared().off_screen_rate))
 	Prof.stop(&"player/player_body_animator:frame", prof)
 
 
@@ -172,7 +178,8 @@ func _process_tick(delta: float) -> void:
 	_slide = lerpf(_slide, 1.0 if sliding else 0.0, blend)
 	_climb = lerpf(_climb, 1.0 if on_ladder else 0.0, blend)
 	if on_ladder:
-		_climb_phase += player.velocity.y * delta / CLIMB_STRIDE
+		_climb_phase += (player.global_position.y - _climb_y if lod else player.velocity.y * delta) / CLIMB_STRIDE
+	_climb_y = player.global_position.y
 	_tree.set(&"parameters/climb/blend_amount", _climb)
 	_tree.set(&"parameters/climb_seek/seek_request", fposmod(_climb_phase, 1.0) * _climb_length)
 	_face_ladder(delta)
@@ -268,9 +275,10 @@ func _marker(marker_name: StringName) -> Node3D:
 			var found := _socket.find_child(String(key), true, false) as Node3D
 			if found != null:
 				_markers[key] = found
-	var marker: Object = _markers.get(marker_name)
-	if marker == null:
+	if not _markers.has(marker_name):
 		return null
+	# Untyped: a freed marker would error on the way into a typed variable.
+	var marker: Variant = _markers[marker_name]
 	if not is_instance_valid(marker):
 		_forget_markers()
 		return _marker(marker_name)

@@ -86,11 +86,11 @@ export default playtest({ title: "Body LOD: far and off-screen bodies posed less
 		await s.give("Ana", "glowstick");
 		await s.action("Ana", "glowstick");
 		await t.expect.poll(async () => (await bo.find(`${anaPath}/*Glowstick*/Light`, "OmniLight3D", 5)).length, { what: "the stick light on Ana in Bo's game", timeout: 10_000 }).toBe(1);
-		await s.teleport("Ana", await along(s, home, ahead, 25, -5));
+		await s.teleport("Ana", await along(s, home, ahead, 25, 5));
 		const mid = await along(s, home, ahead, 25);
 		await s.lookAt("Bo", [mid[0], mid[1] + 1.2, mid[2]]);
-		// Facing across Bo's view, to his right.
-		await s.look("Ana", yaw - Math.PI / 2);
+		// Facing across Bo's view, to his left.
+		await s.look("Ana", yaw + Math.PI / 2);
 		await s.intent("Ana", { move: [0, 1] });
 		await sleep(800);
 		await bo.screenshot("ana-walking-25m-night", {
@@ -98,7 +98,7 @@ export default playtest({ title: "Body LOD: far and off-screen bodies posed less
 		});
 		await sleep(700);
 		await bo.screenshot("ana-walking-25m-night-2", {
-			expect: "The same person a moment later, a little further along, still with the blue glow on the chest and a different leg position.",
+			expect: "The same person a moment later, a little further along (to the left), still with the blue glow on the chest and a different leg position.",
 		});
 		await s.intent("Ana", { move: [0, 0] });
 	});

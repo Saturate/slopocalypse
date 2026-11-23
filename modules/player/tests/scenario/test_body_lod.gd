@@ -127,3 +127,19 @@ func test_a_hidden_copy_is_not_posed() -> void:
 	(hidden.player.get_node("Body") as Node3D).visible = true
 	await _frames(2)
 	assert_int(hidden.poses - start).is_greater(0)
+
+
+func test_a_far_climber_steps_by_how_far_it_rose() -> void:
+	var far := _copy(Vector3(0.0, 0.0, -90.0), true)
+	await _frames(2)
+	var climber := far.player
+	climber.climbing = true
+	var start: float = far.get(&"_climb_phase")
+	# Up a full stride with a speed that says otherwise: only the height counts.
+	for i in 30:
+		climber.position.y += PlayerBodyAnimator.CLIMB_STRIDE / 30.0
+		climber.velocity = Vector3.UP * 5.0
+		await get_tree().process_frame
+	await _frames_for(4, 0.2)
+	var climbed: float = float(far.get(&"_climb_phase")) - start
+	assert_float(climbed).is_equal_approx(1.0, 0.001)

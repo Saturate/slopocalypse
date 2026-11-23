@@ -36,4 +36,6 @@ profile zone now includes the AnimationTree's own work for opted-in bodies (it u
 outside any zone), so compare whole frame time, not that zone alone, across this change.
 Something that copies a body on a client gets a pose up to one interval old, and must switch
 the copy's skeleton back to processing on its own: the ragdoll (`Corpse`) does, since its
-physics simulator is a skeleton modifier.
+physics simulator is a skeleton modifier. Between poses the skeleton holds the
+modifiers' result only while nothing else sets its bone poses; a system that writes bone poses
+on a living body must pose it through the animator instead.
