@@ -294,9 +294,9 @@ func _focus_points() -> Array[Vector3]:
 		out.append(cam.global_position)
 	else:
 		# Trees and rocks block shots and sight on a headless client too.
-		var own := VoxelWorld.own_player_on_client(self)
-		if own != null:
-			out.append(own.global_position)
+		var own: Variant = VoxelWorld.own_spot_on_client(self)
+		if own is Vector3:
+			out.append(own)
 	# Before a client has connected there is no peer to ask, and nothing to follow yet.
 	if multiplayer.has_multiplayer_peer() and multiplayer.is_server():
 		for group: StringName in [&"players", &"vehicles"]:
