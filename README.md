@@ -19,6 +19,7 @@ The other half of the experiment is control: how much structure does it take bef
 - **Tests first.** Behaviour gets a failing test before the code, so "it works" means something.
 - **Small, deletable modules.** Each feature lives in its own folder and talks to the rest only through events, and the gate boots the game with every optional module off. Slop stays local, and a bad module can be deleted.
 - **Eyes that didn't write it.** Visual changes are captured to a contact sheet and judged by a fresh agent that never saw the code.
+- **Scripted playtests.** `node tools/play.ts <scenario>` starts a real server and named clients, drives them, checks game state and takes screenshots with what each should show, for that same kind of reviewer.
 - **No magic numbers.** Gameplay values live in `data/`, so tuning doesn't mean digging through generated code.
 - **One issue, one branch, one pull request.** Every change is small and traceable.
 
@@ -51,6 +52,33 @@ docker run -d --name slopocalypse --restart unless-stopped -p 7777:7777/udp -p 7
 ```
 
 The world save, logs and journals live in the `/data` volume, so a rebuilt image keeps everyone's gear. Players join on UDP port 7777. The same port on TCP serves a status page for browsers: open `http://<server>:7777` to see who is on and what mission is running (`/status.json` has the same as JSON). It is read only; leave TCP unpublished to keep it private. In Kubernetes, expose 7777 for both UDP and TCP on the Service. For another port, add `--server=PORT --save=/data/world.db` after the image name and publish that port instead. To change game values, mount a file over `/opt/slopocalypse/tweaks/<res path>` (see `TWEAKING.md`).
+
+### The web page behind HTTPS
+
+The page speaks plain HTTP, so on the open internet put a reverse proxy in front that terminates HTTPS (Caddy, nginx, Traefik), and keep the page itself reachable only by that proxy. Two settings help, as flags after `--web` or as environment variables (the flags win):
+
+- `--web-port=8080` or `WEB_PORT=8080`: the page on its own TCP port instead of the game's.
+- `--web-bind=127.0.0.1` or `WEB_BIND=127.0.0.1`: listen on that address only (default `*`, every address), so only a proxy on the same machine reaches it. An address that isn't an IP keeps the page off rather than opening it to everyone.
+
+In Docker, publish the TCP port on the host's loopback only and let the proxy on the host reach it there; `WEB_BIND` is for running the server on the host itself (`tools/deploy.ts --web-port 8080 --web-bind 127.0.0.1` sets both in the service). Behind a proxy, always set `WEB_PASSWORD` (the admin pages stay off without it) and `WEB_TRUSTED_PROXY` in the server's environment: `-e` for Docker; for the systemd service from `tools/deploy.ts`, `sudo systemctl edit slopocalypse` and add `Environment=WEB_PASSWORD=...` and `Environment=WEB_TRUSTED_PROXY=127.0.0.1/32` under `[Service]` (the drop-in survives redeploys). Keep the password out of any file in a repository:
+
+```sh
+docker run -d --name slopocalypse --restart unless-stopped -p 7777:7777/udp -p 127.0.0.1:8080:8080/tcp \
+  -e WEB_PORT=8080 -e WEB_PASSWORD=<a long password> -e WEB_TRUSTED_PROXY=172.17.0.1/32 \
+  -v slopocalypse-data:/data slopocalypse-server
+```
+
+A Caddyfile for it (Caddy gets the certificate itself). The page limits wrong admin passwords per visitor by the `X-Real-IP` header from a trusted proxy, so the proxy sets it. `WEB_TRUSTED_PROXY` names the one address the proxy's connections arrive from: `172.17.0.1/32` above is the default Docker bridge's gateway, which is where traffic published on the host's loopback comes from (check yours with `docker network inspect bridge`); for a server on the host it is `127.0.0.1/32`. Trust only that address: anyone else in a trusted range can claim any `X-Real-IP` and dodge the limit. The check reads IPv4 only, so publish and bind the page on `127.0.0.1`, not `localhost` or `::1`, and point the proxy at `127.0.0.1`:
+
+```
+slop.example.com {
+	reverse_proxy 127.0.0.1:8080 {
+		header_up X-Real-IP {remote_host}
+	}
+}
+```
+
+Serve it at the root of its own (sub)domain: the admin app's links start at `/`.
 
 `AGENTS.md` has every command, the architecture rules and the code style. It is written for coding agents but reads fine for people. `TWEAKING.md` lists the game values you can change without touching code.
 

@@ -84,3 +84,37 @@ func test_threaded_visible_tiles_match_ones_built_right_away() -> void:
 	assert_array(b.keys()).contains_exactly_in_any_order(a.keys())
 	for key: Vector2i in a:
 		assert_array(Array(b[key])).override_failure_message("tile %s differs" % key).is_equal(Array(a[key]))
+
+
+static func _tile_colours(w: VoxelWorld) -> Dictionary:
+	var out := {}
+	var tiles: Dictionary = w.get(&"_tiles")
+	for key: Vector2i in tiles:
+		var mesh := (tiles[key] as MeshInstance3D).mesh
+		out[key] = mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR] if mesh != null else PackedColorArray()
+	return out
+
+
+## Lanes laid while tiles are still being built on worker threads end up in those tiles,
+## as in tiles built after them (#498).
+func test_lanes_laid_while_tiles_build_reach_them() -> void:
+	var yard := {"from": Vector2(AT.x - 12.0, AT.z), "to": Vector2(AT.x + 12.0, AT.z), "width": 8.0, "level": 0.0}
+	var direct := _visual_world()
+	yard["level"] = direct.ground_height(AT.x, AT.z)
+	direct.set_lanes_for(&"test", [yard])
+	direct.update_around([AT], INF)
+	var threaded := _visual_world()
+	# Start the jobs, then lay the lanes before any of them is taken.
+	threaded.update_around([AT], 64.0, true)
+	assert_bool((threaded.get(&"_tile_jobs") as Dictionary).is_empty()).is_false()
+	threaded.set_lanes_for(&"test", [yard])
+	for frame in 600:
+		threaded.update_around([AT], 8.0, true)
+		if (threaded.get(&"_tile_jobs") as Dictionary).is_empty() and not threaded.get(&"_pending"):
+			break
+		await get_tree().process_frame
+	var a := _tile_colours(direct)
+	var b := _tile_colours(threaded)
+	assert_array(b.keys()).contains_exactly_in_any_order(a.keys())
+	for key: Vector2i in a:
+		assert_array(Array(b[key])).override_failure_message("tile %s differs" % key).is_equal(Array(a[key]))

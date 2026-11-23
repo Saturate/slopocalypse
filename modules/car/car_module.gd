@@ -16,6 +16,9 @@ var _kill_y := -INF
 var _rescue_depth := INF
 var _spawner := MultiplayerSpawner.new()
 var _bot: CarBot
+## Client: seats the server named when this client joined, kept until the car and the player
+## in it have both appeared here. Each is {car, seat, player}, the nodes as paths.
+var _pending_seats: Array[Dictionary] = []
 
 ## Kept loaded: Godot's resource cache lets go of a scene once nothing holds it, and loading
 ## a generated scene again from text costs tens of milliseconds per spawn.
@@ -39,6 +42,8 @@ func _physics_process(_delta: float) -> void:
 
 
 func _physics_tick(_delta: float) -> void:
+	if not _pending_seats.is_empty():
+		_apply_pending_seats()
 	if not multiplayer.is_server():
 		return
 	for car in _cars:
@@ -90,6 +95,7 @@ func _release_when_grounded(car: CarController) -> void:
 
 
 func _ready() -> void:
+	add_to_group(&"cars_api")
 	# The server spawns cars; the spawner replicates them to clients.
 	_spawner.name = "Spawner"
 	_spawner.spawn_path = NodePath("..")
@@ -102,9 +108,13 @@ func _ready() -> void:
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	EventBus.subscribe(&"player.teleporting", _on_teleporting)
 	EventBus.subscribe(&"admin.spawn", _on_admin_spawn)
+	Net.peer_leaving.connect(_on_peer_leaving)
+	Net.peer_joined.connect(_on_peer_joined)
 
 
 func _exit_tree() -> void:
+	Net.peer_leaving.disconnect(_on_peer_leaving)
+	Net.peer_joined.disconnect(_on_peer_joined)
 	EventBus.unsubscribe(&"world.ready", _on_world_ready)
 	EventBus.unsubscribe(&"player.interact", _on_player_interact)
 	EventBus.unsubscribe(&"car.entered", _on_car_entered)
@@ -154,8 +164,11 @@ func _on_player_interact(payload: Dictionary) -> void:
 
 func _on_car_entered(payload: Dictionary) -> void:
 	var car := payload.get("car") as CarController
-	var who := payload.get("player") as Node
-	if car == null or who == null or not _is_local(who):
+	var who := payload.get("player") as Node3D
+	if car == null or who == null:
+		return
+	car.show_seat(payload.get("seat", CarController.DRIVER), who)
+	if not _is_local(who):
 		return
 	if _bot != null:
 		_bot.entered(car)
@@ -173,15 +186,102 @@ func _on_car_entered(payload: Dictionary) -> void:
 func _on_car_exited(payload: Dictionary) -> void:
 	var car := payload.get("car") as CarController
 	var who := payload.get("player") as Node
+	if car == null:
+		return
+	var seat: StringName = payload.get("seat", CarController.DRIVER)
+	car.show_seat(seat, null)
+	_forget_pending_seat(car, seat)
 	# Only when it is this instance's own player getting out: the other seat may still be
 	# ours.
-	if car == null or who == null or not _is_local(who):
+	if who == null or not _is_local(who):
 		return
 	var input := car.get_node_or_null("Input")
 	if input != null:
 		# Renamed first so getting straight back in names its new input "Input" again.
 		input.name = "InputLeaving"
 		input.queue_free()
+
+
+## Where `player` would stand if they got out now (beside their door), or null when they are
+## in no car. Saves use it, so a driver saved mid-drive comes back beside the car instead of
+## where they got in, and nobody is moved to find out (#406).
+func exit_spot_of(player: Node3D) -> Variant:
+	for car in _cars:
+		var seat := car.seat_of(player)
+		if seat != &"":
+			return car.exit_position(seat)
+	return null
+
+
+## Where the car `player` sits in is, or null when they are in no car: where a seated player
+## counts as being for relevance and sleeping (`PlayerSpot`). Cheaper than `exit_spot_of`,
+## which looks for room beside the doors.
+func car_spot_of(player: Node3D) -> Variant:
+	for car in _cars:
+		if car.seat_of(player) != &"":
+			return car.global_position
+	return null
+
+
+## Every taken seat as {car, seat, player}, the nodes as paths: what a late joiner needs.
+func occupied_seats() -> Array[Dictionary]:
+	var seats: Array[Dictionary] = []
+	for car in _cars:
+		for seat: StringName in [CarController.DRIVER, CarController.PASSENGER]:
+			var who := car.driver if seat == CarController.DRIVER else car.passenger
+			if who != null:
+				seats.append({"car": car.get_path(), "seat": seat, "player": who.get_path()})
+	return seats
+
+
+## Server: `car.entered` only reached whoever was connected at the time, so someone who
+## joins later is told who already sits in which car (#433).
+func _on_peer_joined(peer: int) -> void:
+	if not multiplayer.is_server() or not multiplayer.get_peers().has(peer):
+		return
+	for seat in occupied_seats():
+		_catch_up.rpc_id(peer, seat["car"], seat["seat"], seat["player"])
+
+
+@rpc("authority", "call_remote", "reliable")
+func _catch_up(car: NodePath, seat: StringName, player: NodePath) -> void:
+	catch_up_seat(car, seat, player)
+
+
+## Late joiner: someone was already in a car. Replayed as the `car.entered` this client
+## missed, so every module reacts as it does to someone getting in; held back until both
+## nodes are here, because the spawners may deliver them after this.
+func catch_up_seat(car: NodePath, seat: StringName, player: NodePath) -> void:
+	_pending_seats.append({"car": car, "seat": seat, "player": player})
+	_apply_pending_seats()
+
+
+func _apply_pending_seats() -> void:
+	var waiting: Array[Dictionary] = []
+	for pending in _pending_seats:
+		var car := get_node_or_null(pending["car"] as NodePath) as CarController
+		var who := get_node_or_null(pending["player"] as NodePath)
+		if car == null or who == null:
+			waiting.append(pending)
+		else:
+			EventBus.publish(&"car.entered", {"player": who, "car": car, "seat": pending["seat"]})
+	_pending_seats = waiting
+
+
+## They got out before their player appeared here: nothing left to catch up on.
+func _forget_pending_seat(car: CarController, seat: StringName) -> void:
+	var path := car.get_path()
+	_pending_seats = _pending_seats.filter(func(p: Dictionary) -> bool: return p["car"] != path or p["seat"] != seat)
+
+
+## Server: someone leaving the server gets out of their car, so the seat is free.
+func _on_peer_leaving(peer: int) -> void:
+	if not multiplayer.is_server():
+		return
+	for car in _cars:
+		for who: Node3D in [car.driver, car.passenger]:
+			if who != null and int(who.get_meta(&"peer_id", 0)) == peer:
+				car.exit_car(who)
 
 
 ## Server: someone being moved (back to the spawn, an admin teleport) gets out of their
@@ -194,10 +294,12 @@ func _on_teleporting(p: Dictionary) -> void:
 
 
 func _on_player_spawned(p: Dictionary) -> void:
-	if not p.get("local", false) or _bot_behaviour() != CarBot.BEHAVIOUR:
+	var behaviour := _bot_behaviour()
+	if not p.get("local", false) or (behaviour != CarBot.BEHAVIOUR and behaviour != CarBot.SIT):
 		return
 	_bot = CarBot.new()
 	_bot.name = "Bot"
+	_bot.sit = behaviour == CarBot.SIT
 	_bot.player = p["player"]
 	add_child(_bot)
 
@@ -207,8 +309,9 @@ func _is_local(who: Node) -> bool:
 	return Net.has_local_player() and int(who.get_meta(&"peer_id", 0)) == Net.local_peer_id()
 
 
+## Session args, not only the command line: a menu choice adds `--bot=` too (the Benchmark).
 func _bot_behaviour() -> String:
-	for arg in OS.get_cmdline_user_args():
+	for arg in Net.session_args():
 		if arg.begins_with("--bot="):
 			return arg.trim_prefix("--bot=")
 	return ""

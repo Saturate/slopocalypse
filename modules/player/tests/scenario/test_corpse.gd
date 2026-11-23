@@ -25,6 +25,7 @@ func before_test() -> void:
 
 
 func after_test() -> void:
+	Armband.enabled = DisplayServer.get_name() != "headless"
 	Corpse.enabled = DisplayServer.get_name() != "headless"
 	for node in get_tree().get_nodes_in_group(Corpse.GROUP):
 		node.free()
@@ -163,3 +164,47 @@ func test_a_removed_limb_loses_its_physics_and_stays_collapsed_once_settled() ->
 	assert_bool(corpse.is_settled()).is_true()
 	assert_float(corpse.skeleton.get_bone_pose_scale(bone).x).is_less(0.01)
 	assert_float(corpse.skeleton.get_bone_pose_scale(corpse.skeleton.find_bone("UpperArm_R")).x).is_equal_approx(1.0, 0.01)
+
+
+func test_it_says_where_it_lies_while_falling_and_once_settled() -> void:
+	var corpse := Corpse.from_body(_player, Vector3(2.0, 1.0, 0.0))
+	await _frames(30)
+	var falling := corpse.lying_at()
+	assert_float(falling.y).is_greater(-0.1)
+	await _frames(int(Corpse.config()["settle_seconds"] * 60.0) + 10)
+	assert_bool(corpse.is_settled()).is_true()
+	var hips := corpse.skeleton.find_bone("Hips")
+	var hips_at := corpse.skeleton.global_transform * corpse.skeleton.get_bone_global_pose(hips).origin
+	var lying := corpse.lying_at()
+	# Near the ground where the bones lie, not the spot it fell from.
+	assert_float(lying.y).is_less(0.6)
+	assert_float(Vector2(lying.x - hips_at.x, lying.z - hips_at.z).length()).is_less(1.0)
+
+
+func test_a_corpse_keeps_its_armband() -> void:
+	Armband.enabled = true
+	_player.set_meta(&"civilian", true)
+	Armband.apply(_player)
+	var corpse := Corpse.from_body(_player, Vector3.ZERO)
+	var band := corpse.get_node_or_null("Body/Skeleton/Band") as GeometryInstance3D
+	assert_object(band).is_not_null()
+	var material := band.material_override as StandardMaterial3D
+	assert_object(material).is_not_null()
+	var green: Array = Armband.config()["civilians"]
+	assert_that(material.albedo_color).is_equal(Color(float(green[0]), float(green[1]), float(green[2])))
+	# A corpse shares the living body's band, so a switch to colour-blind colours reaches it.
+	Settings.set_value(Armband.SETTING, true)
+	Armband.repaint()
+	assert_that(material.albedo_color).is_equal(Armband.colour_of("civilians"))
+	Settings.set_value(Armband.SETTING, false)
+	Armband.repaint()
+
+
+func test_a_corpse_drops_what_only_the_living_wear() -> void:
+	var lit := Node3D.new()
+	lit.name = "Glowstick"
+	lit.set_meta(Corpse.LIVING_ONLY, true)
+	_player.get_node("Body/Skeleton").add_child(lit)
+	var corpse := Corpse.from_body(_player, Vector3.ZERO)
+	assert_object(corpse.get_node_or_null("Body/Skeleton/Glowstick")).is_null()
+	assert_object(corpse.get_node_or_null("Body/Skeleton/Band")).is_not_null()

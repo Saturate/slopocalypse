@@ -6,7 +6,7 @@ extends RefCounted
 
 ## Command-line flags safe to share: how the game was started, never where it connected,
 ## what it is called or where files are (those carry addresses and the OS user name).
-const PUBLIC_ARGS: Array[String] = ["--benchmark", "--solo", "--flags=", "--all-optional-off", "--world=", "--start=", "--bot=", "--bench=", "--uncapped", "--range", "--crowd=", "--debug-api", "--no-shadows", "--render-scale="]
+const PUBLIC_ARGS: Array[String] = ["--benchmark", "--solo", "--flags=", "--all-optional-off", "--world=", "--map=", "--seed=", "--start=", "--bot=", "--bench=", "--uncapped", "--range", "--crowd=", "--debug-api", "--no-shadows", "--render-scale="]
 ## Written over in shared logs: IPv4 addresses, IPv6 ones (compressed like `fe80::1` or all
 ## eight groups, in brackets or not), and dotted host names given with a port.
 ## Hosts with no dot are caught by the phrases the game logs them in (`HOST_PHRASES`).

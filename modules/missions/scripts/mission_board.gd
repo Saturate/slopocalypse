@@ -1,7 +1,7 @@
 class_name MissionBoard
 extends Node3D
-## The mission board on the home tunnel's wall: a cork board on two posts with pinned
-## sheets. Faces along its local -Z; looking at it and pressing F opens the board screen.
+## The mission board in the camp: a cork board on two posts with pinned sheets. Faces along
+## its local -Z; looking at it and pressing F opens the board screen.
 
 const BOARD := Vector3(1.8, 1.1, 0.08)
 const BOARD_Y := 1.5

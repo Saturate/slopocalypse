@@ -12,6 +12,13 @@ var _fov_bonus := 0.0
 var _bob := Vector3.ZERO
 
 
+## How far, as a share of its distance at `designed_fov` degrees, something must sit from
+## the eye to cover the same share of the screen at `fov` degrees: size on screen goes with
+## 1 / (distance * tan(fov / 2)).
+static func distance_scale(designed_fov: float, fov: float) -> float:
+	return tan(deg_to_rad(designed_fov) * 0.5) / tan(deg_to_rad(fov) * 0.5)
+
+
 func _process(delta: float) -> void:
 	var prof := Prof.start()
 	_process_tick(delta)
@@ -28,7 +35,12 @@ func _process_tick(delta: float) -> void:
 	if animator != null:
 		ads = animator.ads_amount()
 		zoom = animator.sight_zoom()
-	camera.fov = (float(cfg["fov"]) + Settings.fov_offset() + _fov_bonus) / lerpf(1.0, zoom, ads)
+	var zoomed := lerpf(1.0, zoom, ads)
+	camera.fov = (float(cfg["fov"]) + Settings.fov_offset() + _fov_bonus) / zoomed
+	if animator != null:
+		# Guns are set up for the default view; a wider one brings the gun nearer instead of
+		# shrinking the sight picture (#376).
+		animator.view_scale = distance_scale(float(cfg["fov"]) / zoomed, camera.fov)
 
 	var speed := player.horizontal_speed() if player.is_on_floor() and player.mode == PlayerController.Mode.NORMAL else 0.0
 	_distance += speed * delta

@@ -20,12 +20,16 @@ Running notes: playtest feedback, findings, known issues and ideas for later. De
 
 ## Known issues
 
+- Who is who (#447, agent playtest with a server and two clients, day and night): the partner marker, armbands, colour-blind switch and glowsticks all work in a real session; crack, stow, show, drop and burn-out reach the other client within a frame or two, and soldiers put their sticks away as soon as shots are fired near them. What feels off:
+  - A patrolling soldier's stick at 40 to 60 m is one to three coloured pixels at 960x540; a fresh reviewer could not pick the soldiers out. Patrols do not read as "lights moving out there" yet.
+  - A partner 7 m away in plain view has no visible marker (the faint value plus the near fade), and at 8 m at night the marker text is dark and hard to read over the glow.
+  - At 2 m the partner's bands look like blocks standing off the shoulders.
+  - Only your own stick leaves your first-person gun out of its light; a partner's lit stick within about a metre of you still lights your gun with its usual steep light (docs/decisions/0018).
 - Gore: limbs taken off while Blood was on stay off if Blood is turned off and on again, but their stump caps are removed and not put back (#387).
-- The start tunnel is a trench in the height-map ground with a voxel lining, roof and rock cover built over it (#124). From far away, at coarse ground detail, the trench edges can show beside the cover; the cover reaches 2 m past the trench to hide it up close.
 
-- Cover boxes are axis-aligned on slopes, so one corner digs in and the far end can lift (visual review, #7). Fine for greybox; align to the terrain normal when the real map arrives.
 - Car chase camera is rigidly parented to the car, so speed and turns are hard to read (visual review, #8). A smoothed follow camera with lag and FOV kick is a candidate after the Checkpoint A playtest.
 - The box car has no front or back shape, so its heading is hard to read from outside.
+- Steep ground (#509, blind review): seen from below, the far half of a steep slope still reads as a dense comb of thin fins, as the 0.5 m detail level keeps single steps and every column on a contour that runs across the grid shows its own lit side. Ledges only apply on the finest level. Wall light is emission, so a wall in a tree's or bridge's shadow is lit as if in the open.
 - Trees and rocks stay floating where the ground was dug away (grass now goes, and dug ground shows as dirt).
 - Dust puffs are hard-edged spheres; soft particles come with the art pass (#38).
 - Cover blocks are plain boxes: no bevels, planks or concrete detail (visual review, #34). Replace with proper prop meshes when the generated map adds buildings (#32).

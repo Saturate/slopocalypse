@@ -182,7 +182,8 @@ func _draw_hud() -> void:
 	var aiming := local_player != null and local_player.intent().aim
 	var white := Color(1, 1, 1, 0.95)
 	var shadow := Color(0, 0, 0, 0.6)
-	if not aiming:
+	# No crosshair on a ladder either: the gun is down and can't fire there.
+	if not aiming and not (local_player != null and local_player.climbing):
 		for d: Vector2 in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
 			# Dark underlay keeps the crosshair readable against bright sky.
 			_hud.draw_line(c + d * 5.0, c + d * 12.0, shadow, 4.0)

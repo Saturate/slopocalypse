@@ -18,6 +18,18 @@ Every third-party asset, generated asset and vendored code in this repo, with it
 | `modules/world/textures/Planks037A/` | Wood planks texture set (1K) | https://ambientcg.com/view?id=Planks037A | CC0 | 2026-11-06 |
 | `modules/world/textures/Bark014/` | Bark texture set (Color, NormalGL 1K) | https://ambientcg.com/view?id=Bark014 | CC0 | 2026-11-06 |
 
+## Recorded sounds
+
+Recordings live in `modules/audio/sounds/` (see its README) and each file gets a row in the table above, like any other asset:
+
+- **Path:** the file, e.g. `modules/audio/sounds/rifle_1.ogg`. Takes cut from one source recording can share a row (`rifle_1.ogg`, `rifle_2.ogg`).
+- **What:** what it is and who made it: "Rifle shot, close (by <author>)". The credits screen shows this column, so the author's name reaches players.
+- **Source:** the link to the original page (freesound.org sound page, not a download link).
+- **Licence:** CC0 or CC BY (with its version, e.g. CC BY 4.0). Nothing else without asking the maintainer first, including packs under their own licence, CC BY-NC and CC BY-ND, and "free for any use" without a named licence.
+- **Added:** the date.
+
+Note in the What column if the file was edited (cut, trimmed, normalised); CC BY asks for changes to be indicated.
+
 ## Tools (not shipped)
 
 - **ffmpeg 9.0.2**, the "essentials" Windows build from gyan.dev (https://github.com/GyanD/codexffmpeg), GPL-3.0. Fetched by `tools/get-ffmpeg.ts` into the git-ignored `tools/ffmpeg/` to encode trailers; never bundled with the game.

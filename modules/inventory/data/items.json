@@ -64,7 +64,8 @@
       "bag_large": 1,
       "rig_heavy": 1,
       "opt_scope_8x": 1,
-      "mag_bolt_5": 1
+      "mag_bolt_5": 1,
+      "glowstick": 2
     }
   },
   "loot": [
@@ -118,8 +119,8 @@
     ],
     "count": 12,
     "distance": [
-      12.0,
-      110.0
+      30.0,
+      120.0
     ],
     "seed": 7,
     "refill_seconds": 150.0,
@@ -159,7 +160,8 @@
       "breach_charge": 3,
       "gun_bolt": 1,
       "opt_scope_8x": 1,
-      "mag_bolt_5": 2
+      "mag_bolt_5": 2,
+      "glowstick": 2
     }
   },
   "starting_kit": [
@@ -242,6 +244,11 @@
       0.55,
       0.45,
       0.2
+    ],
+    "light": [
+      0.3,
+      0.5,
+      0.3
     ]
   },
   "items": {
@@ -572,7 +579,7 @@
       "name": "Bolt-action rifle (with its parts)",
       "short": "Bolt rifle",
       "size": [
-        6,
+        5,
         2
       ],
       "kind": "primary_gun"
@@ -621,6 +628,18 @@
         1
       ],
       "kind": "optic"
+    },
+    "glowstick": {
+      "name": "Glowstick (L to crack, stow or show; K to drop)",
+      "short": "Glowstick",
+      "size": [
+        1,
+        1
+      ],
+      "kind": "light",
+      "use": {
+        "event": "glowsticks.use"
+      }
     }
   }
 }

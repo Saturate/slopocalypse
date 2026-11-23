@@ -1,6 +1,6 @@
 extends Node3D
-## Capture setup: first person at the trader's stall in the home tunnel, then the trade
-## screen open with some tokens.
+## Capture setup: first person at the trader's stall in the camp, then the trade screen
+## open with some tokens.
 
 const WORLD := "res://modules/world/scenes/world.tscn"
 const PLAYER := "res://modules/player/scenes/player.tscn"
@@ -15,7 +15,7 @@ var _ticks := 0
 
 
 func _ready() -> void:
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
 	add_child((load(INVENTORY) as GDScript).new())
 	var missions: Node = (load(MISSIONS) as GDScript).new()
 	add_child(missions)
@@ -29,10 +29,11 @@ func _ready() -> void:
 	_player.global_position = spawn
 	EventBus.publish(&"player.spawned", {"player": _player, "local": true})
 	PlayerBody.first_person(_player.get_node("Body"))
-	EventBus.publish(&"world.ready", {"spawn": spawn})
+	EventBus.publish(&"world.ready", {"spawn": spawn, "camp": world.get("camp")})
 	missions.call(&"server_set_tokens", 1, 340)
 	var stall := _trader.get_node("TraderStall") as Node3D
-	_player.global_position = stall.global_position + Vector3(-2.6, 0.2, -0.5)
+	# In front of the counter (its -z side), a little to one side.
+	_player.global_position = stall.global_transform * Vector3(0.5, 0.2, -2.6)
 	_player.set_physics_process(false)
 	var cam := Camera3D.new()
 	add_child(cam)

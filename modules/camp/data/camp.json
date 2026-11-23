@@ -1,0 +1,7 @@
+{
+  "_comment": "What the players' camp is built of (#420); where it stands is the world's (modules/world/data/world.json camp). fence: the wooden fence round it (VoxFence parameters: height, post_step, planks, voxel), its corner posts and gateposts taller. hut: the walk-in hut's look (VoxShed parameters; its floor size and spot are the world's). yard: packed dirt drawn like a track, as rectangles [x0, z0, x1, z1] in camp metres (x to the right as you face the gate, z toward the gate, from the pad's middle), cut to the pad; they must not overlap and must stay half a metre clear of the hut. As laid out: the lane in from the gate, the parking apron by the gate for the transport and the players' car, a path past the respawn, and the yard in front of the hut, the board and the trader's stall. sink: metres every piece is set into the pad, so no gap shows at its foot.",
+  "sink": 0.05,
+  "fence": {"height": 1.5, "post_step": 2.4, "planks": 3, "voxel": 0.06},
+  "hut": {"paint": 1, "material": 0, "wall_height": 2.5, "pitch": 0.6, "door": 1, "door_width": 1.1, "windows": 2, "back_windows": 0, "voxel": 0.1},
+  "yard": [[-4.0, 9.0, 4.0, 30.0], [-9.0, 2.0, 9.0, 9.0], [-2.0, -4.0, 2.0, 2.0], [-4.0, -11.5, 11.0, -4.0], [-11.0, -7.0, -4.0, -4.0]]
+}

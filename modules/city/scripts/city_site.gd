@@ -245,6 +245,12 @@ func _streets() -> void:
 			piece += 1
 
 
+## Where a street piece over `rect` goes: its asphalt top at the city's level, where the
+## levelled ground is, so nobody stands sunk into it.
+static func street_transform(rect: Rect2, along_x: bool) -> Transform3D:
+	return Transform3D(Basis(Vector3.UP, PI / 2.0) if along_x else Basis.IDENTITY, Vector3(rect.get_center().x, -VoxRoad.BED - VoxRoad.SURFACE, rect.get_center().y))
+
+
 func _road(rect: Rect2, along_x: bool, marked: bool, piece: int) -> void:
 	var length := rect.size.x if along_x else rect.size.y
 	var width := rect.size.y if along_x else rect.size.x
@@ -257,7 +263,7 @@ func _road(rect: Rect2, along_x: bool, marked: bool, piece: int) -> void:
 	if not marked:
 		values["centre"] = 0.0
 	var model := VoxRoad.new().build(values)
-	var where := Transform3D(Basis(Vector3.UP, PI / 2.0) if along_x else Basis.IDENTITY, Vector3(rect.get_center().x, -VoxRoad.BED, rect.get_center().y))
+	var where := street_transform(rect, along_x)
 	for crossing: Rect2 in plan["crossings"]:
 		if rect.grow(0.01).encloses(crossing):
 			_zebra(model, where, crossing, asphalt)

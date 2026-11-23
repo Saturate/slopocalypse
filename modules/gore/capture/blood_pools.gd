@@ -19,13 +19,14 @@ var _ticks := 0
 
 
 func _ready() -> void:
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
+	var origin := VoxelWorld.spawn_of(world)
 	Corpse.enabled = true
 	for v: Array in VICTIMS:
 		var soldier: PlayerController = (load(PLAYER) as PackedScene).instantiate()
 		soldier.add_to_group(&"enemies")
 		add_child(soldier)
-		soldier.global_position = Vector3(float(v[0]), 0.5, 0.0)
+		soldier.global_position = VoxelWorld.spawn_of(world, Vector3(float(v[0]), 0.5, 0.0))
 		var animator := PlayerBodyAnimator.new()
 		animator.name = "BodyAnimator"
 		animator.player = soldier
@@ -34,8 +35,8 @@ func _ready() -> void:
 	add_child(BloodEffects.new())
 	add_child(_camera)
 	_camera.current = true
-	_camera.global_position = Vector3(0.0, 3.6, 4.2)
-	_camera.look_at(Vector3(0.0, 0.0, -0.4))
+	_camera.global_position = origin + Vector3(0.0, 3.6, 4.2)
+	_camera.look_at(origin + Vector3(0.0, 0.0, -0.4))
 
 
 func _physics_process(_delta: float) -> void:

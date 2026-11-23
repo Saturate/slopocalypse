@@ -8,7 +8,7 @@ import { localGodot } from "./lib/godot.ts";
 import { run } from "./lib/proc.ts";
 import { buildRust, hasRustCrates } from "./lib/rust.ts";
 import { buildScenes } from "./lib/scenes.ts";
-import { netSmoke, saveSmoke, soloSmoke } from "./lib/net.ts";
+import { lateJoinSmoke, netSmoke, saveSmoke, soloSmoke } from "./lib/net.ts";
 import { checkChangesets } from "./lib/changesets.ts";
 
 const root = resolve(import.meta.dirname, "..");
@@ -60,6 +60,9 @@ const rustSteps: Step[] = hasRustCrates(root)
 const steps: Step[] = [
 	["typescript", () => commandStep(execPath, [join(root, "node_modules/typescript/bin/tsc"), "--noEmit", "-p", root], 300_000)],
 	["tool tests", () => commandStep(execPath, ["--test", "tools/**/*.test.ts"], 300_000)],
+	// The admin web app (web/): strict types, and a build the server can serve.
+	["web typecheck", () => commandStep(execPath, [join(root, "node_modules/typescript/bin/tsc"), "--noEmit", "-p", join(root, "web")], 300_000)],
+	["web build", () => commandStep(execPath, [join(root, "node_modules/vite/bin/vite.js"), "build", join(root, "web")], 300_000)],
 	...rustSteps,
 	["godot import", () => godotImport(godot, root)],
 	["gdscript parse", () => checkScripts(godot, root, gdScripts().map((f) => join(root, f)))],
@@ -84,7 +87,7 @@ if (full) {
 	]);
 }
 // A real dedicated server and two clients as separate processes.
-if (full) steps.push(["net smoke", () => netSmoke(godot, root)], ["solo smoke", () => soloSmoke(godot, root)], ["save smoke", () => saveSmoke(godot, root)]);
+if (full) steps.push(["net smoke", () => netSmoke(godot, root)], ["late join smoke", () => lateJoinSmoke(godot, root)], ["solo smoke", () => soloSmoke(godot, root)], ["save smoke", () => saveSmoke(godot, root)]);
 // Self-tests start Godot with gdUnit4, which needs the class cache that the import step builds.
 if (full) steps.push(["gate self-tests", () => commandStep(execPath, ["--test", "tools/**/*.itest.ts"], 300_000)]);
 

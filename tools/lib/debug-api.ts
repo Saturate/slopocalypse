@@ -45,7 +45,14 @@ export function discover(userDir: string): Game[] {
 	for (const name of readdirSync(dir)) {
 		if (!/^api-\d+\.json$/.test(name)) continue;
 		const file = join(dir, name);
-		const game = parseApiFile(readFileSync(file, "utf8"), file);
+		let text: string;
+		try {
+			text = readFileSync(file, "utf8");
+		} catch {
+			// A game that quit between the listing and the read.
+			continue;
+		}
+		const game = parseApiFile(text, file);
 		if (game !== undefined) games.push(game);
 	}
 	return games.sort((a, b) => a.pid - b.pid);

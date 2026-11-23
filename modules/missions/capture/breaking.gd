@@ -62,7 +62,7 @@ func _physics_process(_delta: float) -> void:
 		# The player's own camera follows its look intent; a fixed one frames the building.
 		var cam := Camera3D.new()
 		add_child(cam)
-		# From high over the road, looking down on the building and its guards.
+		# From high up, looking down on the building and its guards.
 		cam.global_position = b.global_position + (at - b.global_position).normalized() * 16.0 + Vector3.UP * 12.0
 		cam.look_at(b.global_position + Vector3.UP * 1.2, Vector3.UP)
 		cam.current = true

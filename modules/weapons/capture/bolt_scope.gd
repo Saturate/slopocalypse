@@ -15,11 +15,11 @@ var _ticks := 0
 
 func _ready() -> void:
 	GunAssembly.override_build = "bolt_standard"
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
 	add_child((load(MODULE) as GDScript).new())
 	_player = (load(PLAYER) as PackedScene).instantiate()
 	add_child(_player)
-	_player.global_position = Vector3(0.0, 0.1, 0.0)
+	_player.global_position = VoxelWorld.spawn_of(world, Vector3(0.0, 0.1, 0.0))
 	EventBus.publish(&"player.spawned", {"player": _player, "local": true})
 	var animator := PlayerBodyAnimator.new()
 	animator.name = "BodyAnimator"
@@ -33,7 +33,7 @@ func _ready() -> void:
 	(_player.get_node("Head/Camera") as Camera3D).current = true
 	var dummy: Node3D = (load(DUMMY) as PackedScene).instantiate()
 	add_child(dummy)
-	dummy.global_position = Vector3(0.0, 0.0, -40.0)
+	dummy.global_position = VoxelWorld.spawn_of(world, Vector3(0.0, 0.0, -40.0))
 
 
 func _physics_process(_delta: float) -> void:

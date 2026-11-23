@@ -1,5 +1,5 @@
 {
-  "_comment": "Water towers. tower: legs `height`, tank `radius` and `tank` height (metres), how full it starts (`fill`, 0 to 1), `flow` (cubic metres a second out of one hole per square root metre of water over it), `max_holes` that pour at once, the puddle under it: `puddle_film` (metres deep) and `max_puddle_radius` (metres). spots: where towers stand beside the road: `at` metres out from the start, `side` metres from the road's middle (negative: the other side).",
-  "tower": { "height": 7.0, "radius": 1.6, "tank": 2.6, "fill": 0.9, "flow": 0.05, "max_holes": 24, "puddle_film": 0.05, "max_puddle_radius": 6.0 },
-  "spots": [{ "at": 95.0, "side": 15.0 }]
+  "_comment": "Water towers. tower: legs `height`, tank `radius` and `tank` height (metres), how full it starts (`fill`, 0 to 1), `flow` (cubic metres a second out of one hole per square root metre of water over it), `max_holes` that pour at once, `stream_speed_share` (a jet leaves a hole at this share of the speed water would, so it reads as a leak) and `stream_drops` (particles in each jet), the puddle under it: `puddle_film` (metres deep) and `max_puddle_radius` (metres). sites: a tower stands at every map site of these kinds.",
+  "tower": { "height": 7.0, "radius": 1.6, "tank": 2.6, "fill": 0.9, "flow": 0.05, "max_holes": 10, "stream_speed_share": 0.2, "stream_drops": 90, "puddle_film": 0.05, "max_puddle_radius": 6.0 },
+  "sites": ["water_tower", "town_tower"]
 }

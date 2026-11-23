@@ -1,0 +1,18 @@
+{
+  "span_degrees": 180.0,
+  "tick_degrees": 15.0,
+  "width_share": 0.4,
+  "height": 30.0,
+  "top_margin": 14.0,
+  "marker_size": 9.0,
+  "fade_near_m": 12.0,
+  "fade_band_m": 8.0,
+  "crowd_share": 0.08,
+  "opacity": 0.9,
+  "colours": {
+    "objective": "f5c542",
+    "car": "ece6d6",
+    "base": "8fc25a",
+    "partner": "5fb6ff"
+  }
+}

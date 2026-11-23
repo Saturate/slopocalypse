@@ -15,17 +15,18 @@ const BURIED_DEPTH := 1.0
 const PROBE_ABOVE_GROUND := 3.0
 const PROBE_ABOVE_SELF := 1.5
 const ITEMS := "res://modules/inventory/data/items.json"
-## Reach for picking things up, metres from the eye, and how squarely you must face it.
-const PICKUP_RANGE := 2.6
-const PICKUP_FACING := 0.8
 const DROP_DISTANCE := 1.0
 ## Gear slots whose contents other modules arm the player with.
 const WEAPON_SLOTS: Array[String] = ["primary", "secondary"]
-## How far from a body or crate you may be while its loot screen stays open.
-const LOOT_REACH := PICKUP_RANGE + 1.0
 ## Where the crosshair aims on a crate or a body, above its origin.
 const CRATE_AIM := 0.3
-const BODY_AIM := 0.15
+## How far from where it died a body's ragdoll may lie: it is matched to a body up to 2 m off
+## (Corpse.link_near) and rolls a little more. The server has no ragdolls (each client has
+## its own, decision 0008), so reach to a body counts this much further from its spot.
+const BODY_DRIFT := 3.5
+## People a line-of-sight check looks past before giving up (a crowd round a body).
+const LINE_OF_SIGHT_TRIES := 4
+const PEOPLE: Array[StringName] = [&"players", &"enemies", &"civilians"]
 const PILE_RADIUS := 0.45
 
 var _data: Dictionary = {}
@@ -351,13 +352,19 @@ func _make_loot(data: Variant) -> Node:
 	return loot
 
 
+## How far from a body or crate you may be while its loot screen stays open.
+static func _loot_reach() -> float:
+	return PickupRules.number("range") + PickupRules.number("loot_reach_extra")
+
+
 ## The loot `player` would pick up now: the nearest within reach, roughly in front.
 func loot_in_reach(player: Node3D) -> LootItem:
 	var head := player.get_node_or_null("Head/Camera") as Node3D
 	var eye := head.global_position if head != null else player.global_position + Vector3.UP * 1.6
 	var forward := -head.global_transform.basis.z if head != null else -player.global_transform.basis.z
 	var best: LootItem = null
-	var best_facing := PICKUP_FACING
+	var best_facing := PickupRules.number("facing")
+	var pickup_range := PickupRules.number("range")
 	for node: Node in get_tree().get_nodes_in_group(&"loot"):
 		var loot := node as LootItem
 		if loot == null or loot.is_queued_for_deletion():
@@ -365,7 +372,7 @@ func loot_in_reach(player: Node3D) -> LootItem:
 		var to := loot.global_position - eye
 		var facing := forward.dot(to.normalized())
 		# What the crosshair is closest to wins, not what is nearest.
-		if to.length() < PICKUP_RANGE and facing > best_facing:
+		if to.length() < pickup_range and facing > best_facing:
 			best = loot
 			best_facing = facing
 	if best == null:
@@ -390,19 +397,25 @@ func container_in_reach(player: Node3D) -> Node3D:
 func _container_facing(eye: Vector3, forward: Vector3) -> Array:
 	var best: Node3D = null
 	# Crates and bodies are big; a looser aim still counts.
-	var best_facing := PICKUP_FACING - 0.1
+	var best_facing := PickupRules.number("facing") - 0.1
 	for group: StringName in [&"crates", &"loot_bodies"]:
-		var aim := CRATE_AIM if group == &"crates" else BODY_AIM
 		for node: Node in get_tree().get_nodes_in_group(group):
 			var target := node as Node3D
 			if target == null or target.is_queued_for_deletion():
 				continue
-			var to := target.global_position + Vector3.UP * aim - eye
+			var to := _aim_point(target) - eye
 			var facing := forward.dot(to.normalized())
-			if to.length() < PICKUP_RANGE + 0.4 and facing > best_facing:
+			if to.length() < PickupRules.number("range") + 0.4 and facing > best_facing:
 				best = target
 				best_facing = facing
 	return [best, best_facing] if best != null else []
+
+
+## Where to aim at `target`: a crate's middle; a body where this machine shows it (its
+## ragdoll, else the spot where it died).
+func _aim_point(target: Node3D) -> Vector3:
+	var body := target as LootBody
+	return body.search_point() if body != null else target.global_position + Vector3.UP * CRATE_AIM
 
 
 ## Server: E near loot picks it up if it fits, or opens the loot screen on a crate or body.
@@ -412,10 +425,29 @@ func _on_player_interact(payload: Dictionary) -> void:
 		return
 	var player: Node3D = payload["player"]
 	var peer := int(player.get_meta(&"peer_id", 1))
+	# What the player's own screen showed (a body where its ragdoll lies there, #407) decides
+	# when they named something: used if it checks out, else nothing (no second guess through
+	# the server's own view). Without a name (bots, local tests), what the server sees.
+	if payload.get("named", false):
+		var target := payload.get("target") as Node3D
+		var refused := _refusal(player, target)
+		if not refused.is_empty():
+			Log.info(&"inventory", "peer %d: interact with %s refused: %s" % [peer, str(target.get_path()) if target != null else "nothing", refused])
+			return
+		payload["handled"] = true
+		if target is LootItem:
+			var picked := target as LootItem
+			if server_give(peer, picked.item, picked.get_meta(&"data", {})):
+				picked.queue_free()
+			else:
+				Log.info(&"inventory", "peer %d: no room for %s" % [peer, picked.item])
+		else:
+			server_open(peer, target)
+		return
 	var loot := loot_in_reach(player)
 	if loot == null:
 		var container := container_in_reach(player)
-		if container != null:
+		if container != null and _clear_view(player, container):
 			payload["handled"] = true
 			server_open(peer, container)
 		return
@@ -424,6 +456,53 @@ func _on_player_interact(payload: Dictionary) -> void:
 		loot.queue_free()
 	else:
 		Log.info(&"inventory", "peer %d: no room for %s" % [peer, loot.item])
+
+
+## Server: why `player` may not pick up or open `target` they named, or "" when they may:
+## loot, a crate or a body that is still there, within reach of where it is (a body's
+## ragdoll may lie BODY_DRIFT off its spot), in front of them and not behind something solid.
+func _refusal(player: Node3D, target: Node3D) -> String:
+	if target == null or not is_instance_valid(target) or target.is_queued_for_deletion():
+		return "gone"
+	var reach := PickupRules.number("range")
+	if target is LootBody:
+		reach = _loot_reach() + BODY_DRIFT
+	elif target.is_in_group(&"crates"):
+		reach = _loot_reach()
+	elif not target is LootItem:
+		return "not loot, a crate or a body"
+	if player.global_position.distance_to(target.global_position) > reach:
+		return "out of reach"
+	var head := player.get_node_or_null("Head/Camera") as Node3D
+	var eye := head.global_position if head != null else player.global_position + Vector3.UP * 1.6
+	var forward := -head.global_transform.basis.z if head != null else -player.global_transform.basis.z
+	# Its ragdoll may lie off its spot, but never behind them.
+	if forward.dot(target.global_position - eye) < 0.0 and eye.distance_to(target.global_position) > BODY_DRIFT:
+		return "behind them"
+	if not _clear_view(player, target):
+		return "out of sight"
+	return ""
+
+
+## Server: nothing solid between `player`'s eyes and `target` (people don't count: the dead
+## body's own, whoever stands in between).
+func _clear_view(player: Node3D, target: Node3D) -> bool:
+	var head := player.get_node_or_null("Head/Camera") as Node3D
+	var eye := head.global_position if head != null else player.global_position + Vector3.UP * 1.6
+	var query := PhysicsRayQueryParameters3D.create(eye, _aim_point(target), PhysicsLayers.SOLID)
+	var skip: Array[RID] = []
+	if player is CollisionObject3D:
+		skip.append((player as CollisionObject3D).get_rid())
+	for i in LINE_OF_SIGHT_TRIES:
+		query.exclude = skip
+		var hit := player.get_world_3d().direct_space_state.intersect_ray(query)
+		var collider := hit.get("collider") as CollisionObject3D
+		if hit.is_empty() or collider == target:
+			return true
+		if collider == null or not PEOPLE.any(func(g: StringName) -> bool: return collider.is_in_group(g)):
+			return false
+		skip.append(collider.get_rid())
+	return false
 
 
 ## Client: drops an item from this player's inventory (or from the open body or crate) in
@@ -478,7 +557,8 @@ func _on_world_ready(payload: Dictionary) -> void:
 	if not multiplayer.is_server():
 		return
 	var spawn: Vector3 = payload.get("spawn", Vector3.ZERO)
-	# Crates spread around the road outside the start tunnel, on its open side.
+	# Crates spread along the highway out of the camp's gate, on its open side, starting past
+	# the camp's fence.
 	var front: Vector3 = payload.get("front", spawn)
 	var forward: Vector3 = payload.get("forward", Vector3.ZERO)
 	var crates: Dictionary = _data.get("crates", {})
@@ -738,7 +818,8 @@ func _session(peer: int) -> InventoryGear:
 	var player := _player_of(peer)
 	if grid == null or not is_instance_valid(node) or player == null or player.get_meta(&"dead", false):
 		return null
-	if player.global_position.distance_to(node.global_position) > LOOT_REACH:
+	var reach := _loot_reach() + (BODY_DRIFT if node is LootBody else 0.0)
+	if player.global_position.distance_to(node.global_position) > reach:
 		return null
 	return grid
 
@@ -916,12 +997,20 @@ func _after_move(peer: int, uid: int, why: String, touched_theirs: bool) -> bool
 
 
 ## Server: H (or a right click on it in the backpack) uses an item: a medkit heals over a
-## few seconds. Returns false if there is none or nothing to heal.
+## few seconds. Returns false if there is none or nothing to heal. An item whose `use` names
+## an `event` belongs to another module: it gets `{peer, item, used}` on that topic, takes the
+## item itself if it accepts, and sets `used`.
 func server_use(peer: int, item: String) -> bool:
 	var use: Dictionary = item_info(item).get("use", {})
 	var player := _player_of(peer)
 	if use.is_empty() or player == null or player.get_meta(&"dead", false):
 		return false
+	if use.has("event"):
+		if count(peer, item) <= 0:
+			return false
+		var ask := {"peer": peer, "item": item, "used": false}
+		EventBus.publish(StringName(str(use["event"])), ask)
+		return bool(ask["used"])
 	var health := player.get_node_or_null("Health") as HealthComponent
 	if health == null or health.health >= health.max_health or _healing.has(player):
 		return false
@@ -1019,7 +1108,7 @@ func _on_ground(at: Vector3) -> Vector3:
 	if world == null:
 		return at
 	# From just over the ground (or over `at` when that is higher, e.g. on a roof), not from
-	# high above: under a roof, like in the start tunnel, that would land on the roof.
+	# high above: under a roof, like a building's, that would land on the roof.
 	var from_y := at.y + 20.0
 	var ground_node := get_tree().get_first_node_in_group(&"ground")
 	if ground_node != null and ground_node.has_method(&"ground_height"):

@@ -124,7 +124,7 @@ func _add(at: Vector3, normal: Vector3, along: Vector3, full: Vector3, spread: f
 	# People are on their own layer: a pool is a box reaching a little above the ground, and a
 	# body lying in it or someone walking through would turn red, as would anyone standing
 	# against a splattered wall.
-	decal.cull_mask = 0xFFFFF & ~RenderLayers.NO_DECALS
+	decal.cull_mask = 0xFFFFF & ~(RenderLayers.NO_DECALS | RenderLayers.FIRST_PERSON)
 	decal.size = full if spread <= 0.0 else _spread_size(full, 0.0)
 	add_child(decal)
 	decal.global_transform = Transform3D(Basis(x, y, x.cross(y)), at)

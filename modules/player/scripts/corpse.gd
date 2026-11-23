@@ -19,7 +19,10 @@ const REQUIRED := {
 }
 const BONE_REQUIRED := {"size": TYPE_ARRAY, "centre": TYPE_ARRAY, "mass": TYPE_FLOAT, "swing": TYPE_FLOAT, "twist": TYPE_FLOAT}
 ## Parts of the living body a corpse has no use for: what animates it, aims it and holds the gun.
-const STRIP: Array[String] = ["AnimationTree", "AnimationPlayer", "Skeleton/Aim", "Skeleton/HandIK", "Skeleton/WeaponAttachment"]
+const STRIP: Array[String] = ["AnimationTree", "AnimationPlayer", "Skeleton/Aim", "Skeleton/HandIK", "Skeleton/WeaponAttachment", PlayerBody.FIRST_PERSON_LAYER]
+## Meta on anything another module hangs on the living skeleton that the dead do not keep (a
+## lit glowstick: the server lays its own on the ground).
+const LIVING_ONLY := &"living_only"
 const GROUP := &"corpses"
 ## The LootBody this corpse stands in for, as meta on both.
 const LINK := &"corpse_link"
@@ -72,6 +75,10 @@ static func from_body(player: Node3D, push: Vector3, velocity := Vector3.ZERO) -
 		if part != null:
 			part.get_parent().remove_child(part)
 			part.free()
+	for part in copy.get_node("Skeleton").get_children():
+		if part.has_meta(LIVING_ONLY):
+			copy.get_node("Skeleton").remove_child(part)
+			part.free()
 	copy.transform = Transform3D.IDENTITY
 	copy.visible = true
 	var corpse := Corpse.new()
@@ -87,6 +94,12 @@ static func from_body(player: Node3D, push: Vector3, velocity := Vector3.ZERO) -
 			if geometry.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
 				geometry.material_override = null
 			geometry.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	# Your own arms sit on the first-person layer (the gun went with WeaponAttachment);
+	# dead, they are a body like any.
+	for mesh in copy.find_children("*", "GeometryInstance3D", true, false):
+		var geometry := mesh as GeometryInstance3D
+		if geometry.layers & RenderLayers.FIRST_PERSON:
+			geometry.layers = RenderLayers.NO_DECALS
 	_copy_pose(source, corpse.skeleton)
 	corpse._add_bones(cfg)
 	if player is PhysicsBody3D:
@@ -175,6 +188,24 @@ func remove_limb(bones: Array[StringName], collapse_bone: StringName) -> void:
 	if bone >= 0:
 		skeleton.set_bone_pose_scale(bone, Vector3.ONE * COLLAPSED)
 		_collapsed.append(bone)
+
+
+## Where the body lies now: the middle of its bones, wherever it has rolled. Read from the
+## physics bodies while they simulate (the skeleton never sees them), from the skeleton once
+## settled (the bodies are gone then).
+func lying_at() -> Vector3:
+	var total := Vector3.ZERO
+	var count := 0
+	if not _settled and is_instance_valid(simulator):
+		for bone in simulator.get_children():
+			if bone is PhysicalBone3D:
+				total += (bone as PhysicalBone3D).global_position
+				count += 1
+	elif is_instance_valid(skeleton):
+		for i in skeleton.get_bone_count():
+			total += skeleton.global_transform * skeleton.get_bone_global_pose(i).origin
+			count += 1
+	return total / float(count) if count > 0 else global_position
 
 
 ## The LootBody this corpse stands in for, or null.

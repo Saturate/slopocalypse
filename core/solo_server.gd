@@ -11,7 +11,7 @@ const BIND_IP := "127.0.0.1"
 ## the solo server can be inspected too, --start= (where the server puts players down) and
 ## --bench= (load a benchmark drives on the server) and --perf-spike-ms= (what a bench run
 ## counts as a hitch).
-const SHARED_PREFIXES: Array[String] = ["--flags=", "--all-optional-off", "--build=", "--save=", "--no-save", "--debug-api", "--range", "--world=", "--start=", "--bench=", "--perf-spike-ms="]
+const SHARED_PREFIXES: Array[String] = ["--flags=", "--all-optional-off", "--build=", "--save=", "--no-save", "--debug-api", "--range", "--world=", "--map=", "--seed=", "--start=", "--bench=", "--perf-spike-ms="]
 ## `--server-perf-log=PATH` on the client is the server's `--perf-log=PATH` (tools/bench.ts
 ## reads both sides of a solo game).
 const SERVER_PERF_LOG := "--server-perf-log="

@@ -143,3 +143,43 @@ func test_relevance_keeps_a_margin() -> void:
 	assert_bool(NetRelevance.relevant(false, 420.0, 400.0, 40.0)).is_false()
 	assert_bool(NetRelevance.relevant(true, 420.0, 400.0, 40.0)).is_true()
 	assert_bool(NetRelevance.relevant(true, 441.0, 400.0, 40.0)).is_false()
+
+
+class FakeCars:
+	extends Node
+	var spot: Variant = null
+
+	func car_spot_of(_player: Node3D) -> Variant:
+		return spot
+
+
+func _player() -> Node3D:
+	for p: Node in get_tree().get_nodes_in_group(&"players"):
+		if _server.is_ancestor_of(p):
+			return p as Node3D
+	return null
+
+
+func test_a_seated_player_counts_where_their_car_is() -> void:
+	var player := _player()
+	var cars: FakeCars = FakeCars.new()
+	cars.add_to_group(&"cars_api")
+	_server.add_child(cars)
+	var by_car := _spawn(Vector3(500, 0, 0))
+	var by_entry := _spawn(Vector3(20, 0, 0))
+	await _settle()
+	assert_object(_on_client(by_car)).is_null()
+	assert_object(_on_client(by_entry)).is_not_null()
+	# Seated (parked out of processing where they got in) and driven far off.
+	player.process_mode = Node.PROCESS_MODE_DISABLED
+	cars.spot = Vector3(490, 0, 0)
+	await _settle()
+	assert_object(_on_client(by_car)).is_not_null()
+	assert_object(_on_client(by_entry)).is_null()
+	# Out again, beside the car: the body stands there now.
+	cars.spot = null
+	player.position = Vector3(492, 0, 0)
+	player.process_mode = Node.PROCESS_MODE_INHERIT
+	await _settle()
+	assert_object(_on_client(by_car)).is_not_null()
+	assert_object(_on_client(by_entry)).is_null()

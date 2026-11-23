@@ -17,7 +17,7 @@ var _camera := Camera3D.new()
 var _ticks := 0
 var _clock: DayClock
 var _lighting := DayLighting.new()
-var _heights: Variant
+var _terrain: VoxelWorld
 var _forward := Vector3.FORWARD
 var _right := Vector3.RIGHT
 var _from := Vector3.ZERO
@@ -28,23 +28,19 @@ func _ready() -> void:
 	add_child((load(WEAPONS) as GDScript).new())
 	add_child((load(SMOKE) as GDScript).new())
 	var terrain := world.get_node("Terrain") as VoxelWorld
-	_heights = terrain.heights
+	_terrain = terrain
 	_clock = DayClock.from_data()
 	add_child(_lighting)
 	_lighting.attach(world.get_node("Sun") as DirectionalLight3D, (world.get_node("Environment") as WorldEnvironment).environment)
 	_clock.set_hour(13.0)
 	_lighting.apply(_clock)
-	var portal: float = _heights.start["portal_z"]
-	var z := portal - 14.0
-	var x: float = _heights.road.x_at(z)
-	_from = Vector3(x, float(_heights.height_at(x, z)) + 3.0, z)
+	_from = terrain.road_point(14.0) + Vector3.UP * 3.0
 	_camera.fov = 70.0
 	_camera.far = 900.0
 	add_child(_camera)
 	_camera.current = true
 	_camera.global_position = _from
-	var aim := _from.z - 30.0
-	_camera.look_at(Vector3(_heights.road.x_at(aim), float(_heights.height_at(_heights.road.x_at(aim), aim)) + 3.0, aim))
+	_camera.look_at(terrain.road_point(44.0) + Vector3.UP * 3.0)
 	_forward = -_camera.global_basis.z
 	_forward.y = 0.0
 	_forward = _forward.normalized()
@@ -64,7 +60,6 @@ func _process(_delta: float) -> void:
 	if BLASTS.has(_ticks):
 		var b: Array = BLASTS[_ticks]
 		# Along the road, so the trees either side don't hide them.
-		var z := _from.z - float(b[0])
-		var at := Vector3(float(_heights.road.x_at(z)) + float(b[1]), 0.0, z)
-		at.y = float(_heights.height_at(at.x, at.z)) + 0.5
+		var at := _terrain.road_point(14.0 + float(b[0])) + _right * float(b[1])
+		at.y = _terrain.ground_height(at.x, at.z) + 0.5
 		Net.server_broadcast(&"explosion", {"position": at, "radius": 3.0, "source": null, "kind": b[2]})

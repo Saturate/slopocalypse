@@ -31,7 +31,8 @@ var _limbs: LimbSevering
 
 
 func _ready() -> void:
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
+	var origin := VoxelWorld.spawn_of(world)
 	Corpse.enabled = true
 	# Every shot here severs, to show each kind of cut; in play a qualifying shot does so
 	# `shot_sever_chance` of the time.
@@ -47,7 +48,7 @@ func _ready() -> void:
 		var soldier: PlayerController = (load(PLAYER) as PackedScene).instantiate()
 		soldier.add_to_group(&"enemies")
 		add_child(soldier)
-		soldier.global_position = Vector3(float(v[0]), 0.5, 0.0)
+		soldier.global_position = VoxelWorld.spawn_of(world, Vector3(float(v[0]), 0.5, 0.0))
 		var animator := PlayerBodyAnimator.new()
 		animator.name = "BodyAnimator"
 		animator.player = soldier
@@ -55,14 +56,8 @@ func _ready() -> void:
 		_soldiers.append(soldier)
 	add_child(_camera)
 	_camera.current = true
-	# Close and from above, with a lamp: the road here runs under an overpass and is dark.
-	_camera.global_position = Vector3(0.0, 3.6, 3.8)
-	_camera.look_at(Vector3(0.0, 0.0, -0.6))
-	var lamp := OmniLight3D.new()
-	lamp.omni_range = 12.0
-	lamp.light_energy = 2.5
-	add_child(lamp)
-	lamp.global_position = Vector3(0.0, 4.0, 1.0)
+	_camera.global_position = origin + Vector3(0.0, 3.6, 3.8)
+	_camera.look_at(origin + Vector3(0.0, 0.0, -0.6))
 
 
 func _process(_delta: float) -> void:
@@ -96,7 +91,7 @@ func _physics_process(_delta: float) -> void:
 		var direction: Vector3 = v[4]
 		var target := Vector3.ZERO
 		if how == "shot":
-			# From a metre off: the barrier beside the road would stop a longer ray.
+			# From a metre off, so the ray meets this soldier and nothing behind or beside it.
 			var start := soldier.global_position + Vector3(0.0, float(v[3]), 0.0) - direction
 			var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(start, start + direction * 2.0, PhysicsLayers.BULLETS))
 			target = hit["position"] if not hit.is_empty() else soldier.global_position

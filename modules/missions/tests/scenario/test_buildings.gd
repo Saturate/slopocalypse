@@ -1,6 +1,7 @@
 extends GdUnitTestSuite
 ## Mission zones lay out walk-in buildings from the mission's seed: the same everywhere,
-## apart from each other and the road, the objective inside one, gone after the run.
+## round the mission's site and off its pad, apart from each other, the objective inside
+## one, gone after the run.
 
 const PLAYER := "res://modules/player/scenes/player.tscn"
 const MISSIONS := "res://modules/missions/missions_module.gd"
@@ -30,8 +31,15 @@ func _cfg() -> Dictionary:
 	return (_missions.get(&"config") as Dictionary)["buildings"]
 
 
-static func _road(metres: float) -> Vector3:
-	return Vector3(0.0, 0.0, -metres)
+## A farm-sized site 300 m out, its track leaving by +z.
+static func _place() -> Dictionary:
+	return {"centre": Vector3(0.0, 0.0, -300.0), "footprint": Rect2(-22.0, -316.0, 44.0, 32.0), "toward": Vector3.BACK}
+
+
+## How far `at` lies from the nearest point of `foot`.
+static func _off(foot: Rect2, at: Vector3) -> float:
+	var nearest := Vector2(clampf(at.x, foot.position.x, foot.end.x), clampf(at.z, foot.position.y, foot.end.y))
+	return nearest.distance_to(Vector2(at.x, at.z))
 
 
 func _ride_out() -> void:
@@ -57,31 +65,46 @@ func _ride_out() -> void:
 
 
 func test_the_same_seed_lays_out_the_same_buildings() -> void:
-	var a := MissionLayout.buildings(_cfg(), 42, _road, 300.0)
-	var b := MissionLayout.buildings(_cfg(), 42, _road, 300.0)
+	var a := MissionLayout.buildings(_cfg(), 42, _place())
+	var b := MissionLayout.buildings(_cfg(), 42, _place())
 	assert_array(a).is_equal(b)
 	assert_int(a.size()).is_between(int(_cfg()["count"][0]), int(_cfg()["count"][1]))
 
 
-func test_buildings_keep_off_the_road_and_apart() -> void:
+func test_buildings_keep_off_the_site_and_apart() -> void:
+	var foot: Rect2 = _place()["footprint"]
 	for seed_value in 20:
-		var layout := MissionLayout.buildings(_cfg(), seed_value, _road, 300.0)
+		var layout := MissionLayout.buildings(_cfg(), seed_value, _place())
 		for i in layout.size():
 			var a: Dictionary = layout[i]
 			var at: Vector3 = a["position"]
-			# The road runs along x = 0 here; the near wall stays off_road[0] away from it.
-			assert_float(absf(at.x) - float(a["depth"]) / 2.0).is_greater_equal(float(_cfg()["off_road"][0]) - 0.01)
+			# Every corner of the building stays off_site[0] off the site's pad.
+			assert_float(_off(foot, at) - float(a["radius"])).is_greater_equal(float(_cfg()["off_site"][0]) - 0.01)
 			for j in range(i + 1, layout.size()):
 				var b: Dictionary = layout[j]
 				var gap := Vector2(at.x - (b["position"] as Vector3).x, at.z - (b["position"] as Vector3).z).length()
 				assert_float(gap).is_greater(float(a["radius"]) + float(b["radius"]))
 
 
-func test_doors_face_the_road() -> void:
-	for entry: Dictionary in MissionLayout.buildings(_cfg(), 7, _road, 300.0):
-		var door := Basis(Vector3.UP, float(entry["yaw"])) * Vector3.FORWARD
-		var at: Vector3 = entry["position"]
-		assert_float(door.x * -signf(at.x)).is_greater(0.9)
+func test_buildings_keep_out_of_ground_others_have_claimed() -> void:
+	# The city on the +x side of the site here.
+	var city := func(at: Vector3, radius: float) -> bool: return at.x + radius > 0.0
+	for seed_value in 10:
+		var layout := MissionLayout.buildings(_cfg(), seed_value, _place(), city)
+		assert_int(layout.size()).is_between(int(_cfg()["count"][0]), int(_cfg()["count"][1]))
+		for entry: Dictionary in layout:
+			assert_float((entry["position"] as Vector3).x + float(entry["radius"])).is_less_equal(0.0)
+
+
+func test_doors_face_the_site_square_to_its_sides() -> void:
+	var centre: Vector3 = _place()["centre"]
+	for seed_value in 10:
+		for entry: Dictionary in MissionLayout.buildings(_cfg(), seed_value, _place()):
+			var door := Basis(Vector3.UP, float(entry["yaw"])) * Vector3.FORWARD
+			var at: Vector3 = entry["position"]
+			# Turned to the nearest of the site's four sides from straight at its middle.
+			assert_float(door.dot((centre - at).normalized())).is_greater(0.7)
+			assert_float(maxf(absf(door.x), absf(door.z))).is_equal_approx(1.0, 0.001)
 
 
 func test_riding_out_builds_them_with_the_drive_inside_one() -> void:
@@ -168,7 +191,7 @@ func test_a_faraway_blast_leaves_it_whole() -> void:
 
 ## A building of `material`, on its own, for the bullet tests.
 func _building(material: String) -> MissionBuilding:
-	var entry: Dictionary = MissionLayout.buildings(_cfg(), 3, _road, 300.0)[0]
+	var entry: Dictionary = MissionLayout.buildings(_cfg(), 3, _place())[0]
 	entry["material"] = material
 	# Windows on the side walls, at the middle (see VoxShed's window spots).
 	entry["windows"] = 2
@@ -300,7 +323,7 @@ func test_a_round_into_a_hole_carries_on_whole() -> void:
 
 ## A building whose right-hand window has `glass` panes, and that pane's centre with the way in.
 func _pane(glass: String) -> Array:
-	var entry: Dictionary = MissionLayout.buildings(_cfg(), 3, _road, 300.0)[0]
+	var entry: Dictionary = MissionLayout.buildings(_cfg(), 3, _place())[0]
 	entry["material"] = "wood"
 	entry["windows"] = 2
 	entry["glass"] = glass
@@ -560,7 +583,7 @@ func test_a_house_left_on_one_corner_column_loses_it() -> void:
 func test_a_mission_can_ask_for_concrete() -> void:
 	var cfg := _cfg().duplicate()
 	cfg["material"] = "concrete"
-	for entry: Dictionary in MissionLayout.buildings(cfg, 9, _road, 300.0):
+	for entry: Dictionary in MissionLayout.buildings(cfg, 9, _place()):
 		assert_str(str(entry["material"])).is_equal("concrete")
 
 

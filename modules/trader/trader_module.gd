@@ -1,11 +1,14 @@
 extends Node
-## The trader at home base: a stall in the start tunnel. F at it opens the trade screen:
+## The trader at home base: a stall inside the camp's fence, on its spot in the camp's
+## layout (CampLayout, carried by `world.ready`). F at it opens the trade screen:
 ## buy from the stock for tokens (it goes into your gear if it fits), sell anything you
 ## carry for a share of its price. The server decides every trade; tokens live with the
 ## missions module (`missions_api`), gear with the inventory (`inventory_api`).
 
 const CONFIG := "res://modules/trader/data/trader.json"
-const REQUIRED := {"stall": TYPE_DICTIONARY, "reach": TYPE_FLOAT, "sell_share": TYPE_FLOAT, "unlisted_price": TYPE_FLOAT, "stock": TYPE_ARRAY}
+const REQUIRED := {"reach": TYPE_FLOAT, "sell_share": TYPE_FLOAT, "unlisted_price": TYPE_FLOAT, "stock": TYPE_ARRAY}
+## Without a camp layout, the stall stands this far off the spawn (see `_on_world_ready`).
+const FALLBACK_OFFSET := Vector3(4.0, 0.0, 0.0)
 ## How squarely you must face the stall to use it.
 const FACING := 0.6
 
@@ -49,14 +52,18 @@ func sell_price(item: String) -> int:
 
 
 func _on_world_ready(payload: Dictionary) -> void:
-	var spawn: Vector3 = payload.get("spawn", Vector3.ZERO)
-	var o: Array = (config["stall"] as Dictionary).get("offset", [0.0, 0.0, 0.0])
+	var camp := CampLayout.of_ready(payload)
 	_stall = TraderStall.new()
 	_stall.name = "TraderStall"
 	add_child(_stall)
-	# The spawn marker floats a metre over the floor.
-	_stall.global_position = Vector3(spawn.x + float(o[0]), spawn.y - 1.0 + float(o[1]), spawn.z + float(o[2]))
-	_stall.rotation.y = PI / 2.0 if float(o[0]) > 0.0 else -PI / 2.0
+	if camp != null:
+		_stall.global_transform = camp.spot("trader")
+	else:
+		# Without a camp layout (world.json's camp is broken, which the world logs): beside
+		# the spawn, across from the mission board, facing it. The marker floats a metre up.
+		var spawn: Vector3 = payload.get("spawn", Vector3.ZERO)
+		_stall.global_position = spawn + Vector3.DOWN + FALLBACK_OFFSET
+		_stall.global_basis = Basis.looking_at(-FALLBACK_OFFSET, Vector3.UP)
 
 
 ## Whether `player` is at the stall and facing it.

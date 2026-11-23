@@ -1,0 +1,24 @@
+{
+  "_comment": "Wires hung between two points. chunk_size: metres; spans are cut into pieces no longer than this and drawn as one mesh per chunk and detail step, so hundreds of spans cost a few draw calls. max_span: metres; longer spans are refused as a mistake. build_ms_per_frame: milliseconds a frame may spend rebuilding changed chunks (at least one a frame); the rest wait for the next frames. sides: faces around each wire. min_pixels: a wire is never drawn thinner than this many pixels, so far lines don't flicker away. roughness: how matt the wires are. fade: metres over which one detail step fades into the next. lod: detail steps by distance from the camera to the middle of a chunk, each drawn until `until` metres (keep every `until` less `fade` at least 1.21 chunk sizes, or the nearest wire in a chunk can drop a step too close); `detail` scales the segments (1 = every segment), `barbs` draws barbed wire's barbs. kinds: per wire kind, `thickness` (metres across), `colour` ([r, g, b]), `sag` (how far the middle of a span hangs below the straight line, as a share of the span's length), `segment_length` (metres per segment at full detail), and for barbed wire `barbs`: `spacing` (metres between barbs), `length` (metres tip to tip) and `thickness`.",
+  "chunk_size": 32.0,
+  "max_span": 400.0,
+  "build_ms_per_frame": 2.0,
+  "sides": 4.0,
+  "min_pixels": 1.5,
+  "roughness": 0.55,
+  "fade": 8.0,
+  "lod": [
+    { "until": 90.0, "detail": 1.0, "barbs": true },
+    { "until": 250.0, "detail": 0.35, "barbs": false },
+    { "until": 900.0, "detail": 0.12, "barbs": false }
+  ],
+  "kinds": {
+    "high_voltage": { "thickness": 0.04, "colour": [0.72, 0.73, 0.75], "sag": 0.04, "segment_length": 3.0 },
+    "low_voltage": { "thickness": 0.02, "colour": [0.09, 0.09, 0.1], "sag": 0.03, "segment_length": 1.0 },
+    "barbed": {
+      "thickness": 0.008, "colour": [0.45, 0.38, 0.32], "sag": 0.008, "segment_length": 0.5,
+      "barbs": { "spacing": 0.25, "length": 0.09, "thickness": 0.008 }
+    },
+    "steel_cable": { "thickness": 0.025, "colour": [0.32, 0.33, 0.34], "sag": 0.006, "segment_length": 1.5 }
+  }
+}

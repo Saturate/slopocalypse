@@ -4,17 +4,19 @@
   "ride_fade_seconds": 0.8,
   "ride_home_reach": 14.0,
   "drop_spread": 2.0,
-  "board": { "offset": [4.9, 0.0, -3.0] },
-  "transport": { "offset": [-2.6, 0.0, -8.0] },
   "dropoff_side": 5.0,
-  "zone": { "beyond_dropoff": 70.0, "radius": 45.0 },
+  "dropoff": { "outside": 25.0, "car_gap": 1.6 },
+  "roadside": { "off_road": 45.0, "ahead": 40.0 },
+  "zone": { "radius": 40.0 },
   "buildings": {
     "count": [3, 6],
     "width": [6.5, 11.0],
     "depth": [5.0, 8.0],
     "wall_height": [2.7, 3.2],
-    "off_road": [9.0, 22.0],
-    "spread": 45.0,
+    "off_site": [1.5, 4.0],
+    "off_roadside": [8.0, 13.0],
+    "level_step": 2.0,
+    "road_clear": 5.0,
     "gap": 3.0,
     "segment": 1.2,
     "segment_hp": 100.0,
@@ -30,6 +32,27 @@
     "pad_margin": 1.5,
     "pad_blend": 6.0
   },
+  "compound": {
+    "margin": 4.0,
+    "patrol_reach": 3.0,
+    "segment": 3.6,
+    "gate": 8.0,
+    "gate_leaf": 2.7,
+    "gate_swing": 70.0,
+    "gaps": 0.0,
+    "post_clear": 0.3,
+    "road_clear": 1.0,
+    "sink": 0.1,
+    "tree_clear": 1.5,
+    "tree_cell": 12.0,
+    "fence": { "seed": 1, "height": 1.5, "post_step": 1.8, "planks": 3, "voxel": 0.06 },
+    "kinds": {
+      "farm": { "fence": { "height": 1.3, "planks": 2 } },
+      "cabin": { "fence": { "height": 1.2, "planks": 2, "post_step": 1.2 } },
+      "antenna": { "fence": { "height": 2.1, "planks": 5 } },
+      "lookout": { "fence": { "height": 2.1, "planks": 5 } }
+    }
+  },
   "hazards": {
     "trigger_radius": 0.9,
     "delay": 0.6,
@@ -40,11 +63,12 @@
     "shot_radius": 0.4,
     "mine_ring": [3.0, 14.0],
     "door_clear": 2.0,
+    "max_grade": 0.5,
     "signs": 2,
     "sign_distance": 32.0
   },
   "offered": 3,
-  "starting_tokens": 150.0,
+  "starting_tokens": 50.0,
   "seed": 11,
   "codenames": {
     "first": ["Rusty", "Silent", "Broken", "Hollow", "Crimson", "Velvet", "Iron", "Paper", "Static", "Copper", "Glass", "Feral", "Midnight", "Sunken", "Neon", "Grim"],
@@ -85,34 +109,38 @@
   "missions": [
     {
       "type": "smash_and_grab",
-      "place": "Substation",
-      "objective": "Grab the drive from the substation before the strike levels it.",
-      "distance": [260.0, 420.0],
+      "place": "Water tower",
+      "sites": ["water_tower", "town_tower"],
+      "objective": "Grab the drive from the pump huts by the water tower before the strike levels them.",
+      "distance": [200.0, 1400.0],
       "time_limit": 180.0,
       "payout": [300.0, 450.0]
     },
     {
       "type": "smash_and_grab",
       "place": "Farmstead",
+      "sites": ["farm"],
       "objective": "A courier hid a drive at the farm. Get it out before the drones arrive.",
-      "distance": [180.0, 320.0],
+      "distance": [150.0, 1500.0],
       "time_limit": 150.0,
       "payout": [200.0, 320.0]
     },
     {
       "type": "smash_and_grab",
       "place": "Radio mast",
+      "sites": ["antenna"],
       "objective": "Pull the drive from the mast huts. The strike comes early.",
-      "distance": [400.0, 620.0],
+      "distance": [300.0, 2000.0],
       "time_limit": 120.0,
       "payout": [450.0, 650.0]
     },
     {
       "type": "clean_sweep",
       "place": "Depot",
-      "objective": "Soldiers have dug in at the depot's concrete blockhouses. Clear out every last one.",
+      "sites": ["any", "roadside"],
+      "objective": "Soldiers have dug in round concrete blockhouses. Clear out every last one.",
       "buildings": { "material": "concrete" },
-      "distance": [220.0, 380.0],
+      "distance": [200.0, 1200.0],
       "guards": [5, 7],
       "patrols": [1, 2],
       "payout": [280.0, 400.0]
@@ -120,6 +148,7 @@
     {
       "type": "clean_sweep",
       "place": "Roadside camp",
+      "sites": ["roadside"],
       "objective": "A squad holds the huts by the road. Sweep them out.",
       "distance": [300.0, 520.0],
       "guards": [7, 10],
@@ -129,28 +158,31 @@
     {
       "type": "ghost_run",
       "place": "Relay station",
+      "sites": ["antenna", "lookout"],
       "buildings": { "material": "concrete" },
-      "objective": "The drive is in the best-guarded hut. Get in and out before they know you were there.",
-      "distance": [240.0, 420.0],
+      "objective": "The drive is in the best-guarded hut by the mast. Get in and out before they know you were there.",
+      "distance": [300.0, 2000.0],
       "guards": [6, 9],
       "payout": [380.0, 520.0]
     },
     {
       "type": "ghost_run",
       "place": "Cabin in the woods",
-      "objective": "A lone cabin deep in the trees. Few guards, they say, but nobody comes back from it. Watch your step.",
-      "distance": [300.0, 520.0],
-      "guards": [1, 2],
+      "sites": ["cabin"],
+      "objective": "A lone cabin deep in the trees, the drive in one of the sheds round it. Few guards, they say, but nobody comes back from it. Watch your step.",
+      "distance": [300.0, 2400.0],
+      "guards": [2, 3],
       "mines": [10, 16],
       "tripwires": [1, 1],
-      "buildings": { "count": [1, 1], "off_road": [28.0, 40.0], "width": [5.0, 6.5], "depth": [4.5, 5.5] },
+      "buildings": { "count": [2, 3], "width": [4.0, 5.5], "depth": [3.5, 4.5], "gap": 2.0 },
       "payout": [420.0, 600.0]
     },
     {
       "type": "ghost_run",
-      "place": "Lodge",
-      "objective": "A drive sits in the back room of a guarded lodge. Quiet is safer.",
-      "distance": [320.0, 560.0],
+      "place": "Farm lodge",
+      "sites": ["farm"],
+      "objective": "A drive sits in the back room of a guarded lodge by the farm. Quiet is safer.",
+      "distance": [300.0, 1800.0],
       "guards": [8, 11],
       "payout": [460.0, 640.0]
     }

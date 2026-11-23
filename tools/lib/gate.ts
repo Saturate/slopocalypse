@@ -1,7 +1,9 @@
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { availableParallelism, tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
+import { platform } from "node:process";
 import { failureLines, scanLog, testSummary } from "./log-scan.ts";
-import { run } from "./proc.ts";
+import { run, type ProcResult } from "./proc.ts";
 
 // Known harmless lines. gdUnit4 points the remote debugger at port 0 on purpose so a
 // parse error cannot drop Godot into its interactive debug> prompt.
@@ -76,8 +78,125 @@ export async function checkScripts(godot: string, root: string, files: readonly 
 	return { ok: true, detail: `${files.length} script(s) compile` };
 }
 
-export async function runGdUnit(godot: string, root: string, testDirs: readonly string[]): Promise<StepResult> {
-	if (testDirs.length === 0) return { ok: true, detail: "no test directories" };
+// Each gdUnit process runs its suites one after another, and the full suite took over 20
+// minutes on a 4-core CI runner, so the suites are split across processes. More than this
+// many fight over cores and memory more than they gain.
+const MAX_SHARDS = 6;
+// A gdUnit process grows as it goes (to about 4 GB on Linux over a few hundred suites), so
+// each shard restarts Godot after this many suites; a start costs a few seconds.
+export const SUITES_PER_PROCESS = 20;
+// Estimates for a suite with no recorded time: scenario suites run physics for seconds.
+const GUESS_SCENARIO_SECONDS = 5;
+const GUESS_SECONDS = 1;
+const SUITE_OVERHEAD_SECONDS = 0.1;
+// Times from the last runs on this machine (git-ignored) win over the committed ones, which
+// CI uses; refresh the committed file by copying the local one over it now and then.
+const LOCAL_DURATIONS = "tests/reports/durations.json";
+export const COMMITTED_DURATIONS = "tools/test-durations.json";
+
+export interface Suite {
+	path: string;
+	seconds: number;
+}
+
+// gdUnit's own convention, which every suite here follows: test_*.gd.
+export function listSuites(testDirs: readonly string[]): string[] {
+	const found: string[] = [];
+	const walk = (dir: string): void => {
+		for (const name of readdirSync(dir)) {
+			const full = join(dir, name);
+			if (statSync(full).isDirectory()) walk(full);
+			else if (/^test_.*\.gd$/.test(name)) found.push(full);
+		}
+	};
+	for (const dir of testDirs) if (existsSync(dir)) walk(dir);
+	return found.sort();
+}
+
+export function guessSeconds(resPath: string, known: Readonly<Record<string, number>>): number {
+	return known[resPath] ?? (resPath.includes("/scenario/") ? GUESS_SCENARIO_SECONDS : GUESS_SECONDS);
+}
+
+export function shardCount(cpus: number, suites: number): number {
+	return Math.max(1, Math.min(cpus, MAX_SHARDS, suites));
+}
+
+// Longest first, each to the least loaded shard: close to even without knowing more.
+export function planShards(suites: readonly Suite[], count: number): string[][] {
+	const shards = Array.from({ length: count }, () => ({ total: 0, paths: [] as string[] }));
+	const order = [...suites].sort((a, b) => b.seconds - a.seconds || a.path.localeCompare(b.path));
+	for (const suite of order) {
+		let least = shards[0]!;
+		for (const shard of shards) if (shard.total < least.total || (shard.total === least.total && shard.paths.length < least.paths.length)) least = shard;
+		// Loading a suite costs something even when its tests take no time.
+		least.total += Math.max(suite.seconds, SUITE_OVERHEAD_SECONDS);
+		least.paths.push(suite.path);
+	}
+	return shards.map((s) => s.paths).filter((p) => p.length > 0);
+}
+
+// Suite times from a gdUnit results.xml, by res:// path.
+export function suiteTimes(xml: string): Record<string, number> {
+	const out: Record<string, number> = {};
+	for (const m of xml.matchAll(/<testsuite\b[^>]*>/g)) {
+		const tag = m[0];
+		const name = /\bname="([^"]+)"/.exec(tag)?.[1];
+		const pkg = /\bpackage="([^"]+)"/.exec(tag)?.[1];
+		const time = /\btime="([\d.]+)"/.exec(tag)?.[1];
+		if (name === undefined || pkg === undefined || time === undefined) continue;
+		out[`res://${pkg}/${name}.gd`] = Number(time);
+	}
+	return out;
+}
+
+// Godot puts user:// under the OS's per-user data folder, which each OS lets an environment
+// variable move. Shards each get their own, so one cannot delete what another is using
+// (gdUnit empties user://tmp after every suite) or read another's test files.
+export function userDirEnv(os: NodeJS.Platform, dir: string): Record<string, string> {
+	if (os === "win32") return { APPDATA: dir };
+	if (os === "darwin") return { HOME: dir };
+	return { XDG_DATA_HOME: dir };
+}
+
+function readDurations(path: string): Record<string, number> {
+	if (!existsSync(path)) return {};
+	try {
+		const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+		if (typeof parsed !== "object" || parsed === null) return {};
+		const out: Record<string, number> = {};
+		for (const [k, v] of Object.entries(parsed)) if (typeof v === "number") out[k] = v;
+		return out;
+	} catch {
+		return {};
+	}
+}
+
+function newestReport(dir: string): string | undefined {
+	if (!existsSync(dir)) return undefined;
+	const numbered = readdirSync(dir)
+		.map((n) => /^report_(\d+)$/.exec(n))
+		.filter((m): m is RegExpExecArray => m !== null)
+		.sort((a, b) => Number(b[1]) - Number(a[1]));
+	const name = numbered[0]?.[0];
+	return name === undefined ? undefined : join(dir, name, "results.xml");
+}
+
+interface ShardRun {
+	suites: number;
+	planned: string[];
+	result: ProcResult;
+	times: Record<string, number>;
+}
+
+export function chunk<T>(items: readonly T[], size: number): T[][] {
+	const out: T[][] = [];
+	for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+	return out;
+}
+
+async function runShard(godot: string, root: string, files: readonly string[], index: string): Promise<ShardRun> {
+	const reports = join(root, "tests", "reports", `shard-${index}`);
+	const userDir = mkdtempSync(join(tmpdir(), "slopocalypse-gdunit-"));
 	const args = [
 		"--headless",
 		"--path",
@@ -90,23 +209,75 @@ export async function runGdUnit(godot: string, root: string, testDirs: readonly 
 		// Input events don't reach headless Godot; our tests drive intent components instead.
 		"--ignoreHeadlessMode",
 		"-rd",
-		"res://tests/reports",
-		...testDirs.flatMap((d) => ["-a", toRes(root, d)]),
+		toRes(root, reports),
+		...files.flatMap((f) => ["-a", toRes(root, f)]),
 	];
-	const r = await run(godot, args, { cwd: root, timeoutMs: 600_000 });
-	const summary = testSummary(r.output);
-	const problems = scanLog(r.output, GODOT_NOISE);
-	const lines: string[] = [];
-	if (r.timedOut) lines.push("test run timed out");
-	if (summary === undefined) lines.push(`no test summary in output (exit ${r.code})`);
-	else if (summary.errors + summary.failures > 0) lines.push(`${summary.failures} failure(s), ${summary.errors} error(s)`);
-	if (r.code !== 0 && summary !== undefined && summary.errors + summary.failures === 0) lines.push(`exit ${r.code}`);
-	if (problems.length > 0) lines.push("unexpected error lines:", ...problems.map((p) => "  " + p));
-	if (lines.length > 0) {
-		const failed = failureLines(r.output);
-		return { ok: false, detail: [...lines, ...failed].join("\n") };
+	try {
+		// A shard runs a few minutes; the limit only catches a hang.
+		const result = await run(godot, args, { cwd: root, timeoutMs: 1_200_000, env: { ...process.env, ...userDirEnv(platform, userDir) } });
+		const xml = newestReport(reports);
+		const times = xml !== undefined && existsSync(xml) ? suiteTimes(readFileSync(xml, "utf8")) : {};
+		return { suites: files.length, result, times, planned: files.map((f) => toRes(root, f)) };
+	} finally {
+		// A Godot child still holding a file (Windows) must not turn the results into a throw.
+		try {
+			rmSync(userDir, { recursive: true, force: true });
+		} catch {
+			// Left in the temp folder.
+		}
 	}
-	return { ok: true, detail: `${summary?.cases ?? 0} test case(s) passed` };
+}
+
+export async function runGdUnit(godot: string, root: string, testDirs: readonly string[]): Promise<StepResult> {
+	if (testDirs.length === 0) return { ok: true, detail: "no test directories" };
+	const files = listSuites(testDirs);
+	if (files.length === 0) return { ok: true, detail: "no test suites" };
+	const localDurations = join(root, LOCAL_DURATIONS);
+	const known = { ...readDurations(join(root, COMMITTED_DURATIONS)), ...readDurations(localDurations) };
+	const suites = files.map((path) => ({ path, seconds: guessSeconds(toRes(root, path), known) }));
+	// GATE_SHARDS caps the parallel runs where memory, not cores, is the limit: each run grows to
+	// about 4 GB, and four of them filled a 16 GB Linux runner until it was killed.
+	const cap = Number.parseInt(process.env["GATE_SHARDS"] ?? "", 10);
+	const cpus = Number.isFinite(cap) && cap > 0 ? Math.min(cap, availableParallelism()) : availableParallelism();
+	const shards = planShards(suites, shardCount(cpus, suites.length));
+	const perShard = await Promise.all(
+		shards.map(async (paths, i) => {
+			const out: ShardRun[] = [];
+			for (const [j, part] of chunk(paths, SUITES_PER_PROCESS).entries()) out.push(await runShard(godot, root, part, `${i}-${j}`));
+			return out;
+		}),
+	);
+	const runs = perShard.flat();
+
+	const lines: string[] = [];
+	const failed: string[] = [];
+	let cases = 0;
+	const times: Record<string, number> = { ...readDurations(localDurations) };
+	runs.forEach((shard, i) => {
+		const r = shard.result;
+		const name = runs.length > 1 ? `run ${i + 1}/${runs.length} (${shard.suites} suites): ` : "";
+		const summary = testSummary(r.output);
+		const problems = scanLog(r.output, GODOT_NOISE);
+		const before = lines.length;
+		if (r.timedOut) lines.push(`${name}test run timed out`);
+		if (summary === undefined) lines.push(`${name}no test summary in output (exit ${r.code})`);
+		else {
+			cases += summary.cases;
+			if (summary.errors + summary.failures > 0) lines.push(`${name}${summary.failures} failure(s), ${summary.errors} error(s)`);
+			if (r.code !== 0 && summary.errors + summary.failures === 0) lines.push(`${name}exit ${r.code}`);
+		}
+		if (problems.length > 0) lines.push(`${name}unexpected error lines:`, ...problems.map((p) => "  " + p));
+		// A suite gdUnit skipped without a word would otherwise pass as fewer cases.
+		const missing = summary === undefined ? [] : shard.planned.filter((p) => shard.times[p] === undefined);
+		if (missing.length > 0) lines.push(`${name}suites that did not run:`, ...missing.map((p) => "  " + p));
+		if (lines.length > before) failed.push(...failureLines(r.output));
+		// Self-test fixtures live in fresh hidden folders; their times would only pile up.
+		for (const [path, secs] of Object.entries(shard.times)) if (!path.includes("/.")) times[path] = Math.round(secs * 10) / 10;
+	});
+	mkdirSync(join(root, "tests", "reports"), { recursive: true });
+	writeFileSync(localDurations, JSON.stringify(Object.fromEntries(Object.entries(times).sort(([a], [b]) => a.localeCompare(b))), null, "\t") + "\n");
+	if (lines.length > 0) return { ok: false, detail: [...lines, ...failed.slice(0, 60)].join("\n") };
+	return { ok: true, detail: `${cases} test case(s) passed${shards.length > 1 ? ` in ${shards.length} parallel shards, ${runs.length} Godot runs` : ""}` };
 }
 
 // Directories named "tests" anywhere outside addons/ and hidden folders; "unit" subfolders for the fast check.
@@ -132,9 +303,12 @@ export function findTestDirs(root: string, mode: "fast" | "full"): string[] {
 
 // Runs the real main scene for a few frames and checks the boot log line. This is what
 // proves a module can be switched off (or deleted) without breaking startup.
+// The game starts its own solo server, which would otherwise sit out its 30 s wait for a
+// player that already left, holding the output open; only the game's own boot counts here.
 export async function bootGame(godot: string, root: string, userArgs: readonly string[], expect: RegExp): Promise<StepResult> {
-	const args = ["--headless", "--path", root, "--quit-after", "120", ...(userArgs.length > 0 ? ["--", ...userArgs] : [])];
-	const r = await run(godot, args, { cwd: root, timeoutMs: 60_000 });
+	// --no-save: the solo server is killed with the game and must not be writing the player's world.
+	const args = ["--headless", "--path", root, "--quit-after", "120", "--", "--no-save", ...userArgs];
+	const r = await run(godot, args, { cwd: root, timeoutMs: 60_000, children: "kill" });
 	const problems = scanLog(r.output, GODOT_NOISE);
 	if (r.timedOut) return { ok: false, detail: "boot timed out" };
 	if (r.code !== 0 || problems.length > 0) return { ok: false, detail: [`exit ${r.code}`, ...problems].join("\n") };

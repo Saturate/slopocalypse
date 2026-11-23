@@ -26,23 +26,36 @@ func _follower(group: StringName, at: Vector3) -> Node3D:
 	return n
 
 
+## Two opposite corners of the map, well inside its edge, the one furthest from the camp first.
+func _corners() -> Array[Vector3]:
+	var area := _voxels.heights.extent().grow(-150.0)
+	var a := Vector3(area.position.x, 0, area.position.y)
+	var b := Vector3(area.end.x, 0, area.end.y)
+	var out: Array[Vector3] = [a, b]
+	if b.distance_to(_voxels.home) > a.distance_to(_voxels.home):
+		out.reverse()
+	return out
+
+
 func test_ground_is_solid_under_everyone_at_once() -> void:
-	var places := [Vector3(-94, 0, -13), Vector3(40, 0, -700), Vector3(-60, 0, -1500)]
+	var corners := _corners()
+	var places := [_voxels.home + Vector3(-94, 0, -13), corners[0], corners[1]]
 	_follower(&"players", places[0])
 	_follower(&"vehicles", places[1])
 	_follower(&"enemies", places[2])
 	for i in 300:
 		await get_tree().process_frame
-	for p: Vector3 in places + [Vector3.ZERO]:
+	for p: Vector3 in places + [_voxels.home]:
 		assert_bool(_voxels.is_ready_at(p)).override_failure_message("no ground at %s" % p).is_true()
 
 
 func test_ground_far_from_everyone_is_let_go() -> void:
-	var walker := _follower(&"players", Vector3(0, 0, -800))
+	var corners := _corners()
+	var walker := _follower(&"players", corners[0])
 	for i in 200:
 		await get_tree().process_frame
-	assert_bool(_voxels.is_ready_at(Vector3(0, 0, -800))).is_true()
-	walker.global_position = Vector3(0, 0, -1600)
+	assert_bool(_voxels.is_ready_at(corners[0])).is_true()
+	walker.global_position = corners[1]
 	for i in 300:
 		await get_tree().process_frame
-	assert_bool(_voxels.is_ready_at(Vector3(0, 0, -800))).is_false()
+	assert_bool(_voxels.is_ready_at(corners[0])).is_false()

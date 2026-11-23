@@ -247,3 +247,52 @@ func test_clearing_calls_off_every_strike_drone() -> void:
 	_module.server_spawn_strike(Vector3(-5, 0, 0))
 	_module.server_clear_strikes()
 	assert_int(_module.strike_count()).is_equal(0)
+
+
+func _camp_round(at: Vector3) -> CampLayout:
+	return CampLayout.around(at, Vector3.FORWARD, (Data.load_json(CampLayout.CONFIG) as Dictionary)["camp"])
+
+
+## #420: inside the camp's fence nobody is dived at, and no drone is sent for them.
+func test_no_dive_at_someone_inside_the_camp() -> void:
+	var drone: StalkerDrone = _module.server_spawn(_target)
+	drone.safe_zone = _camp_round(_target.global_position)
+	drone.server_anger(_target)
+	var dived := false
+	for i in 60 * 4:
+		if i % 30 == 0:
+			drone.postpone_dive(0.05)
+		await get_tree().physics_frame
+		dived = dived or drone.is_diving()
+	assert_bool(dived).is_false()
+	# A dive already under way is called off once its target is inside.
+	drone.server_dive()
+	await _frames(2)
+	assert_bool(drone.is_diving()).is_false()
+	assert_int(_explosions.size()).is_equal(0)
+	assert_bool(is_instance_valid(drone)).is_true()
+
+
+func test_outside_the_camp_it_still_dives() -> void:
+	var drone: StalkerDrone = _module.server_spawn(_target)
+	# The camp is far off: the target is fair game.
+	drone.safe_zone = _camp_round(_target.global_position + Vector3(200.0, 0.0, 0.0))
+	drone.server_anger(_target)
+	drone.postpone_dive(0.05)
+	var dived := false
+	for i in 30:
+		await get_tree().physics_frame
+		dived = dived or drone.is_diving()
+	assert_bool(dived).is_true()
+
+
+func test_no_drone_is_sent_for_players_at_home() -> void:
+	_module.config["respawn_seconds"] = 0.2
+	EventBus.publish(&"world.ready", {"spawn": _target.global_position + Vector3.UP, "camp": _camp_round(_target.global_position)})
+	EventBus.publish(&"player.spawned", {"player": _target, "local": true})
+	await _frames(120)
+	assert_int(_module.drones().size()).is_equal(0)
+	# Out past the fence, one comes.
+	_target.global_position = Vector3(300.0, 0.0, 0.0)
+	await _frames(120)
+	assert_int(_module.drones().size()).is_equal(1)

@@ -1,0 +1,6 @@
+{
+  "id": "camp",
+  "depends_on": ["world", "voxkit"],
+  "flag": "camp",
+  "entry": "camp_module.gd"
+}

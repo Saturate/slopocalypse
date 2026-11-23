@@ -39,6 +39,28 @@ Report: (1) the single largest gap between the images and the goal, (2) any bloc
 (3) anything that looks unintentional. Be concrete about which frame. Do not suggest code.
 ```
 
+## Playtests: the same review for a real session
+
+A capture setup stages a scene; a scripted playtest runs the real game (a server and named clients) and drives it. Use one when the change is about play between people, the server, or a place in the real world:
+
+```bash
+node tools/play.ts --list
+node tools/play.ts <scenario>            # e.g. partner-marker, glowstick-night
+```
+
+Scenarios live in `tools/playtests/` (copy one; `tools/lib/play.ts` has the API). Each `screenshot(name, { expect })` carries its expectation, written before looking. The run writes `build/play/<scenario>/<time>/`:
+
+- `report.md` / `report.json`: steps, state checks, image checks, log errors and warnings, frame times. For you, not the reviewer.
+- `review.md`: only the screenshot paths and their expectations, with the review instructions.
+
+Hand `review.md` to a fresh subagent and nothing else:
+
+```
+Read <absolute path to review.md> and look at every image it lists. Follow its instructions.
+```
+
+Never pass the report, the scenario code or your own opinion. A failed run (state check or log error) is fixed first; a passed run is not done until the reviewer agrees the pictures show what the expectations say.
+
 ## 4. Act on it
 
 - Blocking defects: fix, recapture, review again with a new subagent.

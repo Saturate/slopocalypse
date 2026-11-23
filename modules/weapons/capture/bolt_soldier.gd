@@ -14,7 +14,7 @@ var _ticks := 0
 
 func _ready() -> void:
 	GunAssembly.override_build = "bolt_standard"
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
 	var scenery := find_child("Scenery", true, false) as Node3D
 	if scenery != null:
 		scenery.visible = false
@@ -22,7 +22,7 @@ func _ready() -> void:
 	_player = (load(PLAYER) as PackedScene).instantiate()
 	_player.add_to_group(&"players")
 	add_child(_player)
-	_player.global_position = Vector3(0.0, 0.1, 0.0)
+	_player.global_position = VoxelWorld.spawn_of(world, Vector3(0.0, 0.1, 0.0))
 	EventBus.publish(&"player.spawned", {"player": _player, "local": false})
 	var animator := PlayerBodyAnimator.new()
 	animator.name = "BodyAnimator"

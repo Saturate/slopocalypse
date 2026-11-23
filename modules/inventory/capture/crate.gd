@@ -12,7 +12,7 @@ var _ticks := 0
 
 
 func _ready() -> void:
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
 	add_child((load(WEAPONS) as GDScript).new())
 	var inventory: Node = (load(INVENTORY) as GDScript).new()
 	add_child(inventory)
@@ -20,7 +20,7 @@ func _ready() -> void:
 	_player.set_meta(&"peer_id", 1)
 	_player.add_to_group(&"players")
 	add_child(_player)
-	_player.global_position = Vector3(3.0, 0.1, -2.6)
+	_player.global_position = VoxelWorld.spawn_of(world, Vector3(3.0, 0.1, -2.6))
 	EventBus.publish(&"player.spawned", {"player": _player, "local": true})
 	var animator := PlayerBodyAnimator.new()
 	animator.name = "BodyAnimator"
@@ -28,8 +28,8 @@ func _ready() -> void:
 	_player.add_child(animator)
 	PlayerBody.first_person(_player.get_node("Body"))
 	(_player.get_node("Head/Camera") as Camera3D).current = true
-	EventBus.publish(&"world.ready", {"spawn": Vector3(0.0, _player.global_position.y, 0.0)})
-	inventory.call(&"server_spawn_crate", inventory.call(&"_on_ground", Vector3(4.2, 0.0, -4.4)))
+	EventBus.publish(&"world.ready", {"spawn": VoxelWorld.spawn_of(world)})
+	inventory.call(&"server_spawn_crate", inventory.call(&"_on_ground", VoxelWorld.spawn_of(world, Vector3(4.2, 0.0, -4.4))))
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 

@@ -1,8 +1,8 @@
 extends Node
-## Lights: street lamps along the road and wherever another module asks for them
-## (`city.lamp_spots`: {spots: Array[Transform3D]}), whose bulbs glow, light the street and
-## shatter when shot, and a budget that keeps only the nearest lights real on each screen
-## (LightBudget).
+## Lights: street lamps along the highway out of the camp's gate and wherever another
+## module asks for them (`city.lamp_spots`: {spots: Array[Transform3D]}), whose bulbs glow,
+## light the street and shatter when shot, and a budget that keeps only the nearest lights
+## real on each screen (LightBudget).
 ##
 ## The server decides which bulbs are broken: a round on a bulb broadcasts
 ## `lights.lamp_broken`, and someone joining later is told which are already out.

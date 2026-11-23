@@ -5,7 +5,8 @@ extends Node3D
 
 const WORLD := "res://modules/world/scenes/world.tscn"
 const FRAMES_PER_SHOT := 120
-const AT_Z := -60.0
+## Metres along the highway from the camp.
+const ALONG := 60.0
 
 var _camera := Camera3D.new()
 var _ticks := 0
@@ -22,8 +23,7 @@ func _ready() -> void:
 	_voxels = _world.get_node("Terrain")
 	_scenery = _world.get_node("Scenery")
 	_voxels.dug.connect(_scenery.on_dug)
-	var heights := _voxels.heights
-	_road = Vector3(heights.road.x_at(AT_Z), heights.road.height_at(AT_Z), AT_Z)
+	_road = _voxels.road_point(ALONG)
 	_camera.fov = 70.0
 	_camera.far = 900.0
 	add_child(_camera)
@@ -67,8 +67,7 @@ func _lone_tree() -> Vector2i:
 	var best_gap := 0.0
 	for id in near:
 		var at: Vector3 = _scenery.tree_position(id)
-		# Down the road, away from the mountain over the tunnel.
-		if at.distance_to(_road) > 70.0 or at.z > _road.z:
+		if at.distance_to(_road) > 70.0:
 			continue
 		var gap := INF
 		for other in near:

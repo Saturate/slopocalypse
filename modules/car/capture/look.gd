@@ -1,5 +1,5 @@
 extends Node3D
-## Capture setup: the voxel car parked on the road outside the start tunnel, seen from the
+## Capture setup: the voxel car parked where it waits by the camp, seen from the
 ## front quarter, the side, the back quarter, above, the driver's door, and the wheels close up.
 
 const WORLD := "res://modules/world/scenes/world.tscn"

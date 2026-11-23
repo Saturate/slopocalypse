@@ -1,20 +1,21 @@
 extends Node3D
-## Capture setup: six stops down the road (spawn, forest, meadow, dry, rocky hills, the far
-## end), each looking along it from just above, for judging the road and the biomes.
+## Capture setup: six stops along the highway from the camp (past its end, the last stops
+## stand at the end), each looking along it from just above, for judging the road and the
+## biomes.
 
 const WORLD := "res://modules/world/scenes/world.tscn"
-const STOPS := [10.0, 450.0, 1000.0, 1600.0, 2300.0, 2850.0]
+const STOPS := [10.0, 250.0, 500.0, 800.0, 1100.0, 1400.0]
 const FRAMES_PER_STOP := 150
 
 var _camera := Camera3D.new()
-var _heights: TerrainHeights
+var _voxels: VoxelWorld
 var _scatter: SceneryScatter
 var _ticks := 0
 
 
 func _ready() -> void:
 	var world := await VoxelWorld.add_and_wait(self, WORLD)
-	_heights = (world.get_node("Terrain") as VoxelWorld).heights
+	_voxels = world.get_node("Terrain") as VoxelWorld
 	_scatter = world.get_node("Scenery")
 	_camera.fov = 70.0
 	_camera.far = 900.0
@@ -25,7 +26,7 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	if _heights == null:
+	if _voxels == null:
 		return
 	_ticks += 1
 	if _ticks % FRAMES_PER_STOP == 0:
@@ -35,12 +36,15 @@ func _process(_delta: float) -> void:
 func _go(stop: int) -> void:
 	if stop >= STOPS.size():
 		return
-	var z := -float(STOPS[stop])
-	var road := _heights.road
-	var at := Vector3(road.x_at(z) + 6.0, road.height_at(z) + 5.0, z)
-	var ahead := Vector3(road.x_at(z - 60.0), road.height_at(z - 60.0) + 1.0, z - 60.0)
+	var m := float(STOPS[stop])
+	var centre := _voxels.road_point(m)
+	var along := _voxels.road_point(m + 1.0) - centre
+	along.y = 0.0
+	var right := along.normalized().cross(Vector3.UP) if along.length() > 0.001 else Vector3.RIGHT
+	var at := centre + right * 6.0 + Vector3.UP * 5.0
+	var ahead := _voxels.road_point(m + 60.0) + Vector3.UP * 1.0
 	_camera.global_position = at
 	_camera.look_at(ahead)
 	# Build everything around the new spot at once instead of a chunk a frame.
 	_scatter.update_around([at], INF)
-	(_scatter.get_parent().get_node("Terrain") as VoxelWorld).update_around([at], INF)
+	_voxels.update_around([at], INF)

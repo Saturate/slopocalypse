@@ -1,18 +1,17 @@
 extends GdUnitTestSuite
 ## The range's fixed row: buildings in the listed order along one side of the road, apart
-## by the gap, doors to the road, each with its listed material and panes.
-
-
-static func _road(metres: float) -> Vector3:
-	return Vector3(0.0, 0.0, -metres)
+## by the gap, doors on the line through the zone's centre facing the road, each with its
+## listed material and panes.
 
 
 func test_a_row_keeps_its_order_spacing_and_materials() -> void:
-	var cfg := {"gap": 4.0, "row_off_road": 10.0, "row": [
+	var cfg := {"gap": 4.0, "row": [
 		{"material": "wood", "width": 5.0, "depth": 4.0},
 		{"material": "brick", "glass": "security_glass", "width": 6.0, "depth": 4.0},
 	]}
-	var row := MissionLayout.buildings(cfg, 1, _road, 100.0)
+	# A roadside place 10 m to the +x side of a road running along z.
+	var place := {"centre": Vector3(10.0, 0.0, -100.0), "footprint": Rect2(10.0, -100.0, 0.0, 0.0), "toward": Vector3.LEFT}
+	var row := MissionLayout.buildings(cfg, 1, place)
 	assert_int(row.size()).is_equal(2)
 	assert_str(str(row[0]["material"])).is_equal("wood")
 	assert_str(str(row[0]["glass"])).is_equal("window_glass")

@@ -2,9 +2,12 @@ class_name CarBot
 extends Node
 ## Test driver (`--bot=drive`): walks this instance's player to the nearest car, gets in,
 ## drives for a few seconds and gets out again, through the same intent path a human uses.
+## `--bot=sit` gets in and stays in the driver's seat, for tests that need a car occupied.
 ## Lives under the car module, not the player, because a parked player stops processing.
 
 const BEHAVIOUR := "drive"
+const SIT := "sit"
+const SEATED_LOG := "bot seated"
 ## Let the player land and the car settle before walking over.
 const WAIT_TICKS := 90
 const DRIVE_TICKS := 240
@@ -15,6 +18,8 @@ const DRIVE_STEER := 0.15
 enum State { WALK, DRIVE, DONE }
 
 var player: PlayerController
+## Stay seated with the brake on instead of driving off and getting out.
+var sit := false
 
 var _state := State.WALK
 var _car: CarController
@@ -26,6 +31,9 @@ func entered(car: CarController) -> void:
 	_car = car
 	_state = State.DRIVE
 	_ticks = 0
+	if sit:
+		# tools/lib/net.ts lateJoinSmoke waits for this line before a second client joins.
+		Log.info(&"car", SEATED_LOG)
 
 
 func _physics_process(_delta: float) -> void:
@@ -63,6 +71,9 @@ func _walk_to_car() -> void:
 
 func _drive() -> void:
 	var intent := _car.intent()
+	if sit:
+		_send_car(intent, 0.0, 0.0, true)
+		return
 	if _ticks < DRIVE_TICKS:
 		_send_car(intent, 1.0, DRIVE_STEER, false)
 		return

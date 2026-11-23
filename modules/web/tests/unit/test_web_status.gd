@@ -25,3 +25,44 @@ func test_the_status_holds_nothing_secret() -> void:
 	assert_bool(status.has("players")).is_true()
 	# No missions module here: no mission parts.
 	assert_bool(status.has("mission")).is_false()
+
+
+func test_the_kill_board_shows_totals_and_the_top_players() -> void:
+	var kills := {"totals": {"soldiers": 41, "drones": 3, "players": 1, "civilians": 2, "deaths": 12, "headshots": 9, "longest_kill_m": 212},
+		"top": [{"name": "<b>Ann</b>", "kills": 30, "headshots": 7, "longest_kill_m": 212}, {"name": "Bob", "kills": 15, "headshots": 2, "longest_kill_m": 80}]}
+	var page := WebStatus.html({"players": [], "kills": kills})
+	assert_str(page).contains("41")
+	assert_str(page).contains("212 m")
+	assert_str(page).contains("&lt;b&gt;Ann&lt;/b&gt;")
+	assert_bool(page.contains("<b>Ann</b>")).is_false()
+	assert_int(page.find("Ann")).is_less(page.find("Bob"))
+
+
+func test_the_status_takes_the_kill_board_from_the_stats_module() -> void:
+	var fake := FakeStats.new()
+	add_child(fake)
+	var status := WebStatus.build(get_tree(), 0)
+	fake.free()
+	var kills: Dictionary = status.get("kills", {})
+	assert_int(int((kills["totals"] as Dictionary)["soldiers"])).is_equal(5)
+	assert_int(int((kills["totals"] as Dictionary)["longest_kill_m"])).is_equal(120)
+	assert_str(str((kills["top"] as Array)[0]["name"])).is_equal("Ann")
+	# Without the stats module there is no board.
+	assert_bool(WebStatus.build(get_tree(), 0).has("kills")).is_false()
+
+
+## Stands in for the stats module's API (the `stats_api` group), so this suite does not
+## depend on that module being there.
+class FakeStats:
+	extends Node
+
+	func _init() -> void:
+		add_to_group(&"stats_api")
+
+	func server_totals() -> Dictionary:
+		return {"kills.soldier": 5.0, "kills.soldier.militia": 5.0, "kills.drone": 1.0, "deaths": 2.0, "longest_kill": 120.4}
+
+	func server_top(count: int) -> Array[Dictionary]:
+		var rows: Array[Dictionary] = [{"name": "Ann", "kills": 6, "headshots": 1, "longest_kill": 120.4}]
+		return rows if count > 0 else []
+
