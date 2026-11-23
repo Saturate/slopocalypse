@@ -60,3 +60,27 @@ func test_a_client_without_a_camera_builds_ground_round_its_own_player_only() ->
 	assert_bool(_voxels.is_ready_at(corners[0])).override_failure_message("no ground under the client's own player").is_true()
 	# Someone else's player is the server's business, as with a camera.
 	assert_bool(_voxels.is_ready_at(corners[1])).is_false()
+
+
+## Stands in for the car module: its own player sits in a car parked at `spot`.
+class Cars extends Node:
+	var driver: Node3D
+	var spot: Vector3
+
+	func car_spot_of(player: Node3D) -> Variant:
+		return spot if player == driver else null
+
+
+func test_a_client_without_a_camera_follows_the_car_its_own_player_drives() -> void:
+	var corners := _corners()
+	# A seated body stays parked where it got in; the car has driven to the other corner.
+	var cars: Cars = auto_free(Cars.new())
+	cars.add_to_group(&"cars_api")
+	cars.driver = _player(_world.multiplayer.get_unique_id(), corners[0])
+	cars.spot = corners[1]
+	add_child(cars)
+	var until := Time.get_ticks_msec() + 10000
+	while not _voxels.is_ready_at(corners[1]) and Time.get_ticks_msec() < until:
+		await get_tree().process_frame
+	assert_bool(_voxels.is_ready_at(corners[1])).override_failure_message("no ground under the car the client drives").is_true()
+	assert_bool(_voxels.is_ready_at(corners[0])).override_failure_message("ground built round the parked body").is_false()

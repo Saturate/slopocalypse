@@ -209,6 +209,16 @@ static func own_player_on_client(node: Node) -> Node3D:
 	return null
 
 
+## Where a client's own player counts as being (`PlayerSpot`: the car, once they drive), or
+## null when it has none. A seated body stays where it got in, so following the body built
+## nothing round a headless driver once the car left.
+static func own_spot_on_client(node: Node) -> Variant:
+	var own := own_player_on_client(node)
+	if own == null:
+		return null
+	return PlayerSpot.of(own, PlayerSpot.cars_api(node.get_tree()))
+
+
 ## A marker that keeps the ground built around it (for cameras in captures and harnesses;
 ## the camera, or a headless client's own player, and on the server every player, enemy and
 ## vehicle are followed already).
@@ -694,9 +704,9 @@ func _focus_points() -> Array[Vector3]:
 	if cam != null:
 		out.append(cam.global_position)
 	else:
-		var own := own_player_on_client(self)
-		if own != null:
-			out.append(own.global_position)
+		var own: Variant = own_spot_on_client(self)
+		if own is Vector3:
+			out.append(own)
 	var groups: Array[StringName] = [&"terrain_focus"]
 	if not multiplayer.has_multiplayer_peer() or multiplayer.is_server():
 		groups.append_array([&"players", &"enemies", &"vehicles"] as Array[StringName])
