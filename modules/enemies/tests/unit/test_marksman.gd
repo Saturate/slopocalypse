@@ -12,7 +12,7 @@ var _faction := {
 
 
 func _gear(faction: Dictionary, roll: float) -> Dictionary:
-	return (load(MODULE) as GDScript).call(&"marksman_gear", faction, roll)
+	return (load(MODULE) as GDScript).call(&"role_gear", faction, "marksman", roll)
 
 
 func test_a_squad_under_the_chance_brings_a_marksman_in_the_factions_other_gear() -> void:

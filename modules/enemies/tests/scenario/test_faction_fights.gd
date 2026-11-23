@@ -65,3 +65,38 @@ func test_soldiers_wear_their_factions_side_and_kit() -> void:
 	assert_str(HitscanWeapon.team_of(pair[1])).is_equal("militia")
 	var brain := pair[0].get_node("Brain") as EnemyBrain
 	assert_bool(brain.is_hostile(pair[1])).is_true()
+
+
+## Seeded squads: as often as its faction's `gunner.squad_chance` says, a squad's last soldier
+## carries the machine gun and its brain knows it is the gunner; nobody else is one.
+func test_some_squads_bring_a_gunner_who_knows_it() -> void:
+	var api := get_tree().get_first_node_in_group(&"factions_api")
+	(_enemies.get(&"_rng") as RandomNumberGenerator).seed = 11
+	var squads := 0
+	var with_gunner := 0
+	var expected := 0.0
+	for i in 400:
+		var plan: Array[Dictionary] = _enemies.call(&"_plan_squad", 3, Vector3.ZERO)
+		var faction: Dictionary = api.call(&"info", str(plan[0]["faction"]))
+		squads += 1
+		expected += float((faction.get("gunner", {}) as Dictionary).get("squad_chance", 0.0))
+		for k in plan.size():
+			var gunner := bool((load(ENEMIES) as GDScript).call(&"is_gunner", faction, plan[k].get("gear")))
+			if gunner:
+				with_gunner += 1
+				assert_int(k).is_equal(plan.size() - 1)
+	# About the chance the factions give, over 400 squads.
+	assert_float(float(with_gunner)).is_between(expected * 0.7, expected * 1.3)
+	# A real squad with a gunner: only that soldier's brain is the gunner.
+	var squad: Array[Node] = []
+	for i in 50:
+		squad = _enemies.call(&"server_spawn_squad", 3, Vector3(0, 0, 0))
+		await get_tree().process_frame
+		var found := squad.any(func(s: Node) -> bool: return (s.get_node("Brain") as EnemyBrain).gunner)
+		if found:
+			break
+		for s in squad:
+			s.queue_free()
+	var gunners := squad.filter(func(s: Node) -> bool: return (s.get_node("Brain") as EnemyBrain).gunner)
+	assert_int(gunners.size()).is_equal(1)
+	assert_object(gunners[0]).is_same(squad[-1])
