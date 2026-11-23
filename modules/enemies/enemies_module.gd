@@ -205,31 +205,49 @@ func server_spawn_squad(size: int, centre: Variant = null) -> Array[Node]:
 
 ## Spawn data for a squad of `size` around `centre` or a spread spot: one faction to a squad
 ## (the factions module picks by weight; without it, one side). Its first soldier may be the
-## faction's marksman, with their own gear.
+## faction's marksman and its last the faction's gunner, each with their own gear.
 func _plan_squad(size: int, centre: Variant = null) -> Array[Dictionary]:
 	var at: Vector3 = centre if centre is Vector3 else _spread_spot()
 	var api := _factions()
 	var faction := str(api.call(&"pick", _rng)) if api != null else ""
-	var marksman := marksman_gear(api.call(&"info", faction) if api != null else {}, _rng.randf())
+	var info_of: Dictionary = api.call(&"info", faction) if api != null else {}
+	var marksman := role_gear(info_of, "marksman", _rng.randf())
+	var gunner := role_gear(info_of, "gunner", _rng.randf())
 	var out: Array[Dictionary] = []
 	for i in size:
 		var offset := Vector3(_rng.randf_range(-3.0, 3.0), 0.0, _rng.randf_range(-3.0, 3.0))
 		var info := {"position": _on_ground(at + offset) + Vector3.UP * 0.5, "home": at, "faction": faction}
 		if i == 0 and not marksman.is_empty():
 			info["gear"] = marksman
+		elif i == size - 1 and not gunner.is_empty():
+			info["gear"] = gunner
 		out.append(info)
 	return out
 
 
-## The gear a squad's marksman wears, or empty when this squad has none: a faction with
-## `marksman` in its data (`squad_chance`, and `gear` worn instead of the faction's in those
-## slots) brings one when `roll` (0 to 1) is under the chance.
-static func marksman_gear(faction: Dictionary, roll: float) -> Dictionary:
-	var marksman: Dictionary = faction.get("marksman", {})
-	if marksman.is_empty() or roll >= float(marksman.get("squad_chance", 0.0)):
+## The gear a squad's `role` ("marksman", "gunner") wears, or empty when this squad has none:
+## a faction with that role in its data (`squad_chance`, and `gear` worn instead of the
+## faction's in those slots) brings one when `roll` (0 to 1) is under the chance.
+static func role_gear(faction: Dictionary, role: String, roll: float) -> Dictionary:
+	var entry: Dictionary = faction.get(role, {})
+	if entry.is_empty() or roll >= float(entry.get("squad_chance", 0.0)):
+		return {}
+	return _worn_by(faction, role)
+
+
+## Whether a soldier of `faction` wearing `gear` is its gunner: the gear its gunners wear.
+## Known from the gear so the role needn't travel with the spawn to clients, who never use it.
+static func is_gunner(faction: Dictionary, gear: Variant) -> bool:
+	var theirs := _worn_by(faction, "gunner")
+	return not theirs.is_empty() and gear is Dictionary and gear == theirs
+
+
+static func _worn_by(faction: Dictionary, role: String) -> Dictionary:
+	var entry: Dictionary = faction.get(role, {})
+	if entry.is_empty():
 		return {}
 	var gear: Dictionary = (faction.get("gear", {}) as Dictionary).duplicate()
-	gear.merge(marksman.get("gear", {}), true)
+	gear.merge(entry.get("gear", {}), true)
 	return gear
 
 
@@ -326,7 +344,7 @@ func _set_up(enemy: PlayerController, home: Vector3, info: Dictionary = {}) -> v
 	var spawned := {"player": enemy, "local": false, "npc": true}
 	if faction.has("gear"):
 		spawned["gear"] = faction["gear"]
-	# A squad's marksman wears their own.
+	# A squad's marksman or gunner wears their own.
 	if info.has("gear"):
 		spawned["gear"] = info["gear"]
 	EventBus.publish(&"player.spawned", spawned)
@@ -341,6 +359,7 @@ func _set_up(enemy: PlayerController, home: Vector3, info: Dictionary = {}) -> v
 		brain.config = _leaning(faction)
 		brain.home = home
 		brain.keep_out = _camp
+		brain.gunner = is_gunner(faction, info.get("gear"))
 		if info.has("post_yaw"):
 			brain.post_yaw = float(info["post_yaw"])
 			brain.has_post = true

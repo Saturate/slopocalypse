@@ -100,6 +100,20 @@
     "pinned": 1.0,
     "pinned_aim_scale": 2.5
   },
+  "suppress": {
+    "_comment": "Server: a squad's gunner (factions.json gunner) whose foe, one it was firing on, ducks out of sight keeps firing at where it last saw them for seconds (#547): long bursts (burst_shots, tenths of a second of trigger, as burst_shots above) with pause_seconds between them, each think aimed at a fresh point up to spread_degrees off their chest there, so most rounds hit the cover. It fires through no wall closer than muzzle_clear_metres to its muzzle. While it does, squad mates within cover.bound_range move to cover without waiting their turn.",
+    "seconds": 4.0,
+    "spread_degrees": 5.0,
+    "burst_shots": [
+      10,
+      18
+    ],
+    "pause_seconds": [
+      0.3,
+      0.7
+    ],
+    "muzzle_clear_metres": 2.0
+  },
   "sleep": {
     "_comment": "Server: soldiers and civilians far from every player stop moving and thinking until one comes near (#514). They wake within distance metres of a player and sleep again past distance + margin; checked every check_seconds, and at once when a player turns up more than jump_metres from where they were (joining, respawning, getting out of a car). Keep distance at least data/net.json's relevance_distance + relevance_margin, so nobody a player is sent is asleep. A soldier with a target or under fire and an alarmed civilian stay awake anywhere.",
     "distance": 360.0,

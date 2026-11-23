@@ -20,6 +20,12 @@ extends Node
 ## while the others keep firing), then hides and peeks in turns; pinned, it stays down. A
 ## soldier who spots someone calls it out to squad mates within earshot.
 ##
+## A gunner (`gunner`, the soldier its faction gives the machine gun) does not wait when a foe
+## it was firing on ducks out of sight: for `suppress.seconds` it fires long bursts at where it
+## last saw them, wide on purpose, into the cover, so they keep their head down. That covers
+## its squad mates, who then move to cover without taking turns. It still won't fire into a
+## wall right in front of its own muzzle.
+##
 ## It never walks into the players' camp (`keep_out`): the part of a step that would take it
 ## in through the fence or gate is dropped, so it slides along the fence and a soldier
 ## chasing someone into the camp stops at the gate and fights from there; one already inside
@@ -48,6 +54,9 @@ var config: Dictionary = {}
 var home := Vector3.ZERO
 ## The players' camp, which it must not walk into; null lets it go anywhere.
 var keep_out: CampLayout
+
+## Set at spawn for a squad's gunner (see the class comment).
+var gunner := false
 
 ## A guard's post and route (see the class comment).
 var has_post := false
@@ -109,6 +118,11 @@ var _cover_search_in := 0.0
 var _settle_for := 0.0
 var _peeking := false
 var _peek_left := 0.0
+## The foe it last fired on (past its reaction time): only a foe it was fighting is suppressed,
+## not one it only heard.
+var _engaged_with: Node3D
+## Laying down suppressing fire this think; mirrored to the body's `suppressing` meta for mates.
+var _suppressing := false
 
 
 func _ready() -> void:
@@ -132,6 +146,10 @@ func _fear() -> Dictionary:
 
 func _suppression_cfg() -> Dictionary:
 	return config.get("suppression", {})
+
+
+func _suppress_cfg() -> Dictionary:
+	return config.get("suppress", {})
 
 
 ## Something on its mind (a foe, or fire it is still shaking off): it stays awake far from
@@ -193,8 +211,11 @@ func _physics_process(delta: float) -> void:
 	_think_in -= delta
 	if _think_in <= 0.0:
 		_think_in = think_every
+		_suppressing = false
 		_physics_tick(_since_think)
 		_since_think = 0.0
+		if body.get_meta(&"suppressing", false) != _suppressing:
+			body.set_meta(&"suppressing", _suppressing)
 	_carry_on(delta)
 	Prof.stop(&"enemies/enemy_brain:physics", prof)
 
@@ -237,7 +258,7 @@ func _carry_on(delta: float) -> void:
 		_burst_left -= delta
 		if _burst_left <= 0.0:
 			intent.fire = false
-			var pauses: Array = config["burst_pause_seconds"]
+			var pauses: Array = _suppress_cfg().get("pause_seconds", config["burst_pause_seconds"]) if _suppressing else config["burst_pause_seconds"]
 			_burst_pause = _rng.randf_range(float(pauses[0]), float(pauses[1]))
 
 
@@ -267,6 +288,7 @@ func _physics_tick(delta: float) -> void:
 	if seen != null:
 		if target != seen:
 			_seen_for = 0.0
+			_engaged_with = null
 			_call_out(seen)
 		target = seen
 		last_seen = seen.global_position
@@ -279,6 +301,7 @@ func _physics_tick(delta: float) -> void:
 		_lost_for += delta
 		if _lost_for > float(config["forget_seconds"]) or not is_instance_valid(target):
 			target = null
+			_engaged_with = null
 			state = State.PATROL
 			_goal = _patrol_point()
 		elif _lost_for > float(config["chase_seconds"]):
@@ -297,6 +320,8 @@ func _physics_tick(delta: float) -> void:
 	if state != State.PATROL and mood == Fortitude.FLEE:
 		_drop_cover()
 		_flee(delta, intent)
+	elif _wants_to_suppress():
+		_suppress(delta, intent)
 	elif state != State.PATROL and target != null and _use_cover(delta, intent):
 		pass
 	else:
@@ -406,6 +431,7 @@ func _fight(delta: float, intent: PlayerIntent) -> void:
 	_turn_to(want.x + _error.x * spread, want.y + _error.y * spread, delta)
 	if _seen_for < float(config["reaction_seconds"]):
 		return
+	_engaged_with = target
 	var on_target := absf(angle_difference(_yaw, want.x)) < ON_TARGET + spread and absf(_pitch - want.y) < ON_TARGET + spread
 	if _burst_pause > 0.0:
 		_burst_pause -= delta
@@ -418,6 +444,53 @@ func _fight(delta: float, intent: PlayerIntent) -> void:
 	# The burst counts down a tick at a time (`_carry_on`), so it lasts as long at any rate.
 	if on_target and clear_shot(target):
 		intent.fire = true
+
+
+## A gunner whose foe, one it was firing on, went out of sight less than `suppress.seconds`
+## ago. Not while pinned (it keeps its own head down) or on a ladder.
+func _wants_to_suppress() -> bool:
+	return gunner and state == State.CHASE and is_instance_valid(target) and target == _engaged_with \
+		and not target.get_meta(&"dead", false) and _lost_for <= float(_suppress_cfg().get("seconds", 0.0)) and not is_pinned() and not body.climbing
+
+
+## Long bursts at where it last saw its foe, each think aimed at a fresh point within
+## `suppress.spread_degrees` of their chest there, so the stream walks over the cover. No
+## `clear_shot`: hitting the cover is the point.
+func _suppress(delta: float, intent: PlayerIntent) -> void:
+	var cfg := _suppress_cfg()
+	_suppressing = true
+	# Standing its ground to fire, it is not the mate on the move.
+	if body.get_meta(&"moving_to_cover", false):
+		body.set_meta(&"moving_to_cover", false)
+	intent.move = Vector2.ZERO
+	# Up from behind its own cover, so the rounds go over it.
+	intent.crouch = false
+	intent.aim = true
+	var aim_at := last_seen + Vector3.UP * CHEST
+	var want := look_angles(_eye(), aim_at)
+	var spread := deg_to_rad(float(cfg.get("spread_degrees", 5.0)))
+	# Within a circle, so no round is aimed further off than the spread.
+	_error = Vector2.from_angle(_rng.randf() * TAU) * sqrt(_rng.randf())
+	_turn_to(want.x + _error.x * spread, want.y + _error.y * spread, delta)
+	if _burst_pause > 0.0:
+		_burst_pause -= delta
+		return
+	if _burst_left <= 0.0:
+		var shots: Array = cfg.get("burst_shots", config["burst_shots"])
+		# Seconds of trigger, as in `_fight`.
+		_burst_left = float(_rng.randi_range(int(shots[0]), int(shots[1]))) * 0.1
+	var on_target := absf(angle_difference(_yaw, want.x)) < ON_TARGET + spread and absf(_pitch - want.y) < ON_TARGET + spread
+	if on_target and muzzle_clear(aim_at):
+		intent.fire = true
+
+
+## Whether the first `suppress.muzzle_clear_metres` past the muzzle towards `at` are open: a
+## gunner may fire into its foe's cover, never into the wall it stands at itself. Checked from
+## the eye, since the muzzle can already poke through a wall it stands close to.
+func muzzle_clear(at: Vector3) -> bool:
+	var eye := _eye()
+	var reach := minf(float(_suppress_cfg().get("muzzle_clear_metres", 2.0)) + MUZZLE_AHEAD, eye.distance_to(at))
+	return not _blocked(eye, eye + (at - eye).normalized() * reach, PhysicsLayers.SOLID)
 
 
 ## Where to look; `_turn` gets there a tick at a time.
@@ -753,13 +826,21 @@ func _drop_cover() -> void:
 		body.set_meta(&"moving_to_cover", false)
 
 
+## Whether a squad mate close by is on the move, so it waits its turn. Not while a gunner
+## close by is laying down suppressing fire: that covers everyone's move at once (its own
+## side's gunner; a rival's fire covers nobody here).
 func _mate_moving() -> bool:
 	var reach := float(_cover_cfg().get("bound_range", 15.0))
+	var side := HitscanWeapon.team_of(body)
+	var moving := false
 	for node: Node in get_tree().get_nodes_in_group(&"enemies"):
 		var mate := node as Node3D
-		if mate != null and mate != body and mate.get_meta(&"moving_to_cover", false) and not mate.get_meta(&"dead", false) and mate.global_position.distance_to(body.global_position) < reach:
-			return true
-	return false
+		if mate == null or mate == body or mate.get_meta(&"dead", false) or mate.global_position.distance_to(body.global_position) >= reach:
+			continue
+		if mate.get_meta(&"suppressing", false) and HitscanWeapon.team_of(mate) == side:
+			return false
+		moving = moving or bool(mate.get_meta(&"moving_to_cover", false))
+	return moving
 
 
 ## Whether a body crouched at `spot` is hidden from someone standing at `threat`.
