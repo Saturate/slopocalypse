@@ -3,8 +3,9 @@
 // Reads trailer/<name>.json, renders every shot with Godot's Movie Maker (a real window, fixed
 // frame rate, so nothing drops however slow), then ffmpeg trims, fades, joins and encodes:
 // build/trailer/<name>.mp4, and build/trailer/<name>.gif when the list asks for one.
+// Stills in the list are saved as build/trailer/<name>-<still>.png from their shot.
 // --only N renders just shot N (to tune it). Needs ffmpeg: node tools/get-ffmpeg.ts.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { argv, exit, platform } from "node:process";
 import { GODOT_NOISE } from "./lib/gate.ts";
@@ -12,7 +13,7 @@ import { ffmpegBin } from "./lib/ffmpeg.ts";
 import { localGodot } from "./lib/godot.ts";
 import { scanLog } from "./lib/log-scan.ts";
 import { run } from "./lib/proc.ts";
-import { concatList, gifArgs, godotArgs, joinArgs, parseShotList, segmentArgs, totalSeconds } from "./lib/trailer.ts";
+import { concatList, gifArgs, godotArgs, joinArgs, leadInSeconds, parseShotList, segmentArgs, stillArgs, totalSeconds } from "./lib/trailer.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -36,16 +37,30 @@ async function main(): Promise<void> {
 		if (shot === undefined) continue;
 		const movie = join(out, `shot_${i}.avi`);
 		const segment = join(out, `segment_${i}.mp4`);
+		const startFile = join(out, `shot_${i}.start`);
+		rmSync(startFile, { force: true });
 		console.log(`  shot ${i}: ${shot.title ?? shot.setup} (${shot.seconds} s)`);
-		const r = await run(godot, godotArgs(root, list, shot, movie), { cwd: root, timeoutMs: 600_000 });
+		const r = await run(godot, godotArgs(root, list, shot, movie, startFile), { cwd: root, timeoutMs: 600_000 });
 		// Quitting mid-scene leaves engine resources the exit reports as leaked: harmless here.
 		const problems = scanLog(r.output, GODOT_NOISE).filter((l) => !/leaked at exit/.test(l));
 		if (r.code !== 0 || problems.length > 0 || !existsSync(movie)) {
 			throw new Error(`shot ${i} failed (exit ${r.code}):\n${problems.slice(0, 20).join("\n") || r.output.slice(-2000)}`);
 		}
-		const f = await run(ffmpeg, segmentArgs(list, shot, movie, segment), { cwd: root, timeoutMs: 600_000 });
+		// The shot base logs when its camera's view of the subject is blocked (trees, hills).
+		for (const line of r.output.split(/\r?\n/).filter((l) => l.includes("trailer: camera"))) console.log(`    ${line.trim()}`);
+		const leadIn = leadInSeconds(existsSync(startFile) ? readFileSync(startFile, "utf8") : undefined, list.fps);
+		const f = await run(ffmpeg, segmentArgs(list, shot, movie, segment, leadIn), { cwd: root, timeoutMs: 600_000 });
 		if (f.code !== 0) throw new Error(`ffmpeg failed on shot ${i}:\n${f.output.slice(-2000)}`);
+		// The raw capture is uncompressed (hundreds of MB a shot); the segment is what is kept.
+		rmSync(movie, { force: true });
 		segments.push(segment);
+		for (const still of list.stills ?? []) {
+			if (still.shot !== i) continue;
+			const png = join(root, "build", "trailer", `${name}-${still.name}.png`);
+			const st = await run(ffmpeg, stillArgs(segment, still.at, png), { cwd: root, timeoutMs: 120_000 });
+			if (st.code !== 0) throw new Error(`ffmpeg could not take still ${still.name}:\n${st.output.slice(-2000)}`);
+			console.log(`    still: ${png}`);
+		}
 	}
 	if (only >= 0) {
 		console.log(`Shot ${only}: ${segments[0] ?? "nothing"}`);
