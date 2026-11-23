@@ -48,6 +48,8 @@ var _subject := Vector3.INF
 ## The thing being filmed, if it has collision of its own (a house): hits on it don't count.
 var subject_body: Node
 var _blocked_by := ""
+## Every circle `clear_line` has asked for in this shot.
+var _clear_circles: Array = []
 
 
 ## Override: the module ids this shot needs, in load order.
@@ -208,13 +210,11 @@ func clear_line(from: Vector3, to: Vector3, radius: float = 3.0) -> void:
 	var scenery := _find_scenery(get_tree().root)
 	if scenery == null:
 		return
-	var circles: Array = []
-	for c: Vector3 in scenery.get(&"_clearings"):
-		circles.append({"at": Vector3(c.x, 0.0, c.y), "radius": c.z})
 	var steps := maxi(1, ceili(from.distance_to(to) / (radius * 1.2)))
 	for i in steps + 1:
-		circles.append({"at": from.lerp(to, float(i) / float(steps)), "radius": radius})
-	scenery.call(&"set_clearings", circles)
+		_clear_circles.append({"at": from.lerp(to, float(i) / float(steps)), "radius": radius})
+	# Under its own owner so the missions' and the city's clearings stay as they are.
+	scenery.call(&"set_clearings_for", &"trailer", _clear_circles)
 
 
 func mission() -> Node:
@@ -225,13 +225,20 @@ func mission() -> Node:
 func start_mission(type: String) -> void:
 	var missions := mission()
 	var cfg: Dictionary = missions.get(&"config")
+	# Most mission templates only have a place at one of the generated map's sites, so the
+	# roll needs the sites the module read on world.ready.
+	var sites: Array = missions.get(&"sites")
+	var home: Vector3 = (get_tree().get_first_node_in_group(&"spawn_point") as Node3D).global_position
+	var chosen := false
 	for seed_value in 80:
-		var offers: Array = missions.call(&"roll_offers", cfg, seed_value)
+		var offers: Array = missions.call(&"roll_offers", cfg, seed_value, sites, home)
 		var found := offers.filter(func(o: Dictionary) -> bool: return o["type"] == type)
 		if not found.is_empty():
 			missions.set(&"offers", offers)
-			missions.call(&"server_choose", 1, offers.find(found[0]))
+			chosen = bool(missions.call(&"server_choose", 1, offers.find(found[0])))
 			break
+	if not chosen:
+		push_warning("trailer: no %s offer rolled; riding out on the board's first" % type)
 	missions.call(&"server_ride_out")
 
 

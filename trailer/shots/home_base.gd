@@ -1,6 +1,7 @@
 extends "res://trailer/shots/stage.gd"
 ## Trailer shot: home base. The camera glides down the tunnel past the mission board to the
-## transport car waiting further in.
+## transport car waiting further in. Written for the old tunnel camp; on the generated map the
+## camp is open ground and this framing looks down at grass until it is redone (#275).
 
 const EYE := 1.6
 const GLIDE := 330
