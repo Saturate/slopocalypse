@@ -73,6 +73,13 @@
       "bolt_handle": "bolt_std",
       "bolt_magazine": "mag_bolt_5",
       "optic": "opt_scope_8x"
+    },
+    "mg_standard": {
+      "receiver": "rcv_mg",
+      "heavy_barrel": "bar_mg_heavy",
+      "heavy_stock": "stk_mg",
+      "bipod": "bpd_mg",
+      "belt_box": "belt_mg_100"
     }
   },
   "parts": {
@@ -845,6 +852,128 @@
         "magnification": 8.0,
         "ergonomics": -14.0,
         "weight": 0.75
+      }
+    },
+    "rcv_mg": {
+      "name": "Belt-fed machine gun receiver, 7.62x51",
+      "slot": "receiver",
+      "mesh": "vox_mg_receiver",
+      "weapon_slot": "primary",
+      "provides": [
+        "heavy_barrel",
+        "heavy_stock",
+        "bipod",
+        "belt_box"
+      ],
+      "requires": [
+        "heavy_barrel",
+        "heavy_stock",
+        "bipod",
+        "belt_box"
+      ],
+      "mounts": {
+        "heavy_barrel": [
+          0.0,
+          0.035,
+          -0.17
+        ],
+        "heavy_stock": [
+          0.0,
+          0.02,
+          0.125
+        ],
+        "bipod": [
+          0.0,
+          0.015,
+          -0.42
+        ],
+        "belt_box": [
+          -0.03,
+          0.0,
+          -0.06
+        ]
+      },
+      "markers": {
+        "Sight": [
+          0.0,
+          0.1,
+          0.09
+        ],
+        "GripR": [
+          0.0,
+          -0.068,
+          0.117
+        ]
+      },
+      "stats": {
+        "rounds_per_minute": 900.0,
+        "damage": 32.0,
+        "spread_degrees": 2.4,
+        "recoil_pitch_degrees": 0.35,
+        "recoil_yaw_degrees": 0.3,
+        "reload_seconds": 6.0,
+        "ads_seconds": 0.4,
+        "ergonomics": 14.0,
+        "weight": 4.6
+      },
+      "ads_spread_multiplier": 0.35,
+      "braced_spread_multiplier": 0.25,
+      "draw_seconds": 1.1,
+      "move_speed_multiplier": 0.8
+    },
+    "bar_mg_heavy": {
+      "name": "Heavy quick-change barrel with carry handle",
+      "slot": "heavy_barrel",
+      "mesh": "vox_mg_barrel",
+      "provides": [],
+      "markers": {
+        "Muzzle": [
+          0.0,
+          0.0,
+          -0.56
+        ],
+        "GripL": [
+          -0.04,
+          -0.035,
+          -0.05
+        ]
+      },
+      "stats": {
+        "range": 300.0,
+        "ergonomics": -6.0,
+        "weight": 2.6
+      }
+    },
+    "stk_mg": {
+      "name": "Fixed machine gun stock",
+      "slot": "heavy_stock",
+      "mesh": "vox_mg_stock",
+      "provides": [],
+      "stats": {
+        "recoil_pct": -15.0,
+        "ergonomics": 4.0,
+        "weight": 0.9
+      }
+    },
+    "bpd_mg": {
+      "name": "Folding bipod",
+      "slot": "bipod",
+      "mesh": "vox_mg_bipod",
+      "provides": [],
+      "stats": {
+        "ergonomics": -4.0,
+        "weight": 0.6
+      }
+    },
+    "belt_mg_100": {
+      "name": "100 round 7.62x51 belt box",
+      "slot": "belt_box",
+      "mesh": "vox_mg_belt",
+      "provides": [],
+      "stats": {
+        "magazine": 100.0,
+        "ergonomics": -4.0,
+        "weight": 1.8
       }
     }
   },

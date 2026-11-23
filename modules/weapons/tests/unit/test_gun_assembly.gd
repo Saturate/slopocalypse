@@ -158,3 +158,60 @@ func test_the_bolt_actions_parts_are_voxel_meshes_in_their_own_space() -> void:
 	assert_float((model.get_node("Muzzle") as Node3D).position.z).is_less(-0.7)
 	for name: String in ["GripR", "GripL", "Sight", "BoltKnob"]:
 		assert_object(model.get_node_or_null(name)).override_failure_message(name).is_not_null()
+
+
+func test_the_machine_gun_is_a_heavy_belt_fed_automatic() -> void:
+	var slots := GunAssembly.build("mg_standard")
+	var result := GunAssembly.assemble_named("mg_standard")
+	assert_bool(result["ok"]).override_failure_message(str(result["errors"])).is_true()
+	var stats: Dictionary = result["stats"]
+	var rifle: Dictionary = GunAssembly.assemble_named("ar_standard")["stats"]
+	var receiver := GunAssembly.receiver_of(slots)
+	var feel: Dictionary = Data.load_json(HitscanWeapon.CONFIG)["rifle"]
+	# Fully automatic at about 900 rounds a minute from a 100-round belt.
+	assert_str(str(receiver.get("fire_mode", "auto"))).is_equal("auto")
+	assert_float(GunAssembly.cycle_seconds_of(slots, stats)).is_equal(0.0)
+	assert_float(stats["rounds_per_minute"]).is_between(850.0, 950.0)
+	assert_float(stats["magazine"]).is_equal(100.0)
+	# Hits harder than the rifle, reloads, draws and aims far slower.
+	assert_float(stats["damage"]).is_between(30.0, 35.0)
+	assert_float(stats["damage"]).is_greater(float(rifle["damage"]))
+	assert_float(stats["reload_seconds"]).is_between(5.0, 7.0)
+	assert_float(stats["ads_seconds"]).is_greater(float(rifle["ads_seconds"]) * 2.0)
+	assert_float(float(receiver["draw_seconds"])).is_greater(float(feel["draw_seconds"]) * 2.0)
+	# Wide from the hip, tight on the bipod; heavy enough to slow whoever has it out.
+	assert_float(stats["spread_degrees"]).is_greater(float(rifle["spread_degrees"]) * 2.0)
+	assert_float(float(receiver["braced_spread_multiplier"])).is_less(0.5)
+	assert_float(float(receiver["move_speed_multiplier"])).is_between(0.6, 0.95)
+	assert_float(stats["weight"]).is_greater(float(rifle["weight"]) * 2.0)
+
+
+func test_only_the_machine_gun_braces_or_slows() -> void:
+	var feel: Dictionary = Data.load_json(HitscanWeapon.CONFIG)["rifle"]
+	assert_float(float(feel["braced_spread_multiplier"])).is_equal(1.0)
+	assert_float(float(feel["move_speed_multiplier"])).is_equal(1.0)
+
+
+func test_the_machine_guns_voxel_parts_hang_where_the_receiver_mounts_them() -> void:
+	var receiver: Dictionary = GunAssembly.catalogue()["rcv_mg"]
+	var mounts: Dictionary = receiver["mounts"]
+	var by_slot := {"heavy_barrel": "barrel", "heavy_stock": "stock", "bipod": "bipod", "belt_box": "belt"}
+	for slot: String in by_slot:
+		var a: Array = mounts[slot]
+		assert_vector(Vector3(a[0], a[1], a[2])).override_failure_message(slot).is_equal_approx(VoxMachineGun.MOUNTS[by_slot[slot]], Vector3.ONE * 0.0001)
+	# The hands go where the model has a grip and a handle.
+	var grip: Array = receiver["markers"]["GripR"]
+	assert_vector(Vector3(grip[0], grip[1], grip[2])).is_equal_approx(VoxMachineGun.GRIP, Vector3.ONE * 0.0001)
+	var handle: Array = GunAssembly.catalogue()["bar_mg_heavy"]["markers"]["GripL"]
+	assert_vector(Vector3(handle[0], handle[1], handle[2]) + VoxMachineGun.MOUNTS["barrel"]).is_equal_approx(VoxMachineGun.HANDLE, Vector3.ONE * 0.0001)
+	var sight: Array = receiver["markers"]["Sight"]
+	assert_float(float(sight[1])).is_equal_approx(VoxMachineGun.SIGHT_LINE, 0.0001)
+	var model: Node3D = auto_free(GunAssembly.build_model(GunAssembly.build("mg_standard")))
+	add_child(model)
+	assert_float((model.get_node("Muzzle") as Node3D).position.z).is_equal_approx(-0.17 - VoxMachineGun.BARREL_LENGTH, 0.001)
+	for name: String in ["GripR", "GripL", "Sight", "Muzzle"]:
+		assert_object(model.get_node_or_null(name)).override_failure_message(name).is_not_null()
+	for slot: String in GunAssembly.build("mg_standard"):
+		var part := model.get_node_or_null(slot) as MeshInstance3D
+		assert_object(part).override_failure_message(slot).is_not_null()
+		assert_int(GunPartMeshes.triangles(part.mesh)).override_failure_message(slot).is_greater(0)

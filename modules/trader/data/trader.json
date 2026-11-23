@@ -24,6 +24,10 @@
       "price": 60
     },
     {
+      "item": "gun_mg",
+      "price": 90
+    },
+    {
       "item": "medkit",
       "price": 10
     },
@@ -146,6 +150,10 @@
     {
       "item": "opt_scope_8x",
       "price": 60
+    },
+    {
+      "item": "belt_mg_100",
+      "price": 20
     }
   ]
 }

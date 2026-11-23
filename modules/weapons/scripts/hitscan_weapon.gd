@@ -21,6 +21,8 @@ const REQUIRED := {
 	"recoil_recovery": TYPE_FLOAT,
 	"recoil_recovery_share": TYPE_FLOAT,
 	"ads_spread_multiplier": TYPE_FLOAT,
+	"braced_spread_multiplier": TYPE_FLOAT,
+	"braced_max_speed": TYPE_FLOAT,
 	"ads_zoom": TYPE_FLOAT,
 }
 
@@ -176,7 +178,9 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 		return
 	if not rules.try_fire():
 		return
-	var spread := rules.last_spread() * spread_scale(holder != null and holder.intent().aim)
+	# The roll is seeded in the rules; how the holder stands only scales it, so it stays a
+	# pure function of the seed and the synced intent.
+	var spread := rules.last_spread() * spread_scale(holder != null and holder.intent().aim, is_braced())
 	# Clients don't run the rules, so the effects learn from here whether a bolt follows.
 	var cycles := rules.is_cycling()
 	var basis := Basis.looking_at(direction)
@@ -233,9 +237,21 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 
 ## How much of the gun's spread a shot gets: all of it from the hip, `ads_spread_multiplier`
 ## of it aimed (a bolt-action's receiver sets its own, far smaller, so it is only accurate
-## through the scope).
-func spread_scale(aimed: bool) -> float:
-	return float(stats["ads_spread_multiplier"]) if aimed else 1.0
+## through the scope), times `braced_spread_multiplier` when braced (a machine gun on its
+## bipod; 1 for guns that gain nothing from it).
+func spread_scale(aimed: bool, braced: bool = false) -> float:
+	var scale := float(stats["ads_spread_multiplier"]) if aimed else 1.0
+	if braced:
+		scale *= float(stats["braced_spread_multiplier"])
+	return scale
+
+
+## Crouched and still on the ground: the gun rests on something, so it shoots tighter. Not
+## while creeping along faster than `braced_max_speed`, sliding, or in the air.
+func is_braced() -> bool:
+	if holder == null or not holder.intent().crouch or holder.is_sliding() or not holder.grounded():
+		return false
+	return holder.horizontal_speed() <= float(stats["braced_max_speed"])
 
 
 ## How many times one round may go on through something (weapons.json).

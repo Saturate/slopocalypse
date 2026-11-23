@@ -114,6 +114,15 @@ func test_aiming_down_sights_slows_down_and_blocks_sprint() -> void:
 	assert_float(_player.horizontal_speed()).is_equal_approx(expected, expected * 0.1)
 
 
+func test_a_heavy_load_in_the_hands_slows_walking() -> void:
+	await _landed()
+	_player.carry_speed_multiplier = 0.8
+	_player.intent().move = Vector2(0.0, 1.0)
+	await get_tree().create_timer(1.0).timeout
+	var expected: float = float(_player.config["walk_speed"]) * 0.8
+	assert_float(_player.horizontal_speed()).is_equal_approx(expected, expected * 0.08)
+
+
 func test_leaning_moves_the_eye_out_to_the_side() -> void:
 	await _landed()
 	_player.intent().lean = 1
