@@ -21,11 +21,9 @@ Running notes: playtest feedback, findings, known issues and ideas for later. De
 ## Known issues
 
 - Who is who (#447, agent playtest with a server and two clients, day and night): the partner marker, armbands, colour-blind switch and glowsticks all work in a real session; crack, stow, show, drop and burn-out reach the other client within a frame or two, and soldiers put their sticks away as soon as shots are fired near them. What feels off:
-  - Your own lit stick floods the gun and the ground in front of you with flat, saturated blue. It reads as a tint over the screen, not as light from your chest.
   - A patrolling soldier's stick at 40 to 60 m is one to three coloured pixels at 960x540; a fresh reviewer could not pick the soldiers out. Patrols do not read as "lights moving out there" yet.
   - A partner 7 m away in plain view has no visible marker (the faint value plus the near fade), and at 8 m at night the marker text is dark and hard to read over the glow.
   - At 2 m the partner's bands look like blocks standing off the shoulders.
-  - A dropped stick shows as a glow pool with no stick shape in it.
 - Gore: limbs taken off while Blood was on stay off if Blood is turned off and on again, but their stump caps are removed and not put back (#387).
 
 - Car chase camera is rigidly parented to the car, so speed and turns are hard to read (visual review, #8). A smoothed follow camera with lag and FOV kick is a candidate after the Checkpoint A playtest.

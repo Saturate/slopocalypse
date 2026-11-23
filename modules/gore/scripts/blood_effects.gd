@@ -248,5 +248,9 @@ static func keep_blood_off(node: Node) -> void:
 
 ## Off the default layer, which marks paint, and onto the one they leave alone
 ## (RenderLayers.NO_DECALS). Only drawn geometry: a light's layers decide what it lights.
+## Your own first-person arms and gun are already on a layer marks skip, and must stay off
+## the others (RenderLayers.FIRST_PERSON).
 static func keep_clean(mesh: GeometryInstance3D) -> void:
+	if mesh.layers & RenderLayers.FIRST_PERSON:
+		return
 	mesh.layers = (mesh.layers | RenderLayers.NO_DECALS) & ~RenderLayers.DEFAULT
