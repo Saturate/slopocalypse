@@ -11,6 +11,11 @@ extends Node
 ## a sleeper that hears a shot, a blast or a squad mate's call wakes at once (`wake`), so a
 ## fight started far from players (soldiers of two factions) plays out.
 ##
+## Awake soldiers think at a rate set here (`EnemyBrain.set_think_every`, data `think`):
+## `near_seconds` apart within `near_metres` of a player, `view_seconds` apart where a player
+## faces them, `far_seconds` apart otherwise. Between thinks a body carries on with what it
+## last decided, like a person's reaction time (#546).
+##
 ## A player in a car counts where the car is (their own body stays parked where they got in).
 ## A player turning up somewhere new (joining, respawning, getting out of a car) is checked
 ## at once rather than at the next sweep, so nobody is sent a sleeper.
@@ -21,6 +26,11 @@ var distance := 360.0
 var margin := 40.0
 var every := 0.5
 var jump := 10.0
+var near := 40.0
+var near_seconds := 0.1
+var view_cos := cos(deg_to_rad(60.0))
+var view_seconds := 0.25
+var far_seconds := 1.0
 var _since := 0.0
 ## Where the players were at the last sweep.
 var _swept_at: Array[Vector3] = []
@@ -36,6 +46,13 @@ func _ready() -> void:
 		margin = float(cfg["margin"])
 		every = float(cfg["check_seconds"])
 		jump = float(cfg["jump_metres"])
+	var think: Dictionary = (data as Dictionary).get("think", {})
+	if Data.require(CONFIG, think, {"near_metres": TYPE_FLOAT, "near_seconds": TYPE_FLOAT, "view_degrees": TYPE_FLOAT, "view_seconds": TYPE_FLOAT, "far_seconds": TYPE_FLOAT}):
+		near = float(think["near_metres"])
+		near_seconds = float(think["near_seconds"])
+		view_cos = cos(deg_to_rad(float(think["view_degrees"]) / 2.0))
+		view_seconds = float(think["view_seconds"])
+		far_seconds = float(think["far_seconds"])
 
 
 ## Whether one `nearest` metres from the closest player (INF with nobody there) sleeps:
@@ -58,6 +75,31 @@ static func moved(before: Array[Vector3], now: Array[Vector3], jump_m: float) ->
 		if before[i].distance_to(now[i]) > jump_m:
 			return true
 	return false
+
+
+## Seconds between an awake soldier's thinks, standing at `at`: `near_s` within `near_m` of
+## a spot in `spots`, `view_s` when a player there faces it (`facing`: their flat forward,
+## within the half-angle whose cosine is `view_cos`), `far_s` otherwise.
+static func think_every(at: Vector3, spots: Array[Vector3], facing: Array[Vector3], near_m: float, near_s: float, view_cos_half: float, view_s: float, far_s: float) -> float:
+	var out := far_s
+	for i in spots.size():
+		var to := Vector3(at.x - spots[i].x, 0.0, at.z - spots[i].z)
+		if to.length() <= near_m:
+			return near_s
+		if facing[i].dot(to.normalized()) >= view_cos_half:
+			out = view_s
+	return out
+
+
+## Each player's flat forward, in the order of `player_spots`.
+func player_facing() -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	for p: Node in get_tree().get_nodes_in_group(&"players"):
+		var player := p as Node3D
+		if player != null:
+			var forward := -player.global_basis.z
+			out.append(Vector3(forward.x, 0.0, forward.z).normalized())
+	return out
 
 
 ## Stops `body` and its brain where they stand. Its intent is let go first, so its gun does
@@ -115,6 +157,7 @@ func update() -> void:
 
 func _sweep(spots: Array[Vector3]) -> void:
 	_swept_at = spots
+	var facing := player_facing()
 	for group: StringName in [&"enemies", &"civilians"]:
 		for node: Node in get_tree().get_nodes_in_group(group):
 			var body := node as PlayerController
@@ -129,5 +172,7 @@ func _sweep(spots: Array[Vector3]) -> void:
 			var busy := brain.has_method(&"busy") and bool(brain.call(&"busy"))
 			if not busy and sleeps(is_asleep(body), nearest, distance, margin):
 				put_to_sleep(body)
-			else:
-				wake(body)
+				continue
+			wake(body)
+			if brain is EnemyBrain:
+				(brain as EnemyBrain).set_think_every(think_every(body.global_position, spots, facing, near, near_seconds, view_cos, view_seconds, far_seconds))

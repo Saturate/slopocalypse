@@ -67,6 +67,14 @@ var _rival_scan_in := randf() * RIVAL_SCAN_SECONDS
 var _factions: Node
 var target: Node3D
 var last_seen := Vector3.ZERO
+## Seconds between thinks (`set_think_every`; 0 is every tick). Between them its body goes
+## on with what it last decided (walking, firing) and turns towards where it last chose to
+## look, so the gap reads as reaction time. Looking round for foes is most of a think's cost.
+var think_every := 0.0
+var _think_in := 0.0
+var _since_think := 0.0
+var _want_yaw := 0.0
+var _want_pitch := 0.0
 
 var _rng := RandomNumberGenerator.new()
 var _yaw := 0.0
@@ -97,6 +105,7 @@ func _ready() -> void:
 	_rng.randomize()
 	fortitude_start = Fortitude.roll(_fear(), _rng)
 	_yaw = body.rotation.y
+	_want_yaw = _yaw
 	_goal = route[0] if not route.is_empty() else home
 	EventBus.subscribe(&"weapon.fired", _on_shot_heard)
 	EventBus.subscribe(&"explosion", _on_explosion)
@@ -130,6 +139,8 @@ func is_patrolling() -> bool:
 
 ## Wakes it if it was asleep (BrainSleep): something happened to it.
 func _stir() -> void:
+	# Something happened to it: it thinks on the next tick, whatever its rate.
+	_think_in = 0.0
 	if BrainSleep.is_asleep(body):
 		BrainSleep.wake(body)
 
@@ -166,8 +177,37 @@ static func aim_error(seen_for: float, widest: float, tightest: float, settle_se
 
 func _physics_process(delta: float) -> void:
 	var prof := Prof.start()
-	_physics_tick(delta)
+	_since_think += delta
+	_think_in -= delta
+	if _think_in <= 0.0:
+		_think_in = think_every
+		_physics_tick(_since_think)
+		_since_think = 0.0
+	_turn(delta)
 	Prof.stop(&"enemies/enemy_brain:physics", prof)
+
+
+## How often it thinks: more often while players are near or looking its way (BrainSleep
+## sets it). Sooner takes effect at once; later, from a random point, so brains spread
+## their thinking over the ticks.
+func set_think_every(seconds: float) -> void:
+	if seconds < think_every:
+		_think_in = minf(_think_in, seconds)
+	elif seconds > think_every:
+		_think_in = _rng.randf() * seconds
+	think_every = seconds
+
+
+## Every tick: the head turns at its turn speed towards where the last think chose to look.
+func _turn(delta: float) -> void:
+	if surrendered or body.get_meta(&"dead", false):
+		return
+	var step := float(config["turn_speed"]) * delta
+	_yaw += clampf(angle_difference(_yaw, _want_yaw), -step, step)
+	_pitch = move_toward(_pitch, _want_pitch, step)
+	var intent := body.intent()
+	intent.look_yaw = _yaw
+	intent.look_pitch = _pitch
 
 
 func _physics_tick(delta: float) -> void:
@@ -337,10 +377,10 @@ func _fight(delta: float, intent: PlayerIntent) -> void:
 			_burst_pause = _rng.randf_range(float(pauses[0]), float(pauses[1]))
 
 
-func _turn_to(yaw: float, pitch: float, delta: float) -> void:
-	var step := float(config["turn_speed"]) * delta
-	_yaw += clampf(angle_difference(_yaw, yaw), -step, step)
-	_pitch = move_toward(_pitch, clampf(pitch, -1.2, 1.2), step)
+## Where to look; `_turn` gets there a tick at a time.
+func _turn_to(yaw: float, pitch: float, _delta: float) -> void:
+	_want_yaw = yaw
+	_want_pitch = clampf(pitch, -1.2, 1.2)
 
 
 ## Everyone this soldier might fight: players, and other soldiers (only those of a faction
@@ -404,21 +444,24 @@ func _find_target() -> Node3D:
 	var cone := float(config["sight_cone_degrees"])
 	for node: Node in _foes():
 		var player := node as Node3D
-		if player == null or player == body or player.get_meta(&"dead", false) or not player.is_visible_in_tree():
-			continue
-		if not is_hostile(player):
+		if player == null:
 			continue
 		var chest := player.global_position + Vector3.UP * CHEST
-		var d := eye.distance_to(chest)
-		if d > best_d:
-			continue
 		# Something already being fought is tracked all round, not only ahead.
 		if player != target and not in_cone(eye, _yaw, chest, cone):
 			continue
-		if _clear_line(eye, chest, player):
+		if _sees(player, eye, best_d):
 			best = player
-			best_d = d
+			best_d = eye.distance_to(chest)
 	return best
+
+
+## Whether it sees `who` (a living, hostile foe) from `eye` within `reach` metres.
+func _sees(who: Node3D, eye: Vector3, reach: float) -> bool:
+	if who == body or who.get_meta(&"dead", false) or not who.is_visible_in_tree() or not is_hostile(who):
+		return false
+	var chest := who.global_position + Vector3.UP * CHEST
+	return eye.distance_to(chest) <= reach and _clear_line(eye, chest, who)
 
 
 func _clear_line(from: Vector3, to: Vector3, wanted: Node) -> bool:

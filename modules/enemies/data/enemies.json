@@ -107,6 +107,14 @@
     "check_seconds": 0.5,
     "jump_metres": 10.0
   },
+  "think": {
+    "_comment": "Server: how often an awake soldier thinks (#546). Between thinks its body goes on with what it last decided and turns towards where it chose to look, like reaction time; a shot, a blast or a callout makes it think on the next tick. near_seconds apart within near_metres of a player; view_seconds apart when a player faces it (inside view_degrees, the whole width round their forward); far_seconds apart otherwise. Set by the sleep check, every sleep.check_seconds.",
+    "near_metres": 40.0,
+    "near_seconds": 0.1,
+    "view_degrees": 120.0,
+    "view_seconds": 0.25,
+    "far_seconds": 0.5
+  },
   "civilians": {
     "_comment": "Unarmed people in the city (#342): walk_share (share of walking speed when strolling), stroll_radius (metres around home they wander), pause_seconds (how long they stop between strolls), hearing_range (gunfire or a blast this close alarms them), freeze_share (share who crouch where they stand instead of running), calm_seconds (quiet before they stroll again), max_health, clothes (body tints, [r, g, b], picked per person).",
     "walk_share": 0.45,

@@ -1,7 +1,8 @@
 extends Node3D
 ## Capture setup: first person, a squad of three enemy soldiers 12 m ahead turning to
 ## face the player and opening fire (tracers), the HUD showing the hits. Run it with
-## --frames 400: the squad takes a few seconds to spot the player and turn.
+## --frames 400: the squad takes a few seconds to spot the player and turn. They think as
+## often as a real server lets soldiers this near a player.
 
 const WORLD := "res://modules/world/scenes/world.tscn"
 const PLAYER := "res://modules/player/scenes/player.tscn"
@@ -34,4 +35,8 @@ func _ready() -> void:
 	var hud := PlayerHud.new()
 	hud.player = _player
 	_player.add_child(hud)
-	enemies.call(&"server_spawn_squad", 3, VoxelWorld.spawn_of(world, Vector3(2.0, 0.0, -12.0)))
+	var squad: Array[Node] = enemies.call(&"server_spawn_squad", 3, VoxelWorld.spawn_of(world, Vector3(2.0, 0.0, -12.0)))
+	# Think as often as a real server lets soldiers this near a player (BrainSleep's `think`).
+	var near_seconds := float(((Data.load_json(BrainSleep.CONFIG) as Dictionary)["think"] as Dictionary)["near_seconds"])
+	for body in squad:
+		(body.get_node("Brain") as EnemyBrain).set_think_every(near_seconds)
