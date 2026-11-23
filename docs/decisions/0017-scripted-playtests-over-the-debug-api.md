@@ -34,6 +34,15 @@ that run the real thing, check game state, and take screenshots a reviewer judge
 - The debug API gains `get` (any property, script variables too, as text and plain JSON) and
   `call`, which reaches only the methods in `DebugHandler.CALLS`, written as
   `<node under /root/Boot/Modules>:<method>`. A NodePath argument is handed over as the node.
+- Slice 2 (#537) adds: `walkTo` steers the server intent (`move` plus `look_yaw`) and waits on
+  distance over wall time, with a timeout of three times walking pace that fails with where the
+  player stuck; `fire` waits for the gun to be drawn, then pulls the trigger until at least that many rounds have left it (the owner's magazine count; an automatic gun may fire one or two more);
+  `health`, `damage` and `kill` go through `player:server_damage` (a hit with no shooter);
+  `ground` and `onGround` through `world:ground_height` (the untouched terrain, buildings not
+  in it). A per-client setting goes through its own `setting` method, not `call`: `Settings`
+  is a static class, not a module node. It takes only the keys in `DebugHandler.SETTINGS`, with
+  a value of the setting's own type, and never saves, since playtest clients share the
+  player's settings file.
 - Scenarios live in `tools/playtests/`, not in modules: they span modules, the TypeScript check
   already covers `tools/`, and the module layout stays as it is. A scenario declares the modules
   it is about (`needs`); with one switched off the run is skipped, not failed.

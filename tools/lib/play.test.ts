@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { Game as ApiGame } from "./debug-api.ts";
-import { apiForLog, float, ONE_SHOTS, godotValue, makeExpect, nodePath, parsePlayArgs, parseState, parseVec3, PlaytestFailure, PORT_BAND, preferredPort, Recorder, scanPlayLog, vec2, vec3, yawPitchTo } from "./play.ts";
+import { apiForLog, flatDistance, float, ONE_SHOTS, godotValue, roundsFired, SLOW_WITHIN_M, steer, WALK_SPEED, walkTimeoutMs, WEAPON_SLOTS, makeExpect, nodePath, parsePlayArgs, parseState, parseVec3, PlaytestFailure, PORT_BAND, preferredPort, Recorder, scanPlayLog, vec2, vec3, yawPitchTo } from "./play.ts";
 import { finalStatus, reportMarkdown, reviewMarkdown, summarisePerf, type Report } from "./play-report.ts";
 
 test("arguments: a scenario and options", () => {
@@ -149,8 +149,54 @@ test("the report has steps, shots, logs and perf; the review only shots and expe
 	assert.match(reviewMarkdown(report({ shots: [] }), "/r"), /no screenshots/);
 });
 
-test("the one-shot actions match PlayerIntent's", () => {
-	const gd = readFileSync(join(import.meta.dirname, "..", "..", "modules", "player", "scripts", "player_intent.gd"), "utf8");
+// A module's file, or undefined once that module is deleted (its sync test then skips).
+function moduleFile(...path: string[]): string | undefined {
+	const file = join(import.meta.dirname, "..", "..", "modules", ...path);
+	return existsSync(file) ? readFileSync(file, "utf8") : undefined;
+}
+
+test("the one-shot actions match PlayerIntent's", (t) => {
+	const gd = moduleFile("player", "scripts", "player_intent.gd");
+	if (gd === undefined) return t.skip("player module removed");
 	const line = /const ONE_SHOTS := \[(.*)\]/.exec(gd)?.[1] ?? "";
 	assert.deepEqual([...line.matchAll(/&"(\w+)"/g)].map((m) => m[1]), [...ONE_SHOTS]);
+});
+
+test("walking: face the target, ease off near it, stop within reach", () => {
+	const far = steer([0, 5, 0], [0, 0, -10], 1);
+	assert.ok(Math.abs(far.yaw) < 1e-9, "forward is -Z whatever the height");
+	assert.equal(far.forward, 1);
+	assert.equal(far.arrived, false);
+	assert.equal(far.distance, 10);
+	const near = steer([0, 0, 0], [SLOW_WITHIN_M / 2, 0, 0], 0.5);
+	assert.ok(near.forward > 0 && near.forward < 1);
+	assert.ok(Math.abs(near.yaw + Math.PI / 2) < 1e-9, "+X is a quarter turn right");
+	const there = steer([0, 0, 0], [0.5, 9, 0], 1);
+	assert.deepEqual([there.arrived, there.forward], [true, 0]);
+	assert.equal(flatDistance([0, 0, 0], [3, 100, 4]), 5);
+});
+
+test("a walk may take three times walking pace, never under 10 s", () => {
+	assert.equal(walkTimeoutMs(1), 10_000);
+	assert.equal(walkTimeoutMs(45, 4.5), 30_000);
+});
+
+test("rounds fired between magazine readings never go negative", () => {
+	assert.equal(roundsFired(30, 27), 3);
+	assert.equal(roundsFired(2, 30), 0, "a reload in between");
+	assert.equal(roundsFired(-1, 5), 0, "not heard from the server yet");
+});
+
+test("the weapon slots match the weapons module's", (t) => {
+	const gd = moduleFile("weapons", "weapons_module.gd");
+	if (gd === undefined) return t.skip("weapons module removed");
+	const line = /const WEAPON_SLOTS: Array\[String\] = \[(.*)\]/.exec(gd)?.[1] ?? "";
+	assert.deepEqual([...line.matchAll(/"(\w+)"/g)].map((m) => m[1]), [...WEAPON_SLOTS]);
+});
+
+test("the walking pace matches player.json", (t) => {
+	const json = moduleFile("player", "data", "player.json");
+	if (json === undefined) return t.skip("player module removed");
+	const data: unknown = JSON.parse(json);
+	assert.equal(typeof data === "object" && data !== null ? Reflect.get(data, "walk_speed") : undefined, WALK_SPEED);
 });

@@ -118,6 +118,18 @@ func is_ready_at(point: Vector3, radius: float) -> bool:
 	return _voxels == null or _voxels.is_ready_at(point, radius)
 
 
+## Height of the untouched ground at (x, z), from the world's height function (it answers
+## where no terrain is loaded too; buildings and digs are not in it), or null before a world
+## is loaded. Tools put people on the ground with it.
+func ground_height(x: float, z: float) -> Variant:
+	if not _loaded or not is_inside_tree():
+		return null
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	if ground == null or not ground.has_method(&"ground_height"):
+		return null
+	return float(ground.call(&"ground_height", x, z))
+
+
 ## Which world this instance plays, as a save keys it (#472): "flat", or the map's recipe, a
 ## hash of the recipe file (an edited recipe moves things) and its seed.
 func map_key() -> String:
