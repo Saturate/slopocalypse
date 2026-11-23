@@ -12,6 +12,8 @@ const STICK := "Glowstick"
 const CHEST_BONE := "Chest"
 ## Where the stick sits on a body without a skeleton, metres up from the feet.
 const CHEST_HEIGHT := 1.3
+## Every render layer; a light's cull mask starts as this.
+const ALL_LAYERS := 0xFFFFFFFF
 
 var config: Dictionary = {}
 
@@ -209,10 +211,14 @@ func _attach(person: Node3D, own: bool) -> Node3D:
 	if own:
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 		glow.visible = false
-	var light := _light(colour)
+	var light := _own_light(colour) if own else _light(colour, config["light"])
 	# Out in front of the vest, so the light falls on the ground and people round them.
 	light.position = mesh.position + Vector3(0.0, 0.0, -0.1)
 	holder.add_child(light)
+	if own:
+		var tint := _view_light(colour)
+		tint.position = light.position
+		holder.add_child(tint)
 	return holder
 
 
@@ -222,22 +228,25 @@ func _lay(at: Vector3, colour: Color) -> Node3D:
 	node.set_meta(&"colour", colour)
 	add_child(node)
 	node.global_position = at
-	var mesh := stick(config, colour, float(config["stick"]["glow"]))
+	var cfg: Dictionary = config["ground"]
+	# Dimmer than on the chest: at full glow the stick blooms into its halo and only a
+	# coloured blob reads, not a stick lying there.
+	var mesh := stick(config, colour, float(cfg["glow"]))
 	var size: Array = config["stick"]["size"]
-	mesh.rotation.x = PI / 2.0
-	mesh.position.y = float(size[0]) / 2.0
+	mesh.rotation = Vector3(PI / 2.0, deg_to_rad(float(cfg["turn"])), 0.0)
+	mesh.position.y = float(size[0]) / 2.0 + float(cfg["lift"])
 	node.add_child(mesh)
-	var glow := halo(config["stick"], colour)
-	glow.position.y = 0.1
+	var glow := halo(cfg, colour)
+	# Centred on the stick, not floating over it as a ball.
+	glow.position.y = mesh.position.y
 	node.add_child(glow)
-	var light := _light(colour)
+	var light := _light(colour, config["light"])
 	light.position.y = 0.2
 	node.add_child(light)
 	return node
 
 
-func _light(colour: Color) -> OmniLight3D:
-	var cfg: Dictionary = config["light"]
+func _light(colour: Color, cfg: Dictionary) -> OmniLight3D:
 	var light := OmniLight3D.new()
 	light.name = "Light"
 	light.light_color = colour
@@ -245,6 +254,32 @@ func _light(colour: Color) -> OmniLight3D:
 	light.omni_range = float(cfg["range"])
 	light.omni_attenuation = float(cfg["falloff"])
 	light.shadow_enabled = false
+	return light
+
+
+## Your own stick's light, as only you see it: a hand's width from your gun, the usual light
+## would wash the gun and the ground at your feet out in flat colour. It leaves your arms
+## and gun out (RenderLayers.FIRST_PERSON) and fades gently, so it lights a few metres of
+## ground evenly. Everyone else sees you lit by the usual one.
+func _own_light(colour: Color) -> OmniLight3D:
+	var light := _light(colour, config["own_light"])
+	light.light_cull_mask = ALL_LAYERS & ~RenderLayers.FIRST_PERSON
+	return light
+
+
+## A faint even tint on your own arms and gun only, so they still show the stick is lit.
+func _view_light(colour: Color) -> OmniLight3D:
+	var cfg: Dictionary = config["own_light"]
+	var light := OmniLight3D.new()
+	light.name = "ViewLight"
+	# Paler than the stick: the full colour on a dark gun reads as a navy silhouette.
+	light.light_color = colour.lerp(Color.WHITE, float(cfg["view_pale"]))
+	light.light_energy = float(cfg["view_energy"])
+	light.omni_range = float(cfg["view_range"])
+	# Even across the gun: no hot spot on the part nearest the chest.
+	light.omni_attenuation = 0.0
+	light.shadow_enabled = false
+	light.light_cull_mask = RenderLayers.FIRST_PERSON
 	return light
 
 
@@ -265,3 +300,7 @@ func _budget_lights() -> void:
 		lights.sort_custom(func(a: OmniLight3D, b: OmniLight3D) -> bool: return a.global_position.distance_squared_to(eye) < b.global_position.distance_squared_to(eye))
 	for i in lights.size():
 		lights[i].visible = i < limit
+		# Your own gun's tint goes with your own light.
+		var tint := lights[i].get_parent().get_node_or_null("ViewLight") as OmniLight3D
+		if tint != null:
+			tint.visible = lights[i].visible

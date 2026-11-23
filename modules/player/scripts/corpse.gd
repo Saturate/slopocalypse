@@ -19,7 +19,7 @@ const REQUIRED := {
 }
 const BONE_REQUIRED := {"size": TYPE_ARRAY, "centre": TYPE_ARRAY, "mass": TYPE_FLOAT, "swing": TYPE_FLOAT, "twist": TYPE_FLOAT}
 ## Parts of the living body a corpse has no use for: what animates it, aims it and holds the gun.
-const STRIP: Array[String] = ["AnimationTree", "AnimationPlayer", "Skeleton/Aim", "Skeleton/HandIK", "Skeleton/WeaponAttachment"]
+const STRIP: Array[String] = ["AnimationTree", "AnimationPlayer", "Skeleton/Aim", "Skeleton/HandIK", "Skeleton/WeaponAttachment", PlayerBody.FIRST_PERSON_LAYER]
 ## Meta on anything another module hangs on the living skeleton that the dead do not keep (a
 ## lit glowstick: the server lays its own on the ground).
 const LIVING_ONLY := &"living_only"
@@ -94,6 +94,12 @@ static func from_body(player: Node3D, push: Vector3, velocity := Vector3.ZERO) -
 			if geometry.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
 				geometry.material_override = null
 			geometry.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	# Your own arms sit on the first-person layer (the gun went with WeaponAttachment);
+	# dead, they are a body like any.
+	for mesh in copy.find_children("*", "GeometryInstance3D", true, false):
+		var geometry := mesh as GeometryInstance3D
+		if geometry.layers & RenderLayers.FIRST_PERSON:
+			geometry.layers = RenderLayers.NO_DECALS
 	_copy_pose(source, corpse.skeleton)
 	corpse._add_bones(cfg)
 	if player is PhysicsBody3D:

@@ -4,7 +4,8 @@ extends Node3D
 ## little further, one of them showing theirs; they turn slowly. With `-- --inside`, inside
 ## a closed plaster room (5 x 5 m, 2.6 m high) instead: a player with a lit stick near the
 ## back wall, who stows it from frame `STOW_FRAME` on, to show how much of the room it
-## lights (capture 300 frames, 4 to the sheet: two lit, two stowed).
+## lights (capture 300 frames, 4 to the sheet: two lit, two stowed). `-- --partner=30` puts
+## the partner that many metres off instead of 40.
 
 const WORLD := "res://modules/world/scenes/world.tscn"
 const PLAYER := "res://modules/player/scenes/player.tscn"
@@ -38,6 +39,10 @@ func clock() -> DayClock:
 func _ready() -> void:
 	add_to_group(&"daytime_api")
 	_indoors = OS.get_cmdline_user_args().has("--inside")
+	var partner_at := 40.0
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--partner="):
+			partner_at = float(arg.trim_prefix("--partner="))
 	var world := await VoxelWorld.add_and_wait(self, WORLD)
 	var terrain := world.get_node("Terrain") as VoxelWorld
 	var scenery := find_child("Scenery", true, false) as Node3D
@@ -78,7 +83,7 @@ func _ready() -> void:
 	_camera.look_at(target + Vector3.UP * 1.1)
 	_camera.add_child(terrain.make_viewer())
 
-	var partner := _player(2, VoxelWorld.spawn_of(world, Vector3(-4.0, 0.1, -40.0)))
+	var partner := _player(2, VoxelWorld.spawn_of(world, Vector3(-4.0, 0.1, -partner_at)))
 	inventory.call(&"server_give", 2, GlowstickRules.ITEM)
 	glowsticks.call(&"server_crack", 2)
 	_people.append(partner)

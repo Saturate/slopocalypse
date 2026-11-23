@@ -189,3 +189,17 @@ func test_a_shot_through_your_own_head_throws_no_drops_at_your_eyes() -> void:
 	assert_int(BloodEffects.spray_count(true, true, cfg)).is_equal(0)
 	assert_int(BloodEffects.spray_count(true, false, cfg)).is_equal(int(cfg["headshot_spray_count"]))
 	assert_int(BloodEffects.spray_count(false, true, cfg)).is_equal(int(cfg["spray_count"]))
+
+
+func test_your_own_first_person_gun_stays_on_its_layer_and_marks_skip_it() -> void:
+	PlayerBody.first_person(_player.get_node("Body"))
+	var gun := MeshInstance3D.new()
+	gun.mesh = BoxMesh.new()
+	PlayerBody.weapon_socket(_player).add_child(gun)
+	await get_tree().process_frame
+	assert_int(gun.layers).is_equal(RenderLayers.FIRST_PERSON)
+	BloodEffects.keep_clean(gun)
+	assert_int(gun.layers).is_equal(RenderLayers.FIRST_PERSON)
+	await _step()
+	_effects.on_fired(_shot(Vector3(0.0, 1.0, 0.35), _player, _player))
+	assert_int(gun.layers & _effects.marks.newest().cull_mask).is_equal(0)
