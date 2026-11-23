@@ -143,7 +143,12 @@ func test_a_squad_mates_callout_wakes_a_sleeper() -> void:
 
 
 func test_falling_asleep_mid_burst_stops_the_gun() -> void:
+	# The periodic sweep (every 0.5 s, as long as `_soldier` waits) could put it to sleep
+	# before the trigger is pulled; then `update` finds it asleep already and the test
+	# measures nothing. Only the explicit sweep below may do it.
+	_sleep.set_physics_process(false)
 	var enemy := await _soldier()
+	assert_bool(BrainSleep.is_asleep(enemy)).is_false()
 	enemy.intent().fire = true
 	_sleep.update()
 	var shots: Array = []
