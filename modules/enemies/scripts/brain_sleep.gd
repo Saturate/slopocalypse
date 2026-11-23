@@ -30,7 +30,7 @@ var near := 40.0
 var near_seconds := 0.1
 var view_cos := cos(deg_to_rad(60.0))
 var view_seconds := 0.25
-var far_seconds := 1.0
+var far_seconds := 0.5
 var _since := 0.0
 ## Where the players were at the last sweep.
 var _swept_at: Array[Vector3] = []

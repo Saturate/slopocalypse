@@ -255,3 +255,40 @@ func test_between_thinks_it_keeps_turning_towards_where_it_chose_to_look() -> vo
 	await _until(func() -> bool: return absf(angle_difference(brain._yaw, from + 1.0)) < 0.01, 1.0)
 	assert_float(absf(angle_difference(brain._yaw, from + 1.0))).is_less(0.01)
 	assert_float(enemy.intent().look_yaw).is_equal_approx(brain._yaw, 0.001)
+
+
+func test_between_thinks_it_walks_straight_to_where_it_chose_and_stops_there() -> void:
+	_sleep.set_physics_process(false)
+	var enemy := await _soldier()
+	var brain := _brain(enemy)
+	brain.set_think_every(100.0)
+	brain._think_in = 100.0
+	# It faces -Z and must turn to walk to the goal off to its right.
+	var start := enemy.global_position
+	var goal := start + Vector3(6.0, 0.0, 0.0)
+	brain._walking = true
+	brain._walk_goal = goal
+	brain._walk_speed = 1.0
+	brain._walk_stop = 0.0
+	var widest := 0.0
+	var until := Time.get_ticks_msec() + 4000
+	while Time.get_ticks_msec() < until:
+		await get_tree().physics_frame
+		widest = maxf(widest, absf(enemy.global_position.z - start.z))
+	var flat := Vector2(goal.x - enemy.global_position.x, goal.z - enemy.global_position.z)
+	assert_float(flat.length()).override_failure_message("did not stop at its goal").is_less(0.5)
+	# Turning while it walks bends the way a little, never into a loop or a swing past.
+	assert_float(widest).is_less(1.5)
+
+
+func test_a_burst_ends_on_time_between_thinks() -> void:
+	_sleep.set_physics_process(false)
+	var enemy := await _soldier()
+	var brain := _brain(enemy)
+	brain.set_think_every(100.0)
+	brain._think_in = 100.0
+	enemy.intent().fire = true
+	brain._burst_left = 0.3
+	await _until(func() -> bool: return not enemy.intent().fire, 1.0)
+	assert_bool(enemy.intent().fire).is_false()
+	assert_float(brain._burst_pause).is_greater(0.0)
