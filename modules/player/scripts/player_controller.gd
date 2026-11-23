@@ -109,6 +109,10 @@ var _ladder_into := Vector3.ZERO
 ## On a ladder, held to it with no gravity. Synced, so other screens show the climb instead
 ## of judging a body rising or sinking at climbing speed as falling.
 var climbing := false
+## Share of its usual pace the body keeps for what it carries in its hands (a heavy gun out),
+## set by whichever module put it there; 1 carries nothing that slows it. Swimming ignores it:
+## the gun is put away in the water.
+var carry_speed_multiplier := 1.0
 
 
 ## A copy of someone else's body on a client: it shows what the server sends and runs no
@@ -338,10 +342,11 @@ func _step_normal(delta: float) -> void:
 	elif _wants_sprint():
 		speed = config["sprint_speed"]
 		# Building up to a sprint takes a moment; slowing down stays snappy.
-		if horizontal_speed() >= float(config["walk_speed"]) - 0.1:
+		if horizontal_speed() >= float(config["walk_speed"]) * carry_speed_multiplier - 0.1:
 			build = config["sprint_acceleration"]
 	if _intent.aim:
 		speed *= float(config["ads_speed_multiplier"])
+	speed *= carry_speed_multiplier
 	if swimming:
 		speed = float(config["walk_speed"]) * float(config["swim_speed"])
 	elif depth > float(config["wade_depth"]):

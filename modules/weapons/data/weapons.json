@@ -28,6 +28,9 @@
     "recoil_recovery": 6.0,
     "recoil_recovery_share": 0.85,
     "ads_spread_multiplier": 0.25,
+    "braced_spread_multiplier": 1.0,
+    "braced_max_speed": 0.5,
+    "move_speed_multiplier": 1.0,
     "ads_zoom": 1.25,
     "draw_seconds": 0.35
   },

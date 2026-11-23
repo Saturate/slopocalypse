@@ -15,9 +15,14 @@ const WEAPON_SLOTS: Array[String] = ["primary", "secondary"]
 ## A bullet landing this close to a placed charge sets it off.
 const CHARGE_SHOT_RADIUS := 0.35
 ## Gun items and the default build each comes with.
-const GUN_ITEMS := {"gun_rifle": "primary", "gun_pistol": "secondary", "gun_rocket": "primary", "gun_bolt": "primary"}
+const GUN_ITEMS := {"gun_rifle": "primary", "gun_pistol": "secondary", "gun_rocket": "primary", "gun_bolt": "primary", "gun_mg": "primary"}
 ## Gun items that aren't their slot's default gun, with the build they come as.
-const ITEM_BUILDS := {"gun_rocket": "launcher", "gun_bolt": "bolt_standard"}
+const ITEM_BUILDS := {"gun_rocket": "launcher", "gun_bolt": "bolt_standard", "gun_mg": "mg_standard"}
+## How a gun handles that belongs to its receiver rather than adding up over parts: a
+## receiver that names one replaces the value from `weapons.json` (a bolt-action tightens
+## almost all its spread when aimed; a machine gun is slow to draw, tight on its bipod, and
+## slows whoever has it out).
+const RECEIVER_HANDLING: Array[String] = ["ads_spread_multiplier", "braced_spread_multiplier", "draw_seconds", "move_speed_multiplier"]
 
 var _charge_spawner := MultiplayerSpawner.new()
 var _rocket_spawner := MultiplayerSpawner.new()
@@ -394,6 +399,7 @@ func _unequip(player: PlayerController, slot: String) -> void:
 		camera.remove_child(old)
 		old.queue_free()
 	if drawn_slot(player) == slot:
+		player.carry_speed_multiplier = 1.0
 		var socket := PlayerBody.weapon_socket(player)
 		var held := socket.get_node_or_null("HeldRifle") if socket != null else null
 		if held != null:
@@ -447,10 +453,10 @@ func _equip(player: PlayerController, slots: Dictionary) -> void:
 		weapon.stats["damage"] = float(weapon.stats.get("damage", 0.0)) * float(player.get_meta(&"damage_scale"))
 	weapon.semi_auto = GunAssembly.receiver_of(slots).get("fire_mode", "auto") == "semi"
 	weapon.cycle_seconds = GunAssembly.cycle_seconds_of(slots, weapon.stats)
-	# A receiver can set how much aiming tightens its spread (a bolt-action: almost all of it).
 	var receiver := GunAssembly.receiver_of(slots)
-	if receiver.has("ads_spread_multiplier"):
-		weapon.stats["ads_spread_multiplier"] = float(receiver["ads_spread_multiplier"])
+	for key in RECEIVER_HANDLING:
+		if receiver.has(key):
+			weapon.stats[key] = float(receiver[key])
 	weapon.set_meta(&"build", slots)
 	camera.add_child(weapon)
 	if _is_copy(player):
@@ -480,6 +486,10 @@ func _hold(player: PlayerController, slot: String) -> void:
 	player.set_meta(&"drawn", slot)
 	var socket := PlayerBody.weapon_socket(player)
 	var weapon := player.get_node("Head/Camera").get_node_or_null("Weapon_" + slot) as HitscanWeapon
+	# The server and the owner's own prediction each set this when they draw the gun (the
+	# owner a round trip later, when the synced slot or build reaches it), so for that moment
+	# the owner may see a small snap in speed.
+	player.carry_speed_multiplier = carry_speed_of(weapon)
 	if socket == null or weapon == null:
 		return
 	var old_held := socket.get_node_or_null("HeldRifle")
@@ -509,6 +519,13 @@ func _hold(player: PlayerController, slot: String) -> void:
 	socket.add_child(held)
 	if player == _local_player and DisplayServer.get_name() != "headless":
 		_update_scope(player)
+
+
+## How much a drawn gun slows its holder's movement (1 for no gun out).
+static func carry_speed_of(weapon: HitscanWeapon) -> float:
+	if weapon == null:
+		return 1.0
+	return clampf(float(weapon.stats.get("move_speed_multiplier", 1.0)), 0.1, 1.0)
 
 
 func _physics_process(_delta: float) -> void:

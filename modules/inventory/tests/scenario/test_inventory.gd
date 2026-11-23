@@ -77,14 +77,25 @@ func test_a_full_backpack_refuses_more() -> void:
 	assert_bool(_module.call(&"server_give", 8, "hg_ar_long")).is_false()
 
 
-func test_both_rifles_fit_the_small_backpack() -> void:
+func test_every_long_gun_fits_the_small_backpack() -> void:
 	var data: Dictionary = Data.load_json("res://modules/inventory/data/items.json")
 	var items: Dictionary = data["items"]
 	var grid: Array = items["bag_small"]["grid"]
-	for gun: String in ["gun_rifle", "gun_bolt"]:
+	for gun: String in ["gun_rifle", "gun_bolt", "gun_mg"]:
 		var size: Array = items[gun]["size"]
 		var fits: bool = (size[0] <= grid[0] and size[1] <= grid[1]) or (size[1] <= grid[0] and size[0] <= grid[1])
 		assert_bool(fits).override_failure_message("%s (%s) does not fit a %s backpack" % [gun, size, grid]).is_true()
+
+
+func test_the_machine_gun_and_its_parts_fit_a_crate() -> void:
+	var data: Dictionary = Data.load_json("res://modules/inventory/data/items.json")
+	var items: Dictionary = data["items"]
+	var crate: Array = data["crates"]["grid"]
+	for id: String in ["gun_mg", "bar_mg_heavy", "stk_mg", "bpd_mg", "belt_mg_100"]:
+		assert_bool(items.has(id)).override_failure_message(id).is_true()
+		var size: Array = items[id]["size"]
+		assert_bool(int(size[0]) <= int(crate[0]) and int(size[1]) <= int(crate[1])).override_failure_message("%s %s" % [id, size]).is_true()
+	assert_str(str(items["belt_mg_100"]["kind"])).is_equal("magazine")
 
 
 func test_a_bolt_action_goes_into_an_empty_pack_and_comes_back_out() -> void:
