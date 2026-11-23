@@ -297,10 +297,10 @@ export function parseBenchArgs(args: readonly string[], known: readonly string[]
 		ablate: all || switches.has("ablate"),
 		all,
 		saveBaseline: switches.has("save-baseline"),
-		tolerance: Number(values.get("tolerance") ?? "0.15"),
+		tolerance: numberArg(values, "tolerance", "0.15"),
 		driver: values.get("driver"),
 		serverFlags: values.get("server-flags"),
-		crowd: Number(values.get("crowd") ?? "30"),
+		crowd: numberArg(values, "crowd", "30"),
 	};
 }
 
@@ -366,6 +366,27 @@ export function netCosts(records: readonly Record<string, unknown>[], warmupSeco
 		outPerPeer: Math.round(out / used.length),
 		sources: [...totals].map(([name, b]): [string, number] => [name, Math.round(b / used.length)]).sort((a, b) => b[1] - a[1]),
 	};
+}
+
+// A NaN tolerance would make every comparison pass, so a value that is not a number is an error.
+function numberArg(values: ReadonlyMap<string, string>, key: string, fallback: string): number {
+	const v = Number(values.get(key) ?? fallback);
+	if (!Number.isFinite(v)) throw new Error(`--${key} needs a number, not ${values.get(key)}`);
+	return v;
+}
+
+// The rendering driver a saved baseline was measured with ("" headless), undefined when the
+// file predates the field or is not a baseline. Numbers from two drivers do not compare.
+export function baselineDriver(text: string): string | undefined {
+	let data: unknown;
+	try {
+		data = JSON.parse(text);
+	} catch {
+		return undefined;
+	}
+	if (typeof data !== "object" || data === null) return undefined;
+	const v: unknown = Reflect.get(data, "driver");
+	return typeof v === "string" ? v : undefined;
 }
 
 // A baseline file's metrics: only the numbers it holds under a known metric's name. Undefined

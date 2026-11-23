@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ablationDeltas, budgetLine, parseBaseline, compare, moduleCosts, netCosts, parseBenchArgs, parsePerfLog, passesLine, renderingDriver, serverCost, summarise, worstSpikes, zoneCosts, type Summary } from "./bench.ts";
+import { ablationDeltas, baselineDriver, budgetLine, parseBaseline, compare, moduleCosts, netCosts, parseBenchArgs, parsePerfLog, passesLine, renderingDriver, serverCost, summarise, worstSpikes, zoneCosts, type Summary } from "./bench.ts";
 
 const log = [
 	'{"t":1,"frames":60,"frame_ms_mean":30,"frame_ms_p95":50,"frame_ms_max":90,"physics_nodes_ms":2,"physics_peak_ms":9,"memory_mb":100,"nodes":500}',
@@ -153,6 +153,8 @@ test("bench arguments: scenarios, all, ablate and options with values", () => {
 	assert.deepEqual(parseBenchArgs([], ["a", "b"]).scenarios, ["a", "b"]);
 	assert.throws(() => parseBenchArgs(["nope"], ["a"]), /unknown scenario nope/);
 	assert.throws(() => parseBenchArgs(["--tolerance"], ["a"]), /--tolerance needs a value/);
+	assert.throws(() => parseBenchArgs(["--tolerance", "abc"], ["a"]), /--tolerance needs a number/);
+	assert.throws(() => parseBenchArgs(["--crowd", "lots"], ["a"]), /--crowd needs a number/);
 });
 
 test("macOS benches with Vulkan unless told otherwise: Metal cannot time the GPU", () => {
@@ -166,4 +168,11 @@ test("a saved baseline keeps its numeric metrics; anything else in the file is d
 	assert.deepEqual(parseBaseline('{"samples":5,"frame_ms_mean":10,"gpu_ms":null,"nodes":"many","junk":1}'), { frame_ms_mean: 10 });
 	assert.equal(parseBaseline("not json"), undefined);
 	assert.equal(parseBaseline("[1,2]"), undefined);
+});
+
+test("a baseline says which driver measured it, so a run on another driver is not compared with it", () => {
+	assert.equal(baselineDriver('{"frame_ms_mean":10,"driver":"vulkan"}'), "vulkan");
+	assert.equal(baselineDriver('{"frame_ms_mean":10,"driver":""}'), "");
+	assert.equal(baselineDriver('{"frame_ms_mean":10}'), undefined);
+	assert.equal(baselineDriver("not json"), undefined);
 });

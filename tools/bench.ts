@@ -16,7 +16,7 @@ import { cpus, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { arch, argv, exit, platform } from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
-import { ablationDeltas, budgetLine, compare, parseBaseline, moduleCosts, netCosts, parseBenchArgs, parsePerfLog, passesLine, renderingDriver, serverCost, serverLine, summarise, table, worstSpikes, zoneCosts, type BenchArgs, type Summary } from "./lib/bench.ts";
+import { ablationDeltas, baselineDriver, budgetLine, compare, parseBaseline, moduleCosts, netCosts, parseBenchArgs, parsePerfLog, passesLine, renderingDriver, serverCost, serverLine, summarise, table, worstSpikes, zoneCosts, type BenchArgs, type Summary } from "./lib/bench.ts";
 import { renderReport, type Failure, type ScenarioResult } from "./lib/bench-report.ts";
 import { localGodot } from "./lib/godot.ts";
 import { summariseReport } from "./lib/report.ts";
@@ -181,7 +181,13 @@ async function measure(name: string, extra: readonly string[]): Promise<Measured
 			serverText,
 		};
 	} finally {
-		rmSync(work, { recursive: true, force: true });
+		// On Windows a server still closing its log keeps the folder busy; a leftover temp
+		// folder must not fail a run that measured fine.
+		try {
+			rmSync(work, { recursive: true, force: true });
+		} catch (e) {
+			console.log(`  could not remove ${work}: ${e instanceof Error ? e.message : String(e)}`);
+		}
 	}
 }
 
@@ -252,10 +258,14 @@ async function main(): Promise<void> {
 		writeFileSync(join(outDir, `${name}-${stamp}.ndjson`), measured.perfText);
 		if (measured.serverText !== undefined) writeFileSync(join(outDir, `${name}-${stamp}.server.ndjson`), measured.serverText);
 		const baselineFile = join(outDir, `${name}.baseline.json`);
-		const baseline = existsSync(baselineFile) ? parseBaseline(readFileSync(baselineFile, "utf8")) : undefined;
-		if (existsSync(baselineFile) && baseline === undefined) console.log(`  ${baselineFile} is not a baseline; saving this run in its place`);
-		res.baseline = baseline;
-		if (baseline !== undefined) {
+		const baselineText = existsSync(baselineFile) ? readFileSync(baselineFile, "utf8") : undefined;
+		const baseline = baselineText === undefined ? undefined : parseBaseline(baselineText);
+		if (baselineText !== undefined && baseline === undefined) console.log(`  ${baselineFile} is not a baseline; saving this run in its place`);
+		const measuredWith = baselineText === undefined ? undefined : baselineDriver(baselineText);
+		const otherDriver = baseline !== undefined && measuredWith !== res.summary.driver;
+		if (otherDriver) console.log(`  baseline measured with ${measuredWith || "an unknown driver"}, this run with ${res.summary.driver || "none"}: not compared (--save-baseline to replace it)`);
+		res.baseline = otherDriver ? undefined : baseline;
+		if (baseline !== undefined && !otherDriver) {
 			res.regressions = compare(res.summary, baseline, opts.tolerance);
 			for (const r of res.regressions) {
 				regressions++;

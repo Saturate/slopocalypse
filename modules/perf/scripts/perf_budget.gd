@@ -24,15 +24,17 @@ static func split(frame_ms: float, frames: int, scripts_usec: int, physics_usec:
 	var out := {"frame_ms": 0.0, "scripts_ms": 0.0, "physics_ms": 0.0, "render_ms": 0.0, "other_ms": 0.0}
 	if frames <= 0:
 		return out
-	out["frame_ms"] = snappedf(frame_ms, 0.01)
+	# To the microsecond the zones are timed in: an uncapped server runs thousands of frames a
+	# second, and bench.ts multiplies these back up to a cost per tick.
+	out["frame_ms"] = snappedf(frame_ms, 0.001)
 	var totals := [scripts_usec, physics_usec, render_usec]
 	var used := 0.0
 	for i in PARTS.size():
 		var ms := float(totals[i]) / 1000.0 / frames
-		out[PARTS[i]] = snappedf(ms, 0.01)
+		out[PARTS[i]] = snappedf(ms, 0.001)
 		used += ms
 	# Parts are measured on their own clocks, so they can add to a hair over the frame.
-	out["other_ms"] = snappedf(maxf(frame_ms - used, 0.0), 0.01)
+	out["other_ms"] = snappedf(maxf(frame_ms - used, 0.0), 0.001)
 	return out
 
 
