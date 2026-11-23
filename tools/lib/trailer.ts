@@ -122,7 +122,7 @@ export function leadInSeconds(startFileText: string | undefined, fps: number): n
 export function segmentArgs(list: ShotList, shot: Shot, movie: string, segment: string, leadIn = 0): string[] {
 	const [w, h] = list.size;
 	const fades = list.fade > 0 ? `,fade=t=in:st=0:d=${list.fade},fade=t=out:st=${(shot.seconds - list.fade).toFixed(3)}:d=${list.fade}` : "";
-	return ["-y", "-ss", String(Number((leadIn + (shot.skip ?? 0)).toFixed(3))), "-t", String(shot.seconds), "-i", movie, "-vf", `scale=${w}:${h},fps=${list.fps}${fades},format=yuv420p`, "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-an", segment];
+	return ["-y", "-ss", String(Math.floor((leadIn + (shot.skip ?? 0)) * 1000) / 1000), "-t", String(shot.seconds), "-i", movie, "-vf", `scale=${w}:${h},fps=${list.fps}${fades},format=yuv420p`, "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-an", segment];
 }
 
 export function concatList(segments: string[]): string {

@@ -16,6 +16,10 @@ const HUD_LAYER_MAX := 10
 const BG := Color(0.07, 0.08, 0.07)
 const ACCENT := Color(0.86, 0.64, 0.3)
 const TEXT := Color(0.9, 0.9, 0.86)
+## Frames a setup may spend loading before it rolls: a world load plus the shot base's longest
+## settle (trailer/shots/stage.gd MAX_SETTLE) fit well inside. Past it the setup is stuck, and
+## Movie Maker would keep writing frames until the tool's timeout.
+const MAX_LEAD_IN := 3600
 
 
 class Clock:
@@ -39,9 +43,17 @@ class Clock:
 			_start = _written
 			if not start_file.is_empty():
 				var f := FileAccess.open(start_file, FileAccess.WRITE)
+				if f == null:
+					push_error("movie: cannot write --start-file '%s'" % start_file)
+					get_tree().quit(1)
+					return
 				f.store_string(str(_start))
 				f.close()
 		_written += 1
+		if _start < 0 and _written > MAX_LEAD_IN:
+			push_error("movie: the setup did not start rolling in %d frames" % MAX_LEAD_IN)
+			get_tree().quit(1)
+			return
 		if _start >= 0 and _written - _start >= frames:
 			get_tree().quit(0)
 

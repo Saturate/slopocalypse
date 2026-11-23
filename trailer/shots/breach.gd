@@ -25,8 +25,8 @@ func _setup() -> void:
 
 
 func _place() -> void:
-	subject_body = _pick_building()
 	_building = _pick_building()
+	subject_body = _building
 	var spec: Dictionary = _building.get(&"spec")
 	var w := float(spec["width"])
 	_out = _building.global_basis.x

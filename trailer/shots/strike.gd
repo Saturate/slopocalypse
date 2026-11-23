@@ -1,5 +1,5 @@
 extends "res://trailer/shots/stage.gd"
-## Trailer shot: a strike zone house takes three diving drones along its lower walls and comes
+## Trailer shot: a strike zone house takes four diving drones along its lower walls and comes
 ## down. Low camera pushing in slowly from across the road.
 
 ## Ticks at which each drone is sent in, and where on the front wall it aims (x across the
@@ -29,8 +29,8 @@ func _setup() -> void:
 
 
 func _place() -> void:
-	subject_body = _pick_building()
 	_building = _pick_building()
+	subject_body = _building
 	_front = -_building.global_basis.z
 	_side = _building.global_basis.x
 	var d := float(_building.get(&"spec")["depth"])

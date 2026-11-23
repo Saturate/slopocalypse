@@ -4,8 +4,8 @@ extends Node3D
 ## `_shot(tick)`. A cinema camera moves between framings with eased dolly moves and a little
 ## hand-held sway, so shots are not static views.
 ##
-## Modules are loaded by path, never by class name, so deleting a module only breaks the shots
-## that use it, at render time.
+## Optional modules are loaded by path, so deleting one only breaks the shots that use it, at
+## render time. The world and player modules are named by class (VoxelWorld, PlayerIntent).
 
 const WORLD := "res://modules/world/scenes/world.tscn"
 const PLAYER := "res://modules/player/scenes/player.tscn"
@@ -238,7 +238,8 @@ func start_mission(type: String) -> void:
 			chosen = bool(missions.call(&"server_choose", 1, offers.find(found[0])))
 			break
 	if not chosen:
-		push_warning("trailer: no %s offer rolled; riding out on the board's first" % type)
+		# Filming whatever else rolled would quietly render the wrong shot.
+		push_error("trailer: no %s offer rolled at the map's sites" % type)
 	missions.call(&"server_ride_out")
 
 

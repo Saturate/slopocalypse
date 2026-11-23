@@ -22,9 +22,9 @@ func _setup() -> void:
 
 
 func _place() -> void:
-	subject_body = (mission().call(&"building_nodes") as Array)[0]
 	var intent: PlayerIntent = player.call(&"intent")
 	_building = (mission().call(&"building_nodes") as Array)[0]
+	subject_body = _building
 	_front = -_building.global_basis.z
 	var d := float(_building.get(&"spec")["depth"])
 	_stand = _building.global_position + _front * (d / 2.0 + STAND_OFF)
