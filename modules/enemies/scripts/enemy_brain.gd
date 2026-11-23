@@ -31,6 +31,9 @@ enum State { PATROL, FIGHT, CHASE }
 const CHEST := 1.3
 ## Close enough to a patrol point to count as there.
 const ARRIVED := 1.5
+## Between thinks a walk stops this close to its goal at the latest, so it never overshoots
+## an arrival the next think would have counted (cover, corners).
+const HALT := 0.15
 ## Fire only when the aim is within this of the target, radians.
 const ON_TARGET := 0.12
 ## Where a body counts as hidden from a threat: something solid in front of the waist.
@@ -67,6 +70,21 @@ var _rival_scan_in := randf() * RIVAL_SCAN_SECONDS
 var _factions: Node
 var target: Node3D
 var last_seen := Vector3.ZERO
+## Seconds between thinks (`set_think_every`; 0 is every tick). Between them its body goes
+## on with what it last decided (walking, firing) and turns towards where it last chose to
+## look, so the gap reads as reaction time. Looking round for foes is most of a think's cost.
+var think_every := 0.0
+var _think_in := 0.0
+var _since_think := 0.0
+var _want_yaw := 0.0
+var _want_pitch := 0.0
+## What the body keeps doing between thinks, in the world, so turning doesn't bend it: walk
+## to `_walk_goal` (when `_walking`), or else move along `_move_world`.
+var _walking := false
+var _walk_goal := Vector3.ZERO
+var _walk_speed := 0.0
+var _walk_stop := 0.0
+var _move_world := Vector3.ZERO
 
 var _rng := RandomNumberGenerator.new()
 var _yaw := 0.0
@@ -97,6 +115,7 @@ func _ready() -> void:
 	_rng.randomize()
 	fortitude_start = Fortitude.roll(_fear(), _rng)
 	_yaw = body.rotation.y
+	_want_yaw = _yaw
 	_goal = route[0] if not route.is_empty() else home
 	EventBus.subscribe(&"weapon.fired", _on_shot_heard)
 	EventBus.subscribe(&"explosion", _on_explosion)
@@ -129,7 +148,11 @@ func is_patrolling() -> bool:
 
 
 ## Wakes it if it was asleep (BrainSleep): something happened to it.
-func _stir() -> void:
+## `think_now`: it has something new to act on, so it thinks on the next tick whatever its
+## rate (not for more of the fire it is already fighting through).
+func _stir(think_now := true) -> void:
+	if think_now:
+		_think_in = 0.0
 	if BrainSleep.is_asleep(body):
 		BrainSleep.wake(body)
 
@@ -166,8 +189,63 @@ static func aim_error(seen_for: float, widest: float, tightest: float, settle_se
 
 func _physics_process(delta: float) -> void:
 	var prof := Prof.start()
-	_physics_tick(delta)
+	_since_think += delta
+	_think_in -= delta
+	if _think_in <= 0.0:
+		_think_in = think_every
+		_physics_tick(_since_think)
+		_since_think = 0.0
+	_carry_on(delta)
 	Prof.stop(&"enemies/enemy_brain:physics", prof)
+
+
+## How often it thinks: more often while players are near or looking its way (BrainSleep
+## sets it). Sooner takes effect at once; later, from a random point, so brains spread
+## their thinking over the ticks.
+func set_think_every(seconds: float) -> void:
+	if seconds < think_every:
+		_think_in = minf(_think_in, seconds)
+	elif seconds > think_every:
+		# Never later than already due: a stir may be waiting for the next tick.
+		_think_in = minf(_think_in, _rng.randf() * seconds)
+	think_every = seconds
+
+
+## Every tick, cheap (no rays): the head turns at its turn speed towards where the last think
+## chose to look; the body walks on to the goal it chose (stopping there) or along the way
+## it chose, kept out of the camp, and a burst ends on time.
+func _carry_on(delta: float) -> void:
+	if surrendered or body.get_meta(&"dead", false):
+		return
+	var intent := body.intent()
+	if _walking:
+		var flat := Vector2(_walk_goal.x - body.global_position.x, _walk_goal.z - body.global_position.z)
+		if flat.length() > maxf(_walk_stop, HALT):
+			_want_yaw = look_angles(body.global_position, _walk_goal).x
+	var step := float(config["turn_speed"]) * delta
+	_yaw += clampf(angle_difference(_yaw, _want_yaw), -step, step)
+	_pitch = move_toward(_pitch, _want_pitch, step)
+	intent.look_yaw = _yaw
+	intent.look_pitch = _pitch
+	if _walking:
+		var flat := Vector2(_walk_goal.x - body.global_position.x, _walk_goal.z - body.global_position.z)
+		intent.move = Vector2.ZERO if flat.length() <= maxf(_walk_stop, HALT) else _body_move(Vector3(flat.x, 0.0, flat.y).normalized() * _walk_speed)
+	else:
+		intent.move = _body_move(_move_world)
+	_hold_out(intent)
+	if intent.fire:
+		_burst_left -= delta
+		if _burst_left <= 0.0:
+			intent.fire = false
+			var pauses: Array = config["burst_pause_seconds"]
+			_burst_pause = _rng.randf_range(float(pauses[0]), float(pauses[1]))
+
+
+## `way` (world, flat) as a move in the body's frame at the current yaw.
+func _body_move(way: Vector3) -> Vector2:
+	var right := Vector3(cos(_yaw), 0.0, -sin(_yaw))
+	var forward := Vector3(-sin(_yaw), 0.0, -cos(_yaw))
+	return Vector2(way.dot(right), way.dot(forward))
 
 
 func _physics_tick(delta: float) -> void:
@@ -184,6 +262,7 @@ func _physics_tick(delta: float) -> void:
 		intent.crouch = true
 		return
 	_refresh_rivals(delta)
+	_walking = false
 	var seen := _find_target()
 	if seen != null:
 		if target != seen:
@@ -232,7 +311,10 @@ func _physics_tick(delta: float) -> void:
 					intent.move = Vector2.ZERO
 			State.FIGHT:
 				_fight(delta, intent)
-	_hold_out(intent)
+	if not _walking:
+		var right := Vector3(cos(_yaw), 0.0, -sin(_yaw))
+		var forward := Vector3(-sin(_yaw), 0.0, -cos(_yaw))
+		_move_world = right * intent.move.x + forward * intent.move.y
 	intent.look_yaw = _yaw
 	intent.look_pitch = _pitch
 	intent.remote_look = true
@@ -291,6 +373,10 @@ static func blocks_step(camp: CampLayout, at: Vector3, way: Vector3) -> bool:
 func _walk_toward(at: Vector3, delta: float, intent: PlayerIntent, speed: float, stop := ARRIVED * 0.5) -> void:
 	var want := look_angles(body.global_position, at).x
 	_turn_to(want, 0.0, delta)
+	_walking = true
+	_walk_goal = at
+	_walk_speed = speed
+	_walk_stop = stop
 	var flat := Vector2(at.x - body.global_position.x, at.z - body.global_position.z)
 	if flat.length() <= stop:
 		intent.move = Vector2.ZERO
@@ -329,18 +415,15 @@ func _fight(delta: float, intent: PlayerIntent) -> void:
 		# Seconds of trigger; the gun's own fire rate turns it into shots.
 		_burst_left = float(_rng.randi_range(int(shots[0]), int(shots[1]))) * 0.1
 		_error = Vector2(_rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0))
+	# The burst counts down a tick at a time (`_carry_on`), so it lasts as long at any rate.
 	if on_target and clear_shot(target):
 		intent.fire = true
-		_burst_left -= delta
-		if _burst_left <= 0.0:
-			var pauses: Array = config["burst_pause_seconds"]
-			_burst_pause = _rng.randf_range(float(pauses[0]), float(pauses[1]))
 
 
-func _turn_to(yaw: float, pitch: float, delta: float) -> void:
-	var step := float(config["turn_speed"]) * delta
-	_yaw += clampf(angle_difference(_yaw, yaw), -step, step)
-	_pitch = move_toward(_pitch, clampf(pitch, -1.2, 1.2), step)
+## Where to look; `_turn` gets there a tick at a time.
+func _turn_to(yaw: float, pitch: float, _delta: float) -> void:
+	_want_yaw = yaw
+	_want_pitch = clampf(pitch, -1.2, 1.2)
 
 
 ## Everyone this soldier might fight: players, and other soldiers (only those of a faction
@@ -404,21 +487,24 @@ func _find_target() -> Node3D:
 	var cone := float(config["sight_cone_degrees"])
 	for node: Node in _foes():
 		var player := node as Node3D
-		if player == null or player == body or player.get_meta(&"dead", false) or not player.is_visible_in_tree():
-			continue
-		if not is_hostile(player):
+		if player == null:
 			continue
 		var chest := player.global_position + Vector3.UP * CHEST
-		var d := eye.distance_to(chest)
-		if d > best_d:
-			continue
 		# Something already being fought is tracked all round, not only ahead.
 		if player != target and not in_cone(eye, _yaw, chest, cone):
 			continue
-		if _clear_line(eye, chest, player):
+		if _sees(player, eye, best_d):
 			best = player
-			best_d = d
+			best_d = eye.distance_to(chest)
 	return best
+
+
+## Whether it sees `who` (a living, hostile foe) from `eye` within `reach` metres.
+func _sees(who: Node3D, eye: Vector3, reach: float) -> bool:
+	if who == body or who.get_meta(&"dead", false) or not who.is_visible_in_tree() or not is_hostile(who):
+		return false
+	var chest := who.global_position + Vector3.UP * CHEST
+	return eye.distance_to(chest) <= reach and _clear_line(eye, chest, who)
 
 
 func _clear_line(from: Vector3, to: Vector3, wanted: Node) -> bool:
@@ -463,11 +549,12 @@ func _on_shot_heard(p: Dictionary) -> void:
 	var chest := body.global_position + Vector3.UP * CHEST
 	if p.has("from") and p.has("to") and distance_to_segment(chest, p["from"], p["to"]) < float(sup.get("near_miss", 2.0)):
 		suppression += float(sup.get("per_shot", 0.25))
-		if target == null:
+		var new_foe := target == null
+		if new_foe:
 			target = shooter
 			last_seen = shooter.global_position
 			state = State.CHASE
-		_stir()
+		_stir(new_foe)
 	if body.global_position.distance_to(shooter.global_position) > float(config["hearing_range"]):
 		return
 	if target == null or state == State.PATROL:
@@ -486,7 +573,7 @@ func _on_explosion(p: Dictionary) -> void:
 	var d := body.global_position.distance_to(p["position"])
 	if d < reach:
 		suppression += float(_suppression_cfg().get("explosion", 1.5)) * (1.0 - d / reach)
-		_stir()
+		_stir(not is_instance_valid(target))
 
 
 ## Whether a shot from the muzzle would reach `who`: nothing solid and no leaves on the way.
