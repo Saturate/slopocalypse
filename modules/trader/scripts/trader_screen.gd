@@ -5,12 +5,13 @@ extends CanvasLayer
 ## top. Every trade is a request the server decides; the screen redraws from its answer.
 ## Esc, Tab or F closes it.
 
-const BG := Color(0.05, 0.06, 0.06, 0.82)
-const PANEL := Color(0.11, 0.12, 0.11, 0.97)
-const ACCENT := Color(0.82, 0.62, 0.3)
-const TEXT := Color(0.88, 0.88, 0.84)
-const DIM := Color(0.66, 0.67, 0.63)
+const BG := UiPalette.BACKDROP
+const ACCENT := UiPalette.ACCENT
+const TEXT := UiPalette.TEXT
+const DIM := UiPalette.DIM
 const STOCK_COLUMNS := 3
+## Height of the stock list at the 1600x900 base: the panel fits at 720p with room around it.
+const STOCK_HEIGHT := 520.0
 
 var trader: Node
 var peer := 0
@@ -23,7 +24,7 @@ var _stock: GridContainer
 
 
 func _ready() -> void:
-	layer = 43
+	layer = UiLayers.TRADER
 	_build_ui()
 	_root.visible = false
 	EventBus.subscribe(&"trader.opened", _on_opened)
@@ -41,13 +42,13 @@ func is_open() -> bool:
 
 func open() -> void:
 	_root.visible = true
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	UiStack.push(self)
 	_gear.refresh()
 
 
 func close() -> void:
 	_root.visible = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	UiStack.pop(self)
 
 
 func _inventory() -> Node:
@@ -90,12 +91,12 @@ func _process(_delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if not is_open():
+	if not UiStack.is_top(self):
 		return
 	if event.is_action_pressed(&"interact") or event.is_action_pressed(&"inventory"):
 		close()
 		get_viewport().set_input_as_handled()
-	elif event is InputEventKey and event.is_pressed() and (event as InputEventKey).keycode == KEY_ESCAPE:
+	elif UiStack.is_cancel(event):
 		close()
 		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.is_pressed():
@@ -136,12 +137,6 @@ func _build_ui() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_root.add_child(center)
 	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = PANEL
-	style.border_color = ACCENT.darkened(0.5)
-	style.border_width_top = 3
-	style.set_content_margin_all(20)
-	panel.add_theme_stylebox_override("panel", style)
 	center.add_child(panel)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 10)
@@ -168,11 +163,16 @@ func _build_ui() -> void:
 	var theirs := VBoxContainer.new()
 	sides.add_child(theirs)
 	theirs.add_child(_label("FOR SALE", 22, ACCENT))
+	# The stock scrolls in a box sized to the window, so a long list never runs off it.
+	var stock_scroll := ScrollContainer.new()
+	stock_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	stock_scroll.custom_minimum_size.y = STOCK_HEIGHT
+	theirs.add_child(stock_scroll)
 	_stock = GridContainer.new()
 	_stock.columns = STOCK_COLUMNS
 	_stock.add_theme_constant_override("h_separation", 6)
 	_stock.add_theme_constant_override("v_separation", 6)
-	theirs.add_child(_stock)
+	stock_scroll.add_child(_stock)
 	var inventory := _inventory()
 	for entry: Dictionary in trader.call(&"stock"):
 		var item := str(entry["item"])
@@ -182,7 +182,7 @@ func _build_ui() -> void:
 		b.tooltip_text = str(info.get("name", item))
 		b.custom_minimum_size = Vector2(130, 46)
 		b.focus_mode = Control.FOCUS_NONE
-		b.add_theme_font_size_override("font_size", 14)
+		b.add_theme_font_size_override("font_size", UiPalette.HINT)
 		b.pressed.connect(buy.bind(item))
 		_stock.add_child(b)
 	_info = _label("", 15, TEXT)
@@ -191,8 +191,4 @@ func _build_ui() -> void:
 
 
 func _label(text: String, size: int, colour: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", colour)
-	return l
+	return UiText.label(text, size, colour)

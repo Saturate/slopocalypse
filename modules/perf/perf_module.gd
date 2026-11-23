@@ -4,7 +4,9 @@ extends Node
 ## and physics step time, node and object counts, memory, draw calls, network bytes, and every
 ## Godot custom monitor that other modules register (`Performance.add_custom_monitor`), so
 ## this module never needs to know about them. A frame slower than `spike_ms` gets a line of
-## its own, at most one a second, once the warm-up is over. Clients get an overlay (F3).
+## its own once the warm-up is over, with any shader compiles: the first after a quiet second
+## at once, then the slowest of the rest each second, so lines can trail samples by a second.
+## Clients get an overlay (F3).
 ##
 ## Other code reads the newest sample through the `perf_api` group: `latest()`, `sampled`.
 ## `-- --perf-log=PATH` writes to that file instead, and `--uncapped` turns off vsync and the
@@ -16,6 +18,13 @@ const REQUIRED := {"sample_seconds": TYPE_FLOAT, "spike_ms": TYPE_FLOAT, "warmup
 const SPIKE_GAP_SECONDS := 1.0
 ## Zones listed on a spike line, most expensive first.
 const SPIKE_ZONES := 5
+const PIPELINE_MONITORS := {
+	"canvas": Performance.PIPELINE_COMPILATIONS_CANVAS,
+	"mesh": Performance.PIPELINE_COMPILATIONS_MESH,
+	"surface": Performance.PIPELINE_COMPILATIONS_SURFACE,
+	"draw": Performance.PIPELINE_COMPILATIONS_DRAW,
+	"specialization": Performance.PIPELINE_COMPILATIONS_SPECIALIZATION,
+}
 
 signal sampled(record: Dictionary)
 
@@ -29,6 +38,8 @@ var _path := ""
 var _since_sample := 0.0
 var _uptime := 0.0
 var _last_spike := -INF
+## Running pipeline compile totals by kind, as of last frame.
+var _compiled: Dictionary[String, int] = {}
 var _latest: Dictionary = {}
 ## Wall-clock time of the last frame: `delta` is clamped, scaled and fixed under --fixed-fps,
 ## so it is not what the frame really took.
@@ -37,6 +48,8 @@ var _last_usec := 0
 var _tick_began := 0
 var _nodes_usec := 0
 var _ticks := 0
+## Frames since the last sample: synchronizers send their every-frame properties once each.
+var _frames := 0
 
 
 func _ready() -> void:
@@ -80,6 +93,10 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	if _file != null:
+		# A bench run often ends right after the hitch it is about.
+		var spike := _sampler.take_spike()
+		if not spike.is_empty():
+			_write(spike)
 		_file.close()
 		_file = null
 
@@ -102,17 +119,40 @@ func _process(delta: float) -> void:
 	_last_usec = now
 	_uptime += delta
 	_sampler.add_frame(ms)
+	_frames += 1
 	# The zones that ran since this point last frame: what the frame just measured was doing.
 	var frame_zones := Prof.take_frame(SPIKE_ZONES)
-	if ms > float(config["spike_ms"]) and _uptime > float(config["warmup_seconds"]) and _uptime - _last_spike >= SPIKE_GAP_SECONDS:
-		_last_spike = _uptime
-		_write({"t": snappedf(_uptime, 0.001), "spike_ms": snappedf(ms, 0.01), "nodes": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)), "zones": frame_zones})
+	var compiles := _pipeline_compiles()
+	if ms > float(config["spike_ms"]) and _uptime > float(config["warmup_seconds"]):
+		var line := {"t": snappedf(_uptime, 0.001), "spike_ms": snappedf(ms, 0.01), "nodes": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)), "zones": frame_zones}
+		if not compiles.is_empty():
+			line["compiles"] = compiles
+		_sampler.offer_spike(line)
+	if _uptime - _last_spike >= SPIKE_GAP_SECONDS:
+		var spike := _sampler.take_spike()
+		if not spike.is_empty():
+			_last_spike = _uptime
+			_write(spike)
 	_since_sample += delta
 	if _since_sample >= float(config["sample_seconds"]):
 		_since_sample = 0.0
 		_latest = _sample()
 		_write(_latest)
 		sampled.emit(_latest)
+
+
+## Shader pipelines the renderer compiled since last frame, by kind, leaving out kinds with
+## none. A pipeline compiled while drawing stalls that frame and runs in no script zone, so
+## it is the usual reason a spike line shows nothing expensive.
+func _pipeline_compiles() -> Dictionary:
+	var out := {}
+	for kind: String in PIPELINE_MONITORS:
+		var total := int(Performance.get_monitor(PIPELINE_MONITORS[kind]))
+		var grew := total - int(_compiled.get(kind, total))
+		_compiled[kind] = total
+		if grew > 0:
+			out[kind] = grew
+	return out
 
 
 ## Called by the probe at the end of each physics tick's node processing.
@@ -153,6 +193,9 @@ func _sample() -> Dictionary:
 	rec["memory_mb"] = snappedf(Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0, 0.1)
 	if DisplayServer.get_name() != "headless":
 		rec["draw_calls"] = int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+		# Mesh instances drawn after culling, summed over every pass (shadow maps included):
+		# with the draw calls, how many things the frame is made of, not just how heavy.
+		rec["objects_drawn"] = int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))
 		rec["primitives"] = int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
 		rec["video_mb"] = snappedf(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0, 0.1)
 		var vp := get_viewport().get_viewport_rid()
@@ -164,6 +207,12 @@ func _sample() -> Dictionary:
 		rec["net_out_bytes"] = int(peer.host.pop_statistic(ENetConnection.HOST_TOTAL_SENT_DATA))
 		rec["net_in_bytes"] = int(peer.host.pop_statistic(ENetConnection.HOST_TOTAL_RECEIVED_DATA))
 		rec["peers"] = multiplayer.get_peers().size()
+		if multiplayer.is_server() and rec["peers"] > 0:
+			rec["net"] = _net_breakdown(int(rec["net_out_bytes"]), int(rec["peers"]))
+	_frames = 0
+	if not rec.has("net"):
+		# Nothing to report them against (a client, or no one connected): start again.
+		NetStats.take()
 	# Our own code, by zone (see core/prof.gd): milliseconds spent in this sample window.
 	var zones := Prof.take()
 	if not zones.is_empty():
@@ -174,6 +223,49 @@ func _sample() -> Dictionary:
 	if not custom.is_empty():
 		rec["custom"] = custom
 	return rec
+
+
+## Server: what it sent this sample, per second. `out_per_peer` is ENet's exact total over the
+## peers; `sources` are estimates (see NetStats): every synchronizer's every-frame properties
+## by scene, broadcast events by topic, shot replays; `other` is what they leave unexplained
+## (packet headers, acks, on-change properties, RPCs nobody counts yet).
+func _net_breakdown(out_bytes: int, peers: int) -> Dictionary:
+	var seconds := maxf(float(config["sample_seconds"]), 0.001)
+	var sources := NetStats.take()
+	# Once a sample, on the server only: a walk of the tree costs about a millisecond.
+	for node: Node in get_tree().root.find_children("*", "MultiplayerSynchronizer", true, false):
+		var sync := node as MultiplayerSynchronizer
+		if sync == null or sync.replication_config == null:
+			continue
+		var root := sync.get_node_or_null(sync.root_path)
+		if root == null:
+			continue
+		var cfg := sync.replication_config
+		var size := 0
+		for prop: NodePath in cfg.get_properties():
+			if cfg.property_get_replication_mode(prop) != SceneReplicationConfig.REPLICATION_MODE_ALWAYS:
+				continue
+			var holder := root.get_node_or_null(NodePath(String(prop.get_concatenated_names())))
+			if holder != null:
+				size += NetStats.size_of(holder.get_indexed(NodePath(String(prop.get_concatenated_subnames()))))
+		var key := "sync/" + (root.scene_file_path.get_file().get_basename() if not root.scene_file_path.is_empty() else String(root.name))
+		# Once a frame, or once per `replication_interval` when that is longer.
+		var sends := _frames if sync.replication_interval <= 0.0 else mini(_frames, roundi(seconds / sync.replication_interval))
+		# Only the peers it is shown to (see NetRelevance).
+		var shown := peers
+		if not sync.public_visibility:
+			shown = 0
+			for peer in multiplayer.get_peers():
+				if sync.get_visibility_for(peer):
+					shown += 1
+		sources[key] = int(sources.get(key, 0)) + size * sends * shown
+	var counted := 0
+	var per_second := {}
+	for key: String in sources:
+		counted += int(sources[key])
+		per_second[key] = roundi(int(sources[key]) / seconds)
+	per_second["other"] = roundi(maxi(out_bytes - counted, 0) / seconds)
+	return {"out_per_peer": roundi(out_bytes / seconds / peers), "sources": per_second}
 
 
 func _open_log() -> void:

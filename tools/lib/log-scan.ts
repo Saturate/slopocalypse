@@ -49,3 +49,25 @@ export function testSummary(log: string): TestSummary | undefined {
 	}
 	return { cases: Number(match[1]), errors: Number(match[2]), failures: Number(match[3]) };
 }
+
+// What a failed gdUnit run says about each failure: the FAILED line, the assertion's message
+// and where it was. An assertion message spans lines ("Expecting:", the expected value, "but
+// was", the actual value), so each "Expecting" line keeps the three after it.
+export function failureLines(log: string, limit = 60): string[] {
+	const lines = stripAnsi(log).split(/\r?\n/);
+	const out: string[] = [];
+	let follow = 0;
+	for (const line of lines) {
+		if (follow > 0 && line.trim() !== "") {
+			out.push(line);
+			follow--;
+		} else if (/^\s*Expecting/.test(line)) {
+			out.push(line);
+			follow = 3;
+		} else {
+			follow = 0;
+			if (/FAILED|Parse Error|at '/.test(line) && !/^\s*(Statistics|Overall Summary):/.test(line)) out.push(line);
+		}
+	}
+	return out.slice(0, limit);
+}

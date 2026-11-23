@@ -7,11 +7,26 @@ const MODULES_ROOT := "res://modules"
 ## The voxel kit's asset library, if that module is there and on.
 const LIBRARY := "res://modules/voxkit/library/asset_library.gd"
 
+## The test range module (a solo game on a row of buildings for breaking things).
+const RANGE := "res://modules/range/range_module.gd"
+const BENCHMARK := "res://modules/benchmark/benchmark_module.gd"
+## The city module's live view behind the title, if the city is there and on.
+const BACKDROP := "res://modules/city/title/title_backdrop.gd"
+
+var _backdrop: Node
+
 ## `--library` opens the library straight away, once per launch (Back then goes to the menu).
 static var _library_from_args := OS.get_cmdline_user_args().has("--library")
 
 
 func _ready() -> void:
+	# Screens from the last session are gone; their entries must not hold the mouse.
+	UiStack.clear()
+	# Before modules load: a key the player chose must be in place before a module registers
+	# its default for the same action.
+	Settings.load_from()
+	Settings.apply(get_tree().root)
+	Settings.apply_keys()
 	# Before anything reads the profile or opens a save.
 	var moved := UserDataMove.run()
 	if moved > 0:
@@ -34,15 +49,48 @@ func _show_menu() -> void:
 	menu.name = "MainMenu"
 	menu.message = Net.menu_message
 	menu.has_library = _library_available()
+	menu.has_range = Features.is_enabled(&"range") and ResourceLoader.exists(RANGE)
+	# Its run happens in the city with squads dying in view; without either the numbers would
+	# not be the benchmark's.
+	menu.has_benchmark = Features.is_enabled(&"benchmark") and Features.is_enabled(&"city") and Features.is_enabled(&"enemies") and ResourceLoader.exists(BENCHMARK)
 	add_child(menu)
+	_show_backdrop(menu)
 	menu.solo_requested.connect(func() -> void: _begin(menu, func() -> void:
 		Net.awaiting_menu = false
 		Net.start_solo()))
 	menu.host_requested.connect(func(port: int) -> void: _begin(menu, Net.start_host.bind(port)))
 	menu.join_requested.connect(func(host: String, port: int) -> void: _begin(menu, Net.join.bind(host, port)))
+	menu.range_requested.connect(func() -> void: _begin(menu, func() -> void:
+		Net.awaiting_menu = false
+		Net.extra_args = (load(RANGE) as GDScript).call(&"session_args")
+		Features.reload(Net.session_args())
+		Net.start_solo()))
+	menu.benchmark_requested.connect(func() -> void: _begin(menu, func() -> void:
+		Net.awaiting_menu = false
+		Net.extra_args = (load(BENCHMARK) as GDScript).call(&"session_args")
+		Features.reload(Net.session_args())
+		Net.start_solo()))
 	menu.library_requested.connect(func() -> void:
 		menu.queue_free()
+		_free_backdrop()
 		_show_library())
+
+
+## The live city behind the title; the menu keeps its plain backdrop until it has loaded.
+func _show_backdrop(menu: MainMenu) -> void:
+	if not (Features.is_enabled(&"city") and Features.is_enabled(&"world") and ResourceLoader.exists(BACKDROP)):
+		return
+	_backdrop = (load(BACKDROP) as GDScript).new()
+	_backdrop.name = "TitleBackdrop"
+	_backdrop.connect(&"shown", menu.show_world)
+	add_child(_backdrop)
+	move_child(_backdrop, 0)
+
+
+func _free_backdrop() -> void:
+	if _backdrop != null and is_instance_valid(_backdrop):
+		_backdrop.queue_free()
+	_backdrop = null
 
 
 static func _library_available() -> bool:
@@ -60,6 +108,7 @@ func _show_library() -> void:
 
 func _begin(menu: MainMenu, start: Callable) -> void:
 	menu.queue_free()
+	_free_backdrop()
 	Net.menu_message = ""
 	start.call()
 	# A start that failed has already asked for the menu again.

@@ -14,6 +14,8 @@ func clock() -> DayClock:
 
 
 func _ready() -> void:
+	# Other modules ask whether it is night through this group (`clock()`).
+	add_to_group(&"daytime_api")
 	_clock = DayClock.from_data()
 	if _clock == null:
 		set_process(false)

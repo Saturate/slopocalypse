@@ -56,4 +56,40 @@ impl BuildingSupport {
         .map(|i| i as i32)
         .collect()
     }
+
+    /// Standing segments carrying more than their `strength` (kg) once every segment's `mass`
+    /// (kg) is passed down to the anchors over its neighbours nearer the ground.
+    #[func]
+    fn overloaded(
+        edges: PackedInt32Array,
+        anchors: PackedInt32Array,
+        broken: PackedInt32Array,
+        mass: PackedFloat32Array,
+        strength: PackedFloat32Array,
+    ) -> PackedInt32Array {
+        let n = mass.len().min(strength.len()) as i32;
+        let ids = |a: &PackedInt32Array| -> Vec<usize> {
+            a.as_slice()
+                .iter()
+                .filter(|&&i| (0..n).contains(&i))
+                .map(|&i| i as usize)
+                .collect()
+        };
+        let edges: Vec<(usize, usize)> = edges
+            .as_slice()
+            .chunks_exact(2)
+            .filter(|p| p.iter().all(|&i| (0..n).contains(&i)))
+            .map(|p| (p[0] as usize, p[1] as usize))
+            .collect();
+        missions_core::overloaded(
+            &edges,
+            &ids(&anchors),
+            &ids(&broken),
+            mass.as_slice(),
+            strength.as_slice(),
+        )
+        .into_iter()
+        .map(|i| i as i32)
+        .collect()
+    }
 }

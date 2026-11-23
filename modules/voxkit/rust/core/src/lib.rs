@@ -1,11 +1,15 @@
 //! Voxel models made by code: a grid of coloured cells filled with shapes given in metres,
-//! and a greedy mesher that turns it into as few quads as possible.
+//! and a greedy mesher that turns it into as few quads as possible. Each filled cell also
+//! carries a material index (wood, glass, concrete...), which decides how it takes hits; the
+//! names and rules behind the indices live in the voxkit materials data file.
 //!
 //! Model space: x and z are centred on the grid, y starts at 0, so a model stands on the
 //! ground at its origin. Each model picks its own voxel size (a gun wants centimetres, a
 //! wall a decimetre or more).
 
+pub mod edits;
 pub mod heightfield;
+pub mod ways;
 
 /// A cell's colour as 0xRRGGBB; `EMPTY` is air.
 pub type Colour = u32;
@@ -18,16 +22,49 @@ pub struct Grid {
     pub nz: usize,
     pub voxel: f32,
     cells: Vec<Colour>,
+    /// Material index per cell, 0 ("default") for air and for models that never set one.
+    materials: Vec<u8>,
+    /// Material that fills write into the cells they fill.
+    pub brush: u8,
+    /// Materials drawn see-through (glass): the normal mesh treats their cells as air, and a
+    /// second "clear" mesh holds only them.
+    clear: [bool; 256],
     /// Chunks per axis, and which chunks changed since they were last meshed.
     chunks: [usize; 3],
     dirty: Vec<bool>,
+    /// Each chunk's last mesh (normal, see-through), kept so the section round an edit can
+    /// be joined again without meshing its unchanged chunks. Only for sections edited after
+    /// their first draw (`kept`): most models are never edited, and keeping every chunk's
+    /// mesh would double what they cost in memory.
+    meshed: Vec<(Mesh, Mesh)>,
+    /// Section side in chunks (`set_section`), and per section whether it has been drawn
+    /// once and whether its chunks' meshes are kept.
+    section: usize,
+    built: Vec<bool>,
+    kept: Vec<bool>,
     /// Darken face corners by how many cells crowd them (see `corner_level`).
     pub corners: bool,
+}
+
+/// One piece of a `Grid::fracture`: its cells as their own grid, where that grid's origin sits
+/// in the source model, and the filled cells' bounds in its own space.
+pub struct Fragment {
+    pub grid: Grid,
+    pub offset: [f32; 3],
+    pub lo: [f32; 3],
+    pub hi: [f32; 3],
 }
 
 /// Chunk side in cells: each chunk meshes on its own, so an edit rebuilds only the chunks it
 /// touched.
 pub const CHUNK: usize = 16;
+/// Default section side in chunks: what gets drawn is one mesh per section
+/// (`remesh_dirty_sections`), so a building is a handful of instances instead of hundreds.
+/// Models that get shot at use smaller sections (`set_section`): an edit re-joins its whole
+/// section, and a big one costs milliseconds per bullet hole.
+pub const SECTION: usize = 4;
+/// Largest section side a model may ask for.
+pub const MAX_SECTION: usize = 8;
 
 /// Largest grid side in cells, so a typo in a parameter can't ask for gigabytes.
 pub const MAX_SIDE: usize = 1024;
@@ -52,6 +89,25 @@ impl Mesh {
     pub fn quad_count(&self) -> usize {
         self.indices.len() / 6
     }
+
+    /// Gives back the spare capacity pushing left behind, for meshes that are kept.
+    pub fn shrink(&mut self) {
+        self.positions.shrink_to_fit();
+        self.normals.shrink_to_fit();
+        self.colours.shrink_to_fit();
+        self.shade.shrink_to_fit();
+        self.indices.shrink_to_fit();
+    }
+
+    /// Adds `other`'s faces to this mesh.
+    pub fn append(&mut self, other: &Mesh) {
+        let base = self.positions.len() as u32;
+        self.positions.extend_from_slice(&other.positions);
+        self.normals.extend_from_slice(&other.normals);
+        self.colours.extend_from_slice(&other.colours);
+        self.shade.extend_from_slice(&other.shade);
+        self.indices.extend(other.indices.iter().map(|i| i + base));
+    }
 }
 
 impl Grid {
@@ -70,10 +126,40 @@ impl Grid {
             nz: n[2],
             voxel,
             cells: vec![EMPTY; n[0] * n[1] * n[2]],
+            materials: vec![0; n[0] * n[1] * n[2]],
+            brush: 0,
+            clear: [false; 256],
             chunks,
             dirty: vec![true; chunks[0] * chunks[1] * chunks[2]],
+            meshed: vec![Default::default(); chunks[0] * chunks[1] * chunks[2]],
+            section: SECTION,
+            built: Vec::new(),
+            kept: Vec::new(),
             corners: false,
         }
+        .with_sections()
+    }
+
+    /// Fresh section bookkeeping for the current chunk layout: nothing drawn, nothing kept.
+    fn with_sections(mut self) -> Self {
+        self.reset_sections();
+        self
+    }
+
+    fn reset_sections(&mut self) {
+        let n = self.section_count();
+        self.built = vec![false; n];
+        self.kept = vec![false; n];
+        self.meshed = vec![Default::default(); self.dirty.len()];
+    }
+
+    /// Draws the model in sections of `chunks` chunks a side (1 to `MAX_SECTION`) from the
+    /// next `remesh_dirty_sections` on; everything is drawn again. Meant before the first
+    /// draw: section ids change, so a caller must drop what it drew for the old ones.
+    pub fn set_section(&mut self, chunks: usize) {
+        self.section = chunks.clamp(1, MAX_SECTION);
+        self.reset_sections();
+        self.dirty.iter_mut().for_each(|d| *d = true);
     }
 
     fn index(&self, x: usize, y: usize, z: usize) -> usize {
@@ -93,13 +179,443 @@ impl Grid {
 
     pub fn set(&mut self, x: usize, y: usize, z: usize, c: Colour) {
         if x < self.nx && y < self.ny && z < self.nz {
-            self.write(x, y, z, c);
+            let m = if c == EMPTY { 0 } else { self.brush };
+            self.write(x, y, z, c, m);
         }
     }
 
-    /// Every write goes through here so the chunks it changes get remeshed.
-    fn write(&mut self, x: usize, y: usize, z: usize, c: Colour) {
+    /// Draws material `m` see-through (`on`) or not; every chunk is meshed again.
+    pub fn set_clear(&mut self, m: u8, on: bool) {
+        if self.clear[m as usize] != on {
+            self.clear[m as usize] = on;
+            self.dirty.iter_mut().for_each(|d| *d = true);
+        }
+    }
+
+    /// True when some material is drawn see-through.
+    pub fn has_clear(&self) -> bool {
+        self.clear.iter().any(|&c| c)
+    }
+
+    /// Filled and drawn see-through.
+    fn clear_at(&self, p: [i64; 3]) -> bool {
+        if p.iter().any(|&v| v < 0) {
+            return false;
+        }
+        let (x, y, z) = (p[0] as usize, p[1] as usize, p[2] as usize);
+        if x >= self.nx || y >= self.ny || z >= self.nz {
+            return false;
+        }
         let i = self.index(x, y, z);
+        self.cells[i] != EMPTY && self.clear[self.materials[i] as usize]
+    }
+
+    /// Material index of cell (x, y, z); 0 for air and outside the grid.
+    pub fn material(&self, x: usize, y: usize, z: usize) -> u8 {
+        if x >= self.nx || y >= self.ny || z >= self.nz {
+            return 0;
+        }
+        self.materials[self.index(x, y, z)]
+    }
+
+    /// Material index of the cell holding `p` (model space, metres); 0 for air and outside.
+    pub fn material_at(&self, p: [f32; 3]) -> u8 {
+        let o = self.origin();
+        let cell = [0, 1, 2].map(|a| ((p[a] - o[a]) / self.voxel).floor());
+        if cell.iter().any(|&c| c < 0.0) {
+            return 0;
+        }
+        self.material(cell[0] as usize, cell[1] as usize, cell[2] as usize)
+    }
+
+    /// Colour of the cell holding `p` (model space, metres); `EMPTY` for air and outside.
+    pub fn colour_at(&self, p: [f32; 3]) -> Colour {
+        let o = self.origin();
+        let cell = [0, 1, 2].map(|a| ((p[a] - o[a]) / self.voxel).floor() as i64);
+        self.get(cell[0], cell[1], cell[2])
+    }
+
+    /// The material most filled cells inside the box `min..max` (by cell centre) have,
+    /// ignoring 0; 0 when none of them has one.
+    pub fn dominant_material(&self, min: [f32; 3], max: [f32; 3]) -> u8 {
+        let [(x0, x1), (y0, y1), (z0, z1)] = self.range_centres(min, max);
+        let mut counts = [0usize; 256];
+        for y in y0..y1 {
+            for z in z0..z1 {
+                for x in x0..x1 {
+                    let i = self.index(x, y, z);
+                    if self.cells[i] != EMPTY {
+                        counts[self.materials[i] as usize] += 1;
+                    }
+                }
+            }
+        }
+        (1..256)
+            .max_by_key(|&m| (counts[m], std::cmp::Reverse(m)))
+            .filter(|&m| counts[m] > 0)
+            .map_or(0, |m| m as u8)
+    }
+
+    /// The filled cells as few boxes as a greedy merge finds (along x, then z, then y), in
+    /// metres `(min, max)`, leaving out cells whose material is in `skip` (glass a round
+    /// should pass, furniture nobody needs to bump). For collision: the boxes cover exactly
+    /// the cells kept, so doors, windows and stairs come out as they are drawn.
+    pub fn boxes(&self, skip: &[bool; 256]) -> Vec<([f32; 3], [f32; 3])> {
+        let keep = |i: usize| self.cells[i] != EMPTY && !skip[self.materials[i] as usize];
+        let mut taken = vec![false; self.cells.len()];
+        let mut out = Vec::new();
+        let o = self.origin();
+        for y in 0..self.ny {
+            for z in 0..self.nz {
+                for x in 0..self.nx {
+                    let start = self.index(x, y, z);
+                    if taken[start] || !keep(start) {
+                        continue;
+                    }
+                    let free = |x: usize, y: usize, z: usize, taken: &Vec<bool>| {
+                        let i = self.index(x, y, z);
+                        !taken[i] && keep(i)
+                    };
+                    let mut x1 = x + 1;
+                    while x1 < self.nx && free(x1, y, z, &taken) {
+                        x1 += 1;
+                    }
+                    let mut z1 = z + 1;
+                    'grow_z: while z1 < self.nz {
+                        for xx in x..x1 {
+                            if !free(xx, y, z1, &taken) {
+                                break 'grow_z;
+                            }
+                        }
+                        z1 += 1;
+                    }
+                    let mut y1 = y + 1;
+                    'grow_y: while y1 < self.ny {
+                        for zz in z..z1 {
+                            for xx in x..x1 {
+                                if !free(xx, y1, zz, &taken) {
+                                    break 'grow_y;
+                                }
+                            }
+                        }
+                        y1 += 1;
+                    }
+                    for yy in y..y1 {
+                        for zz in z..z1 {
+                            for xx in x..x1 {
+                                let i = self.index(xx, yy, zz);
+                                taken[i] = true;
+                            }
+                        }
+                    }
+                    let v = self.voxel;
+                    out.push((
+                        [
+                            o[0] + x as f32 * v,
+                            o[1] + y as f32 * v,
+                            o[2] + z as f32 * v,
+                        ],
+                        [
+                            o[0] + x1 as f32 * v,
+                            o[1] + y1 as f32 * v,
+                            o[2] + z1 as f32 * v,
+                        ],
+                    ));
+                }
+            }
+        }
+        out
+    }
+
+    /// Each connected patch (cells sharing a face) of material `m`, as its bounding box in
+    /// metres `(min, max)`, in a fixed order (by first cell in storage order), so every
+    /// instance numbers them alike.
+    pub fn components(&self, m: u8) -> Vec<([f32; 3], [f32; 3])> {
+        if m == 0 {
+            return Vec::new();
+        }
+        let n = [self.nx, self.ny, self.nz];
+        let mut seen = vec![false; self.cells.len()];
+        let mut out = Vec::new();
+        let o = self.origin();
+        for start in 0..self.cells.len() {
+            if seen[start] || self.cells[start] == EMPTY || self.materials[start] != m {
+                continue;
+            }
+            seen[start] = true;
+            let mut lo = [usize::MAX; 3];
+            let mut hi = [0usize; 3];
+            let mut stack = vec![start];
+            while let Some(i) = stack.pop() {
+                let x = i % self.nx;
+                let z = (i / self.nx) % self.nz;
+                let y = i / (self.nx * self.nz);
+                let p = [x, y, z];
+                for a in 0..3 {
+                    lo[a] = lo[a].min(p[a]);
+                    hi[a] = hi[a].max(p[a]);
+                }
+                for a in 0..3 {
+                    for d in [-1i64, 1] {
+                        let v = p[a] as i64 + d;
+                        if v < 0 || v as usize >= n[a] {
+                            continue;
+                        }
+                        let mut q = p;
+                        q[a] = v as usize;
+                        let j = self.index(q[0], q[1], q[2]);
+                        if !seen[j] && self.cells[j] != EMPTY && self.materials[j] == m {
+                            seen[j] = true;
+                            stack.push(j);
+                        }
+                    }
+                }
+            }
+            let v = self.voxel;
+            out.push((
+                [0, 1, 2].map(|a| o[a] + lo[a] as f32 * v),
+                [0, 1, 2].map(|a| o[a] + (hi[a] + 1) as f32 * v),
+            ));
+        }
+        out
+    }
+
+    /// The connected patch (cells sharing a face) of material `m` holding the cell at `p`
+    /// (model space), as its bounding box in metres `(min, max)`; `None` when that cell isn't
+    /// `m`, or the patch is bigger than `cap` cells (not a single brick but a whole wall).
+    pub fn component_at(&self, p: [f32; 3], m: u8, cap: usize) -> Option<([f32; 3], [f32; 3])> {
+        let o = self.origin();
+        let cell = [0, 1, 2].map(|a| ((p[a] - o[a]) / self.voxel).floor());
+        let n = [self.nx, self.ny, self.nz];
+        if (0..3).any(|a| cell[a] < 0.0 || cell[a] as usize >= n[a]) {
+            return None;
+        }
+        let start = self.index(cell[0] as usize, cell[1] as usize, cell[2] as usize);
+        if m == 0 || self.cells[start] == EMPTY || self.materials[start] != m {
+            return None;
+        }
+        let mut seen = std::collections::HashSet::new();
+        seen.insert(start);
+        let mut stack = vec![start];
+        let mut lo = [usize::MAX; 3];
+        let mut hi = [0usize; 3];
+        while let Some(i) = stack.pop() {
+            let x = i % self.nx;
+            let z = (i / self.nx) % self.nz;
+            let y = i / (self.nx * self.nz);
+            let q = [x, y, z];
+            for a in 0..3 {
+                lo[a] = lo[a].min(q[a]);
+                hi[a] = hi[a].max(q[a]);
+            }
+            for a in 0..3 {
+                for d in [-1i64, 1] {
+                    let v = q[a] as i64 + d;
+                    if v < 0 || v as usize >= n[a] {
+                        continue;
+                    }
+                    let mut r = q;
+                    r[a] = v as usize;
+                    let j = self.index(r[0], r[1], r[2]);
+                    if self.cells[j] != EMPTY && self.materials[j] == m && seen.insert(j) {
+                        if seen.len() > cap {
+                            return None;
+                        }
+                        stack.push(j);
+                    }
+                }
+            }
+        }
+        let v = self.voxel;
+        Some((
+            [0, 1, 2].map(|a| o[a] + lo[a] as f32 * v),
+            [0, 1, 2].map(|a| o[a] + (hi[a] + 1) as f32 * v),
+        ))
+    }
+
+    /// Breaks the cells inside the box (by centre) into fragments round `seeds` (model space):
+    /// each cell goes to the nearest seed, its distance pushed by up to `jag` voxels of noise
+    /// so the breaks are ragged. Cells of material `unit` (bricks) that touch go together, by
+    /// their middle, so a block is never split. Returns one `(grid, offset, lo, hi)` per seed
+    /// that got cells, in seed order: the fragment as its own grid, where its origin sits in
+    /// this model, and its filled cells' bounds in its own space.
+    pub fn fracture(
+        &self,
+        min: [f32; 3],
+        max: [f32; 3],
+        seeds: &[[f32; 3]],
+        unit: u8,
+        jag: f32,
+        seed: u32,
+    ) -> Vec<Fragment> {
+        if seeds.is_empty() {
+            return Vec::new();
+        }
+        let r = self.range_centres(min, max);
+        let [(x0, x1), (y0, y1), (z0, z1)] = r;
+        let nearest = |p: [f32; 3], x: usize, y: usize, z: usize| -> usize {
+            let n = (hash(x as u32, y as u32, z as u32, seed) * 2.0 - 1.0) * jag * self.voxel;
+            let mut best = 0;
+            let mut best_d = f32::MAX;
+            for (i, s) in seeds.iter().enumerate() {
+                let d = sub(p, *s);
+                let dist = dot(d, d).sqrt() + n;
+                if dist < best_d {
+                    best_d = dist;
+                    best = i;
+                }
+            }
+            best
+        };
+        let owner = self.unit_owners(r, unit, &nearest);
+        let n = [x1 - x0, y1 - y0, z1 - z0].map(|v| v.max(1));
+        let mut parts: Vec<Grid> = seeds.iter().map(|_| self.blank(n)).collect();
+        let mut lo = vec![[usize::MAX; 3]; seeds.len()];
+        let mut hi = vec![[0usize; 3]; seeds.len()];
+        for y in y0..y1 {
+            for z in z0..z1 {
+                for x in x0..x1 {
+                    let i = self.index(x, y, z);
+                    if self.cells[i] == EMPTY {
+                        continue;
+                    }
+                    let to = match owner.get(&i) {
+                        Some(&o) => o,
+                        None => nearest(self.centre(x, y, z), x, y, z),
+                    };
+                    let g = &mut parts[to];
+                    let local = [x - x0, y - y0, z - z0];
+                    let k = g.index(local[0], local[1], local[2]);
+                    g.cells[k] = self.cells[i];
+                    g.materials[k] = self.materials[i];
+                    for a in 0..3 {
+                        lo[to][a] = lo[to][a].min(local[a]);
+                        hi[to][a] = hi[to][a].max(local[a]);
+                    }
+                }
+            }
+        }
+        let o = self.origin();
+        let v = self.voxel;
+        let at = [
+            o[0] + x0 as f32 * v + n[0] as f32 * v / 2.0,
+            o[1] + y0 as f32 * v,
+            o[2] + z0 as f32 * v + n[2] as f32 * v / 2.0,
+        ];
+        let mut out = Vec::new();
+        for (i, g) in parts.into_iter().enumerate() {
+            if lo[i][0] == usize::MAX {
+                continue;
+            }
+            let go = g.origin();
+            let l = [0, 1, 2].map(|a| go[a] + lo[i][a] as f32 * v);
+            let h = [0, 1, 2].map(|a| go[a] + (hi[i][a] + 1) as f32 * v);
+            out.push(Fragment {
+                grid: g,
+                offset: at,
+                lo: l,
+                hi: h,
+            });
+        }
+        out
+    }
+
+    /// For `fracture`: every cell of material `unit` inside the cell range `r`, mapped to the
+    /// seed its whole connected patch goes to (the one nearest the patch's middle).
+    fn unit_owners(
+        &self,
+        r: [(usize, usize); 3],
+        unit: u8,
+        nearest: &impl Fn([f32; 3], usize, usize, usize) -> usize,
+    ) -> std::collections::HashMap<usize, usize> {
+        let mut owner = std::collections::HashMap::new();
+        if unit == 0 {
+            return owner;
+        }
+        let [(x0, x1), (y0, y1), (z0, z1)] = r;
+        let inside = |q: [i64; 3]| (0..3).all(|a| q[a] >= r[a].0 as i64 && q[a] < r[a].1 as i64);
+        let mut seen = std::collections::HashSet::new();
+        for y in y0..y1 {
+            for z in z0..z1 {
+                for x in x0..x1 {
+                    let i = self.index(x, y, z);
+                    if self.cells[i] == EMPTY || self.materials[i] != unit || !seen.insert(i) {
+                        continue;
+                    }
+                    let mut patch = vec![[x, y, z]];
+                    let mut stack = vec![[x, y, z]];
+                    while let Some(q) = stack.pop() {
+                        for a in 0..3 {
+                            for d in [-1i64, 1] {
+                                let mut p = q.map(|v| v as i64);
+                                p[a] += d;
+                                if !inside(p) {
+                                    continue;
+                                }
+                                let c = p.map(|v| v as usize);
+                                let k = self.index(c[0], c[1], c[2]);
+                                if self.cells[k] != EMPTY
+                                    && self.materials[k] == unit
+                                    && seen.insert(k)
+                                {
+                                    patch.push(c);
+                                    stack.push(c);
+                                }
+                            }
+                        }
+                    }
+                    let mut mid = [0f32; 3];
+                    for q in &patch {
+                        mid = add(mid, self.centre(q[0], q[1], q[2]));
+                    }
+                    let to = nearest(scale(mid, 1.0 / patch.len() as f32), x, y, z);
+                    for q in patch {
+                        owner.insert(self.index(q[0], q[1], q[2]), to);
+                    }
+                }
+            }
+        }
+        owner
+    }
+
+    /// An empty grid of exactly `n` cells at this one's voxel size.
+    fn blank(&self, n: [usize; 3]) -> Grid {
+        let mut g = Grid::new(n.map(|v| v as f32 * self.voxel), self.voxel);
+        g.nx = n[0];
+        g.ny = n[1];
+        g.nz = n[2];
+        g.cells = vec![EMPTY; n[0] * n[1] * n[2]];
+        g.materials = vec![0; n[0] * n[1] * n[2]];
+        g.chunks = n.map(|v| v.div_ceil(CHUNK));
+        g.dirty = vec![true; g.chunks[0] * g.chunks[1] * g.chunks[2]];
+        g.section = self.section;
+        g.reset_sections();
+        g.brush = self.brush;
+        g
+    }
+
+    /// How many filled cells of material `m` have their centres inside the box.
+    pub fn count_material(&self, min: [f32; 3], max: [f32; 3], m: u8) -> usize {
+        let [(x0, x1), (y0, y1), (z0, z1)] = self.range_centres(min, max);
+        let mut count = 0;
+        for y in y0..y1 {
+            for z in z0..z1 {
+                for x in x0..x1 {
+                    let i = self.index(x, y, z);
+                    if self.cells[i] != EMPTY && self.materials[i] == m {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        count
+    }
+
+    /// Every write goes through here so the chunks it changes get remeshed. Materials don't
+    /// change the mesh, but a cell's material only changes along with a write anyway.
+    fn write(&mut self, x: usize, y: usize, z: usize, c: Colour, m: u8) {
+        let i = self.index(x, y, z);
+        self.materials[i] = m;
         if self.cells[i] == c {
             return;
         }
@@ -133,6 +649,101 @@ impl Grid {
         (c[1] * self.chunks[2] + c[2]) * self.chunks[0] + c[0]
     }
 
+    /// The cells as RGBA bytes for a 3D texture: one z slice after another, each row by row
+    /// along y, each row along x. Filled cells are opaque (alpha 255), air is all zero.
+    pub fn rgba_slices(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.nx * self.ny * self.nz * 4);
+        for z in 0..self.nz {
+            for y in 0..self.ny {
+                for x in 0..self.nx {
+                    let c = self.cells[self.index(x, y, z)];
+                    if c == EMPTY {
+                        out.extend_from_slice(&[0, 0, 0, 0]);
+                    } else {
+                        out.extend_from_slice(&[(c >> 16) as u8, (c >> 8) as u8, c as u8, 255]);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Which `brick`-cell cubes hold anything, one byte each (255 filled, 0 empty), in the
+    /// same order as `rgba_slices` over a grid of `ceil(n / brick)` bricks per axis. A ray
+    /// walking the cells can jump over a whole empty brick at once.
+    pub fn brick_occupancy(&self, brick: usize) -> (Vec<u8>, [usize; 3]) {
+        let b = brick.max(1);
+        let size = [self.nx, self.ny, self.nz].map(|v| v.div_ceil(b));
+        let mut out = vec![0u8; size[0] * size[1] * size[2]];
+        for y in 0..self.ny {
+            for z in 0..self.nz {
+                for x in 0..self.nx {
+                    if self.cells[self.index(x, y, z)] != EMPTY {
+                        out[((z / b) * size[1] + y / b) * size[0] + x / b] = 255;
+                    }
+                }
+            }
+        }
+        (out, size)
+    }
+
+    /// The cells packed for the GPU: only the `brick`-cell cubes that hold anything, laid
+    /// side by side in an atlas `per_row` bricks wide and deep, plus an indirection grid that
+    /// says where each brick went. See `Atlas`.
+    pub fn brick_atlas(&self, brick: usize, per_row: usize) -> Atlas {
+        let b = brick.max(1);
+        let row = per_row.clamp(1, 255);
+        let bricks = [self.nx, self.ny, self.nz].map(|v| v.div_ceil(b));
+        let (occupied, _) = self.brick_occupancy(b);
+        let used = occupied.iter().filter(|&&o| o != 0).count();
+        let layers = used.div_ceil(row * row).max(1);
+        let cells = [row * b, row * b, layers * b];
+        let mut atlas = vec![0u8; cells[0] * cells[1] * cells[2] * 2];
+        let mut indirection = vec![0u8; occupied.len() * 4];
+        let mut next = 0usize;
+        for bz in 0..bricks[2] {
+            for by in 0..bricks[1] {
+                for bx in 0..bricks[0] {
+                    let id = (bz * bricks[1] + by) * bricks[0] + bx;
+                    if occupied[id] == 0 {
+                        continue;
+                    }
+                    let slot = [next % row, (next / row) % row, next / (row * row)];
+                    next += 1;
+                    indirection[id * 4..id * 4 + 4].copy_from_slice(&[
+                        slot[0] as u8,
+                        slot[1] as u8,
+                        slot[2] as u8,
+                        255,
+                    ]);
+                    for z in 0..b {
+                        for y in 0..b {
+                            for x in 0..b {
+                                let c = self.get(
+                                    (bx * b + x) as i64,
+                                    (by * b + y) as i64,
+                                    (bz * b + z) as i64,
+                                );
+                                let at = [slot[0] * b + x, slot[1] * b + y, slot[2] * b + z];
+                                let i = ((at[2] * cells[1] + at[1]) * cells[0] + at[0]) * 2;
+                                let packed = pack565(c);
+                                atlas[i] = (packed & 0xFF) as u8;
+                                atlas[i + 1] = (packed >> 8) as u8;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Atlas {
+            bricks,
+            indirection,
+            cells,
+            atlas,
+            used,
+        }
+    }
+
     /// How many chunks the grid is split into (ids run from 0).
     pub fn chunk_count(&self) -> usize {
         self.dirty.len()
@@ -162,11 +773,153 @@ impl Grid {
     /// chunk's cell is filled.
     pub fn mesh_chunk(&self, id: usize) -> Mesh {
         let (lo, hi) = self.chunk_cells(id);
-        self.mesh_region(lo, hi, usize::MAX)
+        self.mesh_region(lo, hi, usize::MAX, false)
+    }
+
+    /// The see-through cells of chunk `id` alone (glass): faces only where they meet air.
+    pub fn mesh_chunk_clear(&self, id: usize) -> Mesh {
+        // Most models draw nothing see-through; scanning their cells for it again cost a
+        // shot-at water tower half as much again per hole.
+        if !self.clear.iter().any(|&c| c) {
+            return Mesh::default();
+        }
+        let (lo, hi) = self.chunk_cells(id);
+        self.mesh_region(lo, hi, usize::MAX, true)
+    }
+
+    /// Like `remesh_dirty`, with each chunk's see-through mesh beside its normal one. Tests
+    /// only: it marks chunks clean without refreshing kept section meshes.
+    #[cfg(test)]
+    pub fn remesh_dirty_layers(&mut self) -> Vec<(usize, Mesh, Mesh)> {
+        let ids = self.dirty_chunks();
+        let out = ids
+            .iter()
+            .map(|&id| (id, self.mesh_chunk(id), self.mesh_chunk_clear(id)))
+            .collect();
+        for id in ids {
+            self.dirty[id] = false;
+        }
+        out
+    }
+
+    /// Sections per axis: `section` chunks a side, the last row shorter where chunks run out.
+    fn sections(&self) -> [usize; 3] {
+        let n = self.section;
+        self.chunks.map(|c| c.div_ceil(n))
+    }
+
+    /// How many sections the grid is split into (ids run from 0).
+    pub fn section_count(&self) -> usize {
+        let s = self.sections();
+        s[0] * s[1] * s[2]
+    }
+
+    /// The section holding chunk `id`.
+    pub fn section_of_chunk(&self, id: usize) -> usize {
+        let cx = id % self.chunks[0];
+        let rest = id / self.chunks[0];
+        let cz = rest % self.chunks[2];
+        let cy = rest / self.chunks[2];
+        let s = self.sections();
+        let n = self.section;
+        ((cy / n) * s[2] + cz / n) * s[0] + cx / n
+    }
+
+    /// The chunks inside section `id`.
+    pub fn section_chunks(&self, id: usize) -> Vec<usize> {
+        let s = self.sections();
+        let sx = id % s[0];
+        let rest = id / s[0];
+        let sz = rest % s[2];
+        let sy = rest / s[2];
+        let n = self.section;
+        let mut out = Vec::new();
+        for cy in sy * n..((sy + 1) * n).min(self.chunks[1]) {
+            for cz in sz * n..((sz + 1) * n).min(self.chunks[2]) {
+                for cx in sx * n..((sx + 1) * n).min(self.chunks[0]) {
+                    out.push(self.chunk_id([cx, cy, cz]));
+                }
+            }
+        }
+        out
+    }
+
+    /// Meshes the changed chunks (both layers) and joins the sections they sit in:
+    /// `(section id, mesh, see-through mesh)` per section touched, an empty mesh where a
+    /// layer has nothing to draw. The first call returns every section. A section's first
+    /// draw keeps nothing; once it is edited its chunks' meshes are kept, so later edits mesh
+    /// only the chunks they touch.
+    pub fn remesh_dirty_sections(&mut self) -> Vec<(usize, Mesh, Mesh)> {
+        let ids = self.dirty_chunks();
+        let mut changed = vec![false; self.dirty.len()];
+        let mut touched: Vec<usize> = Vec::new();
+        for &id in &ids {
+            changed[id] = true;
+            self.dirty[id] = false;
+            let section = self.section_of_chunk(id);
+            if !touched.contains(&section) {
+                touched.push(section);
+            }
+        }
+        touched.sort_unstable();
+        touched
+            .into_iter()
+            .map(|section| {
+                let mut mesh = Mesh::default();
+                let mut clear = Mesh::default();
+                let chunks = self.section_chunks(section);
+                if !self.built[section] {
+                    self.built[section] = true;
+                    for chunk in chunks {
+                        mesh.append(&self.mesh_chunk(chunk));
+                        clear.append(&self.mesh_chunk_clear(chunk));
+                    }
+                    return (section, mesh, clear);
+                }
+                // A one-chunk section is only ever redrawn for its own chunk: nothing to keep.
+                if chunks.len() == 1 {
+                    let chunk = chunks[0];
+                    return (
+                        section,
+                        self.mesh_chunk(chunk),
+                        self.mesh_chunk_clear(chunk),
+                    );
+                }
+                // Edited: from now on this section keeps its chunks' meshes.
+                let fresh = !self.kept[section];
+                self.kept[section] = true;
+                for &chunk in &chunks {
+                    if fresh || changed[chunk] {
+                        let mut kept = (self.mesh_chunk(chunk), self.mesh_chunk_clear(chunk));
+                        kept.0.shrink();
+                        kept.1.shrink();
+                        self.meshed[chunk] = kept;
+                    }
+                    mesh.append(&self.meshed[chunk].0);
+                    clear.append(&self.meshed[chunk].1);
+                }
+                (section, mesh, clear)
+            })
+            .collect()
+    }
+
+    /// Section `id` meshed from scratch, for tests and tools.
+    pub fn mesh_chunks_of_section(&self, id: usize) -> Mesh {
+        let mut out = Mesh::default();
+        for chunk in self.section_chunks(id) {
+            out.append(&self.mesh_chunk(chunk));
+        }
+        out
+    }
+
+    /// How many sections keep their chunks' meshes (edited since their first draw).
+    pub fn kept_sections(&self) -> usize {
+        self.kept.iter().filter(|&&k| k).count()
     }
 
     /// Meshes every changed chunk and marks it clean: `(chunk id, mesh)` per chunk, an empty
     /// mesh where a chunk has nothing left to draw.
+    #[cfg(test)]
     pub fn remesh_dirty(&mut self) -> Vec<(usize, Mesh)> {
         let ids = self.dirty_chunks();
         let out = ids.iter().map(|&id| (id, self.mesh_chunk(id))).collect();
@@ -223,14 +976,20 @@ impl Grid {
         out.ny = n[1];
         out.nz = n[2];
         out.cells = vec![EMPTY; n[0] * n[1] * n[2]];
+        out.materials = vec![0; n[0] * n[1] * n[2]];
+        out.brush = self.brush;
+        out.clear = self.clear;
         out.chunks = n.map(|v| v.div_ceil(CHUNK));
         out.dirty = vec![true; out.chunks[0] * out.chunks[1] * out.chunks[2]];
+        out.section = self.section;
+        out.reset_sections();
         for y in y0..y1 {
             for z in z0..z1 {
                 for x in x0..x1 {
-                    let c = self.cells[self.index(x, y, z)];
+                    let from = self.index(x, y, z);
                     let i = out.index(x - x0, y - y0, z - z0);
-                    out.cells[i] = c;
+                    out.cells[i] = self.cells[from];
+                    out.materials[i] = self.materials[from];
                 }
             }
         }
@@ -290,11 +1049,26 @@ impl Grid {
             }
             let i = g.index(x, y, z);
             match op {
-                Op::Fill(paint) => g.write(x, y, z, paint.at(x, y, z)),
-                Op::Carve => g.write(x, y, z, EMPTY),
+                Op::Fill(paint) => g.write(x, y, z, paint.at(x, y, z), g.brush),
+                Op::Carve => g.write(x, y, z, EMPTY, 0),
                 Op::Paint(paint) => {
                     if g.cells[i] != EMPTY {
-                        g.write(x, y, z, paint.at(x, y, z));
+                        g.write(x, y, z, paint.at(x, y, z), g.materials[i]);
+                    }
+                }
+                Op::Mark(m) => {
+                    if g.cells[i] != EMPTY {
+                        g.materials[i] = m;
+                    }
+                }
+                Op::CarveMaterial(m) => {
+                    if g.cells[i] != EMPTY && g.materials[i] == m {
+                        g.write(x, y, z, EMPTY, 0);
+                    }
+                }
+                Op::Recolour(paint, m) => {
+                    if g.cells[i] != EMPTY && g.materials[i] == m {
+                        g.write(x, y, z, paint.at(x, y, z), m);
                     }
                 }
             }
@@ -399,13 +1173,21 @@ impl Grid {
     /// Like `mesh`, but no merged face is longer than `max_run` cells along z, so the mesh
     /// can be bent afterwards (a road following its curve) without faces cutting corners.
     pub fn mesh_max_run(&self, max_run: usize) -> Mesh {
-        self.mesh_region([0, 0, 0], [self.nx, self.ny, self.nz], max_run)
+        self.mesh_region([0, 0, 0], [self.nx, self.ny, self.nz], max_run, false)
     }
 
     /// Greedy mesh of the cells in `lo..hi` (per axis). Neighbours outside the range still
     /// hide faces, but only cells inside it get faces, so meshes of adjacent ranges meet
     /// without gaps or doubles.
-    fn mesh_region(&self, lo: [usize; 3], hi: [usize; 3], max_run: usize) -> Mesh {
+    /// `clear_pass`: mesh only the see-through cells (faces where they meet air); otherwise
+    /// everything else, treating see-through cells as air.
+    fn mesh_region(
+        &self,
+        lo: [usize; 3],
+        hi: [usize; 3],
+        max_run: usize,
+        clear_pass: bool,
+    ) -> Mesh {
         let max_run = max_run.max(1);
         let mut out = Mesh::default();
         let n = [0, 1, 2].map(|a| hi[a].saturating_sub(lo[a]));
@@ -424,7 +1206,7 @@ impl Grid {
                         back,
                         at: lo[axis] + slice,
                     };
-                    let mask = self.face_mask(&s, lo, n);
+                    let mask = self.face_mask(&s, lo, n, clear_pass);
                     for (i, j, w, h, key) in merge_rects(mask, n[u], n[v], cap(u), cap(v)) {
                         let plane = if back { slice } else { slice + 1 } as f32;
                         let mut corner = [0f32; 3];
@@ -448,7 +1230,7 @@ impl Grid {
 
     /// Which faces of slice `s` look out into air, as merge keys (`NONE` where there is no
     /// face), over the `n[u]` x `n[v]` cells of the region starting at `lo`.
-    fn face_mask(&self, s: &Slice, lo: [usize; 3], n: [usize; 3]) -> Vec<u64> {
+    fn face_mask(&self, s: &Slice, lo: [usize; 3], n: [usize; 3], clear_pass: bool) -> Vec<u64> {
         let mut mask = vec![NONE; n[s.u] * n[s.v]];
         for j in 0..n[s.v] {
             for i in 0..n[s.u] {
@@ -459,7 +1241,16 @@ impl Grid {
                 let here = self.get(p[0], p[1], p[2]);
                 let mut q = p;
                 q[s.axis] += if s.back { -1 } else { 1 };
-                if here == EMPTY || self.solid(q) {
+                if here == EMPTY {
+                    continue;
+                }
+                if clear_pass {
+                    // Glass shows only against air.
+                    if !self.clear_at(p) || self.solid(q) {
+                        continue;
+                    }
+                } else if self.clear_at(p) || (self.solid(q) && !self.clear_at(q)) {
+                    // Glass is air to the rest: the frame's faces behind it are drawn.
                     continue;
                 }
                 let levels = if self.corners {
@@ -605,6 +1396,12 @@ pub enum Op {
     Carve,
     /// Recolour only cells already filled (road markings on asphalt, moss on stone).
     Paint(Paint),
+    /// Set the material of cells already filled, leaving their colour.
+    Mark(u8),
+    /// Empty the cells of one material, leaving the rest (a pane out of its frame).
+    CarveMaterial(u8),
+    /// Recolour only the cells of one material (a crack mark on glass, not its frame).
+    Recolour(Paint, u8),
 }
 
 /// A colour with per-cell brightness jitter, so big surfaces don't look flat.
@@ -636,6 +1433,33 @@ impl Paint {
 }
 
 /// 0..1 from integer coordinates and a seed.
+/// A grid packed for the GPU (`Grid::brick_atlas`). `indirection` has 4 bytes per brick of
+/// the `bricks` grid (z slices, then y rows, then x): the brick's place in the atlas in
+/// bricks (x, y, z) and 255, or all zero for an empty brick. `atlas` has 2 bytes per cell of
+/// the `cells` grid (same order): the colour as 5-6-5 bits, low byte first, 0 for air.
+#[derive(Debug, Clone)]
+pub struct Atlas {
+    pub bricks: [usize; 3],
+    pub indirection: Vec<u8>,
+    pub cells: [usize; 3],
+    pub atlas: Vec<u8>,
+    pub used: usize,
+}
+
+/// A colour as 5-6-5 bits; air is 0, and a filled cell that would round to 0 (black) keeps
+/// one bit of blue so it stays filled.
+pub fn pack565(c: Colour) -> u16 {
+    if c == EMPTY {
+        return 0;
+    }
+    let r = ((c >> 16) & 0xFF) as u16;
+    let g = ((c >> 8) & 0xFF) as u16;
+    let b = (c & 0xFF) as u16;
+    let packed =
+        ((r * 31 + 127) / 255) << 11 | ((g * 63 + 127) / 255) << 5 | ((b * 31 + 127) / 255);
+    packed.max(1)
+}
+
 pub fn hash(x: u32, y: u32, z: u32, seed: u32) -> f32 {
     let mut h = x.wrapping_mul(0x8da6_b343)
         ^ y.wrapping_mul(0xd816_3841)
@@ -693,6 +1517,234 @@ mod tests {
 
     fn fill(c: Colour) -> Op {
         Op::Fill(Paint::solid(c))
+    }
+
+    #[test]
+    fn fills_take_the_brush_material_and_carving_clears_it() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        assert_eq!(g.material(0, 0, 0), 0);
+        g.brush = 3;
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 0.5, 0.5], fill(RED));
+        g.brush = 5;
+        g.fill_box([-0.5, 0.5, -0.5], [0.5, 1.0, 0.5], fill(RED));
+        assert_eq!(g.material(2, 1, 2), 3);
+        assert_eq!(g.material(2, 8, 2), 5);
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 0.25, 0.5], Op::Carve);
+        assert_eq!(g.material(2, 1, 2), 0);
+        // Same colour, new material: still a change.
+        g.brush = 7;
+        g.fill_box([-0.5, 0.5, -0.5], [0.5, 1.0, 0.5], fill(RED));
+        assert_eq!(g.material(2, 8, 2), 7);
+    }
+
+    #[test]
+    fn mark_changes_the_material_of_filled_cells_only() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        g.brush = 1;
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 0.45, 0.5], fill(RED));
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], Op::Mark(4));
+        assert_eq!(g.material(0, 0, 0), 4);
+        assert_eq!(g.get(0, 0, 0), RED);
+        // Air stays air with no material.
+        assert_eq!(g.material(0, 9, 0), 0);
+        assert_eq!(g.get(0, 9, 0), EMPTY);
+    }
+
+    #[test]
+    fn material_at_reads_the_cell_holding_a_point() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        g.brush = 2;
+        g.fill_box([-0.5, 0.0, -0.5], [0.0, 1.0, 0.5], fill(RED));
+        assert_eq!(g.material_at([-0.25, 0.5, 0.0]), 2);
+        assert_eq!(g.material_at([0.25, 0.5, 0.0]), 0);
+        assert_eq!(g.material_at([9.0, 0.5, 0.0]), 0);
+        assert_eq!(g.material_at([-0.25, -1.0, 0.0]), 0);
+    }
+
+    #[test]
+    fn the_dominant_material_is_the_most_common_one_in_the_box() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        g.brush = 8;
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], fill(RED));
+        g.brush = 1;
+        g.fill_box([-0.5, 0.0, -0.5], [-0.3, 1.0, 0.5], fill(BLUE));
+        assert_eq!(g.dominant_material([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5]), 8);
+        assert_eq!(g.dominant_material([-0.5, 0.0, -0.5], [-0.3, 1.0, 0.5]), 1);
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], Op::Carve);
+        assert_eq!(g.dominant_material([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5]), 0);
+    }
+
+    #[test]
+    fn colour_at_reads_the_cell_holding_a_point() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        g.fill_box([-0.5, 0.0, -0.5], [0.0, 1.0, 0.5], fill(RED));
+        assert_eq!(g.colour_at([-0.25, 0.5, 0.0]), RED);
+        assert_eq!(g.colour_at([0.25, 0.5, 0.0]), EMPTY);
+        assert_eq!(g.colour_at([0.0, -3.0, 0.0]), EMPTY);
+    }
+
+    #[test]
+    fn boxes_cover_exactly_the_kept_cells_in_few_boxes() {
+        let mut g = Grid::new([2.0, 2.0, 2.0], 0.1);
+        g.brush = 1;
+        g.fill_box(
+            [-1.0, 0.0, -1.0],
+            [1.0, 0.2, 1.0],
+            Op::Fill(Paint::solid(1)),
+        );
+        // A wall with a doorway, and a pane of glass to leave out.
+        g.fill_box(
+            [-1.0, 0.2, -0.1],
+            [1.0, 2.0, 0.1],
+            Op::Fill(Paint::solid(2)),
+        );
+        g.fill_box([-0.3, 0.2, -0.1], [0.3, 1.4, 0.1], Op::Carve);
+        g.fill_box([0.5, 1.5, -0.1], [0.8, 1.8, 0.1], Op::Carve);
+        g.brush = 4;
+        g.fill_box([0.5, 1.5, -0.1], [0.8, 1.8, 0.1], Op::Fill(Paint::solid(3)));
+        let mut skip = [false; 256];
+        skip[4] = true;
+        let boxes = g.boxes(&skip);
+        let cells: f32 = boxes
+            .iter()
+            .map(|(a, b)| ((b[0] - a[0]) * (b[1] - a[1]) * (b[2] - a[2]) / 0.001).round())
+            .sum();
+        let kept = (0..g.cells.len())
+            .filter(|&i| g.cells[i] != EMPTY && g.materials[i] != 4)
+            .count();
+        assert_eq!(cells as usize, kept);
+        // A floor slab, a wall either side of the doorway and over it: a handful, not thousands.
+        assert!(boxes.len() < 12, "{} boxes", boxes.len());
+        // Nothing in the doorway.
+        let hit = |p: [f32; 3]| {
+            boxes
+                .iter()
+                .any(|(a, b)| (0..3).all(|k| p[k] > a[k] && p[k] < b[k]))
+        };
+        assert!(!hit([0.0, 1.0, 0.0]));
+        assert!(hit([-0.6, 1.0, 0.0]));
+        assert!(!hit([0.65, 1.65, 0.0]));
+    }
+
+    #[test]
+    fn components_find_each_connected_patch_of_a_material() {
+        let mut g = Grid::new([2.0, 1.0, 1.0], 0.1);
+        g.brush = 1;
+        g.fill_box([-1.0, 0.0, -0.5], [1.0, 1.0, 0.5], fill(RED));
+        g.brush = 4;
+        // Two panes apart, and a third material between them.
+        g.fill_box([-0.8, 0.3, -0.05], [-0.4, 0.7, 0.05], fill(BLUE));
+        g.fill_box([0.4, 0.3, -0.05], [0.8, 0.7, 0.05], fill(BLUE));
+        let panes = g.components(4);
+        assert_eq!(panes.len(), 2);
+        for (min, max) in &panes {
+            assert!(max[0] - min[0] > 0.35 && max[0] - min[0] < 0.6);
+        }
+        assert!(g.components(9).is_empty());
+    }
+
+    #[test]
+    fn carving_one_material_leaves_the_rest() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        g.brush = 1;
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], fill(RED));
+        g.brush = 4;
+        g.fill_box([-0.2, 0.3, -0.1], [0.2, 0.7, 0.1], fill(BLUE));
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], Op::CarveMaterial(4));
+        assert_eq!(g.colour_at([0.0, 0.5, 0.0]), EMPTY);
+        assert_eq!(g.colour_at([-0.4, 0.5, 0.0]), RED);
+    }
+
+    #[test]
+    fn recolour_changes_only_one_material() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        g.brush = 1;
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], fill(RED));
+        g.brush = 4;
+        g.fill_box([-0.2, 0.3, -0.1], [0.2, 0.7, 0.1], fill(BLUE));
+        g.fill_box(
+            [-0.5, 0.0, -0.5],
+            [0.5, 1.0, 0.5],
+            Op::Recolour(Paint::solid(0xFFFFFF), 4),
+        );
+        assert_eq!(g.colour_at([0.0, 0.5, 0.0]), 0xFFFFFF);
+        assert_eq!(g.colour_at([-0.4, 0.5, 0.0]), RED);
+        assert_eq!(g.material_at([0.0, 0.5, 0.0]), 4);
+    }
+
+    #[test]
+    fn component_at_finds_the_one_brick_round_a_point() {
+        let mut g = Grid::new([2.0, 1.0, 1.0], 0.1);
+        g.brush = 9;
+        g.fill_box([-1.0, 0.0, -0.5], [1.0, 1.0, 0.5], fill(RED));
+        g.brush = 7;
+        // Two bricks with a joint between them.
+        g.fill_box([-0.6, 0.2, -0.2], [-0.2, 0.4, 0.2], fill(BLUE));
+        g.fill_box([-0.1, 0.2, -0.2], [0.3, 0.4, 0.2], fill(BLUE));
+        let (min, max) = g.component_at([-0.4, 0.3, 0.0], 7, 1000).unwrap();
+        assert!(min[0] > -0.65 && max[0] < -0.15);
+        assert!(g.component_at([0.6, 0.3, 0.0], 7, 1000).is_none());
+        // A patch bigger than the cap isn't a brick.
+        assert!(g.component_at([0.6, 0.3, 0.0], 9, 50).is_none());
+        assert_eq!(
+            g.count_material([-1.0, 0.0, -0.5], [1.0, 1.0, 0.5], 7),
+            2 * 4 * 2 * 4
+        );
+    }
+
+    #[test]
+    fn see_through_cells_go_in_their_own_mesh() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        g.brush = 1;
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], fill(RED));
+        g.brush = 4;
+        g.fill_box([-0.2, 0.3, -0.5], [0.2, 0.7, 0.5], fill(BLUE));
+        let before = g.mesh_chunk(0).quad_count();
+        g.set_clear(4, true);
+        let solid = g.mesh_chunk(0);
+        let glass = g.mesh_chunk_clear(0);
+        // No glass in the normal mesh, and the frame round the glass now shows faces.
+        assert!(solid.colours.iter().all(|&c| c != BLUE));
+        assert!(solid.quad_count() > before);
+        // Only glass in the clear mesh, and only where it meets air (its two ends).
+        assert!(!glass.colours.is_empty() && glass.colours.iter().all(|&c| c == BLUE));
+        assert!(glass.normals.iter().all(|n| n[2].abs() == 1.0));
+        let layers = g.remesh_dirty_layers();
+        assert_eq!(layers.len(), g.chunk_count());
+    }
+
+    #[test]
+    fn fracture_keeps_every_cell_and_never_splits_a_brick() {
+        let mut g = Grid::new([2.0, 1.0, 1.0], 0.1);
+        g.brush = 9;
+        g.fill_box([-1.0, 0.0, -0.1], [1.0, 1.0, 0.1], fill(RED));
+        g.brush = 7;
+        g.fill_box([-0.6, 0.2, -0.1], [-0.2, 0.4, 0.1], fill(BLUE));
+        let before = g.filled();
+        let seeds = [[-0.4, 0.3, 0.0], [-0.35, 0.35, 0.0], [0.5, 0.5, 0.0]];
+        let parts = g.fracture([-1.0, 0.0, -0.5], [1.0, 1.0, 0.5], &seeds, 7, 1.5, 3);
+        assert!(parts.len() >= 2);
+        assert_eq!(parts.iter().map(|p| p.grid.filled()).sum::<usize>(), before);
+        let with_brick = parts
+            .iter()
+            .filter(|p| {
+                (0..p.grid.cells.len())
+                    .any(|i| p.grid.cells[i] != EMPTY && p.grid.materials[i] == 7)
+            })
+            .count();
+        assert_eq!(with_brick, 1);
+        let again = g.fracture([-1.0, 0.0, -0.5], [1.0, 1.0, 0.5], &seeds, 7, 1.5, 3);
+        let sizes = |f: &[Fragment]| f.iter().map(|p| p.grid.filled()).collect::<Vec<_>>();
+        assert_eq!(sizes(&parts), sizes(&again));
+    }
+
+    #[test]
+    fn a_copied_box_keeps_its_materials() {
+        let mut g = Grid::new([1.0, 1.0, 1.0], 0.1);
+        g.brush = 6;
+        g.fill_box([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], fill(BLUE));
+        let (copy, _) = g.copy_box([-0.2, 0.2, -0.2], [0.2, 0.6, 0.2]);
+        assert_eq!(copy.material(0, 0, 0), 6);
     }
 
     /// Face area per (colour, normal), in square cells, so float sums compare exactly.
@@ -809,6 +1861,127 @@ mod tests {
     }
 
     #[test]
+    fn section_meshes_cover_the_same_faces_as_the_whole_mesh() {
+        for mut g in sample_models() {
+            let whole = area_by_colour(&[g.mesh()], g.voxel);
+            let sections = g.remesh_dirty_sections();
+            assert_eq!(sections.len(), g.section_count());
+            let meshes: Vec<Mesh> = sections.into_iter().map(|(_, m, _)| m).collect();
+            assert_eq!(area_by_colour(&meshes, g.voxel), whole);
+            // Nothing changed: nothing to draw again.
+            assert!(g.remesh_dirty_sections().is_empty());
+        }
+    }
+
+    #[test]
+    fn sections_group_chunks_and_every_chunk_is_in_one() {
+        // 8 x 2 x 3 chunks: 2 x 1 x 1 sections, the second with 4 x 2 x 3 chunks too.
+        let g = Grid::new([12.8, 3.2, 4.8], 0.1);
+        assert_eq!(g.chunk_count(), 48);
+        assert_eq!(g.section_count(), 2);
+        let mut seen = vec![0; g.chunk_count()];
+        for section in 0..g.section_count() {
+            for chunk in g.section_chunks(section) {
+                assert_eq!(g.section_of_chunk(chunk), section);
+                seen[chunk] += 1;
+            }
+        }
+        assert!(seen.iter().all(|&n| n == 1));
+        assert_eq!(g.section_of_chunk(g.chunk_of(63, 0, 0)), 0);
+        assert_eq!(g.section_of_chunk(g.chunk_of(64, 0, 0)), 1);
+    }
+
+    #[test]
+    fn an_edit_joins_only_the_sections_round_it_from_kept_chunk_meshes() {
+        let mut g = Grid::new([12.8, 1.6, 1.6], 0.1);
+        g.fill_box([-6.4, 0.0, -0.8], [6.4, 1.6, 0.8], fill(RED));
+        assert_eq!(g.remesh_dirty_sections().len(), 2);
+        // Inside the first section.
+        g.set(8, 8, 8, BLUE);
+        let again = g.remesh_dirty_sections();
+        assert_eq!(
+            again.iter().map(|(id, _, _)| *id).collect::<Vec<_>>(),
+            vec![0]
+        );
+        // Across the border between chunks 3 and 4 (x = 0): both sections change.
+        g.fill_box([-0.15, 0.2, -0.2], [0.15, 0.5, 0.2], Op::Carve);
+        let both = g.remesh_dirty_sections();
+        assert_eq!(
+            both.iter().map(|(id, _, _)| *id).collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+        // The joined sections hold exactly the faces the whole model has now.
+        let meshes: Vec<Mesh> = both.into_iter().map(|(_, m, _)| m).collect();
+        let total: i64 = area_by_colour(&meshes, g.voxel).values().sum();
+        assert_eq!(total, exposed_faces(&g));
+    }
+
+    #[test]
+    fn a_model_never_edited_keeps_no_chunk_meshes() {
+        let mut g = Grid::new([12.8, 1.6, 1.6], 0.1);
+        g.fill_box([-6.4, 0.0, -0.8], [6.4, 1.6, 0.8], fill(RED));
+        assert_eq!(g.remesh_dirty_sections().len(), 2);
+        assert_eq!(g.kept_sections(), 0);
+        assert!(
+            g.meshed
+                .iter()
+                .all(|(m, c)| m.positions.is_empty() && c.positions.is_empty())
+        );
+    }
+
+    #[test]
+    fn only_edited_sections_keep_their_chunk_meshes_and_still_join_right() {
+        let mut g = Grid::new([12.8, 1.6, 1.6], 0.1);
+        g.fill_box([-6.4, 0.0, -0.8], [6.4, 1.6, 0.8], fill(RED));
+        g.remesh_dirty_sections();
+        g.set(8, 8, 8, BLUE);
+        let first = g.remesh_dirty_sections();
+        assert_eq!(g.kept_sections(), 1);
+        // A second edit in the same section joins from the kept meshes.
+        g.set(20, 8, 8, BLUE);
+        let second = g.remesh_dirty_sections();
+        assert_eq!(second.len(), 1);
+        assert_eq!(first[0].0, second[0].0);
+        let untouched = g.mesh_chunks_of_section(1 - second[0].0);
+        let mut all: Vec<Mesh> = second.into_iter().map(|(_, m, _)| m).collect();
+        all.push(untouched);
+        let total: i64 = area_by_colour(&all, g.voxel).values().sum();
+        assert_eq!(total, exposed_faces(&g));
+    }
+
+    #[test]
+    fn smaller_sections_split_a_model_into_more_and_an_edit_touches_one() {
+        let mut g = Grid::new([12.8, 3.2, 3.2], 0.1);
+        g.fill_box([-6.4, 0.0, -1.6], [6.4, 3.2, 1.6], fill(RED));
+        assert_eq!(g.section_count(), 2);
+        g.set_section(2);
+        // 8 x 2 x 2 chunks in sections of 2: 4 x 1 x 1.
+        assert_eq!(g.section_count(), 4);
+        assert_eq!(g.remesh_dirty_sections().len(), 4);
+        g.set(8, 8, 8, BLUE);
+        assert_eq!(g.remesh_dirty_sections().len(), 1);
+        g.set_section(0);
+        assert_eq!(g.section, 1);
+        g.set_section(99);
+        assert_eq!(g.section, MAX_SECTION);
+    }
+
+    #[test]
+    fn see_through_cells_come_back_as_each_sections_clear_mesh() {
+        let mut g = Grid::new([3.2, 1.6, 1.6], 0.1);
+        g.fill_box([-1.6, 0.0, -0.8], [1.6, 1.6, 0.8], fill(RED));
+        g.brush = 7;
+        g.fill_box([-0.5, 0.5, -0.8], [0.5, 1.0, -0.7], fill(BLUE));
+        g.set_clear(7, true);
+        let sections = g.remesh_dirty_sections();
+        assert_eq!(sections.len(), 1);
+        let (_, mesh, clear) = &sections[0];
+        assert!(clear.quad_count() > 0);
+        assert!(mesh.colours.iter().all(|&c| c == RED));
+        assert!(clear.colours.iter().all(|&c| c == BLUE));
+    }
+
+    #[test]
     fn an_edit_dirties_its_chunk_and_a_neighbour_only_across_a_border() {
         let mut g = Grid::new([4.8, 1.6, 1.6], 0.1);
         g.remesh_dirty();
@@ -861,6 +2034,75 @@ mod tests {
             area_by_colour(&meshes, g.voxel),
             area_by_colour(&[g.mesh()], g.voxel)
         );
+    }
+
+    #[test]
+    fn rgba_slices_run_z_then_y_then_x_with_air_transparent() {
+        let mut g = Grid::new([0.3, 0.2, 0.4], 0.1);
+        assert_eq!([g.nx, g.ny, g.nz], [3, 2, 4]);
+        g.set(2, 1, 3, 0x123456);
+        g.set(0, 0, 0, 0xff0000);
+        let bytes = g.rgba_slices();
+        assert_eq!(bytes.len(), 3 * 2 * 4 * 4);
+        let at = |x: usize, y: usize, z: usize| ((z * 2 + y) * 3 + x) * 4;
+        assert_eq!(
+            &bytes[at(2, 1, 3)..at(2, 1, 3) + 4],
+            &[0x12, 0x34, 0x56, 255]
+        );
+        assert_eq!(&bytes[at(0, 0, 0)..at(0, 0, 0) + 4], &[0xff, 0, 0, 255]);
+        assert_eq!(&bytes[at(1, 0, 2)..at(1, 0, 2) + 4], &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn brick_occupancy_marks_only_bricks_with_something_in_them() {
+        let mut g = Grid::new([1.0, 0.5, 0.9], 0.1);
+        assert_eq!([g.nx, g.ny, g.nz], [10, 5, 9]);
+        g.set(9, 4, 8, 0xffffff);
+        g.set(0, 0, 0, 0xffffff);
+        let (bytes, size) = g.brick_occupancy(4);
+        assert_eq!(size, [3, 2, 3]);
+        let at = |x: usize, y: usize, z: usize| (z * 2 + y) * 3 + x;
+        assert_eq!(bytes[at(2, 1, 2)], 255);
+        assert_eq!(bytes[at(0, 0, 0)], 255);
+        assert_eq!(bytes.iter().filter(|&&b| b == 255).count(), 2);
+    }
+
+    #[test]
+    fn the_atlas_holds_every_filled_cell_where_the_indirection_says() {
+        let mut g = Grid::new([1.3, 0.9, 1.1], 0.1);
+        g.set(0, 0, 0, 0xff0000);
+        g.set(12, 8, 10, 0x00ff00);
+        g.set(5, 4, 5, 0x000000);
+        let a = g.brick_atlas(4, 2);
+        assert_eq!(a.bricks, [4, 3, 3]);
+        assert_eq!(a.used, 3);
+        assert_eq!(a.cells, [8, 8, 4]);
+        let lookup = |x: usize, y: usize, z: usize| -> u16 {
+            let id = ((z / 4) * a.bricks[1] + y / 4) * a.bricks[0] + x / 4;
+            let ind = &a.indirection[id * 4..id * 4 + 4];
+            if ind[3] == 0 {
+                return 0;
+            }
+            let at = [
+                ind[0] as usize * 4 + x % 4,
+                ind[1] as usize * 4 + y % 4,
+                ind[2] as usize * 4 + z % 4,
+            ];
+            let i = ((at[2] * a.cells[1] + at[1]) * a.cells[0] + at[0]) * 2;
+            a.atlas[i] as u16 | (a.atlas[i + 1] as u16) << 8
+        };
+        for z in 0..g.nz {
+            for y in 0..g.ny {
+                for x in 0..g.nx {
+                    let c = g.get(x as i64, y as i64, z as i64);
+                    assert_eq!(lookup(x, y, z), pack565(c), "cell {x} {y} {z}");
+                }
+            }
+        }
+        // Black stays filled; air is the only zero.
+        assert_ne!(lookup(5, 4, 5), 0);
+        assert_eq!(pack565(0xff0000), 0xF800);
+        assert_eq!(pack565(0x00ff00), 0x07E0);
     }
 
     #[test]

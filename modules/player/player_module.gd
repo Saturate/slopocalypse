@@ -8,6 +8,8 @@ extends Node
 const SCENE := "res://modules/player/scenes/player.tscn"
 ## How far down a held player looks for ground before letting go.
 const GROUND_PROBE := 40.0
+## Random spots near the spawn tried before falling back to the rings round it.
+const NEAR_SPAWN_TRIES := 8
 
 var _spawner := MultiplayerSpawner.new()
 var _players: Dictionary[int, PlayerController] = {}
@@ -21,6 +23,8 @@ var _holding: Dictionary = {}
 ## Server: dead player -> seconds until they come back.
 var _respawn_in: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
+## Server: how far apart players who join together start; -1 until read.
+var _spacing := -1.0
 ## Server: player -> seconds until they may go back to the spawn again.
 var _back_cooldown: Dictionary = {}
 
@@ -48,6 +52,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"session.back_to_spawn", _on_back_to_spawn_asked)
 	EventBus.subscribe(&"admin.teleport", _on_admin_teleport)
 	EventBus.subscribe(&"player.move_requested", _on_admin_teleport)
+	EventBus.subscribe(&"settings.changed", _on_settings_changed)
 	Net.peer_joined.connect(_on_peer_joined)
 	Net.peer_left.connect(_on_peer_left)
 
@@ -61,6 +66,13 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"session.back_to_spawn", _on_back_to_spawn_asked)
 	EventBus.unsubscribe(&"admin.teleport", _on_admin_teleport)
 	EventBus.unsubscribe(&"player.move_requested", _on_admin_teleport)
+	EventBus.unsubscribe(&"settings.changed", _on_settings_changed)
+
+
+## Colour-blind colours switched on or off: every band in the world changes at once.
+func _on_settings_changed(p: Dictionary) -> void:
+	if str(p.get("key", "")) == Armband.SETTING:
+		Armband.repaint()
 
 
 func players() -> Array[PlayerController]:
@@ -102,8 +114,7 @@ func _physics_tick(delta: float) -> void:
 		var ground := _ground_height(at)
 		if at.y < ground - _rescue_depth or at.y < _kill_y:
 			Log.warn(&"player", "fell through the ground at %s, putting them back on top" % at)
-			player.global_position = Vector3(at.x, ground + 1.0, at.z)
-			player.velocity = Vector3.ZERO
+			player.put_at(Vector3(at.x, ground + 1.0, at.z))
 			server_hold(player)
 
 
@@ -171,7 +182,63 @@ func _on_peer_left(peer: int) -> void:
 func _server_spawn(peer: int) -> void:
 	if _players.has(peer):
 		return
-	_spawner.spawn({"peer": peer, "position": _spawn})
+	var taken: Array[Vector3] = []
+	for p: PlayerController in _players.values():
+		taken.append(p.global_position if p.is_inside_tree() else p.position)
+	# The name rides along so clients can label other players (the compass, #455).
+	var who := str(Net.identity_of(peer).get("name", ""))
+	_spawner.spawn({"peer": peer, "position": free_spawn_point(_spawn, taken, _spawn_spacing(), _car_at), "name": who})
+
+
+## How far apart players who join together start, from player.json, read once; 0 (everyone
+## on the spawn) if the file is broken, which Data.require has already reported.
+func _spawn_spacing() -> float:
+	if _spacing < 0.0:
+		var data: Variant = Data.load_json(PlayerController.CONFIG)
+		var fields := {"spawn_spacing": TYPE_FLOAT, "spawn_min_gap": TYPE_FLOAT, "radius": TYPE_FLOAT}
+		_spacing = spawn_spacing_from(data) if data is Dictionary and Data.require(PlayerController.CONFIG, data, fields) else 0.0
+	return _spacing
+
+
+## `spawn_spacing`, but never so tight that two bodies overlap: at least two radii plus
+## `spawn_min_gap` between their centres.
+static func spawn_spacing_from(config: Dictionary) -> float:
+	return maxf(float(config["spawn_spacing"]), float(config["radius"]) * 2.0 + float(config["spawn_min_gap"]))
+
+
+## The spawn itself when nobody stands on it, else the first spot on rings `spacing` apart
+## around it that is `spacing` from everyone. Two bodies in one spot push each other out the
+## same way every tick and slide off together at tens of metres a second.
+## `blocked(at) -> bool` turns down a spot for anything else in the way (a parked car, #406).
+static func free_spawn_point(spawn: Vector3, taken: Array[Vector3], spacing: float, blocked := Callable()) -> Vector3:
+	const PER_RING := 8
+	const MAX_RINGS := 4
+	for ring in MAX_RINGS + 1:
+		for i in (1 if ring == 0 else PER_RING):
+			var angle := TAU * float(i) / float(PER_RING)
+			var at := spawn + Vector3(cos(angle), 0.0, sin(angle)) * spacing * float(ring)
+			if blocked.is_valid() and bool(blocked.call(at)):
+				continue
+			if taken.all(func(t: Vector3) -> bool: return Vector2(t.x - at.x, t.z - at.z).length() >= spacing):
+				return at
+	return spawn
+
+
+## A spot within `respawn_spread` of the spawn with no car on it (one parked on the spawn
+## would trap whoever is put inside it, #406); the free spawn rings if every draw has one.
+func _near_spawn(player: PlayerController) -> Vector3:
+	var spread := float(player.config.get("respawn_spread", 0.0))
+	for i in NEAR_SPAWN_TRIES:
+		var at := _spawn + Vector3(_rng.randf_range(-spread, spread), 0.5, _rng.randf_range(-spread, spread))
+		if not _car_at(at):
+			return at
+	return free_spawn_point(_spawn, [], _spawn_spacing(), _car_at) + Vector3.UP * 0.5
+
+
+## Whether a car stands where a person would with their feet at `at`: a body put there would
+## start inside it and could not move.
+func _car_at(at: Vector3) -> bool:
+	return PlayerController.vehicle_at(get_viewport().find_world_3d(), at) if is_inside_tree() else false
 
 
 ## Runs on the server and, through the spawner, on every client.
@@ -182,12 +249,16 @@ func _spawn_player(data: Variant) -> Node:
 	player.name = str(peer)
 	player.position = info["position"]
 	player.set_meta(&"peer_id", peer)
+	player.set_meta(&"player_name", str(info.get("name", "")))
 	player.add_to_group(&"players")
 	_players[peer] = player
-	# The server simulates every player; client copies wait for movement sync (#10).
-	if not multiplayer.is_server():
-		player.set_physics_process(false)
 	var local := Net.has_local_player() and peer == Net.local_peer_id()
+	# The server simulates every player; copies of others on a client only show what it sends
+	# (#10). Your own copy keeps its step: eye height, floor contact and camera feel come from it.
+	if not multiplayer.is_server() and not local:
+		PlayerController.hold_still(player)
+	# Others are shown a moment in the past, blended between updates; our own camera can't lag.
+	player.set_meta(&"net_smooth", not local)
 	player.ready.connect(_on_player_ready.bind(player, local), CONNECT_ONE_SHOT)
 	return player
 
@@ -206,9 +277,7 @@ func _server_died(source: Node, player: PlayerController) -> void:
 func server_respawn(player: PlayerController) -> void:
 	_respawn_in.erase(player)
 	(player.get_node("Health") as HealthComponent).server_reset()
-	var spread := float(player.config.get("respawn_spread", 0.0))
-	player.global_position = _spawn + Vector3(_rng.randf_range(-spread, spread), 0.5, _rng.randf_range(-spread, spread))
-	player.velocity = Vector3.ZERO
+	player.put_at(_near_spawn(player))
 	Net.server_broadcast(&"player.respawned", {"player": player})
 	server_hold(player)
 
@@ -239,8 +308,7 @@ func server_back_to_spawn(player: PlayerController) -> bool:
 		return false
 	_back_cooldown[player] = float(player.config.get("back_to_spawn_cooldown_seconds", 10.0))
 	EventBus.publish(&"player.back_to_spawn", {"player": player})
-	var spread := float(player.config.get("respawn_spread", 0.0))
-	server_move_to(player, _spawn + Vector3(_rng.randf_range(-spread, spread), 0.5, _rng.randf_range(-spread, spread)))
+	server_move_to(player, _near_spawn(player))
 	Log.info(&"player", "%s went back to the spawn" % who)
 	return true
 
@@ -249,9 +317,15 @@ func server_back_to_spawn(player: PlayerController) -> bool:
 ## exists. A car lets them out first (and puts them beside it); then they move.
 func server_move_to(player: PlayerController, at: Vector3) -> void:
 	EventBus.publish(&"player.teleporting", {"player": player})
-	player.global_position = at
-	player.velocity = Vector3.ZERO
+	player.put_at(at)
 	server_hold(player)
+
+
+## Server: takes `amount` health from a player as a hit with no shooter would (scripted
+## playtests kill someone this way). Returns the damage dealt; god mode deals none.
+func server_damage(player: PlayerController, amount: float) -> float:
+	var health := player.get_node_or_null("Health") as HealthComponent
+	return health.server_apply_damage(amount) if health != null else 0.0
 
 
 ## Everywhere: a dead player is hidden, cannot be hit and does not move; the camera stays
@@ -259,6 +333,9 @@ func server_move_to(player: PlayerController, at: Vector3) -> void:
 func _on_player_died(p: Dictionary) -> void:
 	var player := p.get("player") as PlayerController
 	if player != null:
+		# Clients: a ragdoll falls where they stood; the body itself waits for the respawn.
+		if not player.get_meta(&"dead", false):
+			Corpse.from_body(player, Corpse.push_from(player, p.get("source")), player.velocity)
 		_set_dead(player, true)
 
 
@@ -281,6 +358,10 @@ func _on_player_ready(player: PlayerController, local: bool) -> void:
 		var health := player.get_node_or_null("Health") as HealthComponent
 		if health != null:
 			health.died.connect(_server_died.bind(player))
+	# Before the spawn is announced: HUD rows built on `player.spawned` (glowstick, charge
+	# hints) read their key caps from the InputMap once, and showed "?" when this came after.
+	if local:
+		InputBindings.register(player.config.get("bindings", {}), &"player")
 	# Other modules (weapons, world viewer, later inventory) equip players through this.
 	EventBus.publish(&"player.spawned", {"player": player, "local": local})
 	var bot := _bot_behaviour()
@@ -301,17 +382,20 @@ func _on_player_ready(player: PlayerController, local: bool) -> void:
 
 
 func _setup_local(player: PlayerController) -> void:
-	InputBindings.register(player.config.get("bindings", {}), &"player")
 	var hud := PlayerHud.new()
 	hud.name = "Hud"
 	hud.player = player
 	player.add_child(hud)
-	var input := PlayerInput.new()
-	input.name = "Input"
-	input.intent = player.intent()
-	input.player = player
-	input.sensitivity = player.config["mouse_sensitivity"]
-	player.add_child(input)
+	# A bot drives this player (the benchmark): no keyboard or mouse, so whoever sits at the
+	# machine can't steer, look or shoot, the mouse is never captured and the window runs on
+	# without focus. Every run is then the same (#377).
+	if _bot_behaviour().is_empty():
+		var input := PlayerInput.new()
+		input.name = "Input"
+		input.intent = player.intent()
+		input.player = player
+		input.sensitivity = player.config["mouse_sensitivity"]
+		player.add_child(input)
 	var feel := PlayerCameraFeel.new()
 	feel.name = "CameraFeel"
 	feel.player = player
@@ -327,6 +411,8 @@ func _on_car_entered(payload: Dictionary) -> void:
 	var player := payload.get("player") as PlayerController
 	if player == null or not _players.values().has(player):
 		return
+	player.clear_shove()
+	player.let_go()
 	# Parked, not freed: the same player comes back on exit.
 	player.process_mode = Node.PROCESS_MODE_DISABLED
 	player.visible = false
@@ -337,8 +423,7 @@ func _on_car_exited(payload: Dictionary) -> void:
 	var player := payload.get("player") as PlayerController
 	if player == null or not _players.values().has(player):
 		return
-	player.global_position = payload["position"]
-	player.velocity = Vector3.ZERO
+	player.put_at(payload["position"])
 	player.process_mode = Node.PROCESS_MODE_INHERIT
 	player.visible = true
 	(player.get_node("Shape") as CollisionShape3D).set_deferred(&"disabled", false)
@@ -347,9 +432,10 @@ func _on_car_exited(payload: Dictionary) -> void:
 		_camera(player).current = true
 
 
-## `--bot=NAME` after `--` makes this instance's own player drive itself (tests, soak).
+## `--bot=NAME` makes this instance's own player drive itself (tests, soak, benchmarks): from
+## the command line after `--`, or added by a menu choice (the Benchmark adds `--bot=city`).
 func _bot_behaviour() -> String:
-	for arg in OS.get_cmdline_user_args():
+	for arg in Net.session_args():
 		if arg.begins_with("--bot="):
 			return arg.trim_prefix("--bot=")
 	return ""

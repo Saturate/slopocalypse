@@ -25,6 +25,16 @@ func _physics_process(_delta: float) -> void:
 
 func _physics_tick(_delta: float) -> void:
 	var driving := seat == &"driver"
+	# A screen is open (a text box, the map): its keys are not driving.
+	if UiStack.is_blocking():
+		if driving:
+			intent.throttle = 0.0
+			intent.steer = 0.0
+			intent.brake = false
+			# The server keeps the last input it got: tell it to let go, or the car drives on.
+			_send_drive()
+		_exit_armed = false
+		return
 	if driving:
 		intent.throttle = Input.get_axis(&"car_reverse", &"car_throttle")
 		intent.steer = Input.get_axis(&"car_left", &"car_right")
@@ -38,5 +48,11 @@ func _physics_tick(_delta: float) -> void:
 			intent.passenger_exit = true
 		if _remote:
 			intent.submit_exit.rpc_id(1)
-	if _remote and driving:
+	if driving:
+		_send_drive()
+
+
+## On a remote client (solo too: its server is another process), the driving input to the server.
+func _send_drive() -> void:
+	if _remote:
 		intent.submit.rpc_id(1, intent.throttle, intent.steer, intent.brake)

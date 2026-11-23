@@ -1,34 +1,65 @@
 {
-  "first_spawn_seconds": 20.0,
-  "max_alive": 6.0,
-  "squad_size": [2, 3],
-  "squad_respawn_seconds": 45.0,
-  "spawn_distance": [45.0, 90.0],
+  "first_spawn_seconds": 5.0,
+  "max_alive": 200.0,
+  "squad_size": [
+    2,
+    4
+  ],
+  "squad_respawn_seconds": 8.0,
+  "spawn_area": [
+    80.0,
+    1200.0
+  ],
+  "spawn_clear": 150.0,
+  "camp_margin": 120.0,
   "corpse_seconds": 12.0,
   "max_health": 100.0,
   "patrol_radius": 18.0,
-  "patrol_pause_seconds": [2.0, 6.0],
+  "patrol_pause_seconds": [
+    2.0,
+    6.0
+  ],
   "walk_speed_share": 0.55,
   "sight_range": 70.0,
   "sight_cone_degrees": 120.0,
   "hearing_range": 45.0,
   "reaction_seconds": 1.0,
-  "aim_error_degrees": [7.0, 2.2],
+  "aim_error_degrees": [
+    7.0,
+    2.2
+  ],
   "damage_scale": 0.6,
-  "uniform_tint": [0.75, 0.55, 0.5],
+  "uniform_tint": [
+    0.75,
+    0.55,
+    0.5
+  ],
   "aim_settle_seconds": 2.5,
   "turn_speed": 4.0,
-  "burst_shots": [3, 6],
-  "burst_pause_seconds": [0.9, 1.8],
+  "burst_shots": [
+    3,
+    6
+  ],
+  "burst_pause_seconds": [
+    0.9,
+    1.8
+  ],
   "chase_seconds": 8.0,
   "forget_seconds": 20.0,
   "post_scan_degrees": 70.0,
   "post_scan_seconds": 8.0,
   "fortitude": {
-    "start": [6, 20],
+    "start": [
+      6,
+      20
+    ],
     "step": 2,
     "steady_from": 18,
-    "bands": { "fight": 17, "posture": 11, "flee": 5 },
+    "bands": {
+      "fight": 17,
+      "posture": 11,
+      "flee": 5
+    },
     "evaluate_seconds": 0.5,
     "ally_range": 25.0,
     "wounded_share": 0.6,
@@ -45,9 +76,18 @@
     "settle_seconds": 1.0,
     "stand_eye": 1.5,
     "threat_eye": 1.5,
-    "no_shot_penalty": 8.0, "body_radius": 0.5, "sweep_height": 0.5, "detour_tries": 6,
-    "peek_seconds": [1.2, 2.4],
-    "hide_seconds": [1.0, 2.0],
+    "no_shot_penalty": 8.0,
+    "body_radius": 0.5,
+    "sweep_height": 0.5,
+    "detour_tries": 6,
+    "peek_seconds": [
+      1.2,
+      2.4
+    ],
+    "hide_seconds": [
+      1.0,
+      2.0
+    ],
     "bound_range": 15.0,
     "callout_range": 30.0
   },
@@ -59,5 +99,57 @@
     "decay": 0.35,
     "pinned": 1.0,
     "pinned_aim_scale": 2.5
+  },
+  "sleep": {
+    "_comment": "Server: soldiers and civilians far from every player stop moving and thinking until one comes near (#514). They wake within distance metres of a player and sleep again past distance + margin; checked every check_seconds, and at once when a player turns up more than jump_metres from where they were (joining, respawning, getting out of a car). Keep distance at least data/net.json's relevance_distance + relevance_margin, so nobody a player is sent is asleep. A soldier with a target or under fire and an alarmed civilian stay awake anywhere.",
+    "distance": 360.0,
+    "margin": 40.0,
+    "check_seconds": 0.5,
+    "jump_metres": 10.0
+  },
+  "civilians": {
+    "_comment": "Unarmed people in the city (#342): walk_share (share of walking speed when strolling), stroll_radius (metres around home they wander), pause_seconds (how long they stop between strolls), hearing_range (gunfire or a blast this close alarms them), freeze_share (share who crouch where they stand instead of running), calm_seconds (quiet before they stroll again), max_health, clothes (body tints, [r, g, b], picked per person).",
+    "walk_share": 0.45,
+    "stroll_radius": 8.0,
+    "pause_seconds": [
+      2.0,
+      7.0
+    ],
+    "hearing_range": 60.0,
+    "freeze_share": 0.25,
+    "calm_seconds": 90.0,
+    "max_health": 60.0,
+    "clothes": [
+      [
+        0.55,
+        0.6,
+        0.72
+      ],
+      [
+        0.72,
+        0.5,
+        0.42
+      ],
+      [
+        0.5,
+        0.5,
+        0.48
+      ],
+      [
+        0.78,
+        0.74,
+        0.62
+      ],
+      [
+        0.42,
+        0.5,
+        0.4
+      ],
+      [
+        0.66,
+        0.42,
+        0.52
+      ]
+    ]
   }
 }

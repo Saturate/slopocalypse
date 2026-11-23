@@ -7,6 +7,8 @@ const OUT := "res://modules/player/scenes/player.tscn"
 func _initialize() -> void:
 	var root := CharacterBody3D.new()
 	root.name = "Player"
+	# Window panes stop bodies too; they sit on their own layer so eyes see through them.
+	root.collision_mask = PhysicsLayers.SOLID | PhysicsLayers.GLASS
 
 	var shape := CollisionShape3D.new()
 	shape.name = "Shape"
@@ -45,7 +47,7 @@ func _initialize() -> void:
 	root.set("shape_path", NodePath("Shape"))
 	# Server -> clients: where the player is and what they're doing, for remote players'
 	# bodies and animation. The local client overrides its own aim every frame.
-	root.add_child(NetSync.make([".:position", ".:rotation", "Head:rotation", ".:velocity"], [".:mode", "Intent:crouch", "Intent:lean", "Intent:aim", "Intent:weapon_slot", "Health:health"]))
+	root.add_child(NetSync.make([".:position", ".:rotation:y", "Head:rotation", ".:velocity"], [".:mode", ".:climbing", "Intent:crouch", "Intent:lean", "Intent:aim", "Intent:weapon_slot", "Health:health"]))
 
 	var result := SceneBuilder.pack_and_save(root, OUT)
 	root.free()

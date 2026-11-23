@@ -34,3 +34,12 @@ func test_old_logs_beyond_the_limit_are_the_oldest_names() -> void:
 	var names: Array[String] = ["server-20261109-100000.ndjson", "client-20261109-090000.ndjson", "client-20261109-110000.ndjson", "notes.txt"]
 	assert_array(PerfSampler.to_prune(names, 2)).contains_exactly(["client-20261109-090000.ndjson"])
 	assert_array(PerfSampler.to_prune(names, 5)).is_empty()
+
+
+func test_the_slowest_spike_since_the_last_take_is_kept() -> void:
+	var s := PerfSampler.new()
+	s.offer_spike({"spike_ms": 25.0})
+	s.offer_spike({"spike_ms": 40.0})
+	s.offer_spike({"spike_ms": 30.0})
+	assert_float(float(s.take_spike()["spike_ms"])).is_equal(40.0)
+	assert_dict(s.take_spike()).is_empty()

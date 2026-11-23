@@ -110,6 +110,21 @@ func test_killing_one_leaves_a_body_with_what_it_carried() -> void:
 	assert_int(get_tree().get_nodes_in_group(&"loot_bodies").size()).is_equal(before + 1)
 
 
+func test_a_killed_soldier_falls_as_a_ragdoll_once() -> void:
+	_player.global_position = Vector3(60, 0.1, 60)
+	var enemy := await _enemy_at(Vector3(0, 0, 0))
+	Corpse.enabled = true
+	(enemy.get_node("Health") as HealthComponent).server_apply_damage(1000.0)
+	# A second report of the same death must not drop a second body.
+	EventBus.publish(&"enemy.died", {"enemy": enemy})
+	await get_tree().process_frame
+	var corpses := get_tree().get_nodes_in_group(Corpse.GROUP)
+	Corpse.enabled = DisplayServer.get_name() != "headless"
+	assert_int(corpses.size()).is_equal(1)
+	for corpse in corpses:
+		corpse.free()
+
+
 func test_a_guard_holds_its_post_and_watches_its_arc() -> void:
 	_player.global_position = Vector3(80, 0.1, 80)
 	var post := Vector3(4, 0, -6)
@@ -351,3 +366,85 @@ func test_a_soldier_who_spots_you_calls_it_out() -> void:
 	await _frames(30)
 	assert_object(_brain(spotter).target).is_same(_player)
 	assert_object(_brain(mate).target).is_same(_player)
+
+
+## A stand-in window pane on the glass layer whose cracks hide what is behind it with
+## `chance`, as a building's pane answers.
+class FakePane extends StaticBody3D:
+	var chance := 0.0
+
+	func sight_block_chance() -> float:
+		return chance
+
+
+func _pane(at: Vector3, chance: float) -> FakePane:
+	var pane: FakePane = auto_free(FakePane.new())
+	pane.chance = chance
+	pane.collision_layer = PhysicsLayers.GLASS
+	pane.collision_mask = 0
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(4.0, 4.0, 0.05)
+	shape.shape = box
+	pane.add_child(shape)
+	add_child(pane)
+	pane.global_position = at
+	return pane
+
+
+func test_it_sees_through_glass_unless_cracks_hide_the_player() -> void:
+	_player.global_position = Vector3(0, 0.1, -10)
+	var enemy := await _enemy_at(Vector3.ZERO)
+	var pane := _pane(Vector3(0, 1.4, -5), 0.0)
+	await _frames(2)
+	var brain := _brain(enemy)
+	assert_bool(brain.clear_shot(_player)).is_true()
+	pane.chance = 1.0
+	assert_bool(brain.clear_shot(_player)).is_false()
+	# Half cracked: some looks get through, some don't.
+	pane.chance = 0.5
+	var seen := 0
+	for i in 200:
+		if brain.clear_shot(_player):
+			seen += 1
+	assert_int(seen).is_between(60, 140)
+
+
+class FakeSmoke extends Node:
+	var thick := false
+
+	func sight_blocked(_from: Vector3, _to: Vector3) -> bool:
+		return thick
+
+
+func test_it_cannot_see_through_whatever_the_sight_blockers_say_hides() -> void:
+	_player.global_position = Vector3(0, 0.1, -10)
+	var enemy := await _enemy_at(Vector3.ZERO)
+	var smoke: FakeSmoke = auto_free(FakeSmoke.new())
+	smoke.add_to_group(&"sight_blockers")
+	add_child(smoke)
+	await _frames(2)
+	var brain := _brain(enemy)
+	assert_bool(brain.clear_shot(_player)).is_true()
+	smoke.thick = true
+	assert_bool(brain.clear_shot(_player)).is_false()
+	smoke.thick = false
+	assert_bool(brain.clear_shot(_player)).is_true()
+
+
+func test_a_soldier_on_a_ladder_climbs_down_to_fight() -> void:
+	# Both hands on the rails it can't shoot, so it doesn't stop on the rungs to try.
+	var owner := RefCounted.new()
+	Ladders.add(owner, Transform3D(Basis.IDENTITY, Vector3(0, 3, 0)), Vector3(0.4, 3, 0.4), Vector3.FORWARD)
+	_player.global_position = Vector3(0, 0.1, -15)
+	var enemy := await _enemy_at(Vector3(0, 0, 0))
+	enemy.global_position = Vector3(0, 3, 0)
+	enemy.climbing = true
+	var down := false
+	for i in 300:
+		await get_tree().physics_frame
+		if enemy.is_on_floor() and not enemy.climbing:
+			down = true
+			break
+	Ladders.remove(owner)
+	assert_bool(down).is_true()

@@ -15,9 +15,13 @@ const WEAPON_SLOTS: Array[String] = ["primary", "secondary"]
 ## A bullet landing this close to a placed charge sets it off.
 const CHARGE_SHOT_RADIUS := 0.35
 ## Gun items and the default build each comes with.
-const GUN_ITEMS := {"gun_rifle": "primary", "gun_pistol": "secondary"}
+const GUN_ITEMS := {"gun_rifle": "primary", "gun_pistol": "secondary", "gun_rocket": "primary", "gun_bolt": "primary"}
+## Gun items that aren't their slot's default gun, with the build they come as.
+const ITEM_BUILDS := {"gun_rocket": "launcher", "gun_bolt": "bolt_standard"}
 
 var _charge_spawner := MultiplayerSpawner.new()
+var _rocket_spawner := MultiplayerSpawner.new()
+var _rockets_fired := 0
 var _charges_placed := 0
 ## Peer id -> slot -> part id, for players who changed their gun; everyone else carries the
 ## default. Kept on every instance so players spawned later get the right gun.
@@ -43,6 +47,11 @@ func _ready() -> void:
 	_charge_spawner.spawn_path = NodePath("..")
 	_charge_spawner.spawn_function = _make_charge
 	add_child(_charge_spawner)
+	# Rockets in flight too: the server spawns them, every instance flies them.
+	_rocket_spawner.name = "RocketSpawner"
+	_rocket_spawner.spawn_path = NodePath("..")
+	_rocket_spawner.spawn_function = _make_rocket
+	add_child(_rocket_spawner)
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	EventBus.subscribe(&"weapons.build_changed", _on_build_changed)
 	EventBus.subscribe(&"inventory.loot_spawned", _on_loot_spawned)
@@ -84,6 +93,9 @@ func _on_player_spawned(p: Dictionary) -> void:
 	if local:
 		_local_player = player
 	var peer := int(player.get_meta(&"peer_id", 1))
+	# Civilians carry nothing.
+	if p.get("unarmed", false):
+		return
 	for slot: String in WEAPON_SLOTS:
 		var build := build_of(peer, slot)
 		if not build.is_empty():
@@ -120,6 +132,8 @@ static func build_of_item(item: String, data: Dictionary) -> Dictionary:
 	var own: Variant = data.get("build")
 	if own is Dictionary and not (own as Dictionary).is_empty() and WeaponBuild.assemble(GunAssembly.catalogue(), own)["ok"]:
 		return own
+	if ITEM_BUILDS.has(item):
+		return GunAssembly.build(str(ITEM_BUILDS[item]))
 	return default_build(str(GUN_ITEMS.get(item, "primary")))
 
 
@@ -254,7 +268,7 @@ func _on_item_model(p: Dictionary) -> void:
 		p["model"] = _charge_model()
 		return
 	if GUN_ITEMS.has(str(p.get("item", ""))) and p.get("model") == null:
-		p["model"] = GunAssembly.build_model(default_build(str(GUN_ITEMS[str(p["item"])])))
+		p["model"] = GunAssembly.build_model(build_of_item(str(p["item"]), {}))
 		return
 	var part: Dictionary = GunAssembly.catalogue().get(str(p.get("item", "")), {})
 	if part.is_empty() or p.get("model") != null:
@@ -403,6 +417,10 @@ func _equip(player: PlayerController, slots: Dictionary) -> void:
 		camera.remove_child(old)
 		old.queue_free()
 	var weapon: HitscanWeapon = _scene().instantiate()
+	# A receiver that fires projectiles (a launcher) gets the launcher's trigger.
+	if bool(GunAssembly.receiver_of(slots).get("projectile", false)):
+		weapon.set_script(RocketLauncher)
+		weapon.set(&"rockets_parent", self)
 	weapon.name = node_name
 	weapon.holder = player
 	weapon.stats = assembled["stats"]
@@ -410,6 +428,11 @@ func _equip(player: PlayerController, slots: Dictionary) -> void:
 	if player.has_meta(&"damage_scale"):
 		weapon.stats["damage"] = float(weapon.stats.get("damage", 0.0)) * float(player.get_meta(&"damage_scale"))
 	weapon.semi_auto = GunAssembly.receiver_of(slots).get("fire_mode", "auto") == "semi"
+	weapon.cycle_seconds = GunAssembly.cycle_seconds_of(slots, weapon.stats)
+	# A receiver can set how much aiming tightens its spread (a bolt-action: almost all of it).
+	var receiver := GunAssembly.receiver_of(slots)
+	if receiver.has("ads_spread_multiplier"):
+		weapon.stats["ads_spread_multiplier"] = float(receiver["ads_spread_multiplier"])
 	weapon.set_meta(&"build", slots)
 	camera.add_child(weapon)
 	if old != null:
@@ -455,6 +478,7 @@ func _hold(player: PlayerController, slot: String) -> void:
 		sight.set_meta(&"zoom", magnification if magnification > 1.0 else float(weapon.stats.get("ads_zoom", 1.0)))
 		sight.set_meta(&"ads_seconds", float(weapon.stats.get("ads_seconds", 0.2)))
 		sight.set_meta(&"magnification", magnification)
+		sight.set_meta(&"thermal", ThermalView.of_build(slots))
 		# A pistol is aimed at arm's length and held out at the hip; the receiver says how far.
 		var receiver := GunAssembly.receiver_of(slots)
 		if receiver.has("eye_relief") and not sight.has_meta(&"eye_relief"):
@@ -502,6 +526,7 @@ func _update_scope(player: PlayerController) -> void:
 		scope.name = "ScopeView"
 		scope.player = player
 		scope.gun = held
+		scope.thermal = sight.get_meta(&"thermal", {})
 		player.add_child(scope)
 
 
@@ -515,6 +540,25 @@ func _on_shot_near_charge(p: Dictionary) -> void:
 		var charge := node as DemolitionCharge
 		if charge != null and not charge.is_queued_for_deletion() and charge.global_position.distance_to(hit) < CHARGE_SHOT_RADIUS:
 			charge.server_explode()
+
+
+## Server only, called by RocketLauncher: a rocket flying from `at` at `velocity`.
+func spawn_rocket(at: Vector3, velocity: Vector3, shooter: Node3D) -> Rocket:
+	_rockets_fired += 1
+	var rocket: Rocket = _rocket_spawner.spawn({"index": _rockets_fired, "position": at, "velocity": velocity, "cfg": RocketLauncher.rocket_config()})
+	rocket.shooter = shooter
+	return rocket
+
+
+## Runs on the server and, through the spawner, on every client.
+func _make_rocket(data: Variant) -> Node:
+	var info: Dictionary = data
+	var rocket := Rocket.new()
+	rocket.name = "Rocket%d" % int(info["index"])
+	rocket.position = info["position"]
+	rocket.velocity = info["velocity"]
+	rocket.cfg = info["cfg"]
+	return rocket
 
 
 func spawn_charge(at: Vector3, stats: Dictionary) -> DemolitionCharge:

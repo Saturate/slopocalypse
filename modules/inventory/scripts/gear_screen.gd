@@ -7,11 +7,10 @@ extends CanvasLayer
 ## outside drops it on the ground, right click uses it (a medkit). Every move is only a
 ## request: the server's answer redraws, so a refused move snaps back.
 
-const BG := Color(0.05, 0.06, 0.06, 0.82)
-const PANEL := Color(0.11, 0.12, 0.11, 0.97)
-const ACCENT := Color(0.82, 0.62, 0.3)
-const TEXT := Color(0.88, 0.88, 0.84)
-const DIM := Color(0.6, 0.61, 0.58)
+const BG := UiPalette.BACKDROP
+const ACCENT := UiPalette.ACCENT
+const TEXT := UiPalette.TEXT
+const DIM := UiPalette.DIM
 const FLASH_SECONDS := 0.5
 const DRAG_ALPHA := 0.9
 
@@ -57,14 +56,14 @@ func is_open() -> bool:
 
 func open() -> void:
 	_root.visible = true
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	UiStack.push(self)
 	_refresh()
 
 
 func _hide() -> void:
 	_dragging = {}
 	_root.visible = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	UiStack.pop(self)
 
 
 func _gear(theirs: bool) -> InventoryGear:
@@ -185,14 +184,14 @@ func _process(delta: float) -> void:
 
 ## Esc closes; R turns what is dragged. Subclasses add their own keys.
 func _input(event: InputEvent) -> void:
-	if not is_open():
+	if not UiStack.is_top(self):
 		return
-	if event is InputEventKey and event.is_pressed() and not event.is_echo():
+	if UiStack.is_cancel(event):
+		_close_requested()
+		get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.is_pressed() and not event.is_echo():
 		var key := (event as InputEventKey).keycode
-		if key == KEY_ESCAPE:
-			_close_requested()
-			get_viewport().set_input_as_handled()
-		elif key == KEY_R and not _dragging.is_empty():
+		if key == KEY_R and not _dragging.is_empty():
 			_drag_rotated = not _drag_rotated
 			get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton:
@@ -310,12 +309,6 @@ func _build_ui() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_root.add_child(center)
 	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = PANEL
-	style.border_color = ACCENT.darkened(0.5)
-	style.border_width_top = 3
-	style.set_content_margin_all(20)
-	panel.add_theme_stylebox_override("panel", style)
 	center.add_child(panel)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 10)
@@ -340,7 +333,6 @@ func _build_ui() -> void:
 			var take := Button.new()
 			take.text = "Take all"
 			take.focus_mode = Control.FOCUS_NONE
-			take.add_theme_font_size_override("font_size", 16)
 			take.pressed.connect(func() -> void: inventory.call(&"request_take_all"))
 			head.add_child(take)
 		var gear_panel := GearPanel.new()
@@ -359,8 +351,4 @@ func _build_ui() -> void:
 
 
 func _label(text: String, size: int, colour: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", colour)
-	return l
+	return UiText.label(text, size, colour)

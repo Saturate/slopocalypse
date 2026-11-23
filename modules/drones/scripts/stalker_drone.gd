@@ -34,6 +34,9 @@ const REQUIRED := {
 var config: Dictionary = {}
 var target: Node3D
 var downed := false
+## The players' camp (#420): it never dives at anyone inside the fence, and pulls out of a
+## dive when its target gets in. Null: nowhere is safe.
+var safe_zone: CampLayout
 
 var _health: HealthComponent
 var _rotors: Node3D
@@ -69,6 +72,8 @@ func _ready() -> void:
 	_until_turn = config["direction_change_seconds"]
 	_until_dive = _next_dive()
 	_health.died.connect(_on_died)
+	# Its motors run hot: thermal sights show it.
+	add_to_group(&"warm")
 	_health.damaged.connect(_on_damaged)
 	# Local only: tells this machine's audio a drone exists, so it can give it a hum.
 	EventBus.publish(&"drone.spawned", {"drone": self})
@@ -182,6 +187,11 @@ func _watch_sights(delta: float) -> void:
 		server_anger(watcher)
 
 
+## Whether `who` stands inside the camp's fence, where no drone dives.
+func is_safe(who: Node3D) -> bool:
+	return safe_zone != null and who != null and safe_zone.inside(who.global_position)
+
+
 func is_diving() -> bool:
 	return _dive_left >= 0.0
 
@@ -209,8 +219,8 @@ func _step_dive(delta: float) -> void:
 	if to.length() < float(config["dive_trigger_radius"]):
 		server_detonate(float(config["dive_blast_radius"]), float(config["dive_damage"]))
 		return
-	if _dive_left < 0.0 or target.get_meta(&"dead", false):
-		# Missed: pull up and go back to circling.
+	if _dive_left < 0.0 or target.get_meta(&"dead", false) or is_safe(target):
+		# Missed, or its target got into the camp: pull up and go back to circling.
 		_dive_left = -1.0
 		_until_dive = _next_dive()
 		return
@@ -236,8 +246,12 @@ func _step_stalk(delta: float) -> void:
 	if _angry:
 		_until_dive -= delta
 		if _until_dive <= 0.0 and not target.get_meta(&"dead", false):
-			server_dive()
-			return
+			if is_safe(target):
+				# Waits its next turn: someone stepping out of the camp is fair game again.
+				_until_dive = _next_dive()
+			else:
+				server_dive()
+				return
 	_until_turn -= delta
 	if _until_turn <= 0.0:
 		_orbit_direction = -_orbit_direction if _rng.randf() < 0.5 else _orbit_direction
@@ -304,7 +318,9 @@ func _keep_above_ground() -> void:
 		velocity.y = maxf(velocity.y, 0.0)
 
 
-func _on_died(_source: Node) -> void:
+func _on_died(source: Node) -> void:
+	# Server-local: who brought it down, for kill stats.
+	EventBus.publish(&"drone.died", {"drone": self, "source": source})
 	downed = true
 	_fall_left = config["fall_seconds"]
 	_tumble = Vector3(_rng.randf_range(-3, 3), _rng.randf_range(-6, 6), _rng.randf_range(-3, 3))
@@ -336,7 +352,7 @@ func server_detonate(radius: float, damage: float) -> void:
 		var holder := health.get_parent() as Node3D
 		var distance := holder.global_position.distance_to(global_position) if holder != null else 0.0
 		health.server_apply_damage(damage * lerpf(1.0, 0.25, clampf(distance / radius, 0.0, 1.0)), self)
-	Net.server_broadcast(&"explosion", {"position": global_position, "radius": radius, "source": null})
+	Net.server_broadcast(&"explosion", {"position": global_position, "radius": radius, "source": null, "kind": "drone"})
 	destroyed.emit()
 	if is_instance_valid(_strike_point):
 		_strike_point.queue_free()

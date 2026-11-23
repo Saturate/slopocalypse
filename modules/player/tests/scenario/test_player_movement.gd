@@ -14,7 +14,7 @@ func before_test() -> void:
 	_world = await VoxelWorld.add_and_wait(self, WORLD)
 	_player = (load(PLAYER) as PackedScene).instantiate()
 	add_child(_player)
-	_player.global_position = Vector3(0.0, 3.0, 0.0)
+	_player.global_position = (_world.get_node("SpawnPoint") as Marker3D).global_position + Vector3.UP * 2.0
 
 
 func after_test() -> void:
@@ -39,8 +39,8 @@ func _landed() -> void:
 func test_lands_and_stays_on_terrain() -> void:
 	await _frames(300)
 	assert_bool(_player.is_on_floor()).is_true()
-	# The spawn is on the tunnel floor (the road) and the body origin is at the feet.
-	var floor_y := (_world.get_node("Terrain") as VoxelWorld).ground_height(0.0, 0.0)
+	# The body origin is at the feet.
+	var floor_y := (_world.get_node("Terrain") as VoxelWorld).surface_height(_player.global_position.x, _player.global_position.z)
 	assert_float(_player.global_position.y).is_equal_approx(floor_y, 0.1)
 
 
@@ -62,6 +62,22 @@ func test_sprint_is_faster_than_walk() -> void:
 	await _frames(60)
 	var sprint: float = _player.config["sprint_speed"]
 	assert_float(_player.horizontal_speed()).is_equal_approx(sprint, sprint * 0.1)
+
+
+func test_turning_while_sprinting_follows_the_new_heading_at_once() -> void:
+	await _landed()
+	_player.intent().move = Vector2(0.0, 1.0)
+	_player.intent().sprint = true
+	await _frames(90)
+	_player.intent().look_delta.x = PI / 2.0
+	# A quarter of a second for the worst case, a 90 degree turn in one tick: speed then sits
+	# about 0.6 m/s over walk speed, so a much lower `acceleration` needs a longer budget.
+	await _frames(15)
+	var heading := -_player.global_transform.basis.z
+	var moving := Vector3(_player.velocity.x, 0.0, _player.velocity.z)
+	assert_float(rad_to_deg(moving.angle_to(heading))).is_less(10.0)
+	var walk: float = _player.config["walk_speed"]
+	assert_float(_player.horizontal_speed()).is_greater(walk)
 
 
 func test_crouch_lowers_the_head_and_slows_down() -> void:

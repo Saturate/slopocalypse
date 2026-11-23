@@ -3,7 +3,7 @@ extends RefCounted
 ## Colours and item tiles for the gear screens.
 
 const GAP := 2
-const TEXT := Color(0.88, 0.88, 0.84)
+const TEXT := UiPalette.TEXT
 const CELL_COLOUR := Color(0.16, 0.17, 0.16)
 const OK := Color(0.4, 0.8, 0.4, 0.35)
 const BAD := Color(0.9, 0.35, 0.3, 0.35)
@@ -23,7 +23,7 @@ static func draw_tile(canvas: Control, inventory: Node, placed: Dictionary, at: 
 	canvas.draw_rect(rect, Color(colour, alpha), false, 1.5)
 	# Tiles carry the short name, top left, small over the picture; the full name on hover.
 	var label := str(info.get("short", info.get("name", item)))
-	canvas.draw_string(ThemeDB.fallback_font, rect.position + Vector2(4, 13), label, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 6, 11, Color(TEXT, alpha * 0.9))
+	canvas.draw_string(canvas.get_theme_default_font(), rect.position + Vector2(4, 14), label, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 6, 14, Color(TEXT, alpha * 0.9))
 
 
 ## The picture inside the tile, kept to its aspect; turned a quarter for a turned item (the

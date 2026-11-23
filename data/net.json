@@ -1,0 +1,9 @@
+{
+  "_comment": "Network relevance: soldiers and drones are sent to a client only while within relevance_distance metres of its player (no further than clients load terrain, world.json load_distance), and dropped past relevance_distance + relevance_margin; checked every relevance_seconds. Smoothing (clients): other players, soldiers and drones are shown smooth_delay seconds in the past, blended between server updates; when updates stop they carry on for up to smooth_extrapolate seconds; a jump of more than smooth_snap_distance metres is shown at once.",
+  "relevance_distance": 300.0,
+  "relevance_margin": 40.0,
+  "relevance_seconds": 0.25,
+  "smooth_delay": 0.05,
+  "smooth_extrapolate": 0.1,
+  "smooth_snap_distance": 5.0
+}

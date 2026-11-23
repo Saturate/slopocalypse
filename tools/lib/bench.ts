@@ -8,12 +8,18 @@ export interface Summary {
 	frame_ms_worst: number;
 	physics_ms: number;
 	physics_peak_ms: number;
+	// What drawing a frame costs the graphics card and the processor's render thread, and
+	// how much it draws: zero on a headless server.
 	gpu_ms: number;
+	render_cpu_ms: number;
+	draw_calls: number;
+	objects_drawn: number;
+	primitives: number;
 	memory_mb: number;
 	nodes: number;
 }
 
-export const METRICS: readonly (keyof Omit<Summary, "samples">)[] = ["frame_ms_mean", "frame_ms_p95", "frame_ms_worst", "physics_ms", "physics_peak_ms", "gpu_ms", "memory_mb", "nodes"];
+export const METRICS: readonly (keyof Omit<Summary, "samples">)[] = ["frame_ms_mean", "frame_ms_p95", "frame_ms_worst", "physics_ms", "physics_peak_ms", "gpu_ms", "render_cpu_ms", "draw_calls", "objects_drawn", "primitives", "memory_mb", "nodes"];
 
 // Differences smaller than this are noise however large in percent (a 0.1 ms frame doubling).
 export const FLOOR: Readonly<Record<(typeof METRICS)[number], number>> = {
@@ -23,6 +29,10 @@ export const FLOOR: Readonly<Record<(typeof METRICS)[number], number>> = {
 	physics_ms: 0.3,
 	physics_peak_ms: 5.0,
 	gpu_ms: 0.5,
+	render_cpu_ms: 0.5,
+	draw_calls: 100,
+	objects_drawn: 100,
+	primitives: 100_000,
 	memory_mb: 20,
 	nodes: 200,
 };
@@ -47,6 +57,40 @@ export function parsePerfLog(text: string): Record<string, unknown>[] {
 	return out;
 }
 
+export interface Spike {
+	t: number;
+	ms: number;
+	// Script zones that ran in the slow frame (ms each) and shader pipelines compiled in it.
+	zones: Record<string, number>;
+	compiles: Record<string, number>;
+}
+
+function numbers(v: unknown): Record<string, number> {
+	const out: Record<string, number> = {};
+	if (typeof v !== "object" || v === null || Array.isArray(v)) return out;
+	for (const [k, n] of Object.entries(v)) if (typeof n === "number") out[k] = n;
+	return out;
+}
+
+// The `n` slowest spike lines after the warm-up, slowest first: the hitches a player feels,
+// and what ran in each.
+export function worstSpikes(text: string, warmupSeconds: number, n: number): Spike[] {
+	const out: Spike[] = [];
+	for (const line of text.split(/\r?\n/)) {
+		let rec: unknown;
+		try {
+			rec = JSON.parse(line);
+		} catch {
+			continue;
+		}
+		if (typeof rec !== "object" || rec === null || !("spike_ms" in rec) || !("t" in rec)) continue;
+		const { t, spike_ms: ms } = rec;
+		if (typeof t !== "number" || typeof ms !== "number" || t < warmupSeconds) continue;
+		out.push({ t, ms, zones: numbers("zones" in rec ? rec.zones : undefined), compiles: numbers("compiles" in rec ? rec.compiles : undefined) });
+	}
+	return out.sort((a, b) => b.ms - a.ms).slice(0, n);
+}
+
 const round = (n: number, places = 2): number => Math.round(n * 10 ** places) / 10 ** places;
 
 export function summarise(records: readonly Record<string, unknown>[], warmupSeconds: number): Summary {
@@ -62,6 +106,10 @@ export function summarise(records: readonly Record<string, unknown>[], warmupSec
 		physics_ms: round(mean("physics_nodes_ms")),
 		physics_peak_ms: round(mean("physics_peak_ms")),
 		gpu_ms: round(mean("gpu_ms")),
+		render_cpu_ms: round(mean("render_cpu_ms")),
+		draw_calls: Math.round(mean("draw_calls")),
+		objects_drawn: Math.round(mean("objects_drawn")),
+		primitives: Math.round(mean("primitives")),
 		memory_mb: round(max("memory_mb"), 1),
 		nodes: max("nodes"),
 	};
@@ -89,6 +137,38 @@ export function zoneCosts(records: readonly Record<string, unknown>[], warmupSec
 		}
 	}
 	return [...totals].map(([name, ms]): [string, number] => [name, round(ms / Math.max(used.length, 1), 3)]).sort((a, b) => b[1] - a[1]);
+}
+
+export interface NetCost {
+	// Mean bytes a second the server sent each peer (ENet's exact total over the peers).
+	outPerPeer: number;
+	// Mean estimated bytes a second by source (see NetStats), most first; "other" is what the
+	// estimates leave unexplained.
+	sources: [string, number][];
+}
+
+// The server's network spend after the warm-up, from the perf module's `net` blocks; undefined
+// when the log has none (a client, or nobody connected).
+export function netCosts(records: readonly Record<string, unknown>[], warmupSeconds: number): NetCost | undefined {
+	const used = records.filter((r) => num(r, "t") >= warmupSeconds && typeof r["net"] === "object" && r["net"] !== null);
+	if (used.length === 0) return undefined;
+	let out = 0;
+	const totals = new Map<string, number>();
+	for (const r of used) {
+		const net = r["net"];
+		if (typeof net !== "object" || net === null) continue;
+		const per = Reflect.get(net, "out_per_peer");
+		if (typeof per === "number") out += per;
+		const sources = Reflect.get(net, "sources");
+		if (typeof sources !== "object" || sources === null) continue;
+		for (const [name, bytes] of Object.entries(sources)) {
+			if (typeof bytes === "number") totals.set(name, (totals.get(name) ?? 0) + bytes);
+		}
+	}
+	return {
+		outPerPeer: Math.round(out / used.length),
+		sources: [...totals].map(([name, b]): [string, number] => [name, Math.round(b / used.length)]).sort((a, b) => b[1] - a[1]),
+	};
 }
 
 export function compare(now: Summary, baseline: Summary, tolerance: number): Regression[] {

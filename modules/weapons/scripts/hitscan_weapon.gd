@@ -3,7 +3,8 @@ extends Node3D
 ## A carried hitscan gun's logic, at the holder's camera so shots follow the aim. It has
 ## no mesh: the one visible rifle is in the body's hands. Reads the holder's PlayerIntent;
 ## the server decides every hit.
-## Fire rules (rate, magazine, reload, spread) run in Rust (`WeaponRules`).
+## Fire rules (rate, magazine, reload, the bolt after each shot, spread) run in Rust
+## (`WeaponRules`).
 
 const CONFIG := "res://modules/weapons/data/weapons.json"
 const REQUIRED := {
@@ -36,6 +37,9 @@ const HEAD_BELOW_EYES := 0.22
 var active := true
 ## One shot per trigger pull (pistols) instead of firing while held.
 var semi_auto := false
+## Seconds to work the bolt after each shot before the next can fire; 0 for a gun that
+## loads itself. Set from the receiver's `action` ("manual") and `cycle_seconds`.
+var cycle_seconds := 0.0
 var rules := WeaponRules.new()
 
 var _recoil_rng := RandomNumberGenerator.new()
@@ -62,7 +66,7 @@ func _ready() -> void:
 		set_physics_process(false)
 		return
 	# Seeded per weapon so server and owning client roll the same spread.
-	rules.setup(stats["rounds_per_minute"], int(stats["magazine"]), stats["reload_seconds"], deg_to_rad(stats["spread_degrees"]), get_instance_id())
+	rules.setup(stats["rounds_per_minute"], int(stats["magazine"]), stats["reload_seconds"], deg_to_rad(stats["spread_degrees"]), cycle_seconds, get_instance_id())
 
 
 ## Rounds left. Clients show what the server last told them; only the server fires.
@@ -70,6 +74,12 @@ func ammo() -> int:
 	if not multiplayer.is_server() and _synced_ammo >= 0:
 		return _synced_ammo
 	return rules.ammo()
+
+
+## True while the bolt is being worked after a shot (server and solo; clients don't run the
+## rules).
+func is_cycling() -> bool:
+	return rules.is_cycling()
 
 
 func is_reloading() -> bool:
@@ -102,7 +112,8 @@ func _physics_tick(delta: float) -> void:
 	if intent.consume_reload():
 		request_reload()
 	var pull := intent.fire and not (semi_auto and _trigger_was_down)
-	_trigger_was_down = intent.fire
+	# A trigger held from a ladder (where it does nothing) is not a new pull on stepping off it.
+	_trigger_was_down = intent.fire or holder.climbing
 	if pull and _draw_left <= 0.0:
 		request_fire(global_transform.origin, -global_transform.basis.z)
 	elif not intent.fire:
@@ -153,53 +164,101 @@ func request_reload() -> void:
 		rules.start_reload()
 
 
-## Server only: applies fire rules, traces the shot and damages what it hits.
+## Server only: applies fire rules, traces the shot and damages what it hits. A round can go
+## on through what it hit: anything with `bullet_exit(point, direction, damage)` (a
+## building's plank wall) answers `{exit, scale}` to let it carry on from `exit` with its
+## damage times `scale`, or `{}` to stop it; at most `max_pass_throughs` times
+## (weapons.json). Each stretch of the round's path is replayed as its own `weapon.fired`,
+## the ones after the first marked `through`.
 func server_fire(origin: Vector3, direction: Vector3) -> void:
-	if holder != null and holder.get_meta(&"dead", false):
+	# Swimming keeps the weapon out of the water (and out of use); climbing a ladder takes both hands.
+	if holder != null and (holder.get_meta(&"dead", false) or holder.get_meta(&"swimming", false) or holder.climbing):
 		return
 	if not rules.try_fire():
 		return
-	var spread := rules.last_spread()
-	if holder != null and holder.intent().aim:
-		spread *= float(stats["ads_spread_multiplier"])
+	var spread := rules.last_spread() * spread_scale(holder != null and holder.intent().aim)
+	# Clients don't run the rules, so the effects learn from here whether a bolt follows.
+	var cycles := rules.is_cycling()
 	var basis := Basis.looking_at(direction)
 	var dir := (basis * Vector3(tan(spread.x), tan(spread.y), -1.0)).normalized()
 	var to := origin + dir * float(stats["range"])
 	var exclude: Array[RID] = []
 	if holder != null:
 		exclude.append(holder.get_rid())
-	# Bullets go through leaves (they only block sight) and stop at anything solid.
-	var query := PhysicsRayQueryParameters3D.create(origin, to, PhysicsLayers.BULLETS, exclude)
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
-	var hit_point := to
-	var damage := 0.0
-	var target: Node = null
-	var collider: Object = null
-	if not hit.is_empty():
-		hit_point = hit["position"]
-		collider = hit["collider"]
-		var health := HealthComponent.find_on(collider as Node) if collider is Node else null
-		# Co-op: players do not hurt each other unless the data says so.
-		if health != null and _is_teammate(health.get_parent()):
-			health = null
-		if health != null:
-			target = health.get_parent()
-			damage = health.server_apply_damage(_damage_for(target, hit_point, health), holder)
-	var target_path := String(target.get_path()) if target != null else ""
-	var collider_path := String((collider as Node).get_path()) if collider is Node else ""
-	# Decided here; replayed everywhere (this instance included) for effects and craters.
-	_replay_shot.rpc(origin, hit_point, damage, target_path, collider_path)
+	var from := origin
+	var damage_scale := 1.0
+	var passes := 0
+	var max_passes := max_pass_throughs()
+	while true:
+		# Bullets go through leaves (they only block sight) and stop at anything solid.
+		var query := PhysicsRayQueryParameters3D.create(from, to, PhysicsLayers.BULLETS, exclude)
+		var hit := get_world_3d().direct_space_state.intersect_ray(query)
+		var hit_point := to
+		var damage := 0.0
+		var target: Node = null
+		var collider: Object = null
+		if not hit.is_empty():
+			hit_point = hit["position"]
+			collider = hit["collider"]
+			var health := HealthComponent.find_on(collider as Node) if collider is Node else null
+			# Co-op: players do not hurt each other unless the data says so.
+			if health != null and _is_teammate(health.get_parent()):
+				health = null
+			if health != null:
+				target = health.get_parent()
+				damage = health.server_apply_damage(_damage_for(target, hit_point, health) * damage_scale, holder)
+				if damage > 0.0 and health.is_dead() and is_headshot(target, hit_point):
+					# Server-local: a kill through the head, for kill stats.
+					EventBus.publish(&"weapon.headshot_kill", {"holder": holder, "target": target})
+		var target_path := String(target.get_path()) if target != null else ""
+		var collider_path := String((collider as Node).get_path()) if collider is Node else ""
+		# Decided here; replayed here and on every client that has the shooter, for effects and
+		# craters. A client the shooter isn't sent to (too far away) hasn't got this node.
+		# What the round carried here, before what was left of the target's health cut it short.
+		var round_damage := float(stats["damage"]) * damage_scale
+		_replay_shot(from, hit_point, damage, target_path, collider_path, passes > 0, round_damage, cycles)
+		var peers := replay_peers(holder)
+		for peer in peers:
+			_replay_shot.rpc_id(peer, from, hit_point, damage, target_path, collider_path, passes > 0, round_damage, cycles)
+		NetStats.add(&"rpc/shot", NetStats.size_of([from, hit_point, damage, target_path, collider_path, passes > 0, round_damage, cycles]) * peers.size())
+		if target != null or collider == null or passes >= max_passes or not collider.has_method(&"bullet_exit"):
+			return
+		var exit: Variant = collider.call(&"bullet_exit", hit_point, dir, float(stats["damage"]) * damage_scale)
+		if not exit is Dictionary or (exit as Dictionary).is_empty():
+			return
+		from = exit["exit"]
+		damage_scale *= float(exit.get("scale", 1.0))
+		passes += 1
+
+
+## How much of the gun's spread a shot gets: all of it from the hip, `ads_spread_multiplier`
+## of it aimed (a bolt-action's receiver sets its own, far smaller, so it is only accurate
+## through the scope).
+func spread_scale(aimed: bool) -> float:
+	return float(stats["ads_spread_multiplier"]) if aimed else 1.0
+
+
+## How many times one round may go on through something (weapons.json).
+static func max_pass_throughs() -> int:
+	var data: Variant = Data.load_json(CONFIG)
+	return int((data as Dictionary).get("max_pass_throughs", 0)) if data is Dictionary else 0
 
 
 ## Runs on the server and every client: publishes `weapon.fired` locally (tracers, hit
 ## markers, craters) and kicks the aim on the instance that owns this player.
+## `through`: this stretch is the same round carrying on after going through something, so
+## there's no new shot to hear, flash or kick. `cycles`: the bolt is worked after this shot
+## (a manual action with rounds left).
 @rpc("authority", "call_local", "reliable")
-func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_path: String, collider_path: String) -> void:
+func _replay_shot(origin: Vector3, hit_point: Vector3, damage: float, target_path: String, collider_path: String, through: bool = false, round_damage: float = -1.0, cycles: bool = false) -> void:
 	var target: Node = get_node_or_null(target_path) if not target_path.is_empty() else null
 	var collider: Node = get_node_or_null(collider_path) if not collider_path.is_empty() else null
-	_play_shot_effects()
+	if not through:
+		_play_shot_effects()
 	# `collider` lets other modules react to what was hit (the world digs into terrain).
-	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "collider": collider, "damage": damage})
+	# `damage` is what the hit dealt; `round_damage` what the round carried (gore judges a
+	# killing shot by it, not by the health that happened to be left), -1 when not sent.
+	EventBus.publish(&"weapon.fired", {"weapon": self, "holder": holder, "from": origin, "to": hit_point, "target": target, "collider": collider, "damage": damage, "through": through, "round_damage": round_damage, "cycles": cycles})
 
 
 ## A shot's damage: the gun's, unless it hit the head. Headshots kill the teams listed in
@@ -233,6 +292,19 @@ func _is_teammate(target: Node) -> bool:
 		return false
 	var data: Variant = Data.load_json(CONFIG)
 	return not (data is Dictionary and bool((data as Dictionary).get("friendly_fire", false)))
+
+
+## The clients that have `holder` (and so its weapons): all of them unless its synchronizer
+## is shown only to some (NetRelevance: soldiers far from a client aren't spawned there).
+static func replay_peers(holder: Node) -> Array[int]:
+	var out: Array[int] = []
+	if holder == null or not holder.is_inside_tree():
+		return out
+	var sync := holder.get_node_or_null(^"NetSync") as MultiplayerSynchronizer
+	for peer in holder.multiplayer.get_peers():
+		if sync == null or sync.public_visibility or sync.get_visibility_for(peer):
+			out.append(peer)
+	return out
 
 
 ## A body's side: its `team` meta, or "players" for players; empty for anything else.

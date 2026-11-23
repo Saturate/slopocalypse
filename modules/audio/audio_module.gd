@@ -1,13 +1,20 @@
 extends Node
 ## Client only: plays the game's sounds from events it hears on the bus, positioned in the
-## world. Shots (rifle, pistol, suppressed) at the shooter, impacts where bullets land, a
+## world. Shots (rifle, pistol, bolt-action, suppressed) at the shooter, the bolt being worked
+## after a bolt-action's shot, impacts where bullets land, a
 ## tick when your own shot hits, explosions, everyone's footsteps, and for your own player
-## reload clicks, a pickup blip, a thump when hurt, plus quiet wind, birds by day and crickets at night. Never changes game
-## state. Sounds come from SoundBank; volumes are in data/audio.json.
+## reload clicks, a pickup blip, a thump when hurt, plus quiet wind, birds by day and crickets at night.
+## Things that break say what they are made of (`missions.surface_hit`, `surface_broke`,
+## `surface_landed`, `{position, material}`): a knock on wood, a ping off metal, glass
+## shattering, masonry crumbling, a rumble when a building part lands. Never changes game
+## state. Sounds come from SoundBank (a recording when there is one, else made in code);
+## volumes and the per-play pitch and volume jitter are in data/audio.json.
 
 const CONFIG := "res://modules/audio/data/audio.json"
 ## Quiet enough to count as off for a looping player that keeps running.
 const SILENT_DB := -60.0
+## A pitch of 0 stops a player; bad jitter data never gets that low.
+const MIN_PITCH := 0.05
 
 ## Off on a headless server; tests switch it on.
 var enabled := DisplayServer.get_name() != "headless"
@@ -31,6 +38,8 @@ func _ready() -> void:
 		return
 	var data: Variant = Data.load_json(CONFIG)
 	config = data if data is Dictionary else {}
+	_check_jitter()
+	SoundBank.find_recordings()
 	EventBus.subscribe(&"weapon.fired", _on_fired)
 	EventBus.subscribe(&"explosion", _on_explosion)
 	EventBus.subscribe(&"drone.diving", _on_drone_diving)
@@ -39,6 +48,10 @@ func _ready() -> void:
 	EventBus.subscribe(&"player.spawned", _on_player_spawned)
 	EventBus.subscribe(&"inventory.changed", _on_inventory_changed)
 	EventBus.subscribe(&"daytime.hour", _on_hour)
+	EventBus.subscribe(&"missions.surface_hit", _on_surface_hit)
+	EventBus.subscribe(&"weapons.rocket_launched", _on_rocket_launched)
+	EventBus.subscribe(&"missions.surface_broke", _on_surface_broke)
+	EventBus.subscribe(&"missions.surface_landed", _on_surface_landed)
 	var wind := AudioStreamPlayer.new()
 	wind.name = "Wind"
 	wind.stream = SoundBank.get_sound("wind")
@@ -65,10 +78,15 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"player.spawned", _on_player_spawned)
 	EventBus.unsubscribe(&"inventory.changed", _on_inventory_changed)
 	EventBus.unsubscribe(&"daytime.hour", _on_hour)
+	EventBus.unsubscribe(&"missions.surface_hit", _on_surface_hit)
+	EventBus.unsubscribe(&"weapons.rocket_launched", _on_rocket_launched)
+	EventBus.unsubscribe(&"missions.surface_broke", _on_surface_broke)
+	EventBus.unsubscribe(&"missions.surface_landed", _on_surface_landed)
 
 
-## Which shot sound a weapon makes: a suppressor on its build quiets it, a semi-auto gun
-## is a pistol. Reads the weapon by duck typing so this module needs no other.
+## Which shot sound a weapon makes: a suppressor on its build quiets it, a gun whose bolt
+## is worked by hand (`cycle_seconds` above 0) is the heavy bolt-action crack, another
+## semi-auto gun is a pistol. Reads the weapon by duck typing so this module needs no other.
 static func shot_sound(weapon: Object) -> String:
 	if weapon == null:
 		return "rifle"
@@ -77,20 +95,79 @@ static func shot_sound(weapon: Object) -> String:
 		for slot: Variant in build:
 			if "supp" in str((build as Dictionary)[slot]):
 				return "suppressed"
+	if cycle_of(weapon) > 0.0:
+		return "bolt_rifle"
 	if weapon.get(&"semi_auto") == true:
 		return "pistol"
 	return "rifle"
 
 
+## Seconds the weapon's bolt takes to work by hand after a shot, 0 if it loads itself.
+static func cycle_of(weapon: Object) -> float:
+	if weapon == null:
+		return 0.0
+	var cycle: Variant = weapon.get(&"cycle_seconds")
+	return float(cycle) if cycle is float else 0.0
+
+
 func _on_fired(p: Dictionary) -> void:
 	var from: Vector3 = p.get("from", Vector3.ZERO)
 	var to: Vector3 = p.get("to", from)
-	var sound := shot_sound(p.get("weapon"))
-	play_at(sound, from, float(config.get("shot_range", 300.0)))
+	# A round carrying on through a wall is the same shot: no second bang.
+	if not bool(p.get("through", false)):
+		play_at(shot_sound(p.get("weapon")), from, float(config.get("shot_range", 300.0)))
+		var cycle := cycle_of(p.get("weapon"))
+		# The last round leaves nothing to chamber: the reload does it.
+		if cycle > 0.0 and bool(p.get("cycles", false)):
+			_play_bolt(from, cycle)
 	if float(p.get("damage", 0.0)) > 0.0 and p.get("holder") == _local:
 		play_flat("hit")
-	elif p.get("target") == null and from.distance_to(to) < float(config.get("shot_range", 300.0)) - 1.0:
+	elif p.get("target") == null and from.distance_to(to) < float(config.get("shot_range", 300.0)) - 1.0 and not _has_surface_sounds(p.get("collider")):
 		play_at("impact", to, 60.0)
+
+
+## The bolt being worked, from where the shot was fired: it starts as the handle lifts and
+## its clacks are laid out for `bolt_cycle.reference_seconds`, played faster or slower to
+## fit this gun's cycle.
+func _play_bolt(at: Vector3, cycle: float) -> void:
+	var cfg: Dictionary = config.get("bolt_cycle", {})
+	var reference := float(cfg.get("reference_seconds", cycle))
+	get_tree().create_timer(cycle * float(cfg.get("start_share", 0.0))).timeout.connect(func() -> void:
+		play_at("bolt_cycle", at, float(cfg.get("range", 60.0)), reference / cycle))
+
+
+## Something that sends its own surface sounds (a building): the plain impact stays quiet.
+static func _has_surface_sounds(collider: Variant) -> bool:
+	return collider is Object and is_instance_valid(collider) and (collider as Object).has_meta(&"surface_sounds")
+
+
+## The sound family of a voxel material (`surface_families` in the data), or "" for none.
+func surface_family(material: String) -> String:
+	return str((config.get("surface_families", {}) as Dictionary).get(material, ""))
+
+
+func _on_surface_hit(p: Dictionary) -> void:
+	var family := surface_family(str(p.get("material", "")))
+	play_at("hit_" + family if not family.is_empty() else "impact", p.get("position", Vector3.ZERO), float(config.get("surface_hit_range", 60.0)))
+
+
+## A batch of pieces of one material breaking: louder for more of them.
+func _on_surface_broke(p: Dictionary) -> void:
+	var family := surface_family(str(p.get("material", "")))
+	if family.is_empty():
+		return
+	var voice := play_at("break_" + family, p.get("position", Vector3.ZERO), float(config.get("surface_break_range", 160.0)))
+	if voice != null:
+		voice.volume_db += minf(6.0, 2.0 * log(maxf(1.0, float(p.get("count", 1)))) / log(2.0))
+
+
+func _on_surface_landed(p: Dictionary) -> void:
+	play_at("collapse", p.get("position", Vector3.ZERO), float(config.get("surface_break_range", 160.0)) * 1.5)
+
+
+## A rocket leaving its tube: a deep thump and a long whoosh.
+func _on_rocket_launched(p: Dictionary) -> void:
+	play_at("launch", p.get("from", Vector3.ZERO), float(config.get("shot_range", 300.0)))
 
 
 func _on_explosion(p: Dictionary) -> void:
@@ -187,9 +264,7 @@ func _ambience(delta: float) -> void:
 	var distance := randf_range(float(birds.get("distance_min", 12.0)), float(birds.get("distance_max", 45.0)))
 	var at := listener.global_position + Vector3(cos(angle) * distance, randf_range(3.0, 10.0), sin(angle) * distance)
 	var song := "bird%d" % randi_range(0, SoundBank.BIRD_VARIANTS - 1)
-	var voice := play_at(song, at, distance * 3.0, randf_range(0.85, 1.2))
-	if voice != null:
-		voice.volume_db = _volume("bird")
+	play_at(song, at, distance * 3.0)
 
 
 func _bird_wait() -> float:
@@ -216,7 +291,7 @@ func _footsteps(delta: float) -> void:
 			var walked := float(_strides.get(body, 0.0)) + flat * delta
 			if walked >= step:
 				walked -= step
-				play_at("footstep", body.global_position, float(config.get("footstep_range", 28.0)), randf_range(0.85, 1.15))
+				play_at("footstep", body.global_position, float(config.get("footstep_range", 28.0)))
 			_strides[body] = walked
 
 
@@ -239,17 +314,19 @@ func _own_player() -> void:
 	_was_reloading = reloading
 
 
-## A sound at a place in the world, fading with distance.
+## A sound at a place in the world, fading with distance. `pitch` is on top of the jitter.
 func play_at(sound: String, at: Vector3, max_distance: float, pitch: float = 1.0) -> AudioStreamPlayer3D:
 	var stream := SoundBank.get_sound(sound)
 	if stream == null or not _room():
 		return null
 	var player := AudioStreamPlayer3D.new()
+	var shake := jitter(sound)
 	player.stream = stream
-	player.volume_db = _volume(sound)
+	player.set_meta(&"sound", sound)
+	player.volume_db = _volume(sound) + shake.y
 	player.max_distance = max_distance
 	player.unit_size = 6.0
-	player.pitch_scale = pitch
+	player.pitch_scale = pitch * shake.x
 	player.finished.connect(player.queue_free)
 	add_child(player)
 	player.global_position = at
@@ -264,8 +341,11 @@ func play_flat(sound: String) -> AudioStreamPlayer:
 	if stream == null or not _room():
 		return null
 	var player := AudioStreamPlayer.new()
+	var shake := jitter(sound)
 	player.stream = stream
-	player.volume_db = _volume(sound)
+	player.set_meta(&"sound", sound)
+	player.volume_db = _volume(sound) + shake.y
+	player.pitch_scale = shake.x
 	player.finished.connect(player.queue_free)
 	add_child(player)
 	player.play()
@@ -285,4 +365,66 @@ func _room() -> bool:
 
 
 func _volume(sound: String) -> float:
-	return float((config.get("volume_db", {}) as Dictionary).get(sound, 0.0))
+	return float(setting_for(config.get("volume_db", {}), sound, 0.0))
+
+
+## One play's variation so a sound (above all a single recorded take) doesn't repeat
+## exactly: x is the pitch factor, y the volume change in dB, each rolled within `jitter`
+## in the data for this sound, falling back field by field to `jitter.default`.
+func jitter(sound: String) -> Vector2:
+	var table: Dictionary = config.get("jitter", {})
+	var raw_default: Variant = table.get("default", {})
+	var fallback: Dictionary = raw_default if raw_default is Dictionary else {}
+	var own: Variant = setting_for(table, sound, fallback)
+	var spec: Dictionary = own if own is Dictionary else fallback
+	var pitch := _range(spec.get("pitch", fallback.get("pitch")), 1.0)
+	var db := _range(spec.get("volume_db", fallback.get("volume_db")), 0.0)
+	return Vector2(maxf(randf_range(pitch.x, pitch.y), MIN_PITCH), randf_range(db.x, db.y))
+
+
+## `sound`'s entry in a per-sound table: its own key, else its family without the variant
+## number ("bird2" reads "bird"), else the longest key ending in "*" that it starts with
+## ("hit_*" covers every "hit_<family>"), else `fallback`.
+static func setting_for(table: Dictionary, sound: String, fallback: Variant) -> Variant:
+	if table.has(sound):
+		return table[sound]
+	var family := sound.rstrip("0123456789")
+	if family != sound and table.has(family):
+		return table[family]
+	var best := ""
+	for key: Variant in table:
+		var k := str(key)
+		if k.ends_with("*") and sound.begins_with(k.trim_suffix("*")) and k.length() > best.length():
+			best = k
+	return table[best] if not best.is_empty() else fallback
+
+
+## A `[min, max]` pair from the data, or no variation around `neutral` when it isn't one
+## (`_check_jitter` has said so).
+static func _range(value: Variant, neutral: float) -> Vector2:
+	return Vector2(float(value[0]), float(value[1])) if _is_range(value) else Vector2(neutral, neutral)
+
+
+static func _is_range(value: Variant) -> bool:
+	return value is Array and (value as Array).size() == 2 and (value as Array).all(func(v: Variant) -> bool: return v is float or v is int) and float(value[0]) <= float(value[1])
+
+
+## Bad jitter fails loudly once at start, naming the entry, instead of on every play.
+func _check_jitter() -> void:
+	var table: Variant = config.get("jitter", {})
+	if not table is Dictionary:
+		Log.error(&"audio", "%s: 'jitter' must be an object" % CONFIG)
+		config["jitter"] = {}
+		return
+	for key: Variant in table:
+		var spec: Variant = table[key]
+		if not spec is Dictionary:
+			Log.error(&"audio", "%s: jitter '%s' must be an object with 'pitch' and 'volume_db'" % [CONFIG, key])
+			# Played unvaried from here on, rather than failing on every play.
+			(table as Dictionary)[key] = {}
+			continue
+		for field: String in ["pitch", "volume_db"]:
+			if (spec as Dictionary).has(field) and not _is_range(spec[field]):
+				Log.error(&"audio", "%s: jitter '%s' field '%s' must be [min, max], got %s" % [CONFIG, key, field, spec[field]])
+		if (spec as Dictionary).has("pitch") and _is_range(spec["pitch"]) and float(spec["pitch"][0]) <= 0.0:
+			Log.error(&"audio", "%s: jitter '%s' pitch must stay above 0" % [CONFIG, key])

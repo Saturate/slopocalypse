@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Map viewer</title>
+<style>
+  :root { --bg: #151714; --panel: #1e211d; --line: #33372f; --text: #e2e1da; --dim: #9a9b95; --accent: #d19e4c; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; display: grid; grid-template-columns: 1fr 340px; height: 100vh; }
+  #view { position: relative; overflow: hidden; cursor: grab; background: #0d0e0c; }
+  #view.dragging { cursor: grabbing; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
+  #hover { position: absolute; left: 8px; bottom: 8px; background: #000a; padding: 4px 8px; border-radius: 4px; font-variant-numeric: tabular-nums; pointer-events: none; }
+  #busy { position: absolute; top: 8px; left: 8px; background: #000a; padding: 4px 8px; border-radius: 4px; display: none; }
+  aside { border-left: 1px solid var(--line); background: var(--panel); padding: 12px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+  h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
+  label { display: flex; align-items: center; gap: 6px; }
+  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  select, input, button, textarea { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font: inherit; }
+  input[type=number] { width: 7em; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  textarea { width: 100%; height: 260px; font: 12px/1.35 ui-monospace, monospace; resize: vertical; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  td { padding: 2px 0; border-bottom: 1px solid var(--line); }
+  td:last-child { text-align: right; }
+  .dim { color: var(--dim); font-size: 12px; }
+  #error { color: #e07a5f; white-space: pre-wrap; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="view">
+  <canvas id="map"></canvas>
+  <div id="busy">Rendering…</div>
+  <div id="hover"></div>
+</div>
+<aside>
+  <section>
+    <h2>Map</h2>
+    <div class="row">
+      <select id="recipe"></select>
+      <button id="prev" title="Previous seed (←)">◀</button>
+      <input id="seed" type="number" min="0" value="1">
+      <button id="next" title="Next seed (→)">▶</button>
+    </div>
+    <div class="row">
+      <label>Size <select id="pixels"><option>256</option><option selected>512</option><option>1024</option></select></label>
+      <button id="fit">Fit</button>
+    </div>
+  </section>
+  <section>
+    <h2>Layers</h2>
+    <div class="row" id="layers"></div>
+  </section>
+  <section>
+    <h2>Stats</h2>
+    <table id="stats"></table>
+  </section>
+  <section>
+    <h2>Recipe</h2>
+    <textarea id="text" spellcheck="false"></textarea>
+    <div class="row">
+      <button id="apply">Render with these values</button>
+      <button id="save">Save to recipe</button>
+      <button id="revert">Revert</button>
+    </div>
+    <div class="dim">Edits render without saving. Save writes modules/world/data/maps/&lt;recipe&gt;.json.</div>
+    <div id="error"></div>
+  </section>
+</aside>
+<script>
+"use strict";
+const LAYERS = ["zones", "settlements", "roads", "earthworks", "sites", "power", "remoteness"];
+const $ = (id) => document.getElementById(id);
+const canvas = $("map");
+const ctx = canvas.getContext("2d");
+let image = null;
+let stats = null;
+let view = { x: 0, y: 0, scale: 1 };
+let edited = null;
+
+for (const l of LAYERS) {
+  const box = document.createElement("label");
+  box.innerHTML = `<input type="checkbox" value="${l}"${l === "remoteness" ? "" : " checked"}> ${l}`;
+  $("layers").append(box);
+}
+
+function layers() {
+  return [...$("layers").querySelectorAll("input:checked")].map((i) => i.value).join(",");
+}
+
+function query() {
+  return new URLSearchParams({ map: $("recipe").value, seed: $("seed").value, pixels: $("pixels").value, layers: layers() });
+}
+
+async function loadRecipe() {
+  const r = await fetch(`/recipe?${new URLSearchParams({ map: $("recipe").value })}`);
+  $("text").value = await r.text();
+  edited = null;
+}
+
+async function render() {
+  $("busy").style.display = "block";
+  $("error").textContent = "";
+  try {
+    const r = await fetch(`/render?${query()}`, edited === null ? {} : { method: "POST", body: edited });
+    if (!r.ok) throw new Error(await r.text());
+    const out = await r.json();
+    stats = out.stats;
+    const img = new Image();
+    img.onload = () => {
+      const first = image === null;
+      image = img;
+      if (first) fit();
+      draw();
+    };
+    img.src = out.image;
+    showStats();
+  } catch (e) {
+    $("error").textContent = String(e.message || e);
+  } finally {
+    $("busy").style.display = "none";
+  }
+}
+
+function showStats() {
+  const rows = Object.entries(stats.summary || {});
+  $("stats").innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
+}
+
+function fit() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  view.scale = Math.min(w, h) / image.width;
+  view.x = (w - image.width * view.scale) / 2;
+  view.y = (h - image.height * view.scale) / 2;
+  draw();
+}
+
+function draw() {
+  canvas.width = canvas.clientWidth * devicePixelRatio;
+  canvas.height = canvas.clientHeight * devicePixelRatio;
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (image) ctx.drawImage(image, view.x, view.y, image.width * view.scale, image.height * view.scale);
+}
+
+// Pan by dragging, zoom about the cursor with the wheel.
+let drag = null;
+$("view").addEventListener("mousedown", (e) => { drag = { x: e.clientX - view.x, y: e.clientY - view.y }; $("view").classList.add("dragging"); });
+addEventListener("mouseup", () => { drag = null; $("view").classList.remove("dragging"); });
+addEventListener("mousemove", (e) => {
+  if (drag) { view.x = e.clientX - drag.x; view.y = e.clientY - drag.y; draw(); }
+  hover(e);
+});
+$("view").addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const f = Math.exp(-e.deltaY * 0.0015);
+  view.x = mx - (mx - view.x) * f;
+  view.y = my - (my - view.y) * f;
+  view.scale *= f;
+  draw();
+}, { passive: false });
+
+// Where the cursor is on the ground, the height there and its zone, from the stats grid.
+function hover(e) {
+  if (!image || !stats || !stats.grid) return;
+  const rect = canvas.getBoundingClientRect();
+  const px = (e.clientX - rect.left - view.x) / view.scale;
+  const py = (e.clientY - rect.top - view.y) / view.scale;
+  if (px < 0 || py < 0 || px >= image.width || py >= image.height) { $("hover").textContent = ""; return; }
+  const g = stats.grid;
+  const x = g.left + (px / image.width) * g.size;
+  const z = g.top + (py / image.height) * g.size;
+  const i = Math.min(g.cells - 1, Math.floor((px / image.width) * g.cells));
+  const j = Math.min(g.cells - 1, Math.floor((py / image.height) * g.cells));
+  const k = j * g.cells + i;
+  $("hover").textContent = `x ${x.toFixed(0)}  z ${z.toFixed(0)}  height ${g.heights[k].toFixed(1)} m  ${g.kinds[g.zones[k]] || ""}`;
+}
+
+$("prev").onclick = () => { $("seed").value = Math.max(0, Number($("seed").value) - 1); render(); };
+$("next").onclick = () => { $("seed").value = Number($("seed").value) + 1; render(); };
+$("seed").onchange = render;
+$("pixels").onchange = () => { image = null; render(); };
+$("recipe").onchange = async () => { await loadRecipe(); image = null; render(); };
+$("layers").onchange = render;
+$("fit").onclick = () => image && fit();
+$("apply").onclick = () => { edited = $("text").value; render(); };
+$("revert").onclick = async () => { await loadRecipe(); render(); };
+$("save").onclick = async () => {
+  const r = await fetch(`/recipe?${new URLSearchParams({ map: $("recipe").value })}`, { method: "POST", body: $("text").value });
+  $("error").textContent = r.ok ? "Saved." : await r.text();
+  if (r.ok) { edited = null; render(); }
+};
+addEventListener("keydown", (e) => {
+  if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
+  if (e.key === "ArrowLeft") $("prev").click();
+  if (e.key === "ArrowRight") $("next").click();
+});
+addEventListener("resize", draw);
+
+(async () => {
+  const names = await (await fetch("/recipes")).json();
+  $("recipe").innerHTML = names.map((n) => `<option>${n}</option>`).join("");
+  await loadRecipe();
+  render();
+})();
+</script>
+</body>
+</html>

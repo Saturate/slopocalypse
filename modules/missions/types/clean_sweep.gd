@@ -9,6 +9,8 @@ extends MissionType
 const REVEAL_AT := 3
 ## How often the server re-sends the positions of the revealed ones, seconds.
 const REVEAL_EVERY := 1.0
+## Draws for a patrol stop on open ground before taking the last one anyway.
+const PATROL_TRIES := 6
 
 var _guards: Array[Node] = []
 var _left := -1
@@ -40,7 +42,8 @@ func server_open() -> void:
 	_count()
 
 
-## A loop through spots around the zone's buildings.
+## A loop through spots around the zone's buildings, on open ground (off the site's pad
+## and yard, roads, water and steep ground).
 func _patrol_route(rng: RandomNumberGenerator) -> Array:
 	var route := []
 	var buildings: Array = missions.get(&"buildings")
@@ -49,9 +52,14 @@ func _patrol_route(rng: RandomNumberGenerator) -> Array:
 			route.append(missions.call(&"random_spot", 0.6))
 			continue
 		var b: Dictionary = buildings[rng.randi_range(0, buildings.size() - 1)]
-		var a := rng.randf() * TAU
-		var r := float(b.get("radius", 4.0)) + 3.0
-		var at := (b["position"] as Vector3) + Vector3(cos(a) * r, 0.0, sin(a) * r)
+		# Inside the compound's fence where there is one: it keeps this much round each building.
+		var r := float(b.get("radius", 4.0)) + float(((missions.get(&"config") as Dictionary).get("compound", {}) as Dictionary).get("patrol_reach", 3.0))
+		var at: Vector3 = b["position"]
+		for _try in PATROL_TRIES:
+			var a := rng.randf() * TAU
+			at = (b["position"] as Vector3) + Vector3(cos(a) * r, 0.0, sin(a) * r)
+			if bool(missions.call(&"open_ground", at)):
+				break
 		at.y = float(missions.call(&"ground_y", at.x, at.z))
 		route.append(at)
 	return route

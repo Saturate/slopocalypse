@@ -6,11 +6,11 @@ extends GearScreen
 
 func _ready() -> void:
 	super._ready()
-	layer = 40
+	layer = UiLayers.SCREENS
 
 
 func _hint() -> String:
-	return "Drag to move  ·  R turns  ·  drag out to drop  ·  right click uses  ·  B mods your gun"
+	return "Drag to move  ·  R turns  ·  drag out to drop  ·  right click uses  ·  %s mods your gun" % KeyHint.key_for(&"modding")
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -19,9 +19,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+## A screen opened over this one (modding, loot) closes first; Tab then closes this.
 func toggle() -> void:
 	if is_open():
-		close()
+		if UiStack.is_top(self):
+			close()
 	else:
 		open()
 

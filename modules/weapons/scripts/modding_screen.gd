@@ -5,11 +5,10 @@ extends CanvasLayer
 ## which asks the server to make it this player's gun. Parts are swapped on a draft; nothing
 ## changes until the server accepts. Every part is offered until inventory exists.
 
-const BG := Color(0.05, 0.06, 0.06, 0.82)
-const PANEL := Color(0.11, 0.12, 0.11, 0.97)
-const ACCENT := Color(0.82, 0.62, 0.3)
-const TEXT := Color(0.86, 0.86, 0.82)
-const DIM := Color(0.6, 0.61, 0.58)
+const BG := UiPalette.BACKDROP
+const ACCENT := UiPalette.ACCENT
+const TEXT := UiPalette.TEXT
+const DIM := UiPalette.DIM
 const BETTER := Color(0.45, 0.85, 0.45)
 const WORSE := Color(0.95, 0.42, 0.35)
 const PREVIEW_SIZE := Vector2i(560, 360)
@@ -38,7 +37,7 @@ var _waiting := false
 
 
 func _ready() -> void:
-	layer = 40
+	layer = UiLayers.SCREENS
 	_build_ui()
 	_root.visible = false
 	EventBus.subscribe(&"weapons.build_changed", _on_build_changed)
@@ -51,11 +50,11 @@ func _exit_tree() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed(&"modding"):
-		toggle()
-		get_viewport().set_input_as_handled()
-	elif is_open() and event is InputEventKey and event.is_pressed() and (event as InputEventKey).keycode == KEY_ESCAPE:
+	if UiStack.is_top(self) and UiStack.is_cancel(event):
 		close()
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed(&"modding") and (not is_open() or UiStack.is_top(self)):
+		toggle()
 		get_viewport().set_input_as_handled()
 
 
@@ -82,14 +81,14 @@ func open() -> void:
 	_fill_pickers()
 	_root.visible = true
 	_preview_port.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	UiStack.push(self)
 	_refresh()
 
 
 func close() -> void:
 	_root.visible = false
 	_preview_port.render_target_update_mode = SubViewport.UPDATE_DISABLED
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	UiStack.pop(self)
 
 
 ## Puts `part_id` ("" for none) in `slot` on the draft.
@@ -270,12 +269,6 @@ func _build_ui() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_root.add_child(center)
 	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = PANEL
-	style.border_color = ACCENT.darkened(0.5)
-	style.border_width_top = 3
-	style.set_content_margin_all(20)
-	panel.add_theme_stylebox_override("panel", style)
 	center.add_child(panel)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 20)
@@ -373,11 +366,7 @@ func _preview() -> Control:
 
 
 func _label(text: String, size: int, colour: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", colour)
-	return l
+	return UiText.label(text, size, colour)
 
 
 func _button(text: String, on_press: Callable, primary: bool = false) -> Button:
@@ -386,10 +375,6 @@ func _button(text: String, on_press: Callable, primary: bool = false) -> Button:
 	b.text = text
 	b.custom_minimum_size = Vector2(100, 38)
 	if primary:
-		var st := StyleBoxFlat.new()
-		st.bg_color = ACCENT.darkened(0.15)
-		st.set_corner_radius_all(2)
-		b.add_theme_stylebox_override("normal", st)
-		b.add_theme_color_override("font_color", Color(0.07, 0.08, 0.08))
+		b.theme_type_variation = &"AccentButton"
 	b.pressed.connect(on_press)
 	return b

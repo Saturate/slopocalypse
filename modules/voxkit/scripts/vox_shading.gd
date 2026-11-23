@@ -9,6 +9,9 @@ extends RefCounted
 const CONFIG := "res://modules/voxkit/data/voxkit.json"
 
 static var _done := false
+## The brightness per corner level now in use (empty when off), for GPU volumes that shade
+## their corners in the shader instead.
+static var levels := PackedFloat32Array()
 
 
 ## Loads the settings once; call before making voxel meshes. Cheap after the first call.
@@ -32,14 +35,16 @@ static func ensure() -> void:
 		if levels.size() != 4:
 			push_error("%s: corner_shading.levels needs 4 numbers" % CONFIG)
 			levels.clear()
+	VoxShading.levels = levels
 	VoxelModel.set_corner_shading(levels)
 
 
 ## For tests and comparison captures: shading on (with `levels`) or off (empty), whatever the
 ## data says, until `reset()`.
-static func force(levels: PackedFloat32Array) -> void:
+static func force(with: PackedFloat32Array) -> void:
 	_done = true
-	VoxelModel.set_corner_shading(levels)
+	levels = with
+	VoxelModel.set_corner_shading(with)
 
 
 static func reset() -> void:

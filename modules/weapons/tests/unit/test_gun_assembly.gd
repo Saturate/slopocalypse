@@ -61,7 +61,7 @@ func test_markers_come_from_the_outermost_part() -> void:
 	assert_int(model.find_children("Sight", "Marker3D", true, false).size()).is_equal(1)
 
 
-func test_every_build_has_battlebit_level_detail() -> void:
+func test_every_build_has_the_detail_budget_the_spec_asks() -> void:
 	# The spec's budget for one assembled gun: detailed enough to read rails and slots up
 	# close, cheap enough for four players and their kit.
 	for name: String in GunAssembly.build_names():
@@ -104,3 +104,57 @@ func test_the_carried_build_is_the_default_unless_overridden() -> void:
 	GunAssembly.override_build = "ar_cqb"
 	assert_str(GunAssembly.chosen_build()).is_equal("ar_cqb")
 	GunAssembly.override_build = ""
+
+
+func test_the_bolt_action_is_a_manual_action_with_a_magnified_scope() -> void:
+	var slots := GunAssembly.build("bolt_standard")
+	var stats: Dictionary = GunAssembly.assemble_named("bolt_standard")["stats"]
+	var rifle: Dictionary = GunAssembly.assemble_named("ar_standard")["stats"]
+	assert_float(stats["magazine"]).is_equal(5.0)
+	assert_float(GunAssembly.cycle_seconds_of(slots, stats)).is_greater(0.0)
+	assert_float(GunAssembly.cycle_seconds_of(GunAssembly.build("ar_standard"), rifle)).is_equal(0.0)
+	assert_float(stats["damage"]).is_greater(float(rifle["damage"]) * 2.0)
+	# Accurate only aimed: its hip spread is wide, its receiver makes aiming tighten it.
+	assert_float(float(GunAssembly.receiver_of(slots).get("ads_spread_multiplier", 1.0))).is_less(0.05)
+	# The long scope magnifies more than any other optic.
+	for id: String in GunModding.options("optic"):
+		if id != "opt_scope_8x":
+			assert_float(float(GunAssembly.catalogue()[id]["stats"].get("magnification", 1.0))).is_less(float(stats["magnification"]))
+
+
+func test_every_manual_receiver_says_how_long_its_cycle_is() -> void:
+	for id: String in GunAssembly.catalogue():
+		var part: Dictionary = GunAssembly.catalogue()[id]
+		if str(part.get("action", "")) == "manual":
+			assert_float(float((part["stats"] as Dictionary).get("cycle_seconds", 0.0))).override_failure_message(id).is_greater(0.0)
+
+
+func test_the_voxel_parts_hang_where_the_receiver_mounts_them() -> void:
+	# The voxel kit draws the rifle whole, then cuts each part out around its mount; the
+	# receiver's mounts in the data must be the same points.
+	var receiver: Dictionary = GunAssembly.catalogue()["rcv_bolt"]
+	var mounts: Dictionary = receiver["mounts"]
+	var by_slot := {"bolt_barrel": "barrel", "bolt_stock": "stock", "bolt_handle": "bolt", "bolt_magazine": "magazine", "optic": "scope"}
+	for slot: String in by_slot:
+		var a: Array = mounts[slot]
+		assert_vector(Vector3(a[0], a[1], a[2])).override_failure_message(slot).is_equal_approx(VoxBoltRifle.MOUNTS[by_slot[slot]], Vector3.ONE * 0.0001)
+	var knob: Array = GunAssembly.catalogue()["bolt_std"]["markers"]["BoltKnob"]
+	assert_vector(Vector3(knob[0], knob[1], knob[2])).is_equal_approx(VoxBoltRifle.knob(), Vector3.ONE * 0.0001)
+	var scope_sight: Array = GunAssembly.catalogue()["opt_scope_8x"]["markers"]["Sight"]
+	assert_vector(Vector3(scope_sight[0], scope_sight[1], scope_sight[2])).is_equal_approx(Vector3(0.0, VoxBoltRifle.SCOPE_AXIS, VoxBoltRifle.SCOPE_EYEPIECE_Z), Vector3.ONE * 0.0001)
+
+
+func test_the_bolt_actions_parts_are_voxel_meshes_in_their_own_space() -> void:
+	var barrel := GunPartMeshes.mesh("vox_bolt_barrel")
+	assert_object(barrel).is_not_null()
+	var box := barrel.get_aabb()
+	# From the mount forward to the muzzle, round the bore.
+	assert_float(box.position.z).is_equal_approx(-VoxBoltRifle.BARREL_LENGTH, 0.01)
+	# Its rounded back end tucks a little into the receiver.
+	assert_float(box.end.z).is_less(0.02)
+	assert_float(box.get_center().y).is_equal_approx(0.0, 0.01)
+	var model: Node3D = auto_free(GunAssembly.build_model(GunAssembly.build("bolt_standard")))
+	add_child(model)
+	assert_float((model.get_node("Muzzle") as Node3D).position.z).is_less(-0.7)
+	for name: String in ["GripR", "GripL", "Sight", "BoltKnob"]:
+		assert_object(model.get_node_or_null(name)).override_failure_message(name).is_not_null()

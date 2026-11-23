@@ -1,16 +1,21 @@
 // Benchmarks: runs fixed scenarios, reads the perf log each writes, and compares with this
 // machine's baseline. Not part of the gate (timings are too noisy on shared machines).
-//   node tools/bench.ts [solo-walk] [solo-drive] [server-bots] [--save-baseline] [--tolerance 0.15]
+//   node tools/bench.ts [solo-walk] [solo-drive] [solo-city] [solo-deaths] [benchmark] [range-destroy] [server-bots] [server-crowd] [--save-baseline] [--tolerance 0.15]
 //     [--server-flags car:off,enemies:off]  (server-bots: switch modules off to see what costs what)
+//     [--crowd 30]  (server-crowd: how many soldiers)
+//     [--driver vulkan]  (windowed scenarios: another rendering driver; on macOS the Metal driver
+//                         times out its GPU timers once frames pass a second, Vulkan still reads them)
 // Results and baselines live in bench/ (git-ignored): timings mean nothing across machines.
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { argv, exit } from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
-import { compare, parsePerfLog, summarise, table, zoneCosts, type Summary } from "./lib/bench.ts";
+import { compare, netCosts, parsePerfLog, summarise, table, worstSpikes, zoneCosts, type Summary } from "./lib/bench.ts";
 import { localGodot } from "./lib/godot.ts";
+import { summariseReport } from "./lib/report.ts";
 import { run } from "./lib/proc.ts";
+import { benchmarkArgs, rangeArgs } from "./lib/range.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const godot = localGodot(root);
@@ -19,28 +24,61 @@ const outDir = join(root, "bench");
 const WARMUP_SECONDS = 10;
 // The game quits after this many frames (--net-report-after); about a minute at 60 fps.
 const RUN_FRAMES = 3600;
+// A windowed run too slow to get there is stopped after this long instead: its samples are
+// on disk already, and a frame rate that low is the finding.
+const RUN_SECONDS = 150;
 const BOT_CLIENTS = 6;
+const CROWD_CLIENTS = 4;
 const TOP_ZONES = 12;
+const TOP_SPIKES = 6;
 
 interface Scenario {
 	what: string;
 	run: (perfLog: string) => Promise<void>;
 }
 
+// A windowed solo game driven by a bot, with the perf module writing to `perfLog`.
+// `--driver vulkan` (or another rendering driver) goes to the engine, for comparing drivers
+// or when the default one cannot time the GPU.
+// `selfTimed` runs end themselves (the benchmark quits once its results are written), so they
+// get no frame count to stop at.
+async function windowed(name: string, userArgs: readonly string[], perfLog: string, selfTimed = false): Promise<void> {
+	const driver = arg("driver");
+	const engine = driver === undefined ? [] : ["--rendering-driver", driver];
+	const stop = selfTimed ? [] : [`--net-report-after=${RUN_FRAMES}`];
+	const r = await run(godot, [...engine, "--path", root, "--", "--solo", ...userArgs, "--uncapped", "--perf-spike-ms=20", ...stop, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: RUN_SECONDS * 1000 });
+	if (r.timedOut) console.log(`  ${name}: stopped after ${RUN_SECONDS} s, before ${RUN_FRAMES} frames (under ${(RUN_FRAMES / RUN_SECONDS).toFixed(0)} fps)`);
+}
+
 const SCENARIOS: Record<string, Scenario> = {
 	"solo-walk": {
 		what: "windowed solo game, a bot walks the road and shoots (client rendering)",
-		run: async (perfLog) => {
-			const r = await run(godot, ["--path", root, "--", "--solo", "--bot=walk", "--no-save", "--uncapped", "--perf-spike-ms=20", `--net-report-after=${RUN_FRAMES}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: 240_000 });
-			if (r.timedOut) throw new Error("solo-walk timed out");
-		},
+		run: (perfLog) => windowed("solo-walk", ["--bot=walk", "--no-save"], perfLog),
 	},
 	"solo-drive": {
 		what: "windowed solo game, a bot drives the car down the road (terrain and scenery streaming, car physics)",
+		run: (perfLog) => windowed("solo-drive", ["--bot=drive", "--no-save"], perfLog),
+	},
+	"solo-city": {
+		what: "windowed solo game starting in the city, a bot walks the ring of avenues round the square (the heaviest place to render: buildings, lamps, trees, guards)",
+		run: (perfLog) => windowed("solo-city", ["--start=city", "--bot=city", "--no-save"], perfLog),
+	},
+	"solo-deaths": {
+		what: "windowed solo game, squads land in front of the player and are killed one a second (what a soldier appearing and dying costs on screen)",
+		run: (perfLog) => windowed("solo-deaths", ["--bench=deaths", "--no-save"], perfLog),
+	},
+	benchmark: {
+		what: "the in-game benchmark players run from the menu: solo in the city, the city bot walks while squads land and die in front of the player (modules/benchmark); prints its own results too",
 		run: async (perfLog) => {
-			const r = await run(godot, ["--path", root, "--", "--solo", "--bot=drive", "--no-save", "--uncapped", "--perf-spike-ms=20", `--net-report-after=${RUN_FRAMES}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: 240_000 });
-			if (r.timedOut) throw new Error("solo-drive timed out");
+			const out = perfLog.replace(/perf\.ndjson$/, "benchmark.json");
+			await windowed("benchmark", [...benchmarkArgs(root), `--benchmark-out=${out}`], perfLog, true);
+			if (!existsSync(out)) throw new Error("benchmark wrote no results (did the run finish?)");
+			for (const line of summariseReport({ kind: "benchmark", benchmark: JSON.parse(readFileSync(out, "utf8")) }).filter((l) => l.startsWith("  benchmark") || l.startsWith("    hitch"))) console.log(line);
 		},
+	},
+	"range-destroy": {
+		what: "windowed solo game on the test range, the range bot shoots and blasts each building in turn (destruction cost: remeshing, debris, collapse)",
+		run: (perfLog) => windowed("range-destroy", [...rangeArgs(root), "--bot=range"], perfLog),
 	},
 	"server-bots": {
 		what: `headless dedicated server with ${BOT_CLIENTS} bot clients (server cost)`,
@@ -59,6 +97,23 @@ const SCENARIOS: Record<string, Scenario> = {
 			if (results.some((r) => r.timedOut)) throw new Error("server-bots timed out");
 		},
 	},
+	"server-crowd": {
+		what: `headless dedicated server, ${CROWD_CLIENTS} bot clients and --crowd soldiers (default 30) spread over the map (server and network cost per soldier)`,
+		run: async (perfLog) => {
+			const port = 7796;
+			const base = ["--headless", "--path", root, "--"];
+			const crowd = Number(arg("crowd") ?? "30");
+			// Not --uncapped: synchronizers send once a frame, so an uncapped server would send many
+			// times what a real one does. Server CPU comes from the per-tick physics and zones.
+			const server = run(godot, [...base, `--server=${port}`, "--no-save", "--perf-spike-ms=20", `--crowd=${crowd}`, `--net-report-after=${RUN_FRAMES + 600}`, `--perf-log=${perfLog}`], { cwd: root, timeoutMs: 400_000 });
+			await delay(4000);
+			const clients = Array.from({ length: CROWD_CLIENTS }, (_, i) =>
+				run(godot, [...base, `--connect=127.0.0.1:${port}`, i === 0 ? "--bot=drive" : "--bot=walk", `--net-report-after=${RUN_FRAMES}`, `--name=crowd${i}`], { cwd: root, timeoutMs: 400_000 }),
+			);
+			const results = await Promise.all([server, ...clients]);
+			if (results.some((r) => r.timedOut)) throw new Error("server-crowd timed out");
+		},
+	},
 };
 
 function arg(name: string): string | undefined {
@@ -68,7 +123,7 @@ function arg(name: string): string | undefined {
 
 async function main(): Promise<void> {
 	if (!existsSync(godot)) throw new Error("Godot missing: run node tools/get-godot.ts");
-	const asked = argv.slice(2).filter((a) => !a.startsWith("--") && a !== arg("tolerance") && a !== arg("server-flags"));
+	const asked = argv.slice(2).filter((a) => !a.startsWith("--") && a !== arg("tolerance") && a !== arg("server-flags") && a !== arg("crowd") && a !== arg("driver"));
 	const names = asked.length > 0 ? asked : Object.keys(SCENARIOS);
 	for (const n of names) if (!(n in SCENARIOS)) throw new Error(`unknown scenario ${n}; known: ${Object.keys(SCENARIOS).join(", ")}`);
 	const tolerance = Number(arg("tolerance") ?? "0.15");
@@ -85,15 +140,29 @@ async function main(): Promise<void> {
 			const perfLog = join(work, "perf.ndjson").replaceAll("\\", "/");
 			await scenario.run(perfLog);
 			if (!existsSync(perfLog)) throw new Error(`${name} wrote no perf log (is the perf module on?)`);
-			const records = parsePerfLog(readFileSync(perfLog, "utf8"));
+			const text = readFileSync(perfLog, "utf8");
+			const records = parsePerfLog(text);
 			const summary = summarise(records, WARMUP_SECONDS);
 			if (summary.samples === 0) throw new Error(`${name}: no samples after the ${WARMUP_SECONDS} s warm-up`);
 			const zones = zoneCosts(records, WARMUP_SECONDS);
 			console.log(`  nodes' physics per tick: ${summary.physics_ms} ms; worst moment per second (Godot's peak): physics ${summary.physics_peak_ms} ms`);
+			if (summary.gpu_ms > 0) console.log(`  drawing a frame: GPU ${summary.gpu_ms} ms, render CPU ${summary.render_cpu_ms} ms; ${summary.draw_calls} draw calls, ${summary.objects_drawn} objects, ${summary.primitives} primitives`);
 			console.log("  most expensive zones (microseconds per frame):");
 			for (const [zone, us] of zones.slice(0, TOP_ZONES)) console.log(`    ${zone.padEnd(38)} ${us.toFixed(1).padStart(8)}`);
+			const spikes = worstSpikes(text, WARMUP_SECONDS, TOP_SPIKES);
+			if (spikes.length > 0) console.log("  worst hitches (frame ms at second t: zones in ms, shader pipelines compiled):");
+			for (const s of spikes) {
+				const ran = Object.entries(s.zones).sort((a, b) => b[1] - a[1]).map(([z, ms]) => `${z} ${ms}`).join(", ");
+				const compiles = Object.entries(s.compiles).map(([k, c]) => `${c} ${k}`).join(", ");
+				console.log(`    ${s.ms.toFixed(1).padStart(7)} ms at ${s.t.toFixed(1)} s: ${ran || "no zones"}${compiles === "" ? "" : `; compiled ${compiles}`}`);
+			}
+			const net = netCosts(records, WARMUP_SECONDS);
+			if (net !== undefined) {
+				console.log(`  sent to each client: ${(net.outPerPeer / 1024).toFixed(1)} KB/s; by source (estimated, KB/s across all clients):`);
+				for (const [source, bytes] of net.sources) console.log(`    ${source.padEnd(38)} ${(bytes / 1024).toFixed(1).padStart(8)}`);
+			}
 			const stamp = new Date().toISOString().replaceAll(":", "-").slice(0, 19);
-			writeFileSync(join(outDir, `${name}-${stamp}.json`), JSON.stringify({ ...summary, zones }, null, 2) + "\n");
+			writeFileSync(join(outDir, `${name}-${stamp}.json`), JSON.stringify({ ...summary, zones, net }, null, 2) + "\n");
 			// The raw log too, for digging into a run afterwards.
 			copyFileSync(perfLog, join(outDir, `${name}-${stamp}.ndjson`));
 			const baselineFile = join(outDir, `${name}.baseline.json`);

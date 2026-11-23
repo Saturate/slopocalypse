@@ -17,7 +17,9 @@ extends Node
 ## downstream can ask `identity_of(peer)`; one that stays silent is dropped.
 ##
 ## Test hook: --net-report-after=FRAMES prints a NET-REPORT line and quits, so tools can
-## check a session from the outside.
+## check a session from the outside. A client or solo game counts physics frames from when its
+## own player is in the world, and tells its server once it has reported; a server counts from
+## its first player and reports and stops only once every client on it has reported.
 
 ## Server: a peer connected and said who they are.
 signal peer_joined(peer_id: int)
@@ -38,20 +40,40 @@ const SOLO_CONNECT_TRIES := 5
 const FIRST_JOIN_SECONDS := 30.0
 ## How long joining a server waits before saying it cannot be reached.
 const JOIN_TIMEOUT_MS := 8000
-## ENet's own defaults, restored after joining.
+## After joining, on both ends. ENet's own minimum is 5 s, but building the world after a
+## join stalled a slow machine's frames for 6 s and dropped the connection; a dead peer is
+## still noticed within 15 to 30 s.
 const ENET_TIMEOUT_LIMIT := 32
-const ENET_TIMEOUT_MIN_MS := 5000
+const ENET_TIMEOUT_MIN_MS := 15000
 const ENET_TIMEOUT_MAX_MS := 30000
 ## How long a connected peer has to say who they are before the server drops them.
 const HELLO_SECONDS := 10.0
+## A gap between physics ticks this long is logged in tool runs (see `_note_stall`).
+const STALL_LOG_MS := 1500
 ## How long a kicked peer has to receive the reason before the line is cut.
 const KICK_SECONDS := 0.5
 const MAX_NAME_LENGTH := 32
 const MAX_KEY_LENGTH := 64
+## Goes up whenever an RPC's arguments change anywhere in the game, or a new RPC is added: the
+## version alone does not catch two builds of one version. A client and server must run the
+## same version and protocol, or an older client would join and silently lose every effect
+## whose replay it can no longer decode (#397). `_hello`, `_kicked` and `_version` must never
+## change their arguments: they are how an older client is told to update.
+## 2: the world module tells joining clients which world it plays (#472).
+## 3: tool-run clients tell the server they have reported (`_wrote_report`).
+const PROTOCOL := 3
+## How long a --net-report-after server waits for its clients' reports before it stops anyway.
+const REPORT_WAIT_SECONDS := 60.0
+## Versions are compared up to this many characters, on both sides alike.
+const MAX_VERSION_LENGTH := 64
 
 var mode: Mode = Mode.SOLO
 var port := DEFAULT_PORT
 var host := "127.0.0.1"
+## Arguments a menu choice adds to this session (the test range's `--range`): modules read
+## them through `session_args()`, and a solo server gets them like the command line's.
+var extra_args := PackedStringArray()
+
 ## Pid of the server this solo session started, or -1.
 var solo_server_pid := -1
 
@@ -62,11 +84,22 @@ var _connect_tries := 0
 var _waited_for_first := 0.0
 
 var _report_after := -1
+var _last_tick_ms := 0
 var _frames := 0
+## Client or solo: this instance's own player is in the world, so its report clock runs.
+var _in_play := false
+## Server: someone has joined (said hello and was let in), which starts its report clock.
+var _had_players := false
+## Server: peers that said their report is out; seconds waited for the rest.
+var _reported: Dictionary = {}
+var _report_wait := 0.0
+var _stopped := false
 
 ## Server: peer -> {name, key} once they said hello; peer -> seconds waited until then.
 var _identities: Dictionary = {}
 var _unnamed: Dictionary = {}
+## Server: peers whose build was checked, peer -> "" when it matches, else why it does not.
+var _builds: Dictionary = {}
 ## Client: why the server sent us away, shown when the connection drops.
 var _kick_reason := ""
 
@@ -109,6 +142,9 @@ func _ready() -> void:
 		Log.info(&"net", "peer %d connected" % id)
 		_had_peers = true
 		if multiplayer.is_server():
+			var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+			if enet != null:
+				enet.get_peer(id).set_timeout(ENET_TIMEOUT_LIMIT, ENET_TIMEOUT_MIN_MS, ENET_TIMEOUT_MAX_MS)
 			_unnamed[id] = 0.0)
 	multiplayer.peer_disconnected.connect(_on_peer_left)
 	multiplayer.connected_to_server.connect(func() -> void:
@@ -159,7 +195,7 @@ func _start_local_server(listen_port: int, bind: String) -> void:
 	host = "127.0.0.1"
 	_connect_tries = 0
 	var log_file := ProjectSettings.globalize_path("user://logs/solo-server.log")
-	solo_server_pid = SoloServer.start(port, OS.get_cmdline_user_args(), log_file, bind)
+	solo_server_pid = SoloServer.start(port, session_args(), log_file, bind)
 	if solo_server_pid < 0:
 		_fail("Could not start the local server.")
 		return
@@ -168,8 +204,8 @@ func _start_local_server(listen_port: int, bind: String) -> void:
 	_start_client()
 
 
-## Once in, ENet's patient defaults return: loading the world can stall a frame for a
-## second or two, and the short join timeout would drop the connection over it.
+## Once in, the patient timeout returns: loading the world can stall frames for seconds,
+## and the short join timeout would drop the connection over it.
 func _restore_timeout() -> void:
 	var peer := multiplayer.multiplayer_peer as ENetMultiplayerPeer
 	if peer != null and mode == Mode.CLIENT:
@@ -193,10 +229,19 @@ func leave(reason: String = "") -> void:
 	_connect_tries = 0
 	_identities.clear()
 	_unnamed.clear()
+	_builds.clear()
 	_kick_reason = ""
+	forget_menu_choice()
 	menu_message = reason
 	awaiting_menu = true
 	get_tree().reload_current_scene.call_deferred()
+
+
+## What a menu choice added (the range, the benchmark) belongs to that session only; left in,
+## the next Solo or Join would run it again, flags and all.
+func forget_menu_choice() -> void:
+	extra_args.clear()
+	Features.reload(session_args())
 
 
 ## A session that cannot start: a player gets the menu and the reason, a tool run an error.
@@ -210,8 +255,10 @@ func _fail(reason: String) -> void:
 
 func _on_peer_left(id: int) -> void:
 	_unnamed.erase(id)
+	_builds.erase(id)
 	if not _identities.has(id):
-		Log.info(&"net", "peer %d left before saying who they are" % id)
+		# Only a server learns who peers are; on a client this would misread every peer.
+		Log.info(&"net", "peer %d left%s" % [id, " before saying who they are" if multiplayer.is_server() else ""])
 	else:
 		Log.info(&"net", "peer %d (%s) left" % [id, _identities[id]["name"]])
 		peer_leaving.emit(id)
@@ -229,7 +276,23 @@ func _on_connection_failed() -> void:
 		Log.info(&"net", "solo server not up yet; retrying")
 		_start_client()
 		return
-	_fail("Could not reach %s:%d. Is the host running, and is the address right?" % [host, port])
+	if mode == Mode.SOLO:
+		_fail("Could not reach the local server on port %d." % port)
+		return
+	_fail(join_help(host, port))
+
+
+## What to check when joining `address`:`at` fails (#414). A playtester could not reach a
+## server others joined fine; their network most likely blocked outbound UDP, which nothing
+## in the old message pointed at.
+static func join_help(address: String, at: int) -> String:
+	return "\n".join(PackedStringArray([
+		"Could not reach %s:%d. Things to check:" % [address, at],
+		"- The address and port are right, and the server is running.",
+		"- The server's firewall and router let in UDP port %d (the game uses UDP, not TCP)." % at,
+		"- Your own network allows outgoing UDP; some work, school and public networks block it.",
+		"- A VPN such as Tailscale or ZeroTier gets round a blocked port: join the host's VPN address instead.",
+	]))
 
 
 ## A player goes back to the menu; a tool-run client left without a server would spam
@@ -252,7 +315,9 @@ func server_broadcast(topic: StringName, payload: Dictionary) -> void:
 	EventBus.publish(topic, payload)
 	if multiplayer.multiplayer_peer is OfflineMultiplayerPeer or multiplayer.get_peers().is_empty():
 		return
-	_replay.rpc(topic, _encode(payload))
+	var encoded := _encode(payload)
+	NetStats.add(StringName("event/" + topic), NetStats.size_of([topic, encoded]) * multiplayer.get_peers().size())
+	_replay.rpc(topic, encoded)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -285,6 +350,10 @@ func _decode(encoded: Dictionary) -> Dictionary:
 
 
 func _stop() -> void:
+	# Physics can tick several times in the frame that quits; saving twice would be wasted.
+	if _stopped:
+		return
+	_stopped = true
 	stopping.emit()
 	get_tree().quit(0)
 
@@ -292,6 +361,8 @@ func _stop() -> void:
 ## Client: tells the server who this is. Tool runs without `--name=` join as a guest so
 ## two of them on one machine do not share a name.
 func _say_hello() -> void:
+	# Before the hello, on the same reliable channel, so the server has it when the hello comes.
+	_version.rpc_id(1, _claimed_version(), PROTOCOL)
 	var profile := PlayerProfile.load_from()
 	var fallback := profile.name if interactive else "Guest%d" % (multiplayer.get_unique_id() % 100000)
 	_hello.rpc_id(1, PlayerProfile.name_from_args(OS.get_cmdline_user_args(), fallback), profile.key)
@@ -303,8 +374,16 @@ func _hello(player_name: String, key: String) -> void:
 	if not multiplayer.is_server() or not _unnamed.has(peer):
 		return
 	_unnamed.erase(peer)
+	# A client from before this check never sends its build: it is older than this server.
+	var refused := str(_builds.get(peer, "This server runs %s; your game is older. Update to join." % _own_version()))
+	_builds.erase(peer)
+	if not refused.is_empty():
+		Log.info(&"net", "refusing peer %d (%s): %s" % [peer, player_name.left(MAX_NAME_LENGTH), refused])
+		server_kick(peer, refused)
+		return
 	_identities[peer] = {"name": player_name.strip_edges().left(MAX_NAME_LENGTH), "key": key.left(MAX_KEY_LENGTH)}
 	Log.info(&"net", "peer %d is %s" % [peer, _identities[peer]["name"]])
+	_had_players = true
 	peer_joined.emit(peer)
 
 
@@ -328,6 +407,60 @@ func server_kick(peer: int, reason: String) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _kicked(reason: String) -> void:
 	_kick_reason = reason
+	# Hanging up ourselves lets the server see an ordinary disconnect; when the server cuts
+	# the line instead it keeps sending to the half-closed peer and logs errors for a while.
+	_hang_up.call_deferred()
+
+
+func _hang_up() -> void:
+	var peer := multiplayer.multiplayer_peer
+	if peer == null or peer is OfflineMultiplayerPeer:
+		return
+	# Detached first, so closing it cannot also fire `server_disconnected` and leave twice.
+	multiplayer.multiplayer_peer = null
+	peer.close()
+	_on_server_gone()
+
+
+## Client to server, just before the hello: which build this client runs. Its name sorts
+## after `_hello`, `_kicked` and `_replay` on purpose: Godot numbers a node's RPCs in name
+## order, so a new RPC must sort after this one, or it would shift `_version` and older
+## clients could not even be told to update.
+@rpc("any_peer", "call_remote", "reliable")
+func _version(version: String, protocol: int) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	if multiplayer.is_server() and _unnamed.has(peer):
+		_builds[peer] = build_mismatch(_own_version().left(MAX_VERSION_LENGTH), PROTOCOL, version.left(MAX_VERSION_LENGTH), protocol)
+
+
+## Client to server, test hook: this client's NET-REPORT is out, so a --net-report-after
+## server may stop. Sorts after `_version`; see there.
+@rpc("any_peer", "call_remote", "reliable")
+func _wrote_report() -> void:
+	if multiplayer.is_server():
+		_reported[multiplayer.get_remote_sender_id()] = true
+
+
+## Why a client on `version`/`protocol` may not join a server on its own, or "" when it may.
+static func build_mismatch(server_version: String, server_protocol: int, version: String, protocol: int) -> String:
+	if version == server_version and protocol == server_protocol:
+		return ""
+	if version == server_version:
+		return "This server runs %s with a different network protocol (%d, yours is %d). Update both to the same build." % [server_version, server_protocol, protocol]
+	return "This server runs %s; you have %s. Update to join." % [server_version, version]
+
+
+static func _own_version() -> String:
+	return str(ProjectSettings.get_setting("application/config/version", ""))
+
+
+## The version this client says it runs: its own, unless a test claims another
+## (`--claim-version=`) to check that the server turns it away.
+static func _claimed_version() -> String:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--claim-version="):
+			return arg.trim_prefix("--claim-version=")
+	return _own_version()
 
 
 func _drop_silent(delta: float) -> void:
@@ -341,6 +474,13 @@ func _drop_silent(delta: float) -> void:
 			var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
 			if enet != null:
 				enet.disconnect_peer(peer)
+
+
+## The command line's user arguments plus any a menu choice added (`extra_args`).
+func session_args() -> PackedStringArray:
+	var out := OS.get_cmdline_user_args()
+	out.append_array(extra_args)
+	return out
 
 
 ## True when this instance should have a player of its own (solo or client).
@@ -360,42 +500,115 @@ func _physics_process(delta: float) -> void:
 
 
 func _physics_tick(delta: float) -> void:
+	_note_stall()
 	_watch_empty(delta)
 	_drop_silent(delta)
-	if _report_after < 0:
+	# Counted from when the session has someone in it, not from launch: a slow machine can
+	# spend seconds loading first, and the smoke tests start their processes seconds apart.
+	if _report_after < 0 or not _report_clock_running():
 		return
 	_frames += 1
-	if _frames == _report_after:
+	if mode == Mode.SERVER:
+		_server_report_tick(delta)
+	elif _frames == _report_after:
 		print(report())
 		# Clients keep running so the server can still count them; they close when it leaves.
-		if mode != Mode.CLIENT:
+		if mode == Mode.SOLO:
 			_stop()
+		elif is_session_connected():
+			_wrote_report.rpc_id(1)
+
+
+## Tool runs only: a stall near ENet's 5 s timeout drops the connection, and on a slow CI
+## runner that shows up as a smoke test whose player vanished; this names it in the log.
+func _note_stall() -> void:
+	if _report_after < 0:
+		return
+	var now := Time.get_ticks_msec()
+	if _last_tick_ms > 0 and now - _last_tick_ms >= STALL_LOG_MS:
+		Log.info(&"net", "stalled %d ms between physics ticks" % (now - _last_tick_ms))
+	_last_tick_ms = now
+
+
+## Server: the connected peers that have not said their report is out.
+static func unreported(peers: PackedInt32Array, reported: Dictionary) -> Array[int]:
+	var out: Array[int] = []
+	for p in peers:
+		if not reported.has(p):
+			out.append(p)
+	return out
+
+
+## A client builds the server's world only after joining, which stalls its frames for seconds
+## on a slow machine; counting from the connection left a bot too little time to walk or
+## drive before its report. A server counts from its first player: a client it turns away
+## must not start the clock, or it could run out before the real player has even connected.
+func _report_clock_running() -> bool:
+	if mode == Mode.SERVER:
+		return _had_players
+	if not _in_play and is_inside_tree():
+		var me := multiplayer.get_unique_id()
+		_in_play = get_tree().get_nodes_in_group(&"players").any(func(p: Node) -> bool: return int(p.get_meta(&"peer_id", 0)) == me)
+	return _in_play
+
+
+## The server's own clock says nothing about how far its clients got, so it reports and stops
+## only once each of them has reported: the clients' reports and its own then cover the same
+## play, and no client is cut off before its report.
+func _server_report_tick(delta: float) -> void:
+	if _frames < _report_after or _stopped:
+		return
+	var waiting := unreported(multiplayer.get_peers(), _reported)
+	if not waiting.is_empty():
+		_report_wait += delta
+		if _report_wait < REPORT_WAIT_SECONDS:
+			return
+		Log.error(&"net", "no report from peer(s) %s within %d s; reporting without them" % [waiting, int(REPORT_WAIT_SECONDS)])
+	print(report())
+	_stop()
 
 
 ## A solo server must not linger as an orphan. A game that crashes is timed out by ENet and
 ## counts as leaving; one that never connected is caught here. (Watching the parent pid does
 ## not work: on Windows Godot only tracks processes it started itself.)
 func _watch_empty(delta: float) -> void:
-	if not _quit_when_empty or _had_peers:
+	if not _waited_too_long(delta):
 		return
-	_waited_for_first += delta
-	if _waited_for_first >= FIRST_JOIN_SECONDS:
+	if _report_after >= 0:
+		Log.error(&"net", "nobody to report on: no peer within %d s; quitting" % int(FIRST_JOIN_SECONDS))
+	else:
 		Log.info(&"net", "nobody joined within %d s; server quitting" % int(FIRST_JOIN_SECONDS))
-		_stop()
+	_stop()
+
+
+## True once FIRST_JOIN_SECONDS have passed without a first peer, for a --quit-when-empty
+## server and for tool runs (--net-report-after) of a server or a solo game: their report
+## frames only count once there is a peer, so without this they would wait out the tool's
+## timeout instead of failing.
+func _waited_too_long(delta: float) -> bool:
+	var tool_run := _report_after >= 0 and mode != Mode.CLIENT
+	if not (_quit_when_empty or tool_run) or _had_peers:
+		return false
+	_waited_for_first += delta
+	return _waited_for_first >= FIRST_JOIN_SECONDS
 
 
 ## One line describing the session, for tools and tests. `moved` is the furthest any player
-## stands from the world origin (the spawn), `shots` the weapon.fired events seen here,
+## stands from the spawn (group `spawn_point`; the origin without one), `shots` the weapon.fired events seen here,
 ## `driven` the furthest any vehicle is from where it spawned, `ammo` the local player's
-## rounds (group `held_weapons`, method `ammo()`).
+## rounds (group `held_weapons`, method `ammo()`), `parked` the players hidden because they
+## sit in a vehicle and `drivers` the vehicles with someone driving.
 func report() -> String:
 	var players := get_tree().get_nodes_in_group(&"players")
 	# The server owns every player body, so "local" means the player spawned for this peer.
 	var me := multiplayer.get_unique_id()
 	var local := players.filter(func(p: Node) -> bool: return mode != Mode.SERVER and int(p.get_meta(&"peer_id", 0)) == me)
 	var moved := 0.0
+	# From the spawn, not the origin: a generated map's camp is far from it (#472).
+	var spawn_node := get_tree().get_first_node_in_group(&"spawn_point") as Node3D
+	var spawn := spawn_node.global_position if spawn_node != null else Vector3.ZERO
 	for p: Node in players:
-		var at := (p as Node3D).global_position
+		var at := (p as Node3D).global_position - spawn
 		moved = maxf(moved, Vector2(at.x, at.z).length())
 	# Group and meta names, not a module dependency: whoever spawns vehicles tags them.
 	var driven := 0.0
@@ -409,7 +622,11 @@ func report() -> String:
 		var holder: Variant = w.get(&"holder")
 		if mode != Mode.SERVER and holder is Node and int((holder as Node).get_meta(&"peer_id", 0)) == me and w.has_method(&"ammo") and w.get(&"active") != false:
 			ammo = int(w.call(&"ammo"))
-	return "NET-REPORT mode=%s peer=%d peers=%d players=%d local_players=%d moved=%.1f shots=%d driven=%.1f ammo=%d" % [Mode.keys()[mode], me, multiplayer.get_peers().size(), players.size(), local.size(), moved, _shots, driven, ammo]
+	# Players this instance shows as parked in a vehicle, and vehicles it knows a driver for:
+	# both must match the server's on a client that joined after someone got in (#433).
+	var parked := players.filter(func(p: Node) -> bool: return not (p as Node3D).visible).size()
+	var drivers := get_tree().get_nodes_in_group(&"vehicles").filter(func(v: Node) -> bool: return v.get(&"driver") != null).size()
+	return "NET-REPORT mode=%s peer=%d peers=%d players=%d local_players=%d moved=%.1f shots=%d driven=%.1f ammo=%d parked=%d drivers=%d" % [Mode.keys()[mode], me, multiplayer.get_peers().size(), players.size(), local.size(), moved, _shots, driven, ammo, parked, drivers]
 
 
 var _shots := 0
@@ -448,8 +665,14 @@ func _start_server() -> void:
 	var err := peer.create_server(port, MAX_CLIENTS)
 	if err != OK:
 		Log.error(&"net", "could not start server on port %d (%s)" % [port, error_string(err)])
+		# A test run would otherwise wait out its tool's timeout for a report that never comes.
+		if _report_after >= 0:
+			get_tree().quit(1)
 		return
 	multiplayer.multiplayer_peer = peer
+	var relevance := NetRelevance.new()
+	relevance.name = "Relevance"
+	add_child(relevance)
 	Log.info(&"net", "server listening on port %d" % port)
 
 
@@ -464,4 +687,8 @@ func _start_client() -> void:
 		# Measured: a failed connect takes about twice the max given here.
 		peer.get_peer(1).set_timeout(0, JOIN_TIMEOUT_MS / 4, JOIN_TIMEOUT_MS / 2)
 	multiplayer.multiplayer_peer = peer
+	if get_node_or_null(^"Smoothing") == null:
+		var smoothing := NetSmoothing.new()
+		smoothing.name = "Smoothing"
+		add_child(smoothing)
 	Log.info(&"net", "connecting to %s:%d" % [host, port])

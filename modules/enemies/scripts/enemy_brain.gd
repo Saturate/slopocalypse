@@ -19,6 +19,11 @@ extends Node
 ## threat, preferably one it can stand up from to fire, runs there (one squad mate at a time
 ## while the others keep firing), then hides and peeks in turns; pinned, it stays down. A
 ## soldier who spots someone calls it out to squad mates within earshot.
+##
+## It never walks into the players' camp (`keep_out`): the part of a step that would take it
+## in through the fence or gate is dropped, so it slides along the fence and a soldier
+## chasing someone into the camp stops at the gate and fights from there; one already inside
+## (pushed in) may walk out or along but never deeper. It never picks cover inside the camp.
 
 enum State { PATROL, FIGHT, CHASE }
 
@@ -32,10 +37,14 @@ const ON_TARGET := 0.12
 const WAIST := 0.9
 ## The muzzle sits about this far in front of the eye.
 const MUZZLE_AHEAD := 0.6
+## Metres ahead a step is checked against `keep_out`: about a stride.
+const STEP_AHEAD := 1.0
 
 var body: PlayerController
 var config: Dictionary = {}
 var home := Vector3.ZERO
+## The players' camp, which it must not walk into; null lets it go anywhere.
+var keep_out: CampLayout
 
 ## A guard's post and route (see the class comment).
 var has_post := false
@@ -50,6 +59,12 @@ var suppression := 0.0
 var surrendered := false
 
 var state := State.PATROL
+## Rival soldiers near enough to be worth looking at (`_refresh_rivals`), and the factions
+## module answering who is hostile to whom (none: soldiers fight only players).
+const RIVAL_SCAN_SECONDS := 0.5
+var _near_rivals: Array[Node] = []
+var _rival_scan_in := randf() * RIVAL_SCAN_SECONDS
+var _factions: Node
 var target: Node3D
 var last_seen := Vector3.ZERO
 
@@ -98,6 +113,25 @@ func _fear() -> Dictionary:
 
 func _suppression_cfg() -> Dictionary:
 	return config.get("suppression", {})
+
+
+## Something on its mind (a foe, or fire it is still shaking off): it stays awake far from
+## players (BrainSleep).
+func busy() -> bool:
+	return not surrendered and (is_instance_valid(target) or suppression > 0.0)
+
+
+## Walking its patrol or holding its post with nobody in mind: the opposite of fighting,
+## stalking someone or keeping its head down under fire, when a soldier keeps quiet
+## (glowsticks).
+func is_patrolling() -> bool:
+	return state == State.PATROL and not is_instance_valid(target) and not surrendered and suppression <= 0.0
+
+
+## Wakes it if it was asleep (BrainSleep): something happened to it.
+func _stir() -> void:
+	if BrainSleep.is_asleep(body):
+		BrainSleep.wake(body)
 
 
 func is_pinned() -> bool:
@@ -149,6 +183,7 @@ func _physics_tick(delta: float) -> void:
 		intent.aim = false
 		intent.crouch = true
 		return
+	_refresh_rivals(delta)
 	var seen := _find_target()
 	if seen != null:
 		if target != seen:
@@ -197,6 +232,7 @@ func _physics_tick(delta: float) -> void:
 					intent.move = Vector2.ZERO
 			State.FIGHT:
 				_fight(delta, intent)
+	_hold_out(intent)
 	intent.look_yaw = _yaw
 	intent.look_pitch = _pitch
 	intent.remote_look = true
@@ -233,6 +269,23 @@ func _hold_post(delta: float, intent: PlayerIntent) -> void:
 	_turn_to(post_yaw + sin(_scan_time / period * TAU) * sweep, 0.0, delta)
 
 
+## Takes the part of its step that would carry it into the camp out of the move.
+func _hold_out(intent: PlayerIntent) -> void:
+	if keep_out == null or intent.move == Vector2.ZERO:
+		return
+	var right := Vector3(cos(_yaw), 0.0, -sin(_yaw))
+	var forward := Vector3(-sin(_yaw), 0.0, -cos(_yaw))
+	var way := keep_out.keep_out_step(body.global_position, right * intent.move.x + forward * intent.move.y, STEP_AHEAD)
+	intent.move = Vector2(way.dot(right), way.dot(forward))
+
+
+## Whether walking `way` from `at`, outside the camp, steps into it.
+static func blocks_step(camp: CampLayout, at: Vector3, way: Vector3) -> bool:
+	if camp == null or way.length() < 0.001 or camp.inside(at):
+		return false
+	return camp.inside(at + way.normalized() * STEP_AHEAD)
+
+
 ## Turns towards `at` and moves straight at it whatever way it faces yet (forward plus a
 ## sidestep), so it never circles a spot it is turning too slowly to face.
 func _walk_toward(at: Vector3, delta: float, intent: PlayerIntent, speed: float, stop := ARRIVED * 0.5) -> void:
@@ -249,6 +302,13 @@ func _walk_toward(at: Vector3, delta: float, intent: PlayerIntent, speed: float,
 
 
 func _fight(delta: float, intent: PlayerIntent) -> void:
+	if body.climbing:
+		# No shooting with both hands on a ladder: down it first, away from the rungs.
+		var away := body.global_basis.inverse() * -body.ladder_into()
+		intent.move = Vector2(away.x, -away.z).limit_length(1.0)
+		intent.fire = false
+		intent.aim = false
+		return
 	intent.move = Vector2.ZERO
 	intent.aim = true
 	var eye := _eye()
@@ -283,15 +343,70 @@ func _turn_to(yaw: float, pitch: float, delta: float) -> void:
 	_pitch = move_toward(_pitch, clampf(pitch, -1.2, 1.2), step)
 
 
-## The nearest living player this soldier can see, or null.
+## Everyone this soldier might fight: players, and other soldiers (only those of a faction
+## hostile to its own count; see `is_hostile`).
+func _foes() -> Array[Node]:
+	var out := get_tree().get_nodes_in_group(&"players")
+	# A rival can be freed (despawned) between scans.
+	for rival: Variant in _near_rivals:
+		if is_instance_valid(rival):
+			out.append(rival)
+	return out
+
+
+## Hostile soldiers within sight range, refreshed every `RIVAL_SCAN_SECONDS` (staggered per
+## soldier): looking through every soldier every tick costs the server too much with 200 of
+## them, and a rival walking into range is noticed within that time.
+func _refresh_rivals(delta: float) -> void:
+	_rival_scan_in -= delta
+	if _rival_scan_in > 0.0:
+		return
+	_rival_scan_in = RIVAL_SCAN_SECONDS
+	_near_rivals.clear()
+	if _factions == null or not is_instance_valid(_factions):
+		_factions = get_tree().get_first_node_in_group(&"factions_api")
+		if _factions == null:
+			return
+	var reach := float(config["sight_range"])
+	var here := body.global_position
+	for node: Node in get_tree().get_nodes_in_group(&"enemies"):
+		var other := node as Node3D
+		if other == null or other == body or other.get_meta(&"dead", false):
+			continue
+		if other.global_position.distance_squared_to(here) > reach * reach:
+			continue
+		if is_hostile(other):
+			_near_rivals.append(other)
+
+
+## Whether `who` is on a side this soldier fights: a player when their standing with this
+## soldier's faction is hostile (every player, without the factions module); another soldier
+## when the factions module says their factions are hostile.
+func is_hostile(who: Node) -> bool:
+	var mine := HitscanWeapon.team_of(body)
+	var theirs := HitscanWeapon.team_of(who)
+	if theirs == "players":
+		if _factions == null or not is_instance_valid(_factions):
+			_factions = get_tree().get_first_node_in_group(&"factions_api")
+		return _factions == null or bool(_factions.call(&"hostile_to_player", mine, who))
+	if theirs.is_empty() or theirs == mine:
+		return false
+	if _factions == null or not is_instance_valid(_factions):
+		_factions = get_tree().get_first_node_in_group(&"factions_api")
+	return _factions != null and bool(_factions.call(&"hostile", mine, theirs))
+
+
+## The nearest living foe this soldier can see, or null.
 func _find_target() -> Node3D:
 	var eye := _eye()
 	var best: Node3D = null
 	var best_d := float(config["sight_range"])
 	var cone := float(config["sight_cone_degrees"])
-	for node: Node in get_tree().get_nodes_in_group(&"players"):
+	for node: Node in _foes():
 		var player := node as Node3D
-		if player == null or player.get_meta(&"dead", false) or not player.is_visible_in_tree():
+		if player == null or player == body or player.get_meta(&"dead", false) or not player.is_visible_in_tree():
+			continue
+		if not is_hostile(player):
 			continue
 		var chest := player.global_position + Vector3.UP * CHEST
 		var d := eye.distance_to(chest)
@@ -311,17 +426,38 @@ func _clear_line(from: Vector3, to: Vector3, wanted: Node) -> bool:
 	var query := PhysicsRayQueryParameters3D.create(from, to, PhysicsLayers.SOLID | PhysicsLayers.SIGHT)
 	query.exclude = [body.get_rid()]
 	var hit := body.get_world_3d().direct_space_state.intersect_ray(query)
-	if hit.is_empty():
-		return true
-	var collider: Variant = hit["collider"]
-	return collider is Node and (collider == wanted or (wanted as Node).is_ancestor_of(collider as Node))
+	var seen := hit.is_empty()
+	if not seen:
+		var collider: Variant = hit["collider"]
+		seen = collider is Node and (collider == wanted or (wanted as Node).is_ancestor_of(collider as Node))
+	return seen and not _glass_hides(from, hit.get("position", to)) and not _blocker_hides(from, to)
+
+
+## Things that hide without being solid (smoke) join the `sight_blockers` group and answer
+## `sight_blocked(from, to)`, so this module needn't know which modules are loaded.
+func _blocker_hides(from: Vector3, to: Vector3) -> bool:
+	for blocker in get_tree().get_nodes_in_group(&"sight_blockers"):
+		if blocker.has_method(&"sight_blocked") and bool(blocker.call(&"sight_blocked", from, to)):
+			return true
+	return false
+
+
+## Window glass doesn't stop eyes, but a cracked pane can: each look through one is stopped
+## with the chance its cracks give (`sight_block_chance` on the pane's body).
+func _glass_hides(from: Vector3, to: Vector3) -> bool:
+	var query := PhysicsRayQueryParameters3D.create(from, to, PhysicsLayers.GLASS)
+	var hit := body.get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty() or not (hit["collider"] as Object).has_method(&"sight_block_chance"):
+		return false
+	var chance := float((hit["collider"] as Object).call(&"sight_block_chance"))
+	return chance > 0.0 and _rng.randf() < chance
 
 
 ## Gunfire nearby draws attention to the shooter, even out of sight; bullets passing close
 ## (or hitting it) build suppression.
 func _on_shot_heard(p: Dictionary) -> void:
 	var shooter := p.get("holder") as Node3D
-	if shooter == null or not shooter.is_in_group(&"players") or body.get_meta(&"dead", false):
+	if shooter == null or shooter == body or not is_hostile(shooter) or body.get_meta(&"dead", false):
 		return
 	var sup := _suppression_cfg()
 	var chest := body.global_position + Vector3.UP * CHEST
@@ -331,6 +467,7 @@ func _on_shot_heard(p: Dictionary) -> void:
 			target = shooter
 			last_seen = shooter.global_position
 			state = State.CHASE
+		_stir()
 	if body.global_position.distance_to(shooter.global_position) > float(config["hearing_range"]):
 		return
 	if target == null or state == State.PATROL:
@@ -338,6 +475,7 @@ func _on_shot_heard(p: Dictionary) -> void:
 		last_seen = shooter.global_position
 		_lost_for = 0.0
 		state = State.CHASE
+		_stir()
 
 
 ## Blasts nearby build suppression: a lot close in, less further out.
@@ -348,6 +486,7 @@ func _on_explosion(p: Dictionary) -> void:
 	var d := body.global_position.distance_to(p["position"])
 	if d < reach:
 		suppression += float(_suppression_cfg().get("explosion", 1.5)) * (1.0 - d / reach)
+		_stir()
 
 
 ## Whether a shot from the muzzle would reach `who`: nothing solid and no leaves on the way.
@@ -479,7 +618,12 @@ func _use_cover(delta: float, intent: PlayerIntent) -> bool:
 			var to_corner := Vector2(_cover_via[0].x - body.global_position.x, _cover_via[0].z - body.global_position.z)
 			if to_corner.length() <= ARRIVED * 0.4:
 				_cover_via.remove_at(0)
-		_walk_toward(_cover if _cover_via.is_empty() else _cover_via[0], delta, intent, 1.0, 0.0)
+		var next := _cover if _cover_via.is_empty() else _cover_via[0]
+		# A spot it cannot walk to without entering the camp is no cover: it fights instead.
+		if blocks_step(keep_out, body.global_position, next - body.global_position):
+			_drop_cover()
+			return false
+		_walk_toward(next, delta, intent, 1.0, 0.0)
 		intent.sprint = true
 		return true
 	body.set_meta(&"moving_to_cover", false)
@@ -559,10 +703,12 @@ func find_cover_route(threat: Vector3) -> Array[Vector3]:
 	var margin := float(cfg.get("settle_distance", 0.2))
 	var tries := int(cfg.get("detour_tries", 6))
 	var here := body.global_position
+	# Outside the camp, no spot or corner inside it: it cannot walk in there.
+	var kept_out := keep_out != null and not keep_out.inside(here)
 	var floors: Array[Vector3] = []
 	for c: Vector3 in _cover_candidates(here, reach, rings, spokes):
 		var spot: Variant = _floor_at(c)
-		if spot is Vector3:
+		if spot is Vector3 and not (kept_out and keep_out.inside(spot)):
 			floors.append(spot)
 	# Hidden spots with what they are worth before the walk is known.
 	var spots: Array[Vector3] = []
@@ -675,6 +821,7 @@ func hear_callout(who: Node3D) -> void:
 	last_seen = who.global_position
 	_lost_for = 0.0
 	state = State.CHASE
+	_stir()
 
 
 func _eye() -> Vector3:

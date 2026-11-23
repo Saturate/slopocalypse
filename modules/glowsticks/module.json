@@ -1,0 +1,6 @@
+{
+  "id": "glowsticks",
+  "depends_on": ["player", "inventory"],
+  "flag": "glowsticks",
+  "entry": "glowsticks_module.gd"
+}

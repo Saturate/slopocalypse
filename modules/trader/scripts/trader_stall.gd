@@ -1,6 +1,6 @@
 class_name TraderStall
 extends StaticBody3D
-## The trader's stall in the home tunnel: a plank counter with crates and a hanging sign.
+## The trader's stall in the camp: a plank counter with crates and a hanging sign.
 ## Faces along its local -Z.
 
 const COUNTER := Vector3(2.4, 1.0, 0.7)
@@ -9,6 +9,8 @@ const TOP := Color(0.32, 0.24, 0.16)
 const CRATE := Color(0.3, 0.36, 0.24)
 const SIGN := Color(0.15, 0.14, 0.12)
 const LAMP_COLOUR := Color(1.0, 0.85, 0.55)
+## The sign's posts stand this far either side of the middle, just inside its ends.
+const SIGN_POST_X := 0.7
 
 
 func _ready() -> void:
@@ -27,6 +29,11 @@ func _ready() -> void:
 	_box(Vector3(0.7, 0.6, 0.6), Vector3(0.5, 0.3, 0.9), CRATE)
 	_box(Vector3(0.6, 0.5, 0.6), Vector3(-0.6, 0.25, 1.0), CRATE.darkened(0.15))
 	_box(Vector3(1.6, 0.4, 0.05), Vector3(0, 2.4, 0), SIGN)
+	# Two posts from the counter top hold the sign up, just behind it.
+	var post_bottom := COUNTER.y + 0.06
+	var post_top := 2.6
+	for x: float in [-SIGN_POST_X, SIGN_POST_X]:
+		_box(Vector3(0.08, post_top - post_bottom, 0.08), Vector3(x, (post_bottom + post_top) / 2.0, 0.065), WOOD.darkened(0.2))
 	var label := Label3D.new()
 	label.text = "TRADER"
 	label.font_size = 64
@@ -41,6 +48,8 @@ func _ready() -> void:
 	lamp.light_energy = 1.2
 	lamp.omni_range = 5.0
 	lamp.position = Vector3(0, 2.2, -0.6)
+	# Counted against the light budget (lights module) when it is there.
+	lamp.add_to_group(&"light_points")
 	add_child(lamp)
 
 

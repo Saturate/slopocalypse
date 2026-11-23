@@ -11,8 +11,10 @@ use std::collections::BTreeMap;
 
 /// Bumped with every change to the tables; `open` upgrades older files step by step.
 /// 2: items name the slot or grid they are in (`container`). 3: players have tokens.
-/// 4: items carry their own data (`data`, JSON: a gun's build).
-pub const SCHEMA_VERSION: i64 = 4;
+/// 4: items carry their own data (`data`, JSON: a gun's build). 5: world parts.
+/// 6: each player's standing with each faction (`player_standing`).
+/// 7: each player's kill stats (`player_stats`, a counter per key).
+pub const SCHEMA_VERSION: i64 = 7;
 pub const MAX_NAME_CHARS: usize = 16;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -39,6 +41,10 @@ pub struct PlayerSave {
     pub position: Option<[f64; 3]>,
     pub items: Vec<PlacedItem>,
     pub builds: Builds,
+    /// Faction id -> standing, -100 to 100. Factions not listed are at their start value.
+    pub standing: BTreeMap<String, f64>,
+    /// Kill stats: counter name ("kills.soldier.militia", "longest_kill") -> value.
+    pub stats: BTreeMap<String, f64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -213,6 +219,49 @@ impl Store {
                 COMMIT;",
             )?;
         }
+        if version < 5 {
+            // What the world has suffered (craters, felled trees, broken lights...), one
+            // blob per module that owns it, each with that module's own format version.
+            // Older files simply have none: the world starts undamaged.
+            db.execute_batch(
+                "BEGIN;
+                CREATE TABLE world_parts (
+                    owner TEXT PRIMARY KEY,
+                    version INTEGER NOT NULL,
+                    data BLOB NOT NULL
+                );
+                PRAGMA user_version = 5;
+                COMMIT;",
+            )?;
+        }
+        if version < 6 {
+            // Older files have none: every player starts at each faction's start value.
+            db.execute_batch(
+                "BEGIN;
+                CREATE TABLE player_standing (
+                    player TEXT NOT NULL COLLATE NOCASE REFERENCES players(name) ON DELETE CASCADE,
+                    faction TEXT NOT NULL,
+                    value REAL NOT NULL,
+                    PRIMARY KEY (player, faction)
+                );
+                PRAGMA user_version = 6;
+                COMMIT;",
+            )?;
+        }
+        if version < 7 {
+            // Older files have none: everyone's counts start at zero.
+            db.execute_batch(
+                "BEGIN;
+                CREATE TABLE player_stats (
+                    player TEXT NOT NULL COLLATE NOCASE REFERENCES players(name) ON DELETE CASCADE,
+                    stat TEXT NOT NULL,
+                    value REAL NOT NULL,
+                    PRIMARY KEY (player, stat)
+                );
+                PRAGMA user_version = 7;
+                COMMIT;",
+            )?;
+        }
         Ok(Store { db })
     }
 
@@ -256,6 +305,8 @@ impl Store {
         }
         tx.execute("DELETE FROM player_items WHERE player = ?1", [name])?;
         tx.execute("DELETE FROM player_builds WHERE player = ?1", [name])?;
+        tx.execute("DELETE FROM player_standing WHERE player = ?1", [name])?;
+        tx.execute("DELETE FROM player_stats WHERE player = ?1", [name])?;
         {
             let mut add = tx.prepare(
                 "INSERT INTO player_items (player, item, x, y, rotated, container, data) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -278,6 +329,17 @@ impl Store {
                 for (part_slot, part) in parts {
                     fit.execute(params![name, weapon_slot, part_slot, part])?;
                 }
+            }
+            let mut stand = tx.prepare(
+                "INSERT INTO player_standing (player, faction, value) VALUES (?1, ?2, ?3)",
+            )?;
+            for (faction, value) in &save.standing {
+                stand.execute(params![name, faction, value.clamp(-100.0, 100.0)])?;
+            }
+            let mut count =
+                tx.prepare("INSERT INTO player_stats (player, stat, value) VALUES (?1, ?2, ?3)")?;
+            for (stat, value) in &save.stats {
+                count.execute(params![name, stat, value.max(0.0)])?;
             }
         }
         tx.commit()?;
@@ -336,12 +398,30 @@ impl Store {
                 .or_default()
                 .insert(part_slot, part);
         }
+        let mut standing_q = self
+            .db
+            .prepare("SELECT faction, value FROM player_standing WHERE player = ?1")?;
+        let standing = standing_q
+            .query_map([name], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?))
+            })?
+            .collect::<rusqlite::Result<BTreeMap<_, _>>>()?;
+        let mut stats_q = self
+            .db
+            .prepare("SELECT stat, value FROM player_stats WHERE player = ?1")?;
+        let stats = stats_q
+            .query_map([name], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?))
+            })?
+            .collect::<rusqlite::Result<BTreeMap<_, _>>>()?;
         Ok(Some(PlayerSave {
             health,
             tokens,
             position,
             items,
             builds,
+            standing,
+            stats,
         }))
     }
 
@@ -375,6 +455,28 @@ impl Store {
         )?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// Saves `owner`'s part of the world (a module's damage record), replacing any earlier.
+    pub fn save_part(&self, owner: &str, version: i64, data: &[u8]) -> Result<()> {
+        self.db.execute(
+            "INSERT INTO world_parts (owner, version, data) VALUES (?1, ?2, ?3)
+             ON CONFLICT(owner) DO UPDATE SET version = excluded.version, data = excluded.data",
+            params![owner, version, data],
+        )?;
+        Ok(())
+    }
+
+    /// `owner`'s saved part as (version, data), or None if it never saved one.
+    pub fn load_part(&self, owner: &str) -> Result<Option<(i64, Vec<u8>)>> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT version, data FROM world_parts WHERE owner = ?1",
+                [owner],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?)
     }
 
     /// The saved world, or None if this file never had one (a fresh world).
@@ -460,6 +562,11 @@ mod tests {
                 },
             ],
             builds,
+            standing: BTreeMap::from([("militia".into(), -80.0), ("regulars".into(), 45.5)]),
+            stats: BTreeMap::from([
+                ("kills.soldier".into(), 7.0),
+                ("longest_kill".into(), 212.5),
+            ]),
         }
     }
 
@@ -501,6 +608,7 @@ mod tests {
         let mut less = kit();
         less.items.pop();
         less.position = None;
+        less.standing.remove("militia");
         s.save_player("Allan", &less, 6).unwrap();
         assert_eq!(s.load_player("Allan").unwrap(), Some(less));
     }
@@ -583,6 +691,36 @@ mod tests {
             s.db.query_row("SELECT COUNT(*) FROM player_items", [], |r| r.get(0))
                 .unwrap();
         assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn world_parts_round_trip_and_replace() {
+        let s = Store::open_in_memory().unwrap();
+        assert_eq!(s.load_part("lights").unwrap(), None);
+        s.save_part("lights", 1, &[1, 2, 3]).unwrap();
+        s.save_part("world", 2, &[9]).unwrap();
+        assert_eq!(s.load_part("lights").unwrap(), Some((1, vec![1, 2, 3])));
+        s.save_part("lights", 3, &[4]).unwrap();
+        assert_eq!(s.load_part("lights").unwrap(), Some((3, vec![4])));
+        assert_eq!(s.load_part("world").unwrap(), Some((2, vec![9])));
+    }
+
+    #[test]
+    fn a_version_4_file_gains_world_parts_and_keeps_its_players() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            "CREATE TABLE players (name TEXT PRIMARY KEY COLLATE NOCASE, key TEXT NOT NULL,
+                health REAL NOT NULL DEFAULT 0, x REAL, y REAL, z REAL,
+                first_seen INTEGER NOT NULL, last_saved INTEGER NOT NULL, tokens INTEGER NOT NULL DEFAULT 0);
+            INSERT INTO players (name, key, health, first_seen, last_saved) VALUES ('Allan', 'k', 50, 1, 1);
+            PRAGMA user_version = 4;",
+        )
+        .unwrap();
+        let s = Store::setup(db).unwrap();
+        assert_eq!(s.claim("Allan", "k", 2).unwrap(), Claim::Returning);
+        assert_eq!(s.load_part("world").unwrap(), None);
+        s.save_part("world", 1, &[7]).unwrap();
+        assert_eq!(s.load_part("world").unwrap(), Some((1, vec![7])));
     }
 
     #[test]

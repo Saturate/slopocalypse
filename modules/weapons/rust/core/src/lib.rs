@@ -1,4 +1,5 @@
-//! Fire rules for hitscan weapons: rate of fire, magazine, reload and seeded spread.
+//! Fire rules for hitscan weapons: rate of fire, magazine, reload, the action that readies
+//! the next round, and seeded spread.
 //! Pure Rust so the server and every client compute identical results, and so the rules are
 //! covered by fast `cargo test` without the engine.
 
@@ -12,6 +13,17 @@ pub struct WeaponStats {
     pub reload_seconds: f64,
     /// Half-angle of the spread cone, in radians.
     pub spread_radians: f64,
+    pub action: Action,
+}
+
+/// How the next round gets into the chamber after a shot.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Action {
+    /// The gun does it itself; only the rate of fire limits the next shot.
+    SelfLoading,
+    /// Someone works the bolt after every shot, which takes `cycle_seconds`. A reload
+    /// chambers a round too, so the last shot of a magazine needs no cycle.
+    Manual { cycle_seconds: f64 },
 }
 
 /// Mutable state of one weapon instance.
@@ -21,6 +33,8 @@ pub struct WeaponState {
     ammo: u32,
     cooldown: f64,
     reload_left: Option<f64>,
+    /// Time left working the bolt; `Some` while the chamber is empty after a shot.
+    cycle_left: Option<f64>,
     rng: SplitMix64,
     last_spread: (f64, f64),
 }
@@ -31,6 +45,8 @@ pub enum Blocked {
     Cooldown,
     Empty,
     Reloading,
+    /// A manual action: the bolt has not been worked since the last shot.
+    Cycling,
 }
 
 impl WeaponState {
@@ -40,6 +56,7 @@ impl WeaponState {
             ammo: stats.magazine,
             cooldown: 0.0,
             reload_left: None,
+            cycle_left: None,
             rng: SplitMix64::new(seed),
             last_spread: (0.0, 0.0),
         }
@@ -53,6 +70,10 @@ impl WeaponState {
         self.reload_left.is_some()
     }
 
+    pub fn is_cycling(&self) -> bool {
+        self.cycle_left.is_some()
+    }
+
     /// Spread of the last shot as (yaw, pitch) offsets in radians.
     pub fn last_spread(&self) -> (f64, f64) {
         self.last_spread
@@ -61,6 +82,10 @@ impl WeaponState {
     /// Advances timers. Call once per physics tick.
     pub fn tick(&mut self, delta: f64) {
         self.cooldown = (self.cooldown - delta).max(0.0);
+        self.cycle_left = self
+            .cycle_left
+            .map(|left| left - delta)
+            .filter(|&left| left > 0.0);
         if let Some(left) = self.reload_left {
             let left = left - delta;
             if left <= 0.0 {
@@ -79,11 +104,20 @@ impl WeaponState {
         if self.ammo == 0 {
             return Err(Blocked::Empty);
         }
+        if self.cycle_left.is_some() {
+            return Err(Blocked::Cycling);
+        }
         if self.cooldown > 0.0 {
             return Err(Blocked::Cooldown);
         }
         self.ammo -= 1;
         self.cooldown = 60.0 / self.stats.rounds_per_minute;
+        if let Action::Manual { cycle_seconds } = self.stats.action
+            && self.ammo > 0
+            && cycle_seconds > 0.0
+        {
+            self.cycle_left = Some(cycle_seconds);
+        }
         self.last_spread = self.next_spread();
         Ok(self.last_spread)
     }
@@ -94,6 +128,8 @@ impl WeaponState {
             return false;
         }
         self.reload_left = Some(self.stats.reload_seconds);
+        // Reloading replaces working the bolt: the reload chambers a round itself.
+        self.cycle_left = None;
         true
     }
 
@@ -102,6 +138,7 @@ impl WeaponState {
     pub fn start_empty_reload(&mut self) {
         self.ammo = 0;
         self.reload_left = Some(self.stats.reload_seconds);
+        self.cycle_left = None;
     }
 
     /// Uniform over the cone's disc, not its square, so corners aren't favoured.
@@ -145,7 +182,75 @@ mod tests {
             magazine: 30,
             reload_seconds: 2.0,
             spread_radians: 0.01,
+            action: Action::SelfLoading,
         }
+    }
+
+    fn bolt_action() -> WeaponStats {
+        WeaponStats {
+            rounds_per_minute: 300.0,
+            magazine: 5,
+            reload_seconds: 3.0,
+            spread_radians: 0.002,
+            action: Action::Manual { cycle_seconds: 1.0 },
+        }
+    }
+
+    #[test]
+    fn manual_cycle_blocks_the_next_shot_until_cycled() {
+        let mut w = WeaponState::new(bolt_action(), 1);
+        assert!(w.try_fire().is_ok());
+        assert!(w.is_cycling());
+        // Long past the rate of fire's 0.2 s, still inside the cycle.
+        w.tick(0.5);
+        assert_eq!(w.try_fire(), Err(Blocked::Cycling));
+        w.tick(0.49);
+        assert_eq!(w.try_fire(), Err(Blocked::Cycling));
+        w.tick(0.02);
+        assert!(!w.is_cycling());
+        assert!(w.try_fire().is_ok());
+        assert_eq!(w.ammo(), 3);
+    }
+
+    #[test]
+    fn a_self_loading_gun_never_cycles() {
+        let mut w = WeaponState::new(rifle(), 1);
+        w.try_fire().unwrap();
+        assert!(!w.is_cycling());
+    }
+
+    #[test]
+    fn the_last_round_leaves_nothing_to_cycle() {
+        let mut w = WeaponState::new(bolt_action(), 1);
+        for _ in 0..5 {
+            w.try_fire().unwrap();
+            w.tick(1.01);
+        }
+        assert_eq!(w.ammo(), 0);
+        w.try_fire().unwrap_err();
+        assert!(!w.is_cycling());
+    }
+
+    #[test]
+    fn an_empty_reload_after_a_part_swap_drops_the_cycle() {
+        let mut w = WeaponState::new(bolt_action(), 1);
+        w.try_fire().unwrap();
+        assert!(w.is_cycling());
+        w.start_empty_reload();
+        assert!(!w.is_cycling());
+        w.tick(3.01);
+        assert!(w.try_fire().is_ok());
+    }
+
+    #[test]
+    fn a_reload_chambers_a_round_instead_of_the_bolt() {
+        let mut w = WeaponState::new(bolt_action(), 1);
+        w.try_fire().unwrap();
+        assert!(w.start_reload());
+        assert!(!w.is_cycling());
+        w.tick(3.01);
+        assert_eq!(w.ammo(), 5);
+        assert!(w.try_fire().is_ok());
     }
 
     #[test]

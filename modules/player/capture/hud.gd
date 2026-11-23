@@ -1,6 +1,7 @@
 extends Node3D
-## Capture setup: the local HUD: health bar, then a hit (red flash, bar drops), then dying
-## (death screen with the respawn countdown).
+## Capture setup: the local HUD (run with --frames 220 --sheet 4): full health, a hit from
+## the left (red flash, damage arc, bar drops), low health (pulsing red edges), then dying
+## (death screen with the respawn countdown, combat HUD hidden).
 
 const WORLD := "res://modules/world/scenes/world.tscn"
 const PLAYER := "res://modules/player/scenes/player.tscn"
@@ -12,11 +13,11 @@ var _ticks := 0
 
 
 func _ready() -> void:
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
 	add_child((load(MODULE) as GDScript).new())
 	_player = (load(PLAYER) as PackedScene).instantiate()
 	add_child(_player)
-	_player.global_position = Vector3(0.0, 0.1, 0.0)
+	_player.global_position = VoxelWorld.spawn_of(world, Vector3(0.0, 0.1, 0.0))
 	EventBus.publish(&"player.spawned", {"player": _player, "local": true})
 	var animator := PlayerBodyAnimator.new()
 	animator.name = "BodyAnimator"
@@ -33,7 +34,7 @@ func _ready() -> void:
 	_player.add_child(hud)
 	var dummy: Node3D = (load(DUMMY) as PackedScene).instantiate()
 	add_child(dummy)
-	dummy.global_position = Vector3(0.0, 0.0, -12.0)
+	dummy.global_position = VoxelWorld.spawn_of(world, Vector3(0.0, 0.0, -12.0))
 
 
 func _physics_process(_delta: float) -> void:
@@ -41,8 +42,14 @@ func _physics_process(_delta: float) -> void:
 		return
 	_ticks += 1
 	var health := _player.get_node("Health") as HealthComponent
-	if _ticks == 60:
+	# Physics ticks: two a captured frame at the capture's 30 fps.
+	if _ticks == 170:
 		health.server_apply_damage(45.0)
-	if _ticks == 140:
+		# A shot from the left, as a replay would report it, for the damage arc.
+		var left := _player.global_position - _player.global_basis.x * 12.0
+		EventBus.publish(&"weapon.fired", {"weapon": null, "holder": null, "from": left, "to": _player.global_position, "target": _player, "damage": 45.0})
+	if _ticks == 296:
+		health.server_apply_damage(30.0)
+	if _ticks == 420:
 		health.server_apply_damage(100.0)
 		EventBus.publish(&"player.died", {"player": _player})

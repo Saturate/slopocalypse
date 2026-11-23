@@ -17,7 +17,7 @@ func _hint() -> String:
 func _ready() -> void:
 	super._ready()
 	# Over the inventory screen and the HUD.
-	layer = 41
+	layer = UiLayers.LOOT
 	EventBus.subscribe(&"inventory.loot_changed", _on_loot_changed)
 	EventBus.subscribe(&"inventory.loot_closed", _on_loot_closed)
 
@@ -41,7 +41,7 @@ func _close_requested() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if is_open() and (event.is_action_pressed(&"inventory") or event.is_action_pressed(&"interact")):
+	if is_open() and UiStack.is_top(self) and (event.is_action_pressed(&"inventory") or event.is_action_pressed(&"interact")):
 		close()
 		get_viewport().set_input_as_handled()
 		return

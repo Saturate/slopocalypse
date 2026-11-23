@@ -1,7 +1,8 @@
 extends Node
 ## Server only: keeps progress between sessions in an SQLite file (`SaveStore`, in Rust).
 ## Per player, by name: backpack, changed gun builds, health and position. For the world:
-## loot lying on the ground and what each crate holds. A player is loaded when they spawn
+## loot lying on the ground, what each crate holds, and every module's damage record (the
+## `world_state` group: craters, felled trees, broken lights, holed towers). A player is loaded when they spawn
 ## and saved when they leave; the world is loaded once it is ready; everything is saved
 ## every `autosave_seconds`, when the last player leaves and when the server stops on its
 ## own. A killed server loses at most `autosave_seconds`.
@@ -17,11 +18,19 @@ const CONFIG := "res://modules/persistence/data/persistence.json"
 const FIELDS := {"file": TYPE_STRING, "autosave_seconds": TYPE_FLOAT, "hold_seconds": TYPE_FLOAT}
 ## A save that lives only as long as the server (tests).
 const MEMORY := ":memory:"
+## The part that says which world the save belongs to (see `_check_map`).
+const MAP_PART := "map"
+const MAP_PART_VERSION := 1
 
 ## Only a real server saves; scenes run without Boot (tests) switch it on by hand.
 var enabled := Net.mode == NetSession.Mode.SERVER
+## Whether the saved world has been put back (`server_load_world`); until then there is
+## nothing of this session's world to save.
+var _world_loaded := false
 var store: SaveStore
 var config: Dictionary = {}
+## The save's file as opened (`user://...`, an OS path, or MEMORY).
+var _path := ""
 
 ## Peer -> the name their progress is saved under.
 var _names: Dictionary = {}
@@ -86,6 +95,7 @@ static func save_path(args: PackedStringArray, configured: String) -> String:
 
 ## Opens the save file (`user://` or an OS path, or MEMORY).
 func open(path: String) -> bool:
+	_path = path
 	store = SaveStore.new()
 	var os_path := ProjectSettings.globalize_path(path) if path != MEMORY else ""
 	if not os_path.is_empty():
@@ -120,6 +130,9 @@ func _on_world_ready(_p: Dictionary) -> void:
 
 
 func server_load_world() -> void:
+	_world_loaded = true
+	_check_map()
+	server_load_parts()
 	var inventory := _inventory()
 	if inventory == null:
 		return
@@ -129,6 +142,42 @@ func server_load_world() -> void:
 		return
 	inventory.call(&"server_restore_world", world)
 	Log.info(&"persistence", "world loaded: %d loot on the ground, %d crates" % [(world["loot"] as Array).size(), (world["crates"] as Array).size()])
+
+
+## A save belongs to one world (#472): the test range or a generated map's recipe
+## and seed (the world module's `map_key`). A save for another world, or from before saves
+## knew their world, would put craters, trees, loot and players where that world had them:
+## it is moved aside (`<file>.old-<time>`) and a fresh one starts.
+func _check_map() -> void:
+	var world := get_tree().get_first_node_in_group(&"world_map")
+	if world == null or not world.has_method(&"map_key"):
+		return
+	var key := str(world.call(&"map_key"))
+	# No world loaded (a broken map recipe): leave the save alone rather than set it aside
+	# for a world that isn't there.
+	if key.is_empty():
+		Log.warn(&"persistence", "no world loaded; not saving, and the save is left as it is")
+		enabled = false
+		return
+	var part := store.load_part(MAP_PART)
+	var saved := ""
+	if not part.is_empty():
+		saved = str(bytes_to_var(part["data"]))
+	if saved == key:
+		return
+	var used := not store.load_world().is_empty() or not part.is_empty()
+	if used and _path != MEMORY:
+		var os_path := ProjectSettings.globalize_path(_path)
+		var aside := "%s.old-%d" % [os_path, int(Time.get_unix_time_from_system())]
+		store = null
+		if DirAccess.rename_absolute(os_path, aside) == OK:
+			Log.warn(&"persistence", "the save was for %s, this server plays %s: moved it to %s and started fresh" % [saved if not saved.is_empty() else "an older world", key, aside])
+		else:
+			Log.error(&"persistence", "could not move the save for another world out of the way (%s)" % os_path)
+		if not open(_path):
+			enabled = false
+			return
+	store.save_part(MAP_PART, MAP_PART_VERSION, var_to_bytes(key))
 
 
 func _on_player_spawned(p: Dictionary) -> void:
@@ -188,17 +237,27 @@ func _restore(peer: int, saved: Dictionary) -> void:
 	var missions := get_tree().get_first_node_in_group(&"missions_api")
 	if missions != null:
 		missions.call(&"server_set_tokens", peer, int(saved.get("tokens", 0)))
+	var factions := get_tree().get_first_node_in_group(&"factions_api")
+	if factions != null and saved.get("standing") is Dictionary:
+		factions.call(&"server_set_standing", peer, saved["standing"])
+	var stats := get_tree().get_first_node_in_group(&"stats_api")
+	if stats != null and saved.get("stats") is Dictionary:
+		stats.call(&"server_set_stats", peer, saved["stats"])
 	var player := _player_of(peer)
 	var at: Variant = saved.get("position")
 	# Saved dead (or never placed): they start over at the spawn like a respawn would.
 	if player == null or not at is Vector3 or float(saved.get("health", 0.0)) <= 0.0:
 		return
+	(player.get_node("Health") as HealthComponent).server_set(float(saved["health"]))
 	# The world may have changed under the spot since (a mountain where the road was):
 	# a spot now inside the ground starts them at the spawn instead, gear and all.
 	if _buried(at as Vector3):
 		Log.info(&"persistence", "%s's saved spot is under the ground now; starting at the spawn" % name_of(peer))
 		return
-	(player.get_node("Health") as HealthComponent).server_set(float(saved["health"]))
+	# A car parked over the spot since: put there, they would start inside it, stuck (#406).
+	if PlayerController.vehicle_at(player.get_world_3d(), (at as Vector3) + Vector3.UP * 0.2):
+		Log.info(&"persistence", "%s's saved spot has a car on it now; starting at the spawn" % name_of(peer))
+		return
 	player.global_position = (at as Vector3) + Vector3.UP * 0.2
 	player.velocity = Vector3.ZERO
 	# Terrain only streams in around players, so it may not be there yet: hang in place
@@ -246,12 +305,16 @@ func server_save_player(peer: int) -> bool:
 	var inventory := _inventory()
 	var weapons := get_tree().get_first_node_in_group(&"weapons_api")
 	var missions := get_tree().get_first_node_in_group(&"missions_api")
+	var factions := get_tree().get_first_node_in_group(&"factions_api")
+	var stats := get_tree().get_first_node_in_group(&"stats_api")
 	var save := {
 		"health": 0.0 if dead else health.health,
 		"tokens": int(missions.call(&"server_tokens_of", peer)) if missions != null else 0,
-		"position": null if dead else player.global_position,
+		"position": null if dead else _standing_spot(player),
 		"items": inventory.call(&"server_items_of", peer) if inventory != null else [],
 		"builds": weapons.call(&"server_builds_of", peer) if weapons != null else {},
+		"standing": factions.call(&"server_standing_of", peer) if factions != null else {},
+		"stats": stats.call(&"server_stats_of", peer) if stats != null else {},
 	}
 	if not store.save_player(player_name, save):
 		Log.error(&"persistence", "could not save %s: %s" % [player_name, store.last_error()])
@@ -259,14 +322,52 @@ func server_save_player(peer: int) -> bool:
 	return true
 
 
+## Where `player` stands, or for someone in a car where they would get out (a parked body in
+## a car stays where it got in).
+func _standing_spot(player: Node3D) -> Vector3:
+	var cars := get_tree().get_first_node_in_group(&"cars_api")
+	var spot: Variant = cars.call(&"exit_spot_of", player) if cars != null else null
+	return spot if spot is Vector3 else player.global_position
+
+
 func server_save_world() -> bool:
+	# The world's map builds before it is loaded (#515); saving in between (the only player
+	# cancels while it builds) would write an empty world over the saved one.
+	if not _world_loaded and get_tree().get_first_node_in_group(&"world_map") != null:
+		Log.info(&"persistence", "the world is not loaded yet; not saving it")
+		return true
+	var ok := server_save_parts()
 	var inventory := _inventory()
 	if inventory == null:
-		return false
+		return ok
 	if not store.save_world(inventory.call(&"server_world_state")):
 		Log.error(&"persistence", "could not save the world: %s" % store.last_error())
 		return false
-	return true
+	return ok
+
+
+## What each module that keeps world damage (the `world_state` group: craters and felled
+## trees, broken lights, holed towers...) has to say, one versioned part each. Persistence
+## never looks inside a part; its owner reads it back.
+func server_save_parts() -> bool:
+	var ok := true
+	for node: Node in get_tree().get_nodes_in_group(&"world_state"):
+		var owner_name := str(node.call(&"world_state_owner"))
+		var data := var_to_bytes(node.call(&"server_world_state"))
+		if not store.save_part(owner_name, int(node.call(&"world_state_version")), data):
+			Log.error(&"persistence", "could not save %s's part of the world: %s" % [owner_name, store.last_error()])
+			ok = false
+	return ok
+
+
+func server_load_parts() -> void:
+	for node: Node in get_tree().get_nodes_in_group(&"world_state"):
+		var owner_name := str(node.call(&"world_state_owner"))
+		var part := store.load_part(owner_name)
+		if part.is_empty():
+			continue
+		node.call(&"server_restore_world_state", int(part["version"]), bytes_to_var(part["data"]))
+		Log.info(&"persistence", "%s's part of the world loaded" % owner_name)
 
 
 func server_save_all() -> void:

@@ -1,0 +1,97 @@
+{
+  "_comment": "Soldier factions (#343). factions: each with a name, a uniform tint ([r, g, b]), the gear its soldiers wear (inventory items by slot), how far they see and hear as factors on the soldiers' base numbers (sight, hearing), and how often its squads spawn (weight), and optionally a marksman: the share of its squads that bring one (squad_chance) and the gear they wear instead (gear, by slot). relations: [a, b, value] from -100 to 100 between two factions, hostile below hostile_below; pairs not listed are `default_relation`. standing: each player's standing with each faction, -100 to 100 (start per faction, or default_start), in the same bands as relations (hostile below hostile_below, friendly above friendly_above, allied above allied_above); how much events move it: kill_member and hurt_member with the victim's faction, kill_rival with every faction hostile to the victim's. guard_faction: who holds the city's posts.",
+  "factions": {
+    "militia": {
+      "name": "Militia",
+      "tint": [
+        0.95,
+        0.72,
+        0.42
+      ],
+      "gear": {
+        "primary": "gun_rifle",
+        "rig": "rig_light"
+      },
+      "sight": 1.0,
+      "hearing": 1.1,
+      "weight": 1.0,
+      "marksman": {
+        "squad_chance": 0.2,
+        "gear": {
+          "primary": "gun_bolt"
+        }
+      }
+    },
+    "regulars": {
+      "name": "Regulars",
+      "tint": [
+        0.45,
+        0.62,
+        0.35
+      ],
+      "gear": {
+        "primary": "gun_rifle",
+        "rig": "rig_heavy"
+      },
+      "sight": 1.2,
+      "hearing": 1.0,
+      "weight": 1.0,
+      "marksman": {
+        "squad_chance": 0.35,
+        "gear": {
+          "primary": "gun_bolt"
+        }
+      }
+    },
+    "scavengers": {
+      "name": "Scavengers",
+      "tint": [
+        0.55,
+        0.65,
+        0.85
+      ],
+      "gear": {
+        "primary": "gun_rifle",
+        "rig": "rig_light"
+      },
+      "sight": 0.9,
+      "hearing": 1.2,
+      "weight": 0.8,
+      "marksman": {
+        "squad_chance": 0.12,
+        "gear": {
+          "primary": "gun_bolt"
+        }
+      }
+    }
+  },
+  "relations": [
+    [
+      "militia",
+      "regulars",
+      -70.0
+    ],
+    [
+      "militia",
+      "scavengers",
+      -40.0
+    ],
+    [
+      "regulars",
+      "scavengers",
+      -60.0
+    ]
+  ],
+  "default_relation": 0.0,
+  "hostile_below": -30.0,
+  "guard_faction": "regulars",
+  "friendly_above": 30.0,
+  "allied_above": 70.0,
+  "standing": {
+    "start": {},
+    "default_start": -50.0,
+    "kill_member": -25.0,
+    "hurt_member": -3.0,
+    "kill_rival": 6.0
+  }
+}

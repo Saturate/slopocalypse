@@ -18,6 +18,23 @@
     "perf": true,
     "missions": true,
     "trader": true,
-    "web": true
+    "range": true,
+    "web": true,
+    "smoke": true,
+    "lights": true,
+    "towers": true,
+    "sites": true,
+    "city": true,
+    "factions": true,
+    "stats": true,
+    "report": true,
+    "gore": true,
+    "benchmark": true,
+    "wires": true,
+    "power": true,
+    "camp": true,
+    "compass": true,
+    "coop_marker": true,
+    "glowsticks": true
   }
 }

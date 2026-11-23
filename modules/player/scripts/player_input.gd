@@ -19,11 +19,15 @@ var _remote := false
 
 
 func _ready() -> void:
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	UiStack.set_captures_when_empty(true)
 	_remote = not multiplayer.is_server()
 	_yaw = player.rotation.y
 	# Runs after the synchronizer has written the server's copy of our rotation.
 	process_priority = 100
+
+
+func _exit_tree() -> void:
+	UiStack.set_captures_when_empty(false)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -31,12 +35,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		var motion: InputEventMouseMotion = event
 		# Zoomed in, the same mouse motion turns less, so aim speed feels the same on screen.
 		var camera := player.get_node("Head/Camera") as Camera3D
-		var zoom := camera.fov / float(player.config["fov"])
-		intent.look_delta += motion.relative * sensitivity * zoom
-	elif event is InputEventKey and event.is_pressed() and (event as InputEventKey).keycode == KEY_ESCAPE:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	elif event is InputEventMouseButton and event.is_pressed():
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		var zoom := camera.fov / (float(player.config["fov"]) + Settings.fov_offset())
+		intent.look_delta += motion.relative * sensitivity * Settings.mouse_scale() * zoom
+	# After alt-tab the window can come back with a free mouse; a click into the game takes
+	# it again, but never through an open screen.
+	elif event is InputEventMouseButton and event.is_pressed() and not UiStack.is_blocking():
+		Input.mouse_mode = UiStack.mouse_mode()
 
 
 func _process(_delta: float) -> void:
@@ -54,6 +58,14 @@ func _process_tick(_delta: float) -> void:
 	_pitch = clampf(_pitch - look.y, -PlayerController.PITCH_LIMIT, PlayerController.PITCH_LIMIT)
 	player.rotation.y = _yaw
 	(player.get_node("Head") as Node3D).rotation.x = _pitch
+	# Your own copy of the controller ticks on a client too (it keeps your eye height and
+	# camera feel). Without this it would consume the look itself whenever a physics tick
+	# falls before this frame's input, and at low frame rates that is nearly every frame,
+	# so the mouse barely turned the view. Marked as owned here, the controller copies the
+	# aim instead of taking it.
+	intent.remote_look = true
+	intent.look_yaw = _yaw
+	intent.look_pitch = _pitch
 
 
 func _physics_process(_delta: float) -> void:
@@ -65,7 +77,7 @@ func _physics_process(_delta: float) -> void:
 func _physics_tick(_delta: float) -> void:
 	# A free mouse means a menu or panel is up (pause, modding): the player stands still
 	# instead of walking off while the keys are used for it.
-	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+	if UiStack.is_blocking() or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		intent.move = Vector2.ZERO
 		intent.sprint = false
 		intent.crouch = false
@@ -82,13 +94,20 @@ func _physics_tick(_delta: float) -> void:
 	# The click that captures the mouse should not also fire.
 	intent.fire = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	intent.aim = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	# The server ignores both on a ladder; dropping them here too keeps this screen's
+	# crosshair and sights in step with it.
+	if player != null and player.climbing:
+		intent.fire = false
+		intent.aim = false
 	for action: StringName in PlayerIntent.ONE_SHOTS:
 		# Menu-only actions have no key; asking Input about them logs an error every frame.
 		if action in FROM_MENU:
 			continue
 		var input_action := &"charge" if action == &"throw" else action
 		if Input.is_action_just_pressed(input_action):
-			if _remote:
+			if _remote and action == &"interact":
+				intent.submit_interact.rpc_id(1, intent.interact_target)
+			elif _remote:
 				intent.submit_action.rpc_id(1, action)
 			else:
 				intent.set(action, true)

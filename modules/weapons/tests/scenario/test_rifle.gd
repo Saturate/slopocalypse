@@ -30,10 +30,14 @@ func before_test() -> void:
 	_rifle.holder = _player
 	_player.get_node("Head/Camera").add_child(_rifle)
 
-	# Straight ahead (-Z), torso at eye height.
+	# Straight ahead (-Z), aimed at the middle of its body. The 1.75 m dummy's top is only
+	# 10 cm over the eyes, and the gun's seeded spread (0.6 degrees, about 10 cm at this range)
+	# took about one shot in 60 over it at eye level.
 	_dummy = (load(DUMMY) as PackedScene).instantiate()
 	add_child(_dummy)
 	_dummy.global_position = Vector3(0.0, 0.0, -10.0)
+	var eyes := float(_player.config["stand_height"]) - float(_player.config["eye_offset"])
+	_player.intent().look_delta = Vector2(0.0, atan2(eyes - 1.0, 10.0))
 
 	_shots.clear()
 	EventBus.subscribe(&"weapon.fired", _on_fired)
@@ -70,6 +74,8 @@ func test_hits_a_dummy_straight_ahead() -> void:
 	assert_int(_shots.size()).is_equal(1)
 	var damage: float = _rifle.stats["damage"]
 	assert_float(_shots[0]["damage"]).is_equal(damage)
+	# What the round carried, beside what it dealt.
+	assert_float(_shots[0]["round_damage"]).is_equal(damage)
 	assert_float(_dummy.health().health).is_equal(_dummy.health().max_health - damage)
 
 
@@ -142,3 +148,54 @@ func test_the_dead_do_not_shoot() -> void:
 	await _frames(10)
 	await _hold_trigger(10)
 	assert_int(_shots.size()).is_equal(0)
+
+
+## A stand-in wall across the line of fire at `z`, between the player and the dummy.
+func _wall(z: float) -> StaticBody3D:
+	var wall: StaticBody3D = auto_free(StaticBody3D.new())
+	wall.set_script(load("res://modules/weapons/tests/scenario/pass_through_wall.gd"))
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(4.0, 4.0, 0.2)
+	shape.shape = box
+	wall.add_child(shape)
+	add_child(wall)
+	wall.global_position = Vector3(0.0, 1.5, z)
+	return wall
+
+
+func _one_shot() -> void:
+	await _frames(10)
+	_player.intent().fire = true
+	await get_tree().physics_frame
+	_player.intent().fire = false
+	await _frames(2)
+
+
+func test_a_round_goes_through_a_wall_that_lets_it_and_hits_behind_for_less() -> void:
+	_wall(-5.0)
+	await _one_shot()
+	var damage: float = _rifle.stats["damage"]
+	assert_float(_dummy.health().health).is_equal_approx(_dummy.health().max_health - damage * 0.6, 0.001)
+	# Two stretches: up to the wall (the shot), then on from it (the same round, through).
+	assert_int(_shots.size()).is_equal(2)
+	assert_bool(bool(_shots[0]["through"])).is_false()
+	assert_bool(bool(_shots[1]["through"])).is_true()
+
+
+func test_a_wall_that_stops_rounds_keeps_the_dummy_safe() -> void:
+	var wall := _wall(-5.0)
+	wall.set(&"stops", true)
+	await _one_shot()
+	assert_float(_dummy.health().health).is_equal(_dummy.health().max_health)
+	assert_int(_shots.size()).is_equal(1)
+
+
+func test_a_round_goes_through_two_walls_at_most() -> void:
+	_wall(-3.0)
+	_wall(-5.0)
+	var third := _wall(-7.0)
+	await _one_shot()
+	assert_float(_dummy.health().health).is_equal(_dummy.health().max_health)
+	assert_int(int(third.get(&"asked"))).is_equal(0)
+	assert_int(_shots.size()).is_equal(3)

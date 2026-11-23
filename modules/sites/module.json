@@ -1,0 +1,6 @@
+{
+  "id": "sites",
+  "depends_on": ["world", "voxkit"],
+  "flag": "sites",
+  "entry": "sites_module.gd"
+}

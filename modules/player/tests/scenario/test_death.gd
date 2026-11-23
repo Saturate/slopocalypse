@@ -58,3 +58,14 @@ func test_dying_twice_counts_once() -> void:
 	health.server_apply_damage(500.0)
 	EventBus.unsubscribe(&"player.died", on_died)
 	assert_int(died.size()).is_equal(1)
+
+
+## Scripted playtests hurt and kill players through the module, as a hit with no shooter.
+func test_server_damage_hurts_and_kills_like_a_hit() -> void:
+	var player := _player()
+	var health := player.get_node("Health") as HealthComponent
+	assert_float(float(_module.call(&"server_damage", player, 30.0))).is_equal(30.0)
+	assert_float(health.health).is_equal(health.max_health - 30.0)
+	_module.call(&"server_damage", player, 1000.0)
+	assert_bool(player.get_meta(&"dead", false)).is_true()
+	assert_float(float(_module.call(&"server_damage", player, 10.0))).is_equal(0.0)

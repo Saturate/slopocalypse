@@ -7,7 +7,7 @@ var _black: ColorRect
 
 
 func _ready() -> void:
-	layer = 60
+	layer = UiLayers.FADE
 	_black = ColorRect.new()
 	_black.color = Color.BLACK
 	_black.modulate.a = 0.0

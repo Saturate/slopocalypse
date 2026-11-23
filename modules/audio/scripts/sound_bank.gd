@@ -1,18 +1,142 @@
 class_name SoundBank
 extends RefCounted
-## Every sound in the game, synthesised once at runtime from noise and tones: no recorded
-## audio, so nothing to license. Each is a short mono 16-bit AudioStreamWAV, cached by name.
+## Every sound in the game. A recording wins when there is one: `<id>.ogg` in `SOUNDS_DIR`,
+## or several takes `<id>_1.ogg`, `<id>_2.ogg`, ... picked at random per play. Without one
+## the sound is synthesised once at runtime from noise and tones, a short mono 16-bit
+## AudioStreamWAV cached by name, so recordings can land one sound at a time.
 
 const RATE := 44100
+## Recorded sounds; see its README for naming and licences.
+const SOUNDS_DIR := "res://modules/audio/sounds"
+## Sounds that play as loops; a recording of one is set to loop as well.
+const LOOPED: Array[String] = ["wind", "rotor", "crickets"]
 ## The wind loop is long so nobody hears it repeat.
 const WIND_SECONDS := 24.0
 ## Different bird songs, asked for as "bird0", "bird1", ...
 const BIRD_VARIANTS := 4
+## Surface sounds by material family (see `audio.json` `surface_families`): a hit is
+## "hit_<family>", a piece breaking "break_<family>".
+const SURFACE_FAMILIES: Array[String] = ["wood", "metal", "glass", "glass_small", "brick", "concrete"]
 
 static var _cache: Dictionary[String, AudioStreamWAV] = {}
+## Recorded takes by sound id (each an Array[AudioStream]), found once per folder list.
+static var _takes: Dictionary = {}
+static var _scanned := false
+static var _dirs := PackedStringArray()
+static var _dirs_set := false
+static var _take_name: RegEx
 
 
-static func get_sound(sound: String) -> AudioStreamWAV:
+## A recording of `sound` (a random take) when there is one, otherwise the generated sound.
+static func get_sound(sound: String) -> AudioStream:
+	var recorded := takes(sound)
+	if not recorded.is_empty():
+		return recorded.pick_random()
+	return generated(sound)
+
+
+## The recorded takes of `sound`, empty when it has none.
+static func takes(sound: String) -> Array[AudioStream]:
+	find_recordings()
+	if not _takes.has(sound):
+		return []
+	return _takes[sound]
+
+
+## Where recordings are looked for: the built-in folder, then its copy under the `tweaks/`
+## folder beside an exported game, whose takes replace the built-in ones for that sound.
+static func default_dirs() -> PackedStringArray:
+	var dirs := PackedStringArray([SOUNDS_DIR])
+	if not Data.tweaks_root.is_empty():
+		dirs.append(Data.tweaks_root.path_join(SOUNDS_DIR.trim_prefix("res://")))
+	return dirs
+
+
+## Look for recordings in `dirs` instead, in order: a later folder's takes of a sound replace
+## an earlier one's. Takes effect on the next lookup.
+static func use_recordings(dirs: PackedStringArray) -> void:
+	_dirs = dirs
+	_dirs_set = true
+	_scanned = false
+	_takes.clear()
+
+
+## Finds and loads the recordings now if that hasn't happened yet, so the first play of a
+## sound doesn't wait on the disk.
+static func find_recordings() -> void:
+	if not _scanned:
+		_scan()
+
+
+## The sound id a recording's file name is for: "rifle.ogg" and "rifle_2.ogg" are both
+## "rifle"; "" for anything that isn't an .ogg.
+static func take_id(file: String) -> String:
+	if file.get_extension().to_lower() != "ogg":
+		return ""
+	if _take_name == null:
+		_take_name = RegEx.create_from_string("^(.+)_\\d+$")
+	var base := file.get_basename()
+	var m := _take_name.search(base)
+	return m.get_string(1) if m != null else base
+
+
+## Every recording is found and loaded once, before the first sound plays, so a play never
+## touches the disk.
+static func _scan() -> void:
+	_scanned = true
+	_takes.clear()
+	if not _dirs_set:
+		_dirs = default_dirs()
+	for dir in _dirs:
+		var found: Dictionary = {}
+		var files := _list(dir)
+		files.sort()
+		for file in files:
+			var id := take_id(file)
+			if id.is_empty():
+				continue
+			var stream := _load_take(dir.path_join(file), id)
+			if stream == null:
+				continue
+			var list: Array[AudioStream] = []
+			if found.has(id):
+				list = found[id]
+			list.append(stream)
+			found[id] = list
+		for id: String in found:
+			if _takes.has(id):
+				Log.info(&"audio", "%s: takes from %s replace the built-in ones" % [id, dir])
+			_takes[id] = found[id]
+
+
+## File names in `dir`. In an exported game a res:// folder holds only the `.import` stubs
+## of recordings (the audio itself is remapped into `.godot/imported`), so res:// folders
+## are listed through the resource loader, which reports them under their own names.
+static func _list(dir: String) -> PackedStringArray:
+	if dir.begins_with("res://"):
+		return ResourceLoader.list_directory(dir)
+	return DirAccess.get_files_at(dir) if DirAccess.dir_exists_absolute(dir) else PackedStringArray()
+
+
+## A res:// recording is an imported resource (ResourceLoader, never FileAccess on the raw
+## path, which an export doesn't ship); anything else (tweaks, tests) is a raw .ogg file.
+static func _load_take(path: String, id: String) -> AudioStream:
+	var stream: AudioStream = null
+	if path.begins_with("res://"):
+		if ResourceLoader.exists(path, "AudioStream"):
+			stream = ResourceLoader.load(path, "AudioStream") as AudioStream
+	else:
+		stream = AudioStreamOggVorbis.load_from_file(path)
+	if stream == null:
+		Log.error(&"audio", "%s: not imported yet, or not a playable Ogg Vorbis file" % path)
+		return null
+	if stream is AudioStreamOggVorbis:
+		(stream as AudioStreamOggVorbis).loop = id in LOOPED
+	return stream
+
+
+## The sound made in code, whether or not a recording exists.
+static func generated(sound: String) -> AudioStreamWAV:
 	if _cache.has(sound):
 		return _cache[sound]
 	var samples := PackedFloat32Array()
@@ -20,6 +144,8 @@ static func get_sound(sound: String) -> AudioStreamWAV:
 	match sound:
 		"rifle": samples = _shot(0.42, 70.0, 1.0, 9000.0, 1)
 		"pistol": samples = _shot(0.3, 110.0, 0.8, 7000.0, 2)
+		"bolt_rifle": samples = _shot(0.75, 52.0, 1.25, 11000.0, 6)
+		"bolt_cycle": samples = _bolt_cycle()
 		"suppressed": samples = _shot(0.16, 140.0, 0.35, 1800.0, 3)
 		"impact": samples = _thud(0.09, 900.0, 4)
 		"hit": samples = _tick()
@@ -28,6 +154,19 @@ static func get_sound(sound: String) -> AudioStreamWAV:
 		"reload": samples = _clicks()
 		"pickup": samples = _blip()
 		"hurt": samples = _hurt()
+		"hit_wood": samples = _knock()
+		"hit_metal": samples = _ping()
+		"hit_glass", "hit_glass_small": samples = _tink()
+		"hit_brick": samples = _chip(4200.0, 160.0, 11)
+		"hit_concrete": samples = _chip(2200.0, 110.0, 12)
+		"break_wood": samples = _splinter()
+		"break_metal": samples = _crunch()
+		"break_glass": samples = _shatter(9, 0.7, 1.0, 21)
+		"break_glass_small": samples = _shatter(28, 0.55, 1.6, 22)
+		"break_brick": samples = _crumble(900.0, 0.8, 31)
+		"break_concrete": samples = _crumble(520.0, 1.0, 32)
+		"collapse": samples = _collapse()
+		"launch": samples = _launch()
 		"dive": samples = _dive()
 		"wind":
 			samples = _wind()
@@ -79,6 +218,167 @@ static func _thud(seconds: float, bright_hz: float, seed: int) -> PackedFloat32A
 	return out
 
 
+## A round into a plank: a short bright tap over a hollow body that rings for a moment.
+static func _knock() -> PackedFloat32Array:
+	var rng := _rng(13)
+	var out := PackedFloat32Array()
+	var lp := 0.0
+	var a := _one_pole(2600.0)
+	for i in int(0.16 * RATE):
+		var t := float(i) / RATE
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * a
+		var body := sin(TAU * 185.0 * t) * 0.55 + sin(TAU * 420.0 * t) * 0.3
+		out.append(clampf(lp * exp(-t * 90.0) * 1.4 + body * exp(-t * 38.0), -1.0, 1.0))
+	return out
+
+
+## A round into sheet metal: a click, then out-of-tune partials that ring on.
+static func _ping() -> PackedFloat32Array:
+	var rng := _rng(14)
+	var out := PackedFloat32Array()
+	var partials := [[1180.0, 9.0, 0.45], [2730.0, 13.0, 0.3], [4120.0, 18.0, 0.2], [5960.0, 26.0, 0.12]]
+	for i in int(0.55 * RATE):
+		var t := float(i) / RATE
+		var v := rng.randf_range(-1.0, 1.0) * exp(-t * 160.0) * 0.7
+		for p: Array in partials:
+			v += sin(TAU * float(p[0]) * t) * exp(-t * float(p[1])) * float(p[2])
+		out.append(clampf(v, -1.0, 1.0))
+	return out
+
+
+## A round into glass: a tiny click and a high, glassy ring.
+static func _tink() -> PackedFloat32Array:
+	var rng := _rng(15)
+	var out := PackedFloat32Array()
+	for i in int(0.22 * RATE):
+		var t := float(i) / RATE
+		var v := rng.randf_range(-1.0, 1.0) * exp(-t * 300.0) * 0.5
+		v += sin(TAU * 3350.0 * t) * exp(-t * 28.0) * 0.4 + sin(TAU * 5180.0 * t) * exp(-t * 36.0) * 0.25 + sin(TAU * 7420.0 * t) * exp(-t * 50.0) * 0.15
+		out.append(clampf(v, -1.0, 1.0))
+	return out
+
+
+## A round off masonry: a dry crack (`bright_hz`: brick brighter than concrete) and a low
+## knock under it.
+static func _chip(bright_hz: float, body_hz: float, seed: int) -> PackedFloat32Array:
+	var rng := _rng(seed)
+	var out := PackedFloat32Array()
+	var lp := 0.0
+	var a := _one_pole(bright_hz)
+	for i in int(0.13 * RATE):
+		var t := float(i) / RATE
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * a
+		out.append(clampf(lp * exp(-t * 75.0) * 2.0 + sin(TAU * body_hz * t) * exp(-t * 55.0) * 0.45, -1.0, 1.0))
+	return out
+
+
+## A plank wall giving way: a run of cracks of different sizes and a low groan.
+static func _splinter() -> PackedFloat32Array:
+	var rng := _rng(23)
+	var out := PackedFloat32Array()
+	out.resize(int(0.65 * RATE))
+	for k in 9:
+		_noise_burst(out, rng.randf_range(0.0, 0.4), rng.randf_range(0.03, 0.09), rng.randf_range(1500.0, 4500.0), rng.randf_range(0.4, 1.0), 40 + k)
+	for i in out.size():
+		var t := float(i) / RATE
+		out[i] = clampf(out[i] + sin(TAU * (95.0 - t * 30.0) * t) * exp(-t * 6.0) * 0.3, -1.0, 1.0)
+	return out
+
+
+## Sheet metal tearing: a grinding crunch and a few clanks.
+static func _crunch() -> PackedFloat32Array:
+	var rng := _rng(24)
+	var out := PackedFloat32Array()
+	out.resize(int(0.7 * RATE))
+	_noise_burst(out, 0.0, 0.45, 2400.0, 0.9, 50)
+	for k in 4:
+		var at := rng.randf_range(0.0, 0.35)
+		var hz := rng.randf_range(700.0, 1900.0)
+		for i in range(int(at * RATE), out.size()):
+			var t := float(i) / RATE - at
+			out[i] += sin(TAU * hz * t) * exp(-t * 14.0) * 0.25 + sin(TAU * hz * 2.31 * t) * exp(-t * 20.0) * 0.12
+	for i in out.size():
+		out[i] = clampf(out[i], -1.0, 1.0)
+	return out
+
+
+## A pane going: `count` pieces ringing out at random over the first part of `seconds`, plus
+## a hiss; `bright` pitches the pieces up (small tempered cubes are many and high).
+static func _shatter(count: int, seconds: float, bright: float, seed: int) -> PackedFloat32Array:
+	var rng := _rng(seed)
+	var out := PackedFloat32Array()
+	out.resize(int(seconds * RATE))
+	_noise_burst(out, 0.0, 0.25, 6000.0, 0.6, seed + 100)
+	for k in count:
+		var at := rng.randf_range(0.0, seconds * 0.6)
+		var hz := rng.randf_range(2500.0, 6500.0) * bright
+		var gain := rng.randf_range(0.15, 0.4) * (1.0 - at / seconds)
+		for i in range(int(at * RATE), mini(out.size(), int((at + 0.15) * RATE))):
+			var t := float(i) / RATE - at
+			out[i] += sin(TAU * hz * t) * exp(-t * 40.0) * gain
+	for i in out.size():
+		out[i] = clampf(out[i], -1.0, 1.0)
+	return out
+
+
+## Masonry crumbling: low, rough noise in many small bursts over `seconds`; `bright_hz` is
+## how gritty (brick grittier than concrete).
+static func _crumble(bright_hz: float, seconds: float, seed: int) -> PackedFloat32Array:
+	var rng := _rng(seed)
+	var out := PackedFloat32Array()
+	out.resize(int(seconds * RATE))
+	_noise_burst(out, 0.0, seconds * 0.8, bright_hz * 0.5, 0.7, seed + 100)
+	for k in 14:
+		_noise_burst(out, rng.randf_range(0.0, seconds * 0.7), rng.randf_range(0.02, 0.07), bright_hz * rng.randf_range(1.0, 3.0), rng.randf_range(0.3, 0.8), seed + k)
+	for i in out.size():
+		out[i] = clampf(out[i], -1.0, 1.0)
+	return out
+
+
+## A rocket leaving its tube: a deep thump, then a hiss that rises and fades as it goes.
+static func _launch() -> PackedFloat32Array:
+	var rng := _rng(41)
+	var out := PackedFloat32Array()
+	var lp := 0.0
+	for i in int(1.4 * RATE):
+		var t := float(i) / RATE
+		var a := _one_pole(lerpf(900.0, 3200.0, clampf(t / 0.4, 0.0, 1.0)))
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * a
+		var hiss := lp * exp(-t * 2.2) * minf(1.0, t * 12.0) * 1.4
+		var thump := sin(TAU * 60.0 * t) * exp(-t * 18.0)
+		out.append(clampf(hiss + thump, -1.0, 1.0))
+	return out
+
+
+## A building part landing: a heavy thud into a long rumble.
+static func _collapse() -> PackedFloat32Array:
+	var rng := _rng(33)
+	var out := PackedFloat32Array()
+	var lp := 0.0
+	var lp2 := 0.0
+	var a := _one_pole(260.0)
+	for i in int(1.6 * RATE):
+		var t := float(i) / RATE
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * a
+		lp2 += (lp - lp2) * a
+		var env := exp(-t * 2.2) * 0.8 + exp(-t * 25.0)
+		out.append(clampf(lp2 * env * 5.0 + sin(TAU * 52.0 * t) * exp(-t * 9.0) * 0.8, -1.0, 1.0))
+	return out
+
+
+## Adds a decaying burst of low-passed noise into `out`, starting `at` seconds in.
+static func _noise_burst(out: PackedFloat32Array, at: float, seconds: float, bright_hz: float, gain: float, seed: int) -> void:
+	var rng := _rng(seed)
+	var lp := 0.0
+	var a := _one_pole(bright_hz)
+	var start := int(at * RATE)
+	var decay := 5.0 / maxf(seconds, 0.001)
+	for i in range(start, mini(out.size(), start + int(seconds * RATE))):
+		var t := float(i - start) / RATE
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * a
+		out[i] += lp * exp(-t * decay) * gain * 2.0
+
+
 ## The hit marker: a bright, dry tick.
 static func _tick() -> PackedFloat32Array:
 	var out := PackedFloat32Array()
@@ -116,6 +416,32 @@ static func _clicks() -> PackedFloat32Array:
 			if t >= at:
 				var u := t - at
 				v += rng.randf_range(-1.0, 1.0) * exp(-u * 160.0) * 0.8 + sin(TAU * 1800.0 * u) * exp(-u * 120.0) * 0.4
+		out.append(clampf(v, -1.0, 1.0))
+	return out
+
+
+## A bolt worked by hand: a click as the handle lifts, a scrape back to a clack at the
+## stop, a scrape forward to a heavier clack, and the click of the handle turning down.
+static func _bolt_cycle() -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	var rng := _rng(8)
+	# [time, loudness, ring pitch] of each metal-on-metal hit.
+	var hits := [[0.0, 0.6, 2400.0], [0.23, 0.9, 1500.0], [0.36, 1.0, 1300.0], [0.5, 0.6, 2600.0]]
+	var scrapes := [[0.11, 0.23], [0.27, 0.36]]
+	var lp := 0.0
+	var a := _one_pole(3500.0)
+	for i in int(0.62 * RATE):
+		var t := float(i) / RATE
+		var noise := rng.randf_range(-1.0, 1.0)
+		lp += (noise - lp) * a
+		var v := 0.0
+		for s: Array in scrapes:
+			if t >= float(s[0]) and t < float(s[1]):
+				v += lp * 0.18
+		for h: Array in hits:
+			if t >= float(h[0]):
+				var u := t - float(h[0])
+				v += (noise * exp(-u * 180.0) * 0.7 + sin(TAU * float(h[2]) * u) * exp(-u * 90.0) * 0.35) * float(h[1])
 		out.append(clampf(v, -1.0, 1.0))
 	return out
 
@@ -169,36 +495,40 @@ static func _hurt() -> PackedFloat32Array:
 	return out
 
 
-## A mild breeze that loops without a seam: soft mid-band noise for the air, a faint brighter
-## rustle for leaves, both swelling on slow gusts that never repeat on a beat (several slow
-## waves at unrelated rates). Long, so the loop isn't heard; no low rumble, which reads as surf.
+## Wind: dark, slowly breathing air. Brown noise through a low-pass whose cutoff rides each
+## gust (calm and low, brighter as it builds), gusts that swell and settle over many seconds,
+## and now and then a soft rustle of leaves, mostly in the gusts. No constant hiss.
 static func _wind() -> PackedFloat32Array:
 	var rng := _rng(9)
 	var n := int(WIND_SECONDS * RATE)
 	var raw := PackedFloat32Array()
 	raw.resize(n)
-	var low := 0.0
-	var high := 0.0
-	var rustle_low := 0.0
-	var rustle_high := 0.0
-	var air_hp := _one_pole(180.0)
-	var air_lp := _one_pole(900.0)
-	var leaf_hp := _one_pole(1800.0)
-	var leaf_lp := _one_pole(5200.0)
+	var brown := 0.0
+	var lp1 := 0.0
+	var lp2 := 0.0
+	var rustle := 0.0
+	var rustle_lp := 0.0
+	var rustle_env := 0.0
+	var rustle_hp := 0.0
 	for i in n:
 		var t := float(i) / RATE
+		# Gusts: three slow swells that don't line up, from calm (0) to a full gust (1).
+		var gust := clampf(0.45 + 0.3 * sin(TAU * t / 17.0) + 0.2 * sin(TAU * t / 9.3 + 1.1) + 0.12 * sin(TAU * t / 5.1 + 2.3), 0.0, 1.0)
 		var white := rng.randf_range(-1.0, 1.0)
-		# Band-pass as the difference of two low-passes.
-		low += (white - low) * air_hp
-		high += (white - high) * air_lp
-		var air := high - low
-		rustle_low += (white - rustle_low) * leaf_hp
-		rustle_high += (white - rustle_high) * leaf_lp
-		var leaves := rustle_high - rustle_low
-		var gust := 0.55 + 0.2 * sin(TAU * t / 7.3) + 0.15 * sin(TAU * t / 3.1 + 1.7) + 0.1 * sin(TAU * t / 11.9 + 0.4)
-		var flutter := maxf(0.0, sin(TAU * t / 2.3 + 0.9) * sin(TAU * t / 5.7))
-		raw[i] = air * 2.2 * gust + leaves * 1.6 * (0.3 + flutter) * gust
-	return _seamless(raw, int(0.8 * RATE))
+		brown = clampf(brown + white * 0.02, -1.0, 1.0) * 0.999
+		var a := _one_pole(lerpf(220.0, 650.0, gust))
+		lp1 += (brown - lp1) * a
+		lp2 += (lp1 - lp2) * a
+		var air := lp2 * (0.35 + 0.65 * gust * gust)
+		# Leaves: a rustle starts now and then, likelier in a gust, and dies away.
+		if rng.randf() < 0.00004 * (0.2 + gust * 2.0):
+			rustle_env = rng.randf_range(0.4, 1.0)
+		rustle_env *= 0.99993
+		rustle += (white - rustle) * _one_pole(2600.0)
+		rustle_hp += (rustle - rustle_hp) * _one_pole(700.0)
+		rustle_lp = rustle - rustle_hp
+		raw[i] = air * 3.2 + rustle_lp * rustle_env * 0.18
+	return _seamless(raw, int(1.5 * RATE))
 
 
 ## Crossfades the end of a sound into its start, so it loops without a click.

@@ -1,0 +1,6 @@
+{
+  "id": "towers",
+  "depends_on": ["world", "voxkit"],
+  "flag": "towers",
+  "entry": "towers_module.gd"
+}

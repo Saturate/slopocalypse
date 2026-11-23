@@ -7,6 +7,9 @@ extends Node
 ## Matches the rifle's 600 rpm interval, so sustained fire always shows a tracer.
 const TRACER_SECONDS := 0.1
 const IMPACT_SECONDS := 0.25
+## No impact puff closer than this to the camera (metres): a round hitting the player whose
+## eyes these are would fill the screen with it.
+const IMPACT_NEAR := 1.0
 const CONFIG := "res://modules/weapons/data/weapons.json"
 
 ## Held rifle's instance id -> [rifle, where it rests in the hands], so kicks always return to
@@ -58,9 +61,14 @@ func kicked_count() -> int:
 
 func _on_fired(p: Dictionary) -> void:
 	var holder := p.get("holder") as Node
-	var held := held_rifle(holder)
 	var to: Vector3 = p["to"]
 	var from: Vector3 = p["from"]
+	# A round carrying on through a wall: its tracer starts at the wall, no new flash or kick.
+	if bool(p.get("through", false)):
+		_spawn_tracer(from, to)
+		_spawn_impact(to)
+		return
+	var held := held_rifle(holder)
 	if held != null:
 		var muzzle := held.find_child("Muzzle", true, false) as Node3D
 		if muzzle != null:
@@ -68,6 +76,10 @@ func _on_fired(p: Dictionary) -> void:
 		remember(held)
 		# The rifle's nose points along -Z, so the kick pushes it back toward the shoulder.
 		held.position.z += _kick_back
+		# A bolt-action's bolt is worked after every shot but the last; its hand goes to it.
+		var weapon := p.get("weapon") as HitscanWeapon
+		if weapon != null and weapon.cycle_seconds > 0.0 and bool(p.get("cycles", false)):
+			BoltCycle.start(held, weapon.cycle_seconds, weapon)
 	_spawn_tracer(from, to)
 	_spawn_muzzle_flash(from)
 	_spawn_impact(to)
@@ -110,7 +122,10 @@ func _spawn_muzzle_flash(at: Vector3) -> void:
 	get_tree().create_timer(TRACER_SECONDS).timeout.connect(light.queue_free)
 
 
-func _spawn_impact(at: Vector3) -> void:
+func _spawn_impact(at: Vector3) -> MeshInstance3D:
+	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if camera != null and camera.global_position.distance_to(at) < IMPACT_NEAR:
+		return null
 	var puff := MeshInstance3D.new()
 	var sphere := SphereMesh.new()
 	sphere.radius = 0.06
@@ -125,6 +140,7 @@ func _spawn_impact(at: Vector3) -> void:
 	var tween := puff.create_tween()
 	tween.tween_property(puff, "scale", Vector3.ONE * 2.5, IMPACT_SECONDS)
 	tween.tween_callback(puff.queue_free)
+	return puff
 
 
 func _world_root() -> Node:

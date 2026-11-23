@@ -8,7 +8,9 @@
 use godot::classes::mesh::ArrayType;
 use godot::prelude::*;
 use std::sync::RwLock;
+use voxkit_core::edits::Edit;
 use voxkit_core::heightfield::{self, Tile};
+use voxkit_core::ways::Look;
 use voxkit_core::{Colour, Grid, Mesh, OPEN, Op, Paint};
 
 /// Brightness per corner level (0 tucked in to 3 open) when corner shading is on, for every
@@ -179,6 +181,176 @@ impl VoxelModel {
         });
     }
 
+    /// The material index every fill after this call writes into its cells (see
+    /// `VoxMaterials` for the names); 0 is "default".
+    #[func]
+    fn set_material(&mut self, index: i64) {
+        self.with(|g, _| g.brush = index.clamp(0, 255) as u8);
+    }
+
+    /// Sets the material of the filled cells inside the box, leaving their colour.
+    #[func]
+    fn mark_box(&mut self, min: Vector3, max: Vector3, index: i64) {
+        self.with(|g, _| g.fill_box(v3(min), v3(max), Op::Mark(index.clamp(0, 255) as u8)));
+    }
+
+    /// Material index of the cell holding `point` (model space); 0 for air and outside. A
+    /// hit point lies on a face, so callers step half a voxel into the surface first.
+    #[func]
+    fn material_at(&self, point: Vector3) -> i64 {
+        self.grid
+            .as_ref()
+            .map_or(0, |g| g.material_at(v3(point)) as i64)
+    }
+
+    /// Colour of the cell holding `point` (model space); fully transparent for air.
+    #[func]
+    fn colour_at(&self, point: Vector3) -> Color {
+        match self.grid.as_ref().map(|g| g.colour_at(v3(point))) {
+            Some(c) if c != voxkit_core::EMPTY => to_color(c),
+            _ => Color::from_rgba(0.0, 0.0, 0.0, 0.0),
+        }
+    }
+
+    /// The material most filled cells inside the box have (model space), 0 when none has
+    /// one: a wall piece's main material.
+    #[func]
+    fn dominant_material(&self, min: Vector3, max: Vector3) -> i64 {
+        self.grid
+            .as_ref()
+            .map_or(0, |g| g.dominant_material(v3(min), v3(max)) as i64)
+    }
+
+    /// The filled cells merged into few `AABB`s (model space) for collision, leaving out
+    /// cells of the materials in `skip` (glass, furniture).
+    #[func]
+    fn collision_boxes(&self, skip: PackedInt32Array) -> Array<Aabb> {
+        let mut out = Array::new();
+        if let Some(g) = self.grid.as_ref() {
+            let mut leave = [false; 256];
+            for &m in skip.as_slice() {
+                if (0..256).contains(&m) {
+                    leave[m as usize] = true;
+                }
+            }
+            for (min, max) in g.boxes(&leave) {
+                let lo = Vector3::new(min[0], min[1], min[2]);
+                let hi = Vector3::new(max[0], max[1], max[2]);
+                out.push(Aabb::new(lo, hi - lo));
+            }
+        }
+        out
+    }
+
+    /// Each connected patch of material `index`, as an `AABB` in model space, in the same
+    /// order on every instance (panes of glass, numbered alike everywhere).
+    #[func]
+    fn components(&self, index: i64) -> Array<Aabb> {
+        let mut out = Array::new();
+        if let Some(g) = self.grid.as_ref() {
+            for (min, max) in g.components(index.clamp(0, 255) as u8) {
+                let lo = Vector3::new(min[0], min[1], min[2]);
+                let hi = Vector3::new(max[0], max[1], max[2]);
+                out.push(Aabb::new(lo, hi - lo));
+            }
+        }
+        out
+    }
+
+    /// The connected patch of material `index` holding the cell at `point` (model space), as
+    /// an `AABB`, or an empty `AABB` when that cell isn't that material or the patch is more
+    /// than `cap` cells (a brick, not a wall).
+    #[func]
+    fn component_at(&self, point: Vector3, index: i64, cap: i64) -> Aabb {
+        let found = self.grid.as_ref().and_then(|g| {
+            g.component_at(v3(point), index.clamp(0, 255) as u8, cap.max(1) as usize)
+        });
+        match found {
+            Some((min, max)) => {
+                let lo = Vector3::new(min[0], min[1], min[2]);
+                Aabb::new(lo, Vector3::new(max[0], max[1], max[2]) - lo)
+            }
+            None => Aabb::default(),
+        }
+    }
+
+    /// How many filled cells of material `index` have their centres inside the box.
+    #[func]
+    fn count_material(&self, min: Vector3, max: Vector3, index: i64) -> i64 {
+        self.grid.as_ref().map_or(0, |g| {
+            g.count_material(v3(min), v3(max), index.clamp(0, 255) as u8) as i64
+        })
+    }
+
+    /// Empties the cells of material `index` inside the box, leaving every other material.
+    #[func]
+    fn carve_material_box(&mut self, min: Vector3, max: Vector3, index: i64) {
+        self.with(|g, _| {
+            g.fill_box(
+                v3(min),
+                v3(max),
+                Op::CarveMaterial(index.clamp(0, 255) as u8),
+            )
+        });
+    }
+
+    /// Recolours only the cells of material `index` inside the ellipsoid (a crack mark).
+    #[func]
+    fn recolour_ellipsoid(&mut self, centre: Vector3, radii: Vector3, colour: Color, index: i64) {
+        self.with(|g, _| {
+            g.fill_ellipsoid(
+                v3(centre),
+                v3(radii),
+                Op::Recolour(paint(colour, 0.0, 0), index.clamp(0, 255) as u8),
+            )
+        });
+    }
+
+    /// Breaks the cells inside the box into fragments round `seeds` (model space), ragged by up
+    /// to `jag` voxels; touching cells of material `unit` (bricks) stay together. Returns
+    /// `[{model, offset, lo, hi}]` in seed order (seeds that got nothing are left out): each
+    /// fragment as its own model, where its origin sits in this one, and its filled bounds.
+    #[func]
+    fn fracture(
+        &self,
+        min: Vector3,
+        max: Vector3,
+        seeds: PackedVector3Array,
+        unit: i64,
+        jag: f32,
+        seed: i64,
+    ) -> VarArray {
+        let mut out = VarArray::new();
+        let Some(grid) = self.grid.as_ref() else {
+            return out;
+        };
+        let points: Vec<[f32; 3]> = seeds.as_slice().iter().map(|p| v3(*p)).collect();
+        for f in grid.fracture(
+            v3(min),
+            v3(max),
+            &points,
+            unit.clamp(0, 255) as u8,
+            jag,
+            seed as u32,
+        ) {
+            let model = Gd::from_init_fn(|base| VoxelModel {
+                base,
+                grid: Some(f.grid),
+                jitter_scale: self.jitter_scale,
+            });
+            let mut d = VarDictionary::new();
+            d.set("model", &model);
+            d.set(
+                "offset",
+                Vector3::new(f.offset[0], f.offset[1], f.offset[2]),
+            );
+            d.set("lo", Vector3::new(f.lo[0], f.lo[1], f.lo[2]));
+            d.set("hi", Vector3::new(f.hi[0], f.hi[1], f.hi[2]));
+            out.push(&d.to_variant());
+        }
+        out
+    }
+
     /// Scales the colour jitter of every fill after this call (0 = flat colours).
     #[func]
     fn set_jitter_scale(&mut self, scale: f32) {
@@ -190,10 +362,184 @@ impl VoxelModel {
         self.grid.as_ref().map_or(0, |g| g.filled() as i64)
     }
 
+    /// Applies integer edits made by the `edit_*` functions (see voxkit_core::edits). Bytes
+    /// that don't read as edits change nothing and return false.
+    #[func]
+    fn apply_edits(&mut self, bytes: PackedByteArray) -> bool {
+        let Ok(edits) = Edit::decode_all(bytes.as_slice()) else {
+            return false;
+        };
+        if let Some(g) = self.grid.as_mut() {
+            g.apply_edits(&edits);
+        }
+        true
+    }
+
+    /// How many edits `bytes` holds, or -1 when they don't read as edits.
+    #[func]
+    fn edit_count(bytes: PackedByteArray) -> i64 {
+        Edit::decode_all(bytes.as_slice()).map_or(-1, |e| e.len() as i64)
+    }
+
+    /// Empty every cell within squared distance `r2` (in cells) of `cell`.
+    #[func]
+    fn edit_cut_sphere(cell: Vector3i, r2: i64) -> PackedByteArray {
+        encode(Edit::CutSphere {
+            centre: i16s(cell),
+            r2: r2.clamp(0, u16::MAX as i64) as u16,
+        })
+    }
+
+    /// Empty every cell in `lo..hi` (cells, `hi` exclusive).
+    #[func]
+    fn edit_cut_box(lo: Vector3i, hi: Vector3i) -> PackedByteArray {
+        encode(Edit::CutBox {
+            lo: i16s(lo),
+            hi: i16s(hi),
+        })
+    }
+
+    /// Empty the cells of material `index` in `lo..hi`.
+    #[func]
+    fn edit_cut_material(lo: Vector3i, hi: Vector3i, index: i64) -> PackedByteArray {
+        encode(Edit::CutMaterial {
+            lo: i16s(lo),
+            hi: i16s(hi),
+            m: index.clamp(0, 255) as u8,
+        })
+    }
+
+    /// Recolour the cells of material `index` within squared distance `r2` of `cell`.
+    #[func]
+    fn edit_recolour(cell: Vector3i, r2: i64, colour: Color, index: i64) -> PackedByteArray {
+        encode(Edit::Recolour {
+            centre: i16s(cell),
+            r2: r2.clamp(0, u16::MAX as i64) as u16,
+            colour: colour_of(colour),
+            m: index.clamp(0, 255) as u8,
+        })
+    }
+
+    /// In `lo..hi`, empty each cell of material `loose` with no face neighbour of material
+    /// `holder`.
+    #[func]
+    fn edit_cut_loose(lo: Vector3i, hi: Vector3i, loose: i64, holder: i64) -> PackedByteArray {
+        encode(Edit::CutLoose {
+            lo: i16s(lo),
+            hi: i16s(hi),
+            loose: loose.clamp(0, 255) as u8,
+            holder: holder.clamp(0, 255) as u8,
+        })
+    }
+
+    /// The cell holding `point` (model space), which may lie outside the grid.
+    #[func]
+    fn cell_of(&self, point: Vector3) -> Vector3i {
+        self.grid.as_ref().map_or(Vector3i::ZERO, |g| {
+            let c = g.cell_of(v3(point));
+            Vector3i::new(c[0] as i32, c[1] as i32, c[2] as i32)
+        })
+    }
+
+    /// The cells whose centres are inside `min..max` (model space) as `[lo, hi]`, `hi`
+    /// exclusive.
+    #[func]
+    fn cells_in_box(&self, min: Vector3, max: Vector3) -> Array<Vector3i> {
+        let mut out = Array::new();
+        if let Some(g) = self.grid.as_ref() {
+            let (lo, hi) = g.cells_in_box(v3(min), v3(max));
+            out.push(Vector3i::new(lo[0] as i32, lo[1] as i32, lo[2] as i32));
+            out.push(Vector3i::new(hi[0] as i32, hi[1] as i32, hi[2] as i32));
+        }
+        out
+    }
+
+    /// A hash of the size, colours and materials: equal on every machine with equal cells.
+    #[func]
+    fn grid_hash(&self) -> i64 {
+        self.grid.as_ref().map_or(0, |g| g.grid_hash() as i64)
+    }
+
+    /// The cells, run-length encoded; `load_snapshot` puts them back.
+    #[func]
+    fn snapshot(&self) -> PackedByteArray {
+        self.grid.as_ref().map_or_else(PackedByteArray::new, |g| {
+            PackedByteArray::from(g.snapshot().as_slice())
+        })
+    }
+
+    /// Replaces the cells with a `snapshot` of a model the same size; false (and nothing
+    /// changed) when it doesn't fit.
+    #[func]
+    fn load_snapshot(&mut self, bytes: PackedByteArray) -> bool {
+        self.grid
+            .as_mut()
+            .is_some_and(|g| g.load_snapshot(bytes.as_slice()).is_ok())
+    }
+
     #[func]
     fn cells(&self) -> Vector3i {
         self.grid.as_ref().map_or(Vector3i::ZERO, |g| {
             Vector3i::new(g.nx as i32, g.ny as i32, g.nz as i32)
+        })
+    }
+
+    /// The cells packed for a GPU volume (see `voxkit_core::Atlas`): `{bricks: Vector3i,
+    /// indirection: PackedByteArray (RGBA8 per brick), cells: Vector3i, atlas:
+    /// PackedByteArray (RG8 per cell, 5-6-5 colour), used: int}`. Only bricks holding
+    /// something are in the atlas, `per_row` bricks to a row and a column.
+    #[func]
+    fn brick_atlas(&self, brick: i64, per_row: i64) -> VarDictionary {
+        let mut out = VarDictionary::new();
+        let Some(grid) = self.grid.as_ref() else {
+            return out;
+        };
+        let a = grid.brick_atlas(brick.max(1) as usize, per_row.max(1) as usize);
+        let v3 = |n: [usize; 3]| Vector3i::new(n[0] as i32, n[1] as i32, n[2] as i32);
+        out.set("bricks", v3(a.bricks));
+        out.set("indirection", &PackedByteArray::from(a.indirection));
+        out.set("cells", v3(a.cells));
+        out.set("atlas", &PackedByteArray::from(a.atlas));
+        out.set("used", a.used as i64);
+        out
+    }
+
+    /// Which `brick`-cell cubes hold anything, as one byte each (255 or 0) in `rgba_slices`
+    /// order, for an R8 `ImageTexture3D` of `brick_counts(brick)` texels.
+    #[func]
+    fn brick_occupancy(&self, brick: i64) -> PackedByteArray {
+        self.grid.as_ref().map_or(PackedByteArray::new(), |g| {
+            PackedByteArray::from(g.brick_occupancy(brick.max(1) as usize).0)
+        })
+    }
+
+    /// How many bricks of `brick` cells cover the grid on each axis.
+    #[func]
+    fn brick_counts(&self, brick: i64) -> Vector3i {
+        self.grid.as_ref().map_or(Vector3i::ZERO, |g| {
+            let b = brick.max(1) as usize;
+            Vector3i::new(
+                g.nx.div_ceil(b) as i32,
+                g.ny.div_ceil(b) as i32,
+                g.nz.div_ceil(b) as i32,
+            )
+        })
+    }
+
+    /// Whether cell (x, y, z) is filled; outside the grid is air.
+    #[func]
+    fn is_filled(&self, x: i64, y: i64, z: i64) -> bool {
+        self.grid
+            .as_ref()
+            .is_some_and(|g| g.get(x, y, z) != voxkit_core::EMPTY)
+    }
+
+    /// The cells as RGBA8 bytes for an `ImageTexture3D`: `cells().z` slices of
+    /// `cells().x` by `cells().y` pixels, one after another; air is transparent black.
+    #[func]
+    fn rgba_slices(&self) -> PackedByteArray {
+        self.grid.as_ref().map_or(PackedByteArray::new(), |g| {
+            PackedByteArray::from(g.rgba_slices())
         })
     }
 
@@ -262,15 +608,52 @@ impl VoxelModel {
         self.grid.as_ref().map_or(0, |g| g.chunk_count() as i64)
     }
 
-    /// Meshes every chunk changed since the last call (all of them the first time) and marks
-    /// them clean: `{chunk id: arrays}`, empty arrays where a chunk has nothing to draw.
+    /// Draws these materials see-through (glass): they leave the normal chunk meshes and come
+    /// back in `remesh_dirty_sections` as each section's clear mesh. Every chunk is remeshed.
     #[func]
-    fn remesh_dirty(&mut self) -> VarDictionary {
+    fn set_clear_materials(&mut self, indices: PackedInt32Array) {
+        self.with(|g, _| {
+            for m in 1..=255u8 {
+                g.set_clear(m, indices.as_slice().contains(&(m as i32)));
+            }
+        });
+    }
+
+    /// How many sections the model is drawn as (`set_section_chunks` a side, 4 unless set).
+    #[func]
+    fn section_count(&self) -> i64 {
+        self.grid.as_ref().map_or(0, |g| g.section_count() as i64)
+    }
+
+    /// Draws the model in sections of `chunks` chunks a side (1 to 8), before the first remesh:
+    /// section ids change, so what was drawn for the old ones must be dropped. Models that get shot at use small ones: an edit re-joins its
+    /// whole section.
+    #[func]
+    fn set_section_chunks(&mut self, chunks: i64) {
+        if let Some(grid) = self.grid.as_mut() {
+            grid.set_section(chunks.clamp(1, voxkit_core::MAX_SECTION as i64) as usize);
+        }
+    }
+
+    /// How many sections keep their chunks' meshes (edited since their first draw).
+    #[func]
+    fn kept_sections(&self) -> i64 {
+        self.grid.as_ref().map_or(0, |g| g.kept_sections() as i64)
+    }
+
+    /// Meshes every chunk changed since the last call and joins the sections they sit in:
+    /// `{section id: [arrays, clear arrays]}` (empty arrays where a layer has nothing to
+    /// draw), every section the first time. One mesh per section is what gets drawn.
+    #[func]
+    fn remesh_dirty_sections(&mut self) -> VarDictionary {
         let mut out = VarDictionary::new();
         if let Some(grid) = self.grid.as_mut() {
             grid.corners = shading().is_some();
-            for (id, mesh) in grid.remesh_dirty() {
-                out.set(id as i64, &arrays_of(&mesh));
+            for (id, mesh, clear) in grid.remesh_dirty_sections() {
+                let mut pair = VarArray::new();
+                pair.push(&arrays_of(&mesh).to_variant());
+                pair.push(&arrays_of(&clear).to_variant());
+                out.set(id as i64, &pair);
             }
         }
         out
@@ -342,6 +725,17 @@ fn arrays_of(mesh: &Mesh) -> VarArray {
     arrays
 }
 
+fn encode(e: Edit) -> PackedByteArray {
+    let mut out = Vec::new();
+    e.encode(&mut out);
+    PackedByteArray::from(out.as_slice())
+}
+
+/// Cell coordinates as the edits carry them; models never reach `i16::MAX` cells a side.
+fn i16s(v: Vector3i) -> [i16; 3] {
+    [v.x, v.y, v.z].map(|c| c.clamp(i16::MIN as i32, i16::MAX as i32) as i16)
+}
+
 fn colour_of(c: Color) -> Colour {
     paint(c, 0.0, 0).colour
 }
@@ -358,7 +752,13 @@ struct VoxelGround {
 impl VoxelGround {
     /// `heights` is `cn` x `cn` (row-major by z), `spacing` metres apart; `colours` is
     /// `cc` x `cc` over the same tile; the tile is `n` columns of `voxel` metres a side.
-    /// Returns mesh arrays in tile-local metres.
+    /// `look` holds the ground's settings: `steep_slope` (rise over run past which `steep`
+    /// shows), `side` (the colour of tall walls), `skirt`, `tilt_grade`, `band`, `pad_band`,
+    /// `band_grade`, `ledge`, `ledge_grade` (see `voxkit_core::heightfield::Tile`) and how ways are drawn (see
+    /// `look_of`). `ways` holds the roads, tracks, lanes and pads over the tile
+    /// (`voxkit_core::ways::WAY_STRIDE` floats each, tile-local); `dug` is non-zero per
+    /// height sample where a crater was dug (or empty). Returns mesh arrays in tile-local
+    /// metres; colour alpha marks sloping tilted tops and painted columns (see below).
     #[func]
     #[allow(clippy::too_many_arguments)]
     fn tile_arrays(
@@ -369,11 +769,10 @@ impl VoxelGround {
         cc: i64,
         n: i64,
         voxel: f32,
-        steep_slope: f32,
-        steep: Color,
-        side: Color,
-        skirt: f32,
         seed: i64,
+        look: VarDictionary,
+        ways: PackedFloat32Array,
+        dug: PackedByteArray,
     ) -> VarArray {
         let (cn, cc, n) = (
             cn.max(2) as usize,
@@ -386,6 +785,9 @@ impl VoxelGround {
         }
         let hs = heights.as_slice().to_vec();
         let cs: Vec<Colour> = colours.as_slice().iter().map(|&c| colour_of(c)).collect();
+        let ws = ways.as_slice().to_vec();
+        let dg = dug.as_slice().to_vec();
+        let number = |key: &str, fallback: f32| look_number(&look, key, fallback);
         let tile = Tile {
             heights: &hs,
             cn,
@@ -394,13 +796,86 @@ impl VoxelGround {
             cc,
             n,
             voxel: voxel.max(0.01),
-            steep_slope,
-            steep: colour_of(steep),
-            side: colour_of(side),
-            skirt,
+            steep_slope: number("steep_slope", f32::INFINITY),
+            steep: look_colour(&look, "steep", 0x77_77_77),
+            side: look_colour(&look, "side", 0x55_33_11),
+            skirt: number("skirt", 0.0),
             seed: seed as u32,
             corners: shading().is_some(),
+            tilt_grade: number("tilt_grade", 0.0),
+            band: number("band", 0.0),
+            pad_band: number("pad_band", 0.0),
+            band_grade: number("band_grade", 0.0),
+            ledge: number("ledge", 0.0),
+            ledge_grade: number("ledge_grade", f32::INFINITY),
+            ways: &ws,
+            look: look_of(&look),
+            dug: &dg,
         };
-        arrays_of(&heightfield::mesh(&tile))
+        let (mut mesh, tilted) = heightfield::mesh_marked(&tile);
+        let painted: Vec<bool> = mesh
+            .shade
+            .iter()
+            .map(|&l| l & heightfield::PAINTED != 0)
+            .collect();
+        for l in &mut mesh.shade {
+            *l &= !heightfield::PAINTED;
+        }
+        let mut arrays = arrays_of(&mesh);
+        // Alpha marks how the ground shader draws a vertex: 1 plain, 0.75 painted by a way,
+        // 0.25 a sloping tilted top (varied per column), 0 both.
+        if !arrays.is_empty() && (!tilted.is_empty() || painted.contains(&true)) {
+            let slot = ArrayType::COLOR.ord() as usize;
+            let mut colours: PackedColorArray = arrays.at(slot).to();
+            for (i, &p) in painted.iter().enumerate() {
+                let slope = tilted.contains(&i);
+                if !slope && !p {
+                    continue;
+                }
+                if let Some(c) = colours.get(i) {
+                    let a = match (slope, p) {
+                        (true, true) => 0.0,
+                        (true, false) => 0.25,
+                        _ => 0.75,
+                    };
+                    colours[i] = Color::from_rgba(c.r, c.g, c.b, a);
+                }
+            }
+            arrays.set(slot, &colours.to_variant());
+        }
+        arrays
+    }
+}
+
+fn look_colour(look: &VarDictionary, key: &str, fallback: Colour) -> Colour {
+    look.get(key)
+        .and_then(|v| v.try_to::<Color>().ok())
+        .map_or(fallback, colour_of)
+}
+
+fn look_number(look: &VarDictionary, key: &str, fallback: f32) -> f32 {
+    look.get(key)
+        .and_then(|v| v.try_to::<f32>().ok())
+        .unwrap_or(fallback)
+}
+
+/// How the ground draws ways, from `look` (keys as `voxkit_core::ways::Look`'s fields,
+/// colours as Color); anything missing keeps its default.
+fn look_of(look: &VarDictionary) -> Look {
+    let d = Look::default();
+    let number = |key: &str, fallback: f32| look_number(look, key, fallback);
+    let colour = |key: &str, fallback: Colour| look_colour(look, key, fallback);
+    Look {
+        paved_bed: colour("paved_bed", d.paved_bed),
+        track_soil: colour("track_soil", d.track_soil),
+        strip_top: number("strip_top", d.strip_top),
+        track_fray: number("track_fray", d.track_fray),
+        track_verge: number("track_verge", d.track_verge),
+        yard_fray: number("yard_fray", d.yard_fray),
+        yard_round: number("yard_round", d.yard_round),
+        lane_soil: colour("lane_soil", d.lane_soil),
+        lane_mix: number("lane_mix", d.lane_mix),
+        verge_mix: number("verge_mix", d.verge_mix),
+        rut_dark: number("rut_dark", d.rut_dark),
     }
 }

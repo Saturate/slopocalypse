@@ -4,13 +4,10 @@ extends CanvasLayer
 ## name, objective, distance, time limit and pay; "Take this job" makes it the mission for
 ## the whole group (the server decides). Esc or F closes it.
 
-const BG := Color(0.05, 0.06, 0.06, 0.82)
-const PANEL := Color(0.11, 0.12, 0.11, 0.97)
-const SHEET := Color(0.16, 0.17, 0.15)
-const CHOSEN := Color(0.24, 0.22, 0.14)
-const ACCENT := Color(0.82, 0.62, 0.3)
-const TEXT := Color(0.9, 0.9, 0.86)
-const DIM := Color(0.74, 0.75, 0.71)
+const BG := UiPalette.BACKDROP
+const ACCENT := UiPalette.ACCENT
+const TEXT := UiPalette.TEXT
+const DIM := UiPalette.DIM
 const SHEET_WIDTH := 300
 
 var missions: Node
@@ -20,7 +17,7 @@ var _sheets: HBoxContainer
 
 
 func _ready() -> void:
-	layer = 42
+	layer = UiLayers.MISSION_BOARD
 	_build_ui()
 	_root.visible = false
 	EventBus.subscribe(&"missions.board_opened", _on_opened)
@@ -39,12 +36,12 @@ func is_open() -> bool:
 func open() -> void:
 	_refresh()
 	_root.visible = true
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	UiStack.push(self)
 
 
 func close() -> void:
 	_root.visible = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	UiStack.pop(self)
 
 
 ## Picks offer `index` (as its button does).
@@ -62,9 +59,9 @@ func _on_changed(_p: Dictionary) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if not is_open():
+	if not UiStack.is_top(self):
 		return
-	if event.is_action_pressed(&"interact") or (event is InputEventKey and event.is_pressed() and (event as InputEventKey).keycode == KEY_ESCAPE):
+	if event.is_action_pressed(&"interact") or UiStack.is_cancel(event):
 		close()
 		get_viewport().set_input_as_handled()
 
@@ -83,12 +80,16 @@ func _refresh() -> void:
 
 func _sheet(index: int, offer: Dictionary, chosen: bool, running: bool) -> Control:
 	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = CHOSEN if chosen else SHEET
-	style.border_color = ACCENT if chosen else SHEET.lightened(0.15)
-	style.set_border_width_all(2)
-	style.set_content_margin_all(16)
-	panel.add_theme_stylebox_override("panel", style)
+	# A raised plate on the board; the chosen one ringed in the accent.
+	var plate := SteelPlate.new()
+	plate.fill = UiPalette.STEEL_RAISED.lightened(0.05) if chosen else UiPalette.STEEL_RAISED
+	plate.shadow = Vector2(4, 4)
+	plate.outline = ACCENT if chosen else Color(0, 0, 0, 0)
+	plate.content_margin_left = 16
+	plate.content_margin_right = 16
+	plate.content_margin_top = 14
+	plate.content_margin_bottom = 14
+	panel.add_theme_stylebox_override("panel", plate)
 	panel.custom_minimum_size.x = SHEET_WIDTH
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 8)
@@ -99,7 +100,9 @@ func _sheet(index: int, offer: Dictionary, chosen: bool, running: bool) -> Contr
 	objective.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	objective.custom_minimum_size.x = SHEET_WIDTH - 32
 	col.add_child(objective)
-	col.add_child(_label("%d m down the road" % int(offer.get("distance", 0)), 15, DIM))
+	# A site's distance is from the camp as the crow flies; a roadside spot's is along the highway.
+	var at_site := not (offer.get("site", {}) as Dictionary).is_empty()
+	col.add_child(_label(("%d m from camp" if at_site else "%d m down the highway") % int(offer.get("distance", 0)), 15, DIM))
 	if offer.has("time_limit"):
 		col.add_child(_label("Time limit %d:%02d once you arrive" % [int(offer["time_limit"]) / 60, int(offer["time_limit"]) % 60], 15, DIM))
 	if offer.has("guards"):
@@ -133,12 +136,6 @@ func _build_ui() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_root.add_child(center)
 	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = PANEL
-	style.border_color = ACCENT.darkened(0.5)
-	style.border_width_top = 3
-	style.set_content_margin_all(24)
-	panel.add_theme_stylebox_override("panel", style)
 	center.add_child(panel)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 14)
@@ -151,8 +148,4 @@ func _build_ui() -> void:
 
 
 func _label(text: String, size: int, colour: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", colour)
-	return l
+	return UiText.label(text, size, colour)

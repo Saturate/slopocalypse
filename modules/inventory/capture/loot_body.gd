@@ -16,11 +16,11 @@ var _ticks := 0
 
 
 func _ready() -> void:
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
 	add_child((load(WEAPONS) as GDScript).new())
 	_inventory = (load(INVENTORY) as GDScript).new()
 	add_child(_inventory)
-	_player = _spawn(1, Vector3(3.0, 0.1, -2.6), true)
+	_player = _spawn(1, VoxelWorld.spawn_of(world, Vector3(3.0, 0.1, -2.6)), true)
 	var animator := PlayerBodyAnimator.new()
 	animator.name = "BodyAnimator"
 	animator.player = _player

@@ -12,7 +12,7 @@ var _key: int = KEY_F2
 
 
 func _ready() -> void:
-	layer = 40
+	layer = UiLayers.SCREENS
 	_key = OS.find_keycode_from_string(str(admin.get(&"config").get("toggle_key", "F2")))
 	_build()
 	_root.visible = false
@@ -29,28 +29,29 @@ func is_open() -> bool:
 
 func open() -> void:
 	_root.visible = true
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	UiStack.push(self)
 
 
 func close() -> void:
 	if not _root.visible:
 		return
 	_root.visible = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	UiStack.pop(self)
 
 
 func _input(event: InputEvent) -> void:
+	if UiStack.is_top(self) and UiStack.is_cancel(event):
+		close()
+		get_viewport().set_input_as_handled()
+		return
 	var key := event as InputEventKey
 	if key == null or not key.pressed or key.echo:
 		return
 	if key.keycode == _key and bool(admin.get(&"is_admin_here")):
-		if is_open():
-			close()
-		else:
+		if not is_open():
 			open()
-		get_viewport().set_input_as_handled()
-	elif key.keycode == KEY_ESCAPE and is_open():
-		close()
+		elif UiStack.is_top(self):
+			close()
 		get_viewport().set_input_as_handled()
 
 
@@ -62,16 +63,11 @@ func _build() -> void:
 	_root.offset_left = -360.0
 	_root.offset_right = -16.0
 	_root.offset_top = 16.0
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.06, 0.07, 0.08, 0.92)
-	style.set_corner_radius_all(6)
-	style.set_content_margin_all(14)
-	_root.add_theme_stylebox_override(&"panel", style)
 	add_child(_root)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override(&"separation", 8)
 	_root.add_child(col)
-	_label(col, "ADMIN", 20, MainMenu.ACCENT)
+	_label(col, "ADMIN", 28, MainMenu.ACCENT)
 
 	_label(col, "Time of day", 14, MainMenu.DIM)
 	var hours := _row(col)
@@ -127,24 +123,12 @@ func _button(parent: Container, text: String, pressed: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.focus_mode = Control.FOCUS_NONE
-	for state: StringName in [&"normal", &"hover", &"pressed"]:
-		var box := StyleBoxFlat.new()
-		box.bg_color = {&"normal": Color(1, 1, 1, 0.07), &"hover": Color(1, 1, 1, 0.16), &"pressed": MainMenu.ACCENT.darkened(0.4)}[state]
-		box.set_corner_radius_all(4)
-		box.content_margin_left = 10.0
-		box.content_margin_right = 10.0
-		box.content_margin_top = 4.0
-		box.content_margin_bottom = 4.0
-		b.add_theme_stylebox_override(state, box)
 	b.pressed.connect(pressed)
 	parent.add_child(b)
 	return b
 
 
 func _label(parent: Container, text: String, size: int, colour: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override(&"font_size", size)
-	l.add_theme_color_override(&"font_color", colour)
+	var l := UiText.label(text, size, colour)
 	parent.add_child(l)
 	return l

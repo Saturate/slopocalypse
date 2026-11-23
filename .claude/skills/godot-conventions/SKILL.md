@@ -67,6 +67,8 @@ func _initialize() -> void:
 
 ## Tests
 
+- One suite, fast: `tools/godot/Godot_v4.7.2-stable_win64.exe --headless --path . -s -d res://addons/gdUnit4/bin/GdUnitCmdTool.gd --ignoreHeadlessMode -rd res://tests/reports -a res://modules/<id>/tests/scenario/test_x.gd` (add more `-a` for more suites or folders); the fast gate only runs `unit` folders.
+
 - `tests/unit` (fast gate), `tests/scenario` and `tests/net` (full gate), at the root and inside each module.
 - gdUnit4: `extends GdUnitTestSuite`, `test_*` functions, `auto_free()` for nodes.
 - Expected errors: wrap in `Log.begin_capture()` / `Log.end_capture()` and assert on `LogCapture.text(entries)`. An uncaptured `push_error` fails the gate even though gdUnit4 passes the test.
@@ -102,3 +104,8 @@ func _initialize() -> void:
 | `Node not found: "UpperLeg.L"` | Node names cannot contain `.` `:` `@` `/` `%`; Godot silently rewrites them | Use `_` in node names (`UpperLeg_L`) |
 | `Parameter "space" is null` from `body_test_motion` | An event published inside a body's `_physics_process` disabled that body (process mode removes it from the space), then the same step called `move_and_slide` | After publishing anything that may park you, `if not can_process(): return`; test it by driving the intent, not by publishing from the test |
 | Later tests in a suite never run | gdUnit4 stops a suite at the first failing test | Fix the first failure, then rerun; don't read "N passed" as the whole suite |
+| Only one of many spawned nodes is found by name | Adding a child whose name is taken renames it to `@Type@123`, not `Name2` | Mark nodes with a meta (`set_meta(&"fragment", true)`) and find them by it |
+| Parse error "Expected variable name" | `pass` (and other keywords) can't be a variable name | Rename (`pass_share`) |
+| Same seed, different result on two machines | Physics (Jolt) isn't deterministic across machines; float carving drifts too | Don't let physics decide shared state: work outcomes out from the seed (see `docs/decisions/0005`) |
+| `rust build` fails "dll is locked" | A running game or editor holds the extension | Close the game before the gate when Rust changed; GDScript-only changes gate fine with it open |
+| A shot's sight-check test hits flying debris | Default ray masks include every layer | Rays that mean "as a bullet sees it" use `PhysicsLayers.BULLETS` (debris is excluded) |

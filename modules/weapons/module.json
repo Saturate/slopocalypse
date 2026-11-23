@@ -1,6 +1,6 @@
 {
   "id": "weapons",
-  "depends_on": ["player"],
+  "depends_on": ["player", "voxkit"],
   "flag": "weapons",
   "entry": "weapons_module.gd"
 }

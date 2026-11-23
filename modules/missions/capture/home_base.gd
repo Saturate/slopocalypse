@@ -1,6 +1,6 @@
 extends Node3D
-## Capture setup: first person in the home tunnel, turning from the mission board on the wall
-## to the transport car parked further in, then the board screen open.
+## Capture setup: first person at the camp, turning from the mission board to the transport
+## by the gate, then the board screen open.
 
 const WORLD := "res://modules/world/scenes/world.tscn"
 const PLAYER := "res://modules/player/scenes/player.tscn"
@@ -13,7 +13,7 @@ var _ticks := 0
 
 
 func _ready() -> void:
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
 	_missions = (load(MISSIONS) as GDScript).new()
 	add_child(_missions)
 	var spawn := (get_tree().get_first_node_in_group(&"spawn_point") as Node3D).global_position
@@ -25,7 +25,7 @@ func _ready() -> void:
 	EventBus.publish(&"player.spawned", {"player": _player, "local": true})
 	PlayerBody.first_person(_player.get_node("Body"))
 	(_player.get_node("Head/Camera") as Camera3D).current = true
-	EventBus.publish(&"world.ready", {"spawn": spawn})
+	EventBus.publish(&"world.ready", {"spawn": spawn, "camp": world.get("camp")})
 	_missions.call(&"server_choose", 1, 0)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 

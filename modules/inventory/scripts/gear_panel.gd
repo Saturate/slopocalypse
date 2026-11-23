@@ -10,8 +10,8 @@ const CELL := 40
 const SLOT_CELLS := 2
 ## Slots shaped for what goes in them: a rifle is long.
 const WIDE_SLOTS := {"primary": Vector2i(4, 2)}
-const ACCENT := Color(0.82, 0.62, 0.3)
-const DIM := Color(0.6, 0.61, 0.58)
+const ACCENT := UiPalette.ACCENT
+const DIM := UiPalette.DIM
 const SLOT_COLOUR := Color(0.14, 0.15, 0.14)
 const SLOT_EDGE := Color(0.3, 0.31, 0.28)
 
@@ -114,7 +114,7 @@ static func _slot_rank(slot: String) -> int:
 func _caption(text: String) -> Label:
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override("font_size", 14)
+	l.add_theme_font_size_override("font_size", UiPalette.HINT)
 	l.add_theme_color_override("font_color", ACCENT)
 	return l
 

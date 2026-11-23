@@ -1,0 +1,6 @@
+{
+  "id": "benchmark",
+  "depends_on": [],
+  "flag": "benchmark",
+  "entry": "benchmark_module.gd"
+}

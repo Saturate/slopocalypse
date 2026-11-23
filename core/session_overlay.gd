@@ -1,7 +1,8 @@
 class_name SessionOverlay
 extends CanvasLayer
 ## Over a running session: a "connecting" card until the server answers (with Cancel, since
-## a wrong address can take a while to time out), and the Esc panel to resume, go back to the
+## a wrong address can take a while to time out), the same card while a module says the
+## session is loading (`session.loading` with its `text`, empty when done), and the Esc panel to resume, go back to the
 ## spawn, leave to the menu or quit. Only added for a player at the keyboard.
 
 ## Solo connects in a blink; the card only shows if it takes longer than this.
@@ -11,12 +12,17 @@ var _waited := 0.0
 var _paused := false
 var _connecting: Control
 var _connecting_label: Label
+## What `session.loading` last said is going on; empty when nothing is.
+var _loading := ""
 var _pause: Control
 var _host_info: Label
+var _settings: SettingsScreen
+var _leave: Button
 
 
 func _ready() -> void:
-	layer = 50
+	layer = UiLayers.SESSION
+	add_to_group(&"session_overlay")
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_connecting = _card()
 	var waiting: VBoxContainer = _connecting.get_meta(&"col")
@@ -24,41 +30,71 @@ func _ready() -> void:
 	_add_button(waiting, &"Cancel", "Cancel", func() -> void: Net.leave())
 	_pause = _card()
 	var col: VBoxContainer = _pause.get_meta(&"col")
-	_text(col, "PAUSED", 24, MainMenu.ACCENT)
+	# Solo runs its own server, so nothing stops while this is open.
+	var title := _text(col, "MENU", 0, MainMenu.ACCENT)
+	title.theme_type_variation = &"TitleLabel"
+	title.remove_theme_font_size_override("font_size")
+	title.remove_theme_color_override("font_color")
+	_text(col, "The world keeps running", 16, MainMenu.DIM)
+	var gap := Control.new()
+	gap.custom_minimum_size.y = 8
+	col.add_child(gap)
 	_host_info = _text(col, "", 14, MainMenu.DIM)
 	_add_button(col, &"Resume", "Resume", _resume)
+	_add_button(col, &"Settings", "Settings", func() -> void: _settings.open())
 	# Unstuck: the player module asks the server to put us back at the spawn.
 	_add_button(col, &"BackToSpawn", "Back to spawn", func() -> void:
 		EventBus.publish(&"session.back_to_spawn", {})
 		_resume())
-	_add_button(col, &"Leave", "Leave to menu", func() -> void: Net.leave())
+	_leave = _add_button(col, &"Leave", "Leave to menu", func() -> void: Net.leave())
 	_add_button(col, &"Quit", "Quit game", func() -> void: get_tree().quit(0))
 	_connecting.visible = false
 	_pause.visible = false
+	_settings = SettingsScreen.new()
+	add_child(_settings)
+	EventBus.subscribe(&"session.loading", _on_loading)
 
 
+func _exit_tree() -> void:
+	EventBus.unsubscribe(&"session.loading", _on_loading)
+
+
+func _on_loading(p: Dictionary) -> void:
+	_loading = str(p.get("text", ""))
+
+
+## Esc opens this only when no other screen is open; another screen on top takes Esc
+## itself, so it closes first.
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.is_pressed() and not event.is_echo() and (event as InputEventKey).keycode == KEY_ESCAPE:
-		if _paused:
-			_resume()
-			get_viewport().set_input_as_handled()
-		else:
-			_paused = true
+	if not UiStack.is_cancel(event):
+		return
+	if _paused and UiStack.is_top(self):
+		_resume()
+		get_viewport().set_input_as_handled()
+	elif not UiStack.is_blocking():
+		_paused = true
+		UiStack.push(self)
+		get_viewport().set_input_as_handled()
 
 
 func _process(delta: float) -> void:
 	var up := Net.is_session_connected()
 	_waited = 0.0 if up else _waited + delta
-	_connecting.visible = not up and _waited > CONNECTING_DELAY
-	_connecting_label.text = "Connecting to %s:%d..." % [Net.host, Net.port]
-	# Clicking back into the game recaptures the mouse; the panel follows.
-	if _paused and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		_paused = false
-	_pause.visible = _paused and up
+	_connecting.visible = (not up and _waited > CONNECTING_DELAY) or (up and not _loading.is_empty())
+	_connecting_label.text = _loading if up else "Connecting to %s:%d..." % [Net.host, Net.port]
+	_pause.visible = _paused and up and _loading.is_empty()
 	if Net.hosting_port > 0:
 		var mine := MainMenu.rank_addresses(IP.get_local_addresses())
 		_host_info.text = "Hosting. Friends join at %s:%d" % [mine[0] if not mine.is_empty() else "your address", Net.hosting_port]
 	_host_info.visible = Net.hosting_port > 0
+
+
+## For modules: an entry in the Esc menu, above "Leave to menu" (factions adds Standing).
+func add_menu_entry(id: StringName, text: String, on_press: Callable) -> Button:
+	var col := _leave.get_parent() as VBoxContainer
+	var b := _add_button(col, id, text, on_press)
+	col.move_child(b, _leave.get_index())
+	return b
 
 
 func is_paused() -> bool:
@@ -67,7 +103,7 @@ func is_paused() -> bool:
 
 func _resume() -> void:
 	_paused = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	UiStack.pop(self)
 
 
 ## A centred card over a dim shade; returns its root, whose "col" meta is the column to fill.
@@ -76,7 +112,7 @@ func _card() -> Control:
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var shade := ColorRect.new()
-	shade.color = Color(0, 0, 0, 0.45)
+	shade.color = UiPalette.BACKDROP
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(shade)
@@ -85,12 +121,6 @@ func _card() -> Control:
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(center)
 	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = MainMenu.PANEL
-	style.border_color = MainMenu.ACCENT.darkened(0.5)
-	style.border_width_top = 3
-	style.set_content_margin_all(24)
-	panel.add_theme_stylebox_override("panel", style)
 	center.add_child(panel)
 	var col := VBoxContainer.new()
 	col.custom_minimum_size.x = 300
@@ -102,10 +132,7 @@ func _card() -> Control:
 
 
 func _text(col: VBoxContainer, text: String, size: int, color: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", color)
+	var l := UiText.label(text, size, color)
 	col.add_child(l)
 	return l
 

@@ -103,7 +103,7 @@ func test_the_cabin_mission_lays_mines_a_wire_and_signs() -> void:
 	assert_bool(_missions.call(&"server_choose", 111, offers.find(cabin))).is_true()
 	assert_bool(_missions.call(&"server_ride_out")).is_true()
 	await get_tree().process_frame
-	assert_int((_missions.get(&"buildings") as Array).size()).is_equal(1)
+	assert_int((_missions.get(&"buildings") as Array).size()).is_between(2, 3)
 	var wires := _mines().filter(func(m: Node) -> bool: return (m as Mine).kind == "wire")
 	assert_int(wires.size()).is_equal(1)
 	assert_int(_mines().size()).is_greater(5)
