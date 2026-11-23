@@ -73,3 +73,22 @@ func test_spreading_at_the_right_end_pushes_inward() -> void:
 	assert_float(maxf(out[0], out[1])).is_equal(300.0)
 	assert_float(minf(out[0], out[1])).is_equal(280.0)
 	assert_float(out[2]).is_equal(120.0)
+
+
+func test_three_labels_in_a_row_each_get_room() -> void:
+	# Labels left to right, each 60 px wide and 30 px apart: the second has no room beside
+	# the first, and the third none beside either, so it needs a row of its own instead of
+	# being written over the second (playtest of #447).
+	var row_end: Array[float] = []
+	var rows: Array[int] = []
+	for tx: float in [0.0, 30.0, 60.0]:
+		rows.append(CompassMath.label_row(row_end, tx, 60.0, 6.0))
+	assert_array(rows).contains_exactly([0, 1, 2])
+
+
+func test_a_label_takes_the_first_row_with_room() -> void:
+	var row_end: Array[float] = []
+	var rows: Array[int] = []
+	for tx: float in [0.0, 30.0, 100.0]:
+		rows.append(CompassMath.label_row(row_end, tx, 60.0, 6.0))
+	assert_array(rows).contains_exactly([0, 1, 0])

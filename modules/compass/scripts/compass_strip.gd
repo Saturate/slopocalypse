@@ -139,7 +139,7 @@ func _draw() -> void:
 	var order := range(_items.size())
 	order.sort_custom(func(a: int, b2: int) -> bool: return xs[a] < xs[b2])
 	var arrows := {}
-	var row_end: Array[float] = [-INF, -INF]
+	var row_end: Array[float] = []
 	var line_height := font.get_height(UiPalette.BODY)
 	for i: int in order:
 		var item := _items[i]
@@ -157,8 +157,7 @@ func _draw() -> void:
 			text = "%s %s" % [item["label"], text]
 		var size := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, UiPalette.BODY)
 		var tx := clampf(at.x - size.x * 0.5, r.position.x, r.end.x - size.x)
-		var row := 0 if tx > row_end[0] + 6.0 else 1
-		row_end[row] = maxf(row_end[row], tx + size.x)
+		var row := CompassMath.label_row(row_end, tx, size.x, 6.0)
 		var ty := at.y + s + 2.0 + line_height * (0.8 + row)
 		_canvas.draw_string_outline(font, Vector2(tx, ty), text, HORIZONTAL_ALIGNMENT_LEFT, -1, UiPalette.BODY, 4, Color(UiPalette.SHADOW, colour.a))
 		_canvas.draw_string(font, Vector2(tx, ty), text, HORIZONTAL_ALIGNMENT_LEFT, -1, UiPalette.BODY, Color(UiPalette.TEXT, colour.a))
