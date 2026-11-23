@@ -351,6 +351,10 @@ func _on_player_ready(player: PlayerController, local: bool) -> void:
 		var health := player.get_node_or_null("Health") as HealthComponent
 		if health != null:
 			health.died.connect(_server_died.bind(player))
+	# Before the spawn is announced: HUD rows built on `player.spawned` (glowstick, charge
+	# hints) read their key caps from the InputMap once, and showed "?" when this came after.
+	if local:
+		InputBindings.register(player.config.get("bindings", {}), &"player")
 	# Other modules (weapons, world viewer, later inventory) equip players through this.
 	EventBus.publish(&"player.spawned", {"player": player, "local": local})
 	var bot := _bot_behaviour()
@@ -371,7 +375,6 @@ func _on_player_ready(player: PlayerController, local: bool) -> void:
 
 
 func _setup_local(player: PlayerController) -> void:
-	InputBindings.register(player.config.get("bindings", {}), &"player")
 	var hud := PlayerHud.new()
 	hud.name = "Hud"
 	hud.player = player

@@ -67,6 +67,20 @@ static func spread(xs: Array[float], gap: float, low: float, high: float) -> Arr
 	return out
 
 
+## The row for a label starting at `tx` and `width` wide, taking labels left to right: the
+## first row whose last label ends at least `gap` before it, or a new row. `row_end` holds
+## where each row ends so far and is updated.
+static func label_row(row_end: Array[float], tx: float, width: float, gap: float) -> int:
+	var row := 0
+	while row < row_end.size() and tx <= row_end[row] + gap:
+		row += 1
+	if row == row_end.size():
+		row_end.append(tx + width)
+	else:
+		row_end[row] = tx + width
+	return row
+
+
 ## For marker positions along the strip (-1 to 1), which ones sit within `gap` of another.
 static func crowded(xs: PackedFloat32Array, gap: float) -> Array[bool]:
 	var out: Array[bool] = []
