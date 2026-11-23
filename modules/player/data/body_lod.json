@@ -1,0 +1,9 @@
+{
+  "_comment": "Clients: how often the bodies of other players, soldiers and civilians are posed (animation, aim, hands on the gun). Your own body is always posed every frame. Closer than near_distance metres and in view: every frame. Up to far_distance: mid_rate times a second. Further: far_rate. Out of view at any distance: off_screen_rate (their shadows can still show). A scope's zoom counts as coming closer. A body is in view while any of a ball of view_radius metres around its middle is.",
+  "near_distance": 15.0,
+  "far_distance": 40.0,
+  "mid_rate": 30.0,
+  "far_rate": 15.0,
+  "off_screen_rate": 10.0,
+  "view_radius": 1.2
+}

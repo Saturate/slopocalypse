@@ -9,6 +9,9 @@ extends Node
 ## enough that a one-frame flicker (a bump while walking) does not pop the pose.
 const BLEND_RATE := 12.0
 const AIM_RATE := 15.0
+## Hand IK side -> the gun's marker for that hand.
+const GRIPS := {&"R": &"GripR", &"L": &"GripL"}
+
 ## Metres climbed per full climb cycle: each hand and foot one rung (0.3 m apart) up. The
 ## climb clip and the hands advance by how far the body has risen, so they keep pace with
 ## any climbing speed, run backwards climbing down and hold when the climber stops.
@@ -35,6 +38,12 @@ const SLUNG := Vector3(-1.2, 0.35, 0.0)
 const NEAR_MARGIN := 0.01
 
 var player: PlayerController
+## Someone else's body: posed less often when far off or out of view (BodyLod). Off for your
+## own, which is posed every frame. Set before adding to the tree.
+var lod := false
+## How many times the body has been posed; tests read it.
+var poses := 0
+
 ## How far from the eye the held gun should sit, as a share of where it was set up to sit:
 ## below 1 nearer, for a view wider than the default, so the sight picture keeps its size on
 ## screen; above 1 is not followed (see _update_ads). The local camera feel sets it; everyone
@@ -42,6 +51,13 @@ var player: PlayerController
 var view_scale := 1.0
 
 var _tree: AnimationTree
+var _skeleton: Skeleton3D
+## Seconds since the body was last posed.
+var _since := 0.0
+var _posed := false
+## Taken off the first wait only, so bodies that arrive together are not all posed on the
+## same frames; never counted as time passing.
+var _lead := 0.0
 var _aim: Node
 var _hand_ik: Node
 var _head: Node3D
@@ -52,12 +68,20 @@ var _slide := 0.0
 var _climb := 0.0
 ## How far through the climb cycle the body is (whole cycles count up the ladder).
 var _climb_phase := 0.0
+## The body's height when last posed. A body posed less often climbs by how far it rose since,
+## not by its speed at one moment times the whole wait, which drifts the hands off the rungs.
+var _climb_y := 0.0
 var _climb_length := 1.0
 var _ads := 0.0
 var _camera: Node3D
 ## The first-person hip point the body was set up with; zero in third person.
 var _default_hip := Vector3.ZERO
 var _hip_read := false
+var _socket: Node3D
+## The held gun's markers (`Sight`, `GripR`, `GripL`), looked up once per gun: a search
+## through the gun's parts every frame was a large share of a crowd's cost.
+var _markers: Dictionary[StringName, Object] = {}
+var _markers_found := false
 
 
 ## How far into aiming down sights the body is, 0 to 1. The camera reads it for its zoom.
@@ -99,13 +123,48 @@ func _ready() -> void:
 	_hand_ik = body.get_node_or_null("Skeleton/HandIK")
 	_head = player.get_node("Head")
 	_camera = player.get_node("Head/Camera")
+	_skeleton = body.get_node("Skeleton")
+	_climb_y = player.global_position.y
+	_socket = PlayerBody.weapon_socket(player)
+	if _socket != null:
+		# A gun is built whole before it goes into the hands, so a change of child is a new gun.
+		_socket.child_order_changed.connect(_forget_markers)
+	if lod:
+		# Posed by hand below, on the frames the body is due.
+		_tree.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+		_skeleton.modifier_callback_mode_process = Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_MANUAL
 	_tree.active = true
 
 
 func _process(delta: float) -> void:
 	var prof := Prof.start()
-	_process_tick(delta)
+	if not lod:
+		_process_tick(delta)
+		poses += 1
+	else:
+		_since += delta
+		# Hidden (a dead soldier until its body goes, someone in a car): nothing to see.
+		if not _skeleton.is_visible_in_tree():
+			Prof.stop(&"player/player_body_animator:frame", prof)
+			return
+		var middle := player.global_position + Vector3.UP
+		if not _posed or _since + _lead >= BodyLod.shared().interval_at(get_viewport(), middle):
+			# Back in view after a long while hidden: one wait's worth, not a jump through every
+			# blend and transition at once.
+			_pose(minf(_since, 1.0 / BodyLod.shared().off_screen_rate))
 	Prof.stop(&"player/player_body_animator:frame", prof)
+
+
+func _pose(delta: float) -> void:
+	_process_tick(delta)
+	_tree.advance(delta)
+	_skeleton.advance(delta)
+	poses += 1
+	_since = 0.0
+	_lead = 0.0
+	if not _posed:
+		_posed = true
+		_lead = fposmod(float(get_instance_id()) * 0.618034, 1.0) / BodyLod.shared().off_screen_rate
 
 
 func _process_tick(delta: float) -> void:
@@ -119,13 +178,13 @@ func _process_tick(delta: float) -> void:
 	_slide = lerpf(_slide, 1.0 if sliding else 0.0, blend)
 	_climb = lerpf(_climb, 1.0 if on_ladder else 0.0, blend)
 	if on_ladder:
-		_climb_phase += player.velocity.y * delta / CLIMB_STRIDE
+		_climb_phase += (player.global_position.y - _climb_y if lod else player.velocity.y * delta) / CLIMB_STRIDE
+	_climb_y = player.global_position.y
 	_tree.set(&"parameters/climb/blend_amount", _climb)
 	_tree.set(&"parameters/climb_seek/seek_request", fposmod(_climb_phase, 1.0) * _climb_length)
 	_face_ladder(delta)
-	var socket := PlayerBody.weapon_socket(player)
-	if socket != null:
-		socket.rotation = socket.rotation.lerp(SLUNG if on_ladder else Vector3.ZERO, blend)
+	if _socket != null:
+		_socket.rotation = _socket.rotation.lerp(SLUNG if on_ladder else Vector3.ZERO, blend)
 	_tree.set(&"parameters/loco/blend_position", speed)
 	_tree.set(&"parameters/crouch_loco/blend_position", speed)
 	_tree.set(&"parameters/crouch/blend_amount", _crouch)
@@ -182,8 +241,7 @@ func _update_ads(delta: float) -> void:
 	if sight != null:
 		# The sight in the space of the bone the weapon hangs from (the socket's parent is
 		# that bone's attachment). Both globals are from this frame, so the lag cancels out.
-		var socket := PlayerBody.weapon_socket(player)
-		_aim.set(&"sight", socket.transform * (socket.global_transform.affine_inverse() * sight.global_position))
+		_aim.set(&"sight", _socket.transform * (_socket.global_transform.affine_inverse() * sight.global_position))
 
 
 ## Tells the hand IK where the held gun wants each hand (its `GripR` / `GripL` markers), in
@@ -194,19 +252,41 @@ func _update_hands() -> void:
 	if player.climbing:
 		_hand_ik.set(&"targets", rail_grips(_climb_phase))
 		return
-	var socket := PlayerBody.weapon_socket(player)
 	var targets := {}
-	if socket != null:
-		for side: StringName in [&"R", &"L"]:
-			var marker := socket.find_child("Grip" + String(side), true, false) as Node3D
+	if _socket != null:
+		for side: StringName in GRIPS:
+			var marker := _marker(GRIPS[side])
 			if marker != null:
-				targets[side] = socket.transform * (socket.global_transform.affine_inverse() * marker.global_position)
+				targets[side] = _socket.transform * (_socket.global_transform.affine_inverse() * marker.global_position)
 	_hand_ik.set(&"targets", targets)
 
 
 func _sight_marker() -> Node3D:
-	var socket := PlayerBody.weapon_socket(player)
-	return socket.find_child("Sight", true, false) as Node3D if socket != null else null
+	return _marker(&"Sight")
+
+
+func _marker(marker_name: StringName) -> Node3D:
+	if _socket == null:
+		return null
+	if not _markers_found:
+		_markers_found = true
+		_markers.clear()
+		for key: StringName in [&"Sight", &"GripR", &"GripL"]:
+			var found := _socket.find_child(String(key), true, false) as Node3D
+			if found != null:
+				_markers[key] = found
+	if not _markers.has(marker_name):
+		return null
+	# Untyped: a freed marker would error on the way into a typed variable.
+	var marker: Variant = _markers[marker_name]
+	if not is_instance_valid(marker):
+		_forget_markers()
+		return _marker(marker_name)
+	return marker as Node3D
+
+
+func _forget_markers() -> void:
+	_markers_found = false
 
 
 ## Turns the body (not the view) to face the ladder being climbed, and back once off it.

@@ -10,12 +10,31 @@ extends Node
 const CONFIG := "res://data/net.json"
 const REQUIRED := {"smooth_delay": TYPE_FLOAT, "smooth_extrapolate": TYPE_FLOAT, "smooth_snap_distance": TYPE_FLOAT}
 
-var delay := 0.05
-var extrapolate := 0.1
-var snap_distance := 5.0
+var delay := 0.05:
+	set(value):
+		delay = value
+		_configure_tracks()
+var extrapolate := 0.1:
+	set(value):
+		extrapolate = value
+		_configure_tracks()
+var snap_distance := 5.0:
+	set(value):
+		snap_distance = value
+		_configure_tracks()
 
-## Synchronizer -> {root, targets: Array of [node, property path, kind], track}.
-var _entries: Dictionary[MultiplayerSynchronizer, Dictionary] = {}
+## One smoothed thing: where its smoothed properties live and what was last shown.
+class Entry:
+	var nodes: Array[Node] = []
+	var properties: Array[NodePath] = []
+	var track := NetSmoothTrack.new()
+	## The values last written, so an unchanged one is not written again: setting a position
+	## moves every node under it, and most of a crowd stands still most of the time.
+	var shown: Array = []
+	## The synchronizer has written different values over the shown ones since.
+	var overwritten := true
+
+var _entries: Dictionary[MultiplayerSynchronizer, Entry] = {}
 
 
 func _ready() -> void:
@@ -51,8 +70,8 @@ func _track(sync: MultiplayerSynchronizer) -> void:
 	var config := sync.replication_config
 	if root == null or config == null:
 		return
-	var targets: Array = []
-	var track := NetSmoothTrack.new()
+	var entry := Entry.new()
+	var track := entry.track
 	for path in config.get_properties():
 		if config.property_get_replication_mode(path) != SceneReplicationConfig.REPLICATION_MODE_ALWAYS:
 			continue
@@ -64,28 +83,44 @@ func _track(sync: MultiplayerSynchronizer) -> void:
 		if not (value is float or value is Vector3):
 			continue
 		if node == root and String(property) == "position":
-			track.snap_index = targets.size()
+			track.snap_index = entry.nodes.size()
 		track.kinds.append(NetSmoothTrack.ANGLE if String(property).begins_with("rotation") else NetSmoothTrack.LINEAR)
-		targets.append([node, property])
-	if targets.is_empty():
+		entry.nodes.append(node)
+		entry.properties.append(property)
+	if entry.nodes.is_empty():
 		return
-	var entry := {"targets": targets, "track": track}
+	_configure(track)
 	_entries[sync] = entry
 	_record(sync)
 	sync.synchronized.connect(_record.bind(sync))
 	sync.tree_exiting.connect(func() -> void: _entries.erase(sync), CONNECT_ONE_SHOT)
 
 
+func _configure(track: NetSmoothTrack) -> void:
+	track.delay = delay
+	track.extrapolate = extrapolate
+	track.snap_distance = snap_distance
+
+
+func _configure_tracks() -> void:
+	for entry: Entry in _entries.values():
+		_configure(entry.track)
+
+
 ## The synchronizer has just written the server's values: keep them, then show the smoothed ones
 ## again in `_process`.
 func _record(sync: MultiplayerSynchronizer) -> void:
-	var entry: Dictionary = _entries.get(sync, {})
-	if entry.is_empty():
+	var entry: Entry = _entries.get(sync)
+	if entry == null:
 		return
 	var values: Array = []
-	for target: Array in entry["targets"]:
-		values.append((target[0] as Node).get_indexed(target[1]))
-	(entry["track"] as NetSmoothTrack).push(_now(), values)
+	values.resize(entry.nodes.size())
+	for i in entry.nodes.size():
+		values[i] = entry.nodes[i].get_indexed(entry.properties[i])
+	entry.track.push(_now(), values)
+	# Only matters when the server's values differ from those shown (something moving).
+	if values != entry.shown:
+		entry.overwritten = true
 
 
 func _process(_delta: float) -> void:
@@ -93,13 +128,13 @@ func _process(_delta: float) -> void:
 		return
 	var t := Prof.start()
 	var now := _now()
-	for entry: Dictionary in _entries.values():
-		var track: NetSmoothTrack = entry["track"]
-		track.delay = delay
-		track.extrapolate = extrapolate
-		track.snap_distance = snap_distance
-		var values := track.sample(now)
-		var targets: Array = entry["targets"]
+	for entry: Entry in _entries.values():
+		var values := entry.track.sample(now)
+		var shown := entry.shown
+		var all := entry.overwritten or shown.size() != values.size()
 		for i in values.size():
-			(targets[i][0] as Node).set_indexed(targets[i][1], values[i])
+			if all or values[i] != shown[i]:
+				entry.nodes[i].set_indexed(entry.properties[i], values[i])
+		entry.shown = values
+		entry.overwritten = false
 	Prof.stop(&"net/smoothing", t)

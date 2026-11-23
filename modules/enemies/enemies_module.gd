@@ -352,6 +352,7 @@ func _set_up(enemy: PlayerController, home: Vector3, info: Dictionary = {}) -> v
 		var animator := PlayerBodyAnimator.new()
 		animator.name = "BodyAnimator"
 		animator.player = enemy
+		animator.lod = true
 		enemy.add_child(animator)
 
 
@@ -382,6 +383,7 @@ func _on_civilian_ready(person: PlayerController, home: Vector3, info: Dictionar
 		var animator := PlayerBodyAnimator.new()
 		animator.name = "BodyAnimator"
 		animator.player = person
+		animator.lod = true
 		person.add_child(animator)
 
 

@@ -84,14 +84,16 @@ func _exit_tree() -> void:
 
 func _on_player_spawned(p: Dictionary) -> void:
 	var player: PlayerController = p["player"]
+	var local: bool = p.get("local", false)
+	if local:
+		_local_player = player
 	var thrower := ChargeThrower.new()
 	thrower.name = "ChargeThrower"
 	thrower.holder = player
 	thrower.charges_parent = self
 	player.add_child(thrower)
-	var local: bool = p.get("local", false)
-	if local:
-		_local_player = player
+	if _is_copy(player):
+		_stop_ticking(thrower)
 	var peer := int(player.get_meta(&"peer_id", 1))
 	# Civilians carry nothing.
 	if p.get("unarmed", false):
@@ -112,6 +114,22 @@ func _on_player_spawned(p: Dictionary) -> void:
 	modding.peer = int(player.get_meta(&"peer_id", 1))
 	modding.player = player
 	add_child(modding)
+
+
+## Someone else on a client: the server fires their guns and places their charges and
+## replays what happened, so the gun and thrower logic here would only tick rules nobody reads
+## (and, unticked, a reload started on a copy would never end).
+func _is_copy(player: PlayerController) -> bool:
+	return not multiplayer.is_server() and player != _local_player
+
+
+## Godot switches physics on at `ready` for a script with `_physics_process`, so a switch-off
+## before then would not hold.
+static func _stop_ticking(node: Node) -> void:
+	if node.is_node_ready():
+		node.set_physics_process(false)
+	else:
+		node.ready.connect(node.set_physics_process.bind(false), CONNECT_ONE_SHOT)
 
 
 ## The build `peer` carries in a weapon slot ("primary" or "secondary"): theirs once known
@@ -435,7 +453,9 @@ func _equip(player: PlayerController, slots: Dictionary) -> void:
 		weapon.stats["ads_spread_multiplier"] = float(receiver["ads_spread_multiplier"])
 	weapon.set_meta(&"build", slots)
 	camera.add_child(weapon)
-	if old != null:
+	if _is_copy(player):
+		_stop_ticking(weapon)
+	elif old != null:
 		weapon.rules.start_empty_reload()
 	weapon.active = drawn_slot(player) == slot
 	if weapon.active:

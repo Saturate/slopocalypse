@@ -166,6 +166,16 @@ func test_a_removed_limb_loses_its_physics_and_stays_collapsed_once_settled() ->
 	assert_float(corpse.skeleton.get_bone_pose_scale(corpse.skeleton.find_bone("UpperArm_R")).x).is_equal_approx(1.0, 0.01)
 
 
+func test_a_corpse_of_a_body_posed_by_hand_still_moves_as_it_falls() -> void:
+	# Far-off bodies on a client are posed by hand (BodyLod); their ragdoll must not inherit it.
+	(_player.get_node("Body/Skeleton") as Skeleton3D).modifier_callback_mode_process = Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_MANUAL
+	var corpse := Corpse.from_body(_player, Vector3(2.0, 1.0, 0.0))
+	var runs := [0]
+	corpse.simulator.modification_processed.connect(func() -> void: runs[0] += 1)
+	await _frames(10)
+	assert_int(runs[0]).is_greater(0)
+
+
 func test_it_says_where_it_lies_while_falling_and_once_settled() -> void:
 	var corpse := Corpse.from_body(_player, Vector3(2.0, 1.0, 0.0))
 	await _frames(30)

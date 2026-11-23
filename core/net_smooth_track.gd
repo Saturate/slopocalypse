@@ -41,7 +41,8 @@ func push(time: float, values: Array) -> void:
 	_values.append(values.duplicate())
 
 
-## Values to show at `now`; empty before the first update.
+## Values to show at `now`; empty before the first update. Read only: it can be the stored
+## update itself.
 func sample(now: float) -> Array:
 	if _times.is_empty():
 		return []
@@ -51,23 +52,29 @@ func sample(now: float) -> Array:
 		_times.pop_front()
 		_values.pop_front()
 	if _times.size() == 1 or t <= _times[0]:
-		return _values[0 if t <= _times[0] else -1].duplicate()
+		return _values[0] if t <= _times[0] else _values[-1]
 	if t >= _times[-1]:
 		var a := _values[-2]
 		var b := _values[-1]
+		# Standing still: nothing to carry on with, and no new array to make.
+		if a == b:
+			return b
 		var span := _times[-1] - _times[-2]
 		var past := minf(t - _times[-1], extrapolate)
 		return _mix(a, b, 1.0 + past / span)
 	for i in range(_times.size() - 1):
 		if t < _times[i + 1]:
+			if _values[i] == _values[i + 1]:
+				return _values[i]
 			return _mix(_values[i], _values[i + 1], (t - _times[i]) / (_times[i + 1] - _times[i]))
-	return _values[-1].duplicate()
+	return _values[-1]
 
 
 func _mix(a: Array, b: Array, k: float) -> Array:
 	var out: Array = []
+	out.resize(a.size())
 	for i in a.size():
-		out.append(_blend(a[i], b[i], k, kinds[i] if i < kinds.size() else LINEAR))
+		out[i] = _blend(a[i], b[i], k, kinds[i] if i < kinds.size() else LINEAR)
 	return out
 
 
