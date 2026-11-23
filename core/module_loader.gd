@@ -4,7 +4,7 @@ extends RefCounted
 ## A module loads when its flag is on (or it has none) and every dependency loads.
 ##
 ## Besides `id`, `depends_on`, `flag` and `entry`, a manifest may declare what other parts of
-## the game reach in it, so they go with its folder (docs/decisions/0019):
+## the game reach in it, so they go with its folder (docs/decisions/0020):
 ## - `debug_calls`: methods on its entry node the debug API's `call` may run, e.g.
 ##   `["server_state", "lit_of"]` (reached as "<id>:<method>").
 ## - `settings`: player settings it reads, each `{key, type, default, label, order}`. The

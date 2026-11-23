@@ -13,7 +13,7 @@ Architecture rules live in `AGENTS.md`; this skill is the how-to and the list of
 ## Adding a module
 
 1. Copy `modules/example/` to `modules/<id>/`.
-2. Edit `module.json`: `id`, `depends_on` (module ids), `flag` (empty string means always on), `entry` (script extending `Node`). Optional, see docs/decisions/0019:
+2. Edit `module.json`: `id`, `depends_on` (module ids), `flag` (empty string means always on), `entry` (script extending `Node`). Optional, see docs/decisions/0020:
    - `debug_calls`: methods on the entry node the debug API's `call` may run (`["server_give", "count"]`, reached as `<id>:<method>`).
    - `settings`: player settings the module reads, `[{"key": "compass", "type": "bool", "default": true, "label": "Compass", "order": 20}]`. The settings screen shows one toggle each while the flag is on, in its toggle list by `order`; read the value with `Settings.value("compass")` and listen for `settings.changed`.
 3. Add the flag to `data/features.json`.
