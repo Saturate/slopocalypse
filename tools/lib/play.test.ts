@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { Game as ApiGame } from "./debug-api.ts";
-import { apiForLog, findScenarios, flatDistance, float, ONE_SHOTS, godotValue, roundsFired, SLOW_WITHIN_M, steer, WALK_SPEED, walkTimeoutMs, WEAPON_SLOTS, makeExpect, nodePath, parsePlayArgs, parseState, parseVec3, PlaytestFailure, PORT_BAND, preferredPort, Recorder, scanPlayLog, vec2, vec3, yawPitchTo } from "./play.ts";
+import { apiForLog, findScenarios, flatDistance, float, ONE_SHOTS, godotValue, headlessSkip, roundsFired, SLOW_WITHIN_M, steer, WALK_SPEED, walkTimeoutMs, WEAPON_SLOTS, makeExpect, nodePath, parsePlayArgs, parseState, parseVec3, PlaytestFailure, PORT_BAND, preferredPort, Recorder, scanPlayLog, vec2, vec3, yawPitchTo } from "./play.ts";
 import { finalStatus, reportMarkdown, reviewMarkdown, summarisePerf, type Report } from "./play-report.ts";
 
 test("arguments: a scenario and options", () => {
@@ -15,6 +15,12 @@ test("arguments: a scenario and options", () => {
 	assert.throws(() => parsePlayArgs(["a", "--port", "x"]), /positive whole number/);
 	assert.throws(() => parsePlayArgs(["a", "--nope"]), /unknown option/);
 	assert.throws(() => parsePlayArgs(["../escape"]), /lower-case words/);
+});
+
+test("a scenario about what is drawn is skipped in a headless run, not failed", () => {
+	assert.match(headlessSkip({ title: "markers", screen: true }, true) ?? "", /draws on screen/);
+	assert.equal(headlessSkip({ title: "markers", screen: true }, false), undefined);
+	assert.equal(headlessSkip({ title: "state only" }, true), undefined);
 });
 
 test("scenarios are found in their modules, a folder without module.json is skipped, a clash is an error", () => {

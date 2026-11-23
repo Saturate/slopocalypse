@@ -195,8 +195,23 @@ func _follow_sun() -> void:
 	_material.set_shader_parameter(&"to_sun", toward)
 
 
+## On a client, its own player; null on a server or offline. A client streams ground round
+## its camera only (the server follows everyone), so one with no camera (headless: playtests
+## with --headless, bots, net tests) follows this instead, or it builds nothing but the camp.
+static func own_player_on_client(node: Node) -> Node3D:
+	var mp := node.multiplayer
+	if not mp.has_multiplayer_peer() or mp.is_server():
+		return null
+	var me := mp.get_unique_id()
+	for n in node.get_tree().get_nodes_in_group(&"players"):
+		if n is Node3D and int(n.get_meta(&"peer_id", 0)) == me:
+			return n as Node3D
+	return null
+
+
 ## A marker that keeps the ground built around it (for cameras in captures and harnesses;
-## players, enemies and vehicles are followed already).
+## the camera, or a headless client's own player, and on the server every player, enemy and
+## vehicle are followed already).
 func make_viewer() -> Node3D:
 	var viewer := Node3D.new()
 	viewer.name = "VoxelViewer"
@@ -675,10 +690,13 @@ func _voxel_for(distance: float) -> float:
 
 func _focus_points() -> Array[Vector3]:
 	var out: Array[Vector3] = []
-	if _visual:
-		var cam := get_viewport().get_camera_3d()
-		if cam != null:
-			out.append(cam.global_position)
+	var cam := get_viewport().get_camera_3d() if _visual else null
+	if cam != null:
+		out.append(cam.global_position)
+	else:
+		var own := own_player_on_client(self)
+		if own != null:
+			out.append(own.global_position)
 	var groups: Array[StringName] = [&"terrain_focus"]
 	if not multiplayer.has_multiplayer_peer() or multiplayer.is_server():
 		groups.append_array([&"players", &"enemies", &"vehicles"] as Array[StringName])

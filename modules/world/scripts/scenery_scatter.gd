@@ -289,10 +289,14 @@ func loaded_chunks() -> Array[int]:
 
 func _focus_points() -> Array[Vector3]:
 	var out: Array[Vector3] = []
-	if _visual:
-		var cam := get_viewport().get_camera_3d()
-		if cam != null:
-			out.append(cam.global_position)
+	var cam := get_viewport().get_camera_3d() if _visual else null
+	if cam != null:
+		out.append(cam.global_position)
+	else:
+		# Trees and rocks block shots and sight on a headless client too.
+		var own := VoxelWorld.own_player_on_client(self)
+		if own != null:
+			out.append(own.global_position)
 	# Before a client has connected there is no peer to ask, and nothing to follow yet.
 	if multiplayer.has_multiplayer_peer() and multiplayer.is_server():
 		for group: StringName in [&"players", &"vehicles"]:
