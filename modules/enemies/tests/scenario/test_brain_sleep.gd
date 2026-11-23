@@ -192,5 +192,5 @@ class FakeCars:
 	extends Node
 	var spot := Vector3.ZERO
 
-	func exit_spot_of(_player: Node3D) -> Variant:
+	func car_spot_of(_player: Node3D) -> Variant:
 		return spot

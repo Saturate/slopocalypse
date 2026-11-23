@@ -213,6 +213,16 @@ func exit_spot_of(player: Node3D) -> Variant:
 	return null
 
 
+## Where the car `player` sits in is, or null when they are in no car: where a seated player
+## counts as being for relevance and sleeping (`PlayerSpot`). Cheaper than `exit_spot_of`,
+## which looks for room beside the doors.
+func car_spot_of(player: Node3D) -> Variant:
+	for car in _cars:
+		if car.seat_of(player) != &"":
+			return car.global_position
+	return null
+
+
 ## Every taken seat as {car, seat, player}, the nodes as paths: what a late joiner needs.
 func occupied_seats() -> Array[Dictionary]:
 	var seats: Array[Dictionary] = []
