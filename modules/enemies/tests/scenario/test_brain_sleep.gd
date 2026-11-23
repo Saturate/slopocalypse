@@ -157,8 +157,12 @@ func test_falling_asleep_mid_burst_stops_the_gun() -> void:
 
 
 func test_a_brain_stopped_by_something_else_is_not_woken_by_a_shot() -> void:
+	# With nobody connected the first sweep (due after `every`) would put the soldier to
+	# sleep itself, and a sleeper is meant to wake; keep the sweep out of it.
+	_sleep.set_physics_process(false)
 	var enemy := await _soldier()
 	var brain := enemy.get_node("Brain") as EnemyBrain
+	assert_bool(BrainSleep.is_asleep(enemy)).is_false()
 	brain.set_physics_process(false)
 	EventBus.publish(&"explosion", {"position": enemy.global_position + Vector3(2, 0, 0), "radius": 2.0})
 	assert_bool(brain.is_physics_processing()).is_false()
