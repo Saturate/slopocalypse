@@ -73,7 +73,7 @@ async function hiddenAt(t: { s: Session; ana: Game }, at: Vec3): Promise<Marker 
 	return m !== undefined && !m.inSight ? m : undefined;
 }
 
-export default playtest({ title: "Co-op partner marker: through a building at range, hidden up close", needs: ["coop_marker"] }, async (t) => {
+export default playtest({ title: "Co-op partner marker: through a building at range, hidden up close", needs: ["coop_marker"], screen: true }, async (t) => {
 	// Soldiers off: a firefight at the spawn would fill the frame and could kill either of them.
 	const s = await t.session({ clients: ["Ana", "Bo"], start: "city", time: "day", args: ["--flags=enemies:off"] });
 	const ana = s.client("Ana");

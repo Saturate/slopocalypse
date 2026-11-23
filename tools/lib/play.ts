@@ -945,6 +945,15 @@ export interface PlaytestMeta {
 	needs?: readonly string[];
 	// Error lines that are expected in this scenario's logs (the gate's own noise always is).
 	allowErrors?: readonly RegExp[];
+	// Every check in the scenario is about what a client draws (markers, body poses): a
+	// headless client draws none of it, so a --headless run is skipped, not failed. A scenario
+	// with state checks worth running headless guards its drawn ones with `t.headless` instead.
+	screen?: boolean;
+}
+
+// Why a run of a scenario with this meta is skipped in this mode, or undefined when it runs.
+export function headlessSkip(meta: PlaytestMeta, headless: boolean): string | undefined {
+	return headless && meta.screen === true ? "the scenario checks what a client draws on screen; headless clients draw nothing" : undefined;
 }
 
 export interface PlayContext {
@@ -980,6 +989,8 @@ export interface RunConfig {
 	// --keep: the processes outlive the scenario until Ctrl-C, so their own backstop is long.
 	keep: boolean;
 	needs: readonly string[];
+	// Set from the scenario's meta through headlessSkip: why this run is skipped, if it is.
+	skip?: string | undefined;
 }
 
 interface Proc {
@@ -1086,6 +1097,7 @@ export class PlayRun {
 	async openSession(opts: SessionOptions): Promise<Session> {
 		if (this.opened) throw new Error("one session per playtest run");
 		this.opened = true;
+		if (this.cfg.skip !== undefined) throw new PlaytestSkip(this.cfg.skip);
 		if (opts.clients.length === 0) throw new Error("a session needs at least one client");
 		if (new Set(opts.clients).size !== opts.clients.length || opts.clients.some((n) => !/^[A-Za-z][A-Za-z0-9]*$/.test(n))) throw new Error(`client names must be distinct single words: ${opts.clients.join(", ")}`);
 		const shared = [...(opts.start !== undefined ? [`--start=${opts.start}`] : []), ...(opts.args ?? [])];

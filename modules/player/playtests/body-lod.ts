@@ -38,7 +38,7 @@ async function placeAnaAhead(s: Session, home: Vec3, ahead: readonly [number, nu
 	await s.lookAt("Bo", "Ana");
 }
 
-export default playtest({ title: "Body LOD: far and off-screen bodies posed less often, still whole", needs: ["glowsticks", "inventory", "daytime", "weapons"] }, async (t) => {
+export default playtest({ title: "Body LOD: far and off-screen bodies posed less often, still whole", needs: ["glowsticks", "inventory", "daytime", "weapons"], screen: true }, async (t) => {
 	const s = await t.session({ clients: ["Ana", "Bo"], time: "day", args: ["--flags=enemies:off"] });
 	const bo = s.client("Bo");
 	const ana = s.client("Ana");

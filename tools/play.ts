@@ -3,7 +3,8 @@
 // build/play/<scenario>/<time>/: report.json, report.md, review.md, shots/ and logs/.
 //   node tools/play.ts <scenario> [--headless] [--keep] [--port N] [--timeout SECONDS]
 //   node tools/play.ts --list
-// --headless: clients without windows (state checks only; screenshots are not taken).
+// --headless: clients without windows (state checks only; screenshots are not taken, and a
+// scenario marked `screen: true`, about what a client draws, is skipped).
 // --keep: leave the game running after the scenario, for a look through the debug API (MCP),
 // until Ctrl-C. Not part of the gate: it opens windows. Hand review.md to a reviewer that has
 // not seen the code (see .claude/skills/visual-review/SKILL.md).
@@ -14,7 +15,7 @@ import { pathToFileURL } from "node:url";
 import { localGodot } from "./lib/godot.ts";
 import { freeUdpPort } from "./lib/net.ts";
 import { finalStatus, reportMarkdown, reviewMarkdown, type Report, type Status } from "./lib/play-report.ts";
-import { findScenarios, parsePlayArgs, PlayRun, Playtest, PlaytestSkip, preferredPort } from "./lib/play.ts";
+import { findScenarios, headlessSkip, parsePlayArgs, PlayRun, Playtest, PlaytestSkip, preferredPort } from "./lib/play.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const DEFAULT_TIMEOUT_S = 600;
@@ -44,7 +45,7 @@ async function main(): Promise<number> {
 	const outDir = join(playDir, args.scenario, stamp);
 	const port = await freeUdpPort(args.port ?? preferredPort(Math.random()));
 	const timeoutMs = (args.timeoutSeconds ?? DEFAULT_TIMEOUT_S) * 1000;
-	const run = new PlayRun({ root, godot, outDir, port, headless: args.headless, timeoutMs, keep: args.keep, needs: test.meta.needs ?? [] });
+	const run = new PlayRun({ root, godot, outDir, port, headless: args.headless, timeoutMs, keep: args.keep, needs: test.meta.needs ?? [], skip: headlessSkip(test.meta, args.headless) });
 	const started = new Date();
 	console.log(`playtest ${args.scenario}: ${test.meta.title}\n  output: ${relative(root, outDir)}`);
 
