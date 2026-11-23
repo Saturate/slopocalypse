@@ -19,6 +19,7 @@ The other half of the experiment is control: how much structure does it take bef
 - **Tests first.** Behaviour gets a failing test before the code, so "it works" means something.
 - **Small, deletable modules.** Each feature lives in its own folder and talks to the rest only through events, and the gate boots the game with every optional module off. Slop stays local, and a bad module can be deleted.
 - **Eyes that didn't write it.** Visual changes are captured to a contact sheet and judged by a fresh agent that never saw the code.
+- **Scripted playtests.** `node tools/play.ts <scenario>` starts a real server and named clients, drives them, checks game state and takes screenshots with what each should show, for that same kind of reviewer.
 - **No magic numbers.** Gameplay values live in `data/`, so tuning doesn't mean digging through generated code.
 - **One issue, one branch, one pull request.** Every change is small and traceable.
 

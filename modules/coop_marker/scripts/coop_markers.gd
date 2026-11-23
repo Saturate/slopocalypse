@@ -56,6 +56,11 @@ func _process(delta: float) -> void:
 	Prof.stop(&"coop_marker/markers:frame", prof)
 
 
+## The markers as last drawn: items() plus `shown`, the alpha each is drawn with.
+func drawn() -> Array[Dictionary]:
+	return _items.duplicate(true)
+
+
 ## A marker per partner now: {id, name, distance, metres, in_sight, alpha (the rules' target),
 ## ahead (in front of the camera), at (screen position of the marker's tip)}. Empty without a
 ## camera or a living local player.

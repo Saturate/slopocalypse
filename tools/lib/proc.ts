@@ -17,6 +17,8 @@ export interface RunOptions {
 	children?: "wait" | "kill";
 	// Sees the output as it comes, for a caller that waits for a line before going on.
 	onOutput?: (text: string) => void;
+	// Gets the process id once it has started, for a caller that ends it itself (killTree).
+	onSpawn?: (pid: number) => void;
 }
 
 const isWindows = platform === "win32";
@@ -60,6 +62,7 @@ export function run(cmd: string, args: readonly string[], opts: RunOptions): Pro
 		const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env ?? process.env, stdio: ["ignore", "pipe", "pipe"], detached: !isWindows, windowsHide: true });
 		const pid = child.pid;
 		if (pid !== undefined && !isWindows) live.add(pid);
+		if (pid !== undefined) opts.onSpawn?.(pid);
 		let output = "";
 		let timedOut = false;
 		let settled = false;
