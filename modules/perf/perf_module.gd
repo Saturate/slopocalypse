@@ -8,6 +8,10 @@ extends Node
 ## at once, then the slowest of the rest each second, so lines can trail samples by a second.
 ## Clients get an overlay (F3).
 ##
+## Each sample also splits the mean frame into a budget (PerfBudget: scripts, physics, render,
+## other; GPU beside it), sums zones by module, and on a client counts what the visible pass
+## and the shadow passes drew. Drivers that cannot time the GPU (Metal) leave `gpu_ms` out.
+##
 ## Other code reads the newest sample through the `perf_api` group: `latest()`, `sampled`.
 ## `-- --perf-log=PATH` writes to that file instead, and `--uncapped` turns off vsync and the
 ## idle sleep between frames, so frame times are work, not waiting (tools/bench.ts uses both).
@@ -18,6 +22,15 @@ const REQUIRED := {"sample_seconds": TYPE_FLOAT, "spike_ms": TYPE_FLOAT, "warmup
 const SPIKE_GAP_SECONDS := 1.0
 ## Zones listed on a spike line, most expensive first.
 const SPIKE_ZONES := 5
+## Godot 4.7's Metal driver has no timestamp queries (its query pool returns zeros), so the
+## GPU time it reports is always 0, not a measurement.
+const GPU_UNTIMED_DRIVERS: Array[String] = ["metal"]
+## What viewport_get_render_info counts, under the names the log uses.
+const RENDER_INFO := {
+	"objects": RenderingServer.VIEWPORT_RENDER_INFO_OBJECTS_IN_FRAME,
+	"primitives": RenderingServer.VIEWPORT_RENDER_INFO_PRIMITIVES_IN_FRAME,
+	"draw_calls": RenderingServer.VIEWPORT_RENDER_INFO_DRAW_CALLS_IN_FRAME,
+}
 const PIPELINE_MONITORS := {
 	"canvas": Performance.PIPELINE_COMPILATIONS_CANVAS,
 	"mesh": Performance.PIPELINE_COMPILATIONS_MESH,
@@ -50,6 +63,17 @@ var _nodes_usec := 0
 var _ticks := 0
 ## Frames since the last sample: synchronizers send their every-frame properties once each.
 var _frames := 0
+## Frame budget, microseconds this sample (see PerfBudget). `Prof.covered_usec()` read at
+## each mark takes the zones' time out of the physics parts, so nothing counts twice.
+var _scripts_usec := 0
+var _physics_usec := 0
+var _render_usec := 0
+var _covered_last_frame := 0
+var _covered_at_tick := 0
+## When the last tick's nodes finished (0: not in the engine's part of a tick).
+var _nodes_ended := 0
+var _covered_at_nodes_end := 0
+var _draw_began := 0
 
 
 func _ready() -> void:
@@ -74,7 +98,11 @@ func _ready() -> void:
 	# Godot emits physics_frame just before nodes run their physics; a probe with the highest
 	# priority runs last. The time between is all nodes' _physics_process; the rest of the
 	# physics tick is the engine (the physics server's step, sync and callbacks).
-	get_tree().physics_frame.connect(func() -> void: _tick_began = Time.get_ticks_usec())
+	get_tree().physics_frame.connect(_on_physics_frame)
+	get_tree().process_frame.connect(_on_process_frame)
+	RenderingServer.frame_pre_draw.connect(_on_pre_draw)
+	RenderingServer.frame_post_draw.connect(_on_post_draw)
+	_covered_last_frame = Prof.covered_usec()
 	var probe := Node.new()
 	probe.name = "TickProbe"
 	probe.process_physics_priority = 2147483647
@@ -92,6 +120,10 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	for pair: Array in [[RenderingServer.frame_pre_draw, _on_pre_draw], [RenderingServer.frame_post_draw, _on_post_draw]]:
+		var sig: Signal = pair[0]
+		if sig.is_connected(pair[1]):
+			sig.disconnect(pair[1])
 	if _file != null:
 		# A bench run often ends right after the hitch it is about.
 		var spike := _sampler.take_spike()
@@ -120,11 +152,15 @@ func _process(delta: float) -> void:
 	_uptime += delta
 	_sampler.add_frame(ms)
 	_frames += 1
+	var covered := Prof.covered_usec()
+	var frame_scripts := covered - _covered_last_frame
+	_covered_last_frame = covered
+	_scripts_usec += frame_scripts
 	# The zones that ran since this point last frame: what the frame just measured was doing.
 	var frame_zones := Prof.take_frame(SPIKE_ZONES)
 	var compiles := _pipeline_compiles()
 	if ms > float(config["spike_ms"]) and _uptime > float(config["warmup_seconds"]):
-		var line := {"t": snappedf(_uptime, 0.001), "spike_ms": snappedf(ms, 0.01), "nodes": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)), "zones": frame_zones}
+		var line := {"t": snappedf(_uptime, 0.001), "spike_ms": snappedf(ms, 0.01), "scripts_ms": snappedf(frame_scripts / 1000.0, 0.01), "nodes": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)), "zones": frame_zones}
 		if not compiles.is_empty():
 			line["compiles"] = compiles
 		_sampler.offer_spike(line)
@@ -158,8 +194,48 @@ func _pipeline_compiles() -> Dictionary:
 ## Called by the probe at the end of each physics tick's node processing.
 func physics_nodes_done() -> void:
 	if _tick_began > 0:
-		_nodes_usec += Time.get_ticks_usec() - _tick_began
+		var now := Time.get_ticks_usec()
+		var covered := Prof.covered_usec()
+		_nodes_usec += now - _tick_began
+		_physics_usec += maxi(now - _tick_began - (covered - _covered_at_tick), 0)
 		_ticks += 1
+		_nodes_ended = now
+		_covered_at_nodes_end = covered
+
+
+## Godot emits physics_frame just before a tick's nodes run.
+func _on_physics_frame() -> void:
+	_end_engine_step()
+	_tick_began = Time.get_ticks_usec()
+	_covered_at_tick = Prof.covered_usec()
+
+
+func _on_process_frame() -> void:
+	_end_engine_step()
+
+
+## From the end of a tick's nodes to the next tick or the frame's _process: deferred calls,
+## physics-mode timers and tweens, the physics server's step, and between two ticks of one
+## frame the next tick's sync and body callbacks (less any zones those ran). After the last
+## tick it also holds the network receive: SceneTree polls the multiplayer API (RPCs,
+## synchronizer updates, spawns) just before process_frame, with nothing to mark between.
+## The first tick's sync and callbacks come before any mark and land in "other".
+func _end_engine_step() -> void:
+	if _nodes_ended == 0:
+		return
+	var spent := Time.get_ticks_usec() - _nodes_ended
+	_physics_usec += maxi(spent - (Prof.covered_usec() - _covered_at_nodes_end), 0)
+	_nodes_ended = 0
+
+
+func _on_pre_draw() -> void:
+	_draw_began = Time.get_ticks_usec()
+
+
+func _on_post_draw() -> void:
+	if _draw_began > 0:
+		_render_usec += Time.get_ticks_usec() - _draw_began
+		_draw_began = 0
 
 
 func _role() -> String:
@@ -183,6 +259,10 @@ func _sample() -> Dictionary:
 		rec["physics_ticks"] = _ticks
 	_nodes_usec = 0
 	_ticks = 0
+	rec["budget"] = PerfBudget.split(float(rec["frame_ms_mean"]), int(rec["frames"]), _scripts_usec, _physics_usec, _render_usec)
+	_scripts_usec = 0
+	_physics_usec = 0
+	_render_usec = 0
 	rec["nodes"] = int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
 	rec["objects"] = int(Performance.get_monitor(Performance.OBJECT_COUNT))
 	rec["orphans"] = int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT))
@@ -199,7 +279,17 @@ func _sample() -> Dictionary:
 		rec["primitives"] = int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
 		rec["video_mb"] = snappedf(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0, 0.1)
 		var vp := get_viewport().get_viewport_rid()
-		rec["gpu_ms"] = snappedf(RenderingServer.viewport_get_measured_render_time_gpu(vp), 0.01)
+		var driver := RenderingServer.get_current_rendering_driver_name()
+		rec["driver"] = driver
+		if not GPU_UNTIMED_DRIVERS.has(driver):
+			rec["gpu_ms"] = snappedf(RenderingServer.viewport_get_measured_render_time_gpu(vp), 0.01)
+		# The camera's own pass against the shadow maps': which one the objects cost.
+		for pass_name: String in ["visible", "shadow"]:
+			var kind := RenderingServer.VIEWPORT_RENDER_INFO_TYPE_VISIBLE if pass_name == "visible" else RenderingServer.VIEWPORT_RENDER_INFO_TYPE_SHADOW
+			var counts := {}
+			for key: String in RENDER_INFO:
+				counts[key] = RenderingServer.viewport_get_render_info(vp, kind, RENDER_INFO[key])
+			rec[pass_name] = counts
 		rec["render_cpu_ms"] = snappedf(RenderingServer.viewport_get_measured_render_time_cpu(vp) + RenderingServer.get_frame_setup_time_cpu(), 0.01)
 	var peer: ENetMultiplayerPeer = multiplayer.multiplayer_peer as ENetMultiplayerPeer if multiplayer.has_multiplayer_peer() else null
 	if peer != null and peer.host != null:
@@ -217,6 +307,7 @@ func _sample() -> Dictionary:
 	var zones := Prof.take()
 	if not zones.is_empty():
 		rec["zones"] = zones
+		rec["modules"] = PerfBudget.by_module(zones, int(rec["frames"]))
 	var custom := {}
 	for name: StringName in Performance.get_custom_monitor_names():
 		custom[String(name)] = Performance.get_custom_monitor(name)

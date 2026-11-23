@@ -9,8 +9,12 @@ const PORT_TRIES := 50
 const BIND_IP := "127.0.0.1"
 ## User arguments that shape the world and so must match on the server, plus --debug-api so
 ## the solo server can be inspected too, --start= (where the server puts players down) and
-## --bench= (load a benchmark drives on the server).
-const SHARED_PREFIXES: Array[String] = ["--flags=", "--all-optional-off", "--build=", "--save=", "--no-save", "--debug-api", "--range", "--world=", "--map=", "--seed=", "--start=", "--bench="]
+## --bench= (load a benchmark drives on the server) and --perf-spike-ms= (what a bench run
+## counts as a hitch).
+const SHARED_PREFIXES: Array[String] = ["--flags=", "--all-optional-off", "--build=", "--save=", "--no-save", "--debug-api", "--range", "--world=", "--map=", "--seed=", "--start=", "--bench=", "--perf-spike-ms="]
+## `--server-perf-log=PATH` on the client is the server's `--perf-log=PATH` (tools/bench.ts
+## reads both sides of a solo game).
+const SERVER_PERF_LOG := "--server-perf-log="
 
 
 ## Starts the server process. Returns its pid, or -1 when it could not be started.
@@ -36,6 +40,8 @@ static func server_args(port: int, user_args: PackedStringArray, project: String
 	# Godot hides its own --log-file from scripts; this copy tells the game where it logs.
 	args.append("--log-file=%s" % log_file)
 	for arg in user_args:
+		if arg.begins_with(SERVER_PERF_LOG):
+			args.append("--perf-log=" + arg.trim_prefix(SERVER_PERF_LOG))
 		for prefix in SHARED_PREFIXES:
 			if arg.begins_with(prefix):
 				args.append(arg)
