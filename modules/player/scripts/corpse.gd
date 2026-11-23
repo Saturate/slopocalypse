@@ -86,6 +86,9 @@ static func from_body(player: Node3D, push: Vector3, velocity := Vector3.ZERO) -
 	corpse.top_level = true
 	corpse.add_child(copy)
 	corpse.skeleton = copy.get_node("Skeleton") as Skeleton3D
+	# A far-off body on a client is posed by hand (BodyLod); the ragdoll's simulator is a
+	# skeleton modifier and only runs when the skeleton processes on its own.
+	corpse.skeleton.modifier_callback_mode_process = Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_IDLE
 	for mesh in corpse.skeleton.get_children():
 		# Your own first-person body only casts a shadow and its arms take none; dead, it is
 		# seen like anyone's.
