@@ -6,7 +6,7 @@ extends RefCounted
 ## asks for the values (`mouse_scale()`, `value(key)`); boot applies the rest once at
 ## start.
 ##
-## A module's settings go with its folder (docs/decisions/0019): core names none of them. A
+## A module's settings go with its folder (docs/decisions/0020): core names none of them. A
 ## value in the file that no present module registers (its folder is gone) is kept as it was
 ## and written back, so putting the module back finds the player's choice.
 ##

@@ -1,4 +1,4 @@
-// "A module owns everything that names it" (docs/decisions/0019): its playtests, the debug
+// "A module owns everything that names it" (docs/decisions/0020): its playtests, the debug
 // calls it allows and the player settings it registers live in modules/<id>/, so deleting the
 // folder removes them. This finds the three ways that rule has been broken before: a scenario
 // outside its module, a central list of another module's debug calls, and a module's setting
