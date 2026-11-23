@@ -43,6 +43,8 @@ const WALK_STRIDE := 2.6
 const RUN_STRIDE := 3.6
 const CROUCH_STRIDE := 1.6
 const KEYS_PER_CYCLE := 16
+## The climb clip's length, seconds; the animator seeks it rather than playing it.
+const CLIMB_CYCLE := 1.0
 
 ## Rifle hold, in chest space. The rifle sits right of centre with its stock in the right
 ## shoulder; the hands go where the rifle mesh has its pistol grip and handguard, and the
@@ -55,6 +57,12 @@ const R_SHOULDER := Vector3(0.2, 0.17, 0)
 const L_SHOULDER := Vector3(-0.2, 0.17, -0.03)
 const UPPER_ARM := 0.31
 const FOREARM := 0.31
+## The armband (#447): a chunky ring over the shoulder and most of the upper arm, in bone
+## space along the arm. A person is about 25 pixels tall at 30 m, so anything slimmer than
+## this shrinks to a pixel and its colour is lost by day.
+const BAND_FROM := 0.0
+const BAND_TO := 0.26
+const BAND_WIDTH := 0.17
 const R_ELBOW_POLE := Vector3(1.0, -1.0, 0.3)
 const L_ELBOW_POLE := Vector3(-0.6, -1.0, 0.0)
 
@@ -189,6 +197,13 @@ func _build_mesh() -> void:
 		_weight(arms, "Hand_" + side)
 		_box(arms, "Hand_" + side, Vector3(0.09, 0.11, 0.06), 0.014, Vector3(0, 0.02, 0), GLOVE)
 
+	# The armband is its own mesh so a uniform tint (a material override on Mesh and Arms)
+	# leaves it alone, and each body colours it by side (Armband).
+	var band := LowPoly.begin()
+	for side in ["R", "L"]:
+		_weight(band, "UpperArm_" + side)
+		_box(band, "UpperArm_" + side, Vector3(BAND_WIDTH, BAND_TO - BAND_FROM, BAND_WIDTH), 0.012, Vector3(0, (BAND_FROM + BAND_TO) * 0.5, 0), Color.WHITE)
+
 	for side in [["L", -1.0], ["R", 1.0]]:
 		var upper: String = "UpperLeg_" + side[0]
 		var lower: String = "LowerLeg_" + side[0]
@@ -206,7 +221,7 @@ func _build_mesh() -> void:
 
 	var skin := _skel.create_skin_from_rest_transforms()
 	var material := LowPoly.material(0.85)
-	for part in [["Mesh", st], ["Arms", arms]]:
+	for part in [["Mesh", st], ["Arms", arms], ["Band", band]]:
 		var inst := MeshInstance3D.new()
 		inst.name = part[0]
 		inst.mesh = LowPoly.finish(part[1], material)
@@ -226,6 +241,9 @@ func _build_clips(data: Dictionary) -> AnimationLibrary:
 	lib.add_animation(&"crouch_walk", _clip(CROUCH_STRIDE / float(data["crouch_speed"]), _crouch_walk, true))
 	lib.add_animation(&"slide", _clip(1.0, _slide, true))
 	lib.add_animation(&"fall", _clip(1.0, _fall, false))
+	# One cycle per CLIMB_CYCLE seconds of clip; the animator seeks it by how far the body has
+	# climbed, so its pace follows the climb and it holds still when the climber does.
+	lib.add_animation(&"climb", _clip(CLIMB_CYCLE, _climb, true))
 	return lib
 
 
@@ -274,6 +292,18 @@ func _slide(_p: float) -> Dictionary:
 	# Leading leg out straight, the other folded under, leaning back into the slide.
 	return {"Spine": Vector3(28, 0, 0), "Chest": Vector3(8, 0, 0), "Head": Vector3(-30, 0, 0),
 		"UpperLeg_L": Vector3(70, 0, 0), "LowerLeg_L": Vector3(-5, 0, 0), "UpperLeg_R": Vector3(30, 0, 10), "LowerLeg_R": Vector3(-125, 0, 0)}
+
+
+func _climb(p: float) -> Dictionary:
+	# Facing the rungs, leaning in a little, each knee lifting to the next rung in turn; the
+	# left foot is highest at p = 0, the right half a cycle later. Hips held where they are
+	# (the feet are on rungs, not on the ground).
+	var pose := {"Spine": Vector3(-6, 0, 0), "Chest": Vector3(-4, 0, 0), "Head": Vector3(14, 0, 0), "airborne": true}
+	for side in [["L", 0.0, -4.0], ["R", 0.5, 4.0]]:
+		var lift := 0.5 + 0.5 * cos(TAU * (p + float(side[1])))
+		pose["UpperLeg_" + side[0]] = Vector3(12 + 58 * lift, 0, float(side[2]))
+		pose["LowerLeg_" + side[0]] = Vector3(-(18 + 82 * lift), 0, 0)
+	return pose
 
 
 func _fall(_p: float) -> Dictionary:
@@ -327,7 +357,8 @@ func _grounded_hips(pose: Dictionary) -> float:
 
 # --- Blend tree --------------------------------------------------------------------------
 
-## loco (idle/walk/run by speed) -> crouch blend -> air blend -> slide blend -> output.
+## loco (idle/walk/run by speed) -> crouch blend -> air blend -> slide blend -> climb blend
+## -> output. The climb pose sits behind a seek node: the animator sets its phase.
 ## The animator drives the blend parameters from the player's synced state.
 func _build_tree(data: Dictionary) -> AnimationNodeBlendTree:
 	var tree := AnimationNodeBlendTree.new()
@@ -346,7 +377,10 @@ func _build_tree(data: Dictionary) -> AnimationNodeBlendTree:
 	tree.add_node(&"crouch_loco", crouch_loco, Vector2(0, 200))
 	tree.add_node(&"fall", _play(&"fall"), Vector2(200, 300))
 	tree.add_node(&"slide_pose", _play(&"slide"), Vector2(400, 300))
-	for blend in [[&"crouch", Vector2(200, 100)], [&"air", Vector2(400, 100)], [&"slide", Vector2(600, 100)]]:
+	tree.add_node(&"climb_pose", _play(&"climb"), Vector2(600, 300))
+	tree.add_node(&"climb_seek", AnimationNodeTimeSeek.new(), Vector2(700, 300))
+	tree.connect_node(&"climb_seek", 0, &"climb_pose")
+	for blend in [[&"crouch", Vector2(200, 100)], [&"air", Vector2(400, 100)], [&"slide", Vector2(600, 100)], [&"climb", Vector2(800, 100)]]:
 		tree.add_node(blend[0], AnimationNodeBlend2.new(), blend[1])
 	tree.connect_node(&"crouch", 0, &"loco")
 	tree.connect_node(&"crouch", 1, &"crouch_loco")
@@ -354,7 +388,9 @@ func _build_tree(data: Dictionary) -> AnimationNodeBlendTree:
 	tree.connect_node(&"air", 1, &"fall")
 	tree.connect_node(&"slide", 0, &"air")
 	tree.connect_node(&"slide", 1, &"slide_pose")
-	tree.connect_node(&"output", 0, &"slide")
+	tree.connect_node(&"climb", 0, &"slide")
+	tree.connect_node(&"climb", 1, &"climb_seek")
+	tree.connect_node(&"output", 0, &"climb")
 	return tree
 
 

@@ -46,9 +46,9 @@ func test_ground_tiles_darken_at_the_foot_of_a_step() -> void:
 	# Heights rise from 0 to 2 m across the tile, so the columns step up.
 	var heights := PackedFloat32Array([0.0, 2.0, 0.0, 2.0])
 	VoxShading.force(PackedFloat32Array([0.5, 0.65, 0.8, 1.0]))
-	var shaded := VoxelGround.tile_arrays(heights, 2, 4.0, colours, 2, 8, 0.5, 100.0, WHITE, WHITE, 1.0, 1)
+	var shaded := VoxelGround.tile_arrays(heights, 2, 4.0, colours, 2, 8, 0.5, 1, {"steep_slope": 100.0, "steep": WHITE, "side": WHITE, "skirt": 1.0}, PackedFloat32Array(), PackedByteArray())
 	VoxShading.force(PackedFloat32Array())
-	var plain := VoxelGround.tile_arrays(heights, 2, 4.0, colours, 2, 8, 0.5, 100.0, WHITE, WHITE, 1.0, 1)
+	var plain := VoxelGround.tile_arrays(heights, 2, 4.0, colours, 2, 8, 0.5, 1, {"steep_slope": 100.0, "steep": WHITE, "side": WHITE, "skirt": 1.0}, PackedFloat32Array(), PackedByteArray())
 	# Ground colours carry their own per-column jitter; shaded corners at the steps go darker
 	# than any of it.
 	assert_float(_darkest(shaded)).is_less(_darkest(plain))

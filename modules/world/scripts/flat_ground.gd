@@ -45,3 +45,7 @@ func set_pads_for(_owner: StringName, _pads: Array) -> void:
 ## Blasts leave the plane as it is (no craters in the test world).
 func server_dig(_at: Vector3, _radius: float) -> void:
 	pass
+
+
+func replay_dig(_logged: Vector4) -> void:
+	pass

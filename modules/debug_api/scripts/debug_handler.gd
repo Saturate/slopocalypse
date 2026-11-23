@@ -10,7 +10,10 @@ const METHODS := {
 	"perf": "",
 	"find_nodes": "pattern (matches node name or path, * and ? wildcards), type (class name, optional), limit",
 	"node": "path",
+	"get": "path, property (any property, script variables too)",
 	"set": "path, property, value (a Godot value string, e.g. Vector3(0, 2, 0))",
+	"call": "target (module/node:method, from the allow-list CALLS), args (Godot value strings; a NodePath is passed as the node there)",
+	"setting": "key (from SETTINGS), value (JSON, the setting's own type); this process only, never saved",
 	"publish": "topic, payload (object)",
 	"screenshot": "",
 	"log": "lines",
@@ -22,11 +25,38 @@ const MAX_LIMIT := 500
 const MAX_VALUE_CHARS := 400
 ## Biggest request body accepted.
 const MAX_BODY := 65536
+## The only methods `call` reaches, as "<module>:<method>". Each is a module's own public
+## API that playtests (tools/play.ts) need and no property or event reaches. A
+## list, not any method on any node: `set` already changes anything stored, but a free call
+## would also reach OS, file and network methods through any node.
+const CALLS: Array[String] = [
+	"inventory:server_give",
+	"inventory:count",
+	"player:server_move_to",
+	"player:server_damage",
+	"daytime:server_set_hour",
+	"glowsticks:lit_of",
+	"glowsticks:server_state",
+	"car:occupied_seats",
+	"coop_marker:markers",
+	"world:is_ready_at",
+	"world:ground_height",
+]
+## The player settings `setting` may change (Settings.DEFAULTS keys): the ones playtests turn
+## on and off per client. Window, volume and key settings stay out.
+const SETTINGS: Array[String] = ["colour_blind", "coop_marker", "compass", "blood"]
+## Values `get` and `call` return are cut to this many elements per container.
+const MAX_ITEMS := 200
+## Arguments a call takes at most.
+const MAX_ARGS := 8
 
 var token := ""
 var role := ""
 ## Where this process logs (for `log`).
 var log_path := ""
+## Where `call` targets are found, and which it may reach; tests point both elsewhere.
+var modules_path := "/root/Boot/Modules"
+var calls: Array[String] = CALLS
 
 
 ## Parses an HTTP request from the bytes received so far. Returns {complete: false} until
@@ -89,8 +119,14 @@ func call_method(method: String, params: Dictionary, tree: SceneTree) -> Diction
 			if node == null:
 				return {"error": "no node at %s" % params.get("path", "")}
 			return {"result": describe(node)}
+		"get":
+			return _get_property(tree, params)
 		"set":
 			return _set_property(tree, params)
+		"call":
+			return _call(tree, params)
+		"setting":
+			return _setting(params)
 		"publish":
 			var topic := str(params.get("topic", ""))
 			if topic.is_empty():
@@ -148,12 +184,110 @@ func _set_property(tree: SceneTree, params: Dictionary) -> Dictionary:
 	return {"result": "%s.%s = %s" % [node.get_path(), property, var_to_str(node.get(property))]}
 
 
+func _get_property(tree: SceneTree, params: Dictionary) -> Dictionary:
+	var node := tree.root.get_node_or_null(NodePath(str(params.get("path", ""))))
+	if node == null:
+		return {"error": "no node at %s" % params.get("path", "")}
+	var property := str(params.get("property", ""))
+	if not property in node:
+		return {"error": "%s has no property %s" % [node.get_class(), property]}
+	var value: Variant = node.get(property)
+	var text := var_to_str(value)
+	return {"result": {"text": text if text.length() <= MAX_VALUE_CHARS else text.substr(0, MAX_VALUE_CHARS) + "...", "value": plain(value)}}
+
+
+## Calls an allow-listed module method (CALLS) with arguments given as Godot value strings.
+func _call(tree: SceneTree, params: Dictionary) -> Dictionary:
+	var target := str(params.get("target", ""))
+	if not calls.has(target):
+		return {"error": "%s is not callable; allowed: %s" % [target, ", ".join(calls)]}
+	var at := target.rfind(":")
+	var node := tree.root.get_node_or_null(NodePath(modules_path.path_join(target.substr(0, at))))
+	var method := target.substr(at + 1)
+	# A client has the server's methods too; there they would change only its own copy.
+	if method.begins_with("server_") and role != "server":
+		return {"error": "%s runs on the server only; this is a %s" % [target, role]}
+	if node == null or not node.has_method(method):
+		return {"error": "%s is not loaded here (module off, or the other side of the session)" % target}
+	var raw: Variant = params.get("args", [])
+	if not raw is Array or (raw as Array).size() > MAX_ARGS:
+		return {"error": "args must be an array of at most %d Godot value strings" % MAX_ARGS}
+	var args: Array = []
+	for a: Variant in raw:
+		var value: Variant = str_to_var(str(a))
+		if value is NodePath:
+			var found := tree.root.get_node_or_null(value as NodePath)
+			if found == null:
+				return {"error": "no node at %s" % value}
+			value = found
+		args.append(value)
+	if args.size() < node.get_method_argument_count(method) - _default_count(node, method) or args.size() > node.get_method_argument_count(method):
+		return {"error": "%s takes %d argument(s), got %d" % [target, node.get_method_argument_count(method), args.size()]}
+	return {"result": plain(node.callv(method, args))}
+
+
+## Changes one of this process's settings as the settings screen would (modules hear
+## `settings.changed`), without saving it: the playtest's clients share the player's own
+## settings file.
+func _setting(params: Dictionary) -> Dictionary:
+	var key := str(params.get("key", ""))
+	if not SETTINGS.has(key):
+		return {"error": "%s is not a setting this API changes; allowed: %s" % [key, ", ".join(SETTINGS)]}
+	var value: Variant = params.get("value")
+	if typeof(value) != typeof(Settings.DEFAULTS[key]):
+		return {"error": "%s takes a %s, got %s" % [key, type_string(typeof(Settings.DEFAULTS[key])), type_string(typeof(value))]}
+	Settings.set_value(key, value)
+	return {"result": plain(Settings.value(key))}
+
+
+func _default_count(node: Object, method: String) -> int:
+	for m: Dictionary in node.get_method_list():
+		if m["name"] == method:
+			return (m["default_args"] as Array).size()
+	return 0
+
+
+## A value as plain JSON: vectors and colours as arrays of numbers, containers walked,
+## anything else as its Godot value string.
+static func plain(value: Variant) -> Variant:
+	match typeof(value):
+		TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING:
+			return value
+		TYPE_STRING_NAME, TYPE_NODE_PATH:
+			return str(value)
+		TYPE_VECTOR2, TYPE_VECTOR2I:
+			return [value.x, value.y]
+		TYPE_VECTOR3, TYPE_VECTOR3I:
+			return [value.x, value.y, value.z]
+		TYPE_COLOR:
+			return [value.r, value.g, value.b, value.a]
+		TYPE_DICTIONARY:
+			var out := {}
+			for k: Variant in value:
+				if out.size() >= MAX_ITEMS:
+					break
+				out[str(k)] = plain(value[k])
+			return out
+		TYPE_OBJECT:
+			# `is` on a freed object is a script error, so validity comes first.
+			if not is_instance_valid(value):
+				return "<freed>"
+			if value is Node:
+				return str((value as Node).get_path()) if (value as Node).is_inside_tree() else str((value as Node).name)
+			return var_to_str(value)
+	if value is Array or typeof(value) >= TYPE_PACKED_BYTE_ARRAY:
+		return Array(value).slice(0, MAX_ITEMS).map(func(v: Variant) -> Variant: return plain(v))
+	return var_to_str(value)
+
+
 func _state(tree: SceneTree) -> Dictionary:
 	var players: Array = []
 	for p: Node in tree.get_nodes_in_group(&"players"):
-		var entry := {"path": str(p.get_path()), "name": str(p.name)}
+		var peer := int(p.get_meta(&"peer_id", 0))
+		var entry := {"path": str(p.get_path()), "name": str(p.name), "peer_id": peer, "player_name": str(p.get_meta(&"player_name", "")), "dead": bool(p.get_meta(&"dead", false)), "local": Net.has_local_player() and peer == Net.local_peer_id()}
 		if p is Node3D:
 			entry["position"] = var_to_str((p as Node3D).global_position)
+			entry["at"] = plain((p as Node3D).global_position)
 		players.append(entry)
 	var modules: Array = []
 	var holder := tree.root.get_node_or_null("Boot/Modules")

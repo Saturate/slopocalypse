@@ -211,3 +211,82 @@ func test_a_saved_world_keeps_a_bodys_gear_as_loot() -> void:
 	var state: Dictionary = _module.call(&"server_world_state")
 	var near := (state["loot"] as Array).filter(func(l: Dictionary) -> bool: return (l["position"] as Vector3).distance_to(body.global_position) < 1.0)
 	assert_int(near.size()).is_equal(held)
+
+
+## Where a client sees the ragdoll lying, standing in for a Corpse.
+class FakeRagdoll:
+	extends Node3D
+	var at := Vector3.ZERO
+
+	func lying_at() -> Vector3:
+		return at
+
+
+func _found(eye: Vector3, look_at: Vector3) -> Node3D:
+	var found: Array = _module.call(&"_container_facing", eye, (look_at - eye).normalized())
+	return found[0] if found.size() > 0 else null
+
+
+func _viewing(peer: int) -> bool:
+	return (_module.get(&"_viewers") as Dictionary).has(peer)
+
+
+func test_a_client_aims_at_the_ragdoll_it_sees() -> void:
+	var body := await _kill(_spawn(92, Vector3(0, 0, 0)))
+	var ragdoll: FakeRagdoll = auto_free(FakeRagdoll.new())
+	add_child(ragdoll)
+	ragdoll.at = Vector3(0.0, 0.15, 1.8)
+	body.set_meta(Corpse.LINK, ragdoll)
+	assert_vector(body.search_point()).is_equal(ragdoll.at)
+	assert_object(_found(Vector3(1.5, 1.6, 1.8), ragdoll.at)).is_same(body)
+
+
+func test_the_server_opens_the_body_the_player_named_where_their_ragdoll_lay() -> void:
+	var body := await _kill(_spawn(94, Vector3(0, 0, 0)))
+	# Standing over where their screen shows the ragdoll, 3 m on from where it died.
+	var searcher := _spawn(95, Vector3(0.0, 0.0, 3.0))
+	EventBus.publish(&"player.interact", {"player": searcher, "target": body, "named": true})
+	assert_bool(_viewing(95)).is_true()
+
+
+func test_a_named_body_too_far_away_is_not_opened() -> void:
+	var body := await _kill(_spawn(96, Vector3(0, 0, 0)))
+	var searcher := _spawn(97, Vector3(0.0, 0.0, 9.0))
+	EventBus.publish(&"player.interact", {"player": searcher, "target": body, "named": true})
+	assert_bool(_viewing(97)).is_false()
+
+
+func test_a_named_body_behind_a_wall_is_not_opened() -> void:
+	var body := await _kill(_spawn(98, Vector3(0, 0, 0)))
+	var searcher := _spawn(99, Vector3(0.0, 0.0, 2.5))
+	var wall := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(4.0, 4.0, 0.3)
+	shape.shape = box
+	wall.add_child(shape)
+	add_child(auto_free(wall))
+	wall.global_position = Vector3(0.0, 1.0, 1.2)
+	await get_tree().physics_frame
+	EventBus.publish(&"player.interact", {"player": searcher, "target": body, "named": true})
+	assert_bool(_viewing(99)).is_false()
+
+
+func test_something_named_that_is_not_loot_is_refused() -> void:
+	var other := _spawn(100, Vector3(0.0, 0.0, -1.0))
+	var searcher := _spawn(101, Vector3(0.0, 0.0, 0.5))
+	EventBus.publish(&"player.interact", {"player": searcher, "target": other, "named": true})
+	assert_bool(_viewing(101)).is_false()
+
+
+func test_a_body_behind_the_player_is_refused() -> void:
+	var body := await _kill(_spawn(102, Vector3(0, 0, 0)))
+	# Facing -z, the body 5 m behind them.
+	var searcher := _spawn(103, Vector3(0.0, 0.0, -5.0))
+	EventBus.publish(&"player.interact", {"player": searcher, "target": body, "named": true})
+	assert_bool(_viewing(103)).is_false()
+
+
+func test_a_body_has_no_floating_label() -> void:
+	var body := await _kill(_spawn(93))
+	assert_array(body.find_children("*", "Label3D", true, false)).is_empty()

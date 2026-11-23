@@ -14,7 +14,8 @@ const PLATFORMS: Record<TargetOs, string> = { windows: "Windows Desktop", linux:
 
 // Data the game reads with FileAccess is not a Godot resource, so it must be listed.
 // The changelog and the licence list are read by the title screen (changelog, credits).
-const INCLUDE = ["*.json", "CHANGELOG.md", "assets/LICENSES.md"];
+// The admin web app (web/, built into modules/web/static) is plain files the server sends.
+const INCLUDE = ["*.json", "CHANGELOG.md", "assets/LICENSES.md", "modules/web/static/*"];
 // Dev-only: tests, builders, captures, tooling and Rust sources never ship.
 const EXCLUDE = [
 	"tests/*",

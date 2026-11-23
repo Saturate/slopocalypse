@@ -1,7 +1,7 @@
 class_name PlayerIntent
 extends Node
 ## What the player wants to do this tick. Keyboard input, tests, bots and the network all
-## write here; the controller only ever reads it.
+## write here; the controller reads it, only dropping the trigger and sights on a ladder.
 ##
 ## Over the network the owning client sends its intent to the server: continuous state
 ## (move, aim, held buttons) every tick, unreliably, since the next packet supersedes it;
@@ -25,6 +25,9 @@ var lean: int = 0
 var jump: bool = false
 ## One-shot: use whatever is in front of the player (enter a car, later loot and doors).
 var interact: bool = false
+## What the player's own screen offered to use when interact was pressed (loot, a crate, a
+## body where its ragdoll lies on that screen), or empty; the server checks it before use.
+var interact_target := NodePath()
 ## Held while the trigger is down; whatever weapon the player carries reads it.
 var fire: bool = false
 ## Held while aiming down sights: slower movement, no sprint, tighter spread.
@@ -43,12 +46,28 @@ var weapon_slot: int = 0
 
 ## One-shot: take me back to the spawn (the Esc menu).
 var back_to_spawn := false
-const ONE_SHOTS := [&"jump", &"interact", &"reload", &"throw", &"detonate", &"weapon_1", &"weapon_2", &"back_to_spawn"]
+## One-shots for a glowstick (the glowsticks module reads them): crack one, or stow or show
+## the lit one; drop the lit one at your feet.
+var glowstick := false
+var glowstick_drop := false
+const ONE_SHOTS := [&"jump", &"interact", &"reload", &"throw", &"detonate", &"weapon_1", &"weapon_2", &"back_to_spawn", &"glowstick", &"glowstick_drop"]
 
 
 func consume_back_to_spawn() -> bool:
 	var out := back_to_spawn
 	back_to_spawn = false
+	return out
+
+
+func consume_glowstick() -> bool:
+	var out := glowstick
+	glowstick = false
+	return out
+
+
+func consume_glowstick_drop() -> bool:
+	var out := glowstick_drop
+	glowstick_drop = false
 	return out
 
 
@@ -67,6 +86,13 @@ func consume_jump() -> bool:
 func consume_interact() -> bool:
 	var out := interact
 	interact = false
+	return out
+
+
+## The target sent with the last interact press, cleared as it is read.
+func consume_interact_target() -> NodePath:
+	var out := interact_target
+	interact_target = NodePath()
 	return out
 
 
@@ -111,9 +137,21 @@ func submit(new_move: Vector2, yaw: float, pitch: float, new_sprint: bool, new_c
 	remote_look = true
 	sprint = new_sprint
 	crouch = new_crouch
-	fire = new_fire
-	aim = new_aim
+	# A climber's hands are on the rails: refused as it arrives, so nothing on the server
+	# reads a trigger or sights that the controller would only clear on its next tick.
+	var climbing: bool = get_parent().get(&"climbing") == true
+	fire = new_fire and not climbing
+	aim = new_aim and not climbing
 	lean = clampi(new_lean, -1, 1)
+
+
+## Client -> server: an interact press with what the client's screen offered to use.
+@rpc("any_peer", "call_remote", "reliable")
+func submit_interact(target: NodePath) -> void:
+	if not _from_owner():
+		return
+	interact = true
+	interact_target = target
 
 
 ## Client -> server, once per press.

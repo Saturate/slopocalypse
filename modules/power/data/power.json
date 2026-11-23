@@ -1,0 +1,31 @@
+{
+  "_comment": "The pieces on the map's power lines (#494); where the lines run is the map recipe's `power` section. pylon, pole, terminal and substation: the voxel kit generator each is made with and its params (the seed is fixed, so towers alike share one mesh); pylon and pole have choices: per parameter, a list a seed picks one from (every high-voltage tower on the map is alike, so the substation's terminals match its pylons; a pole line's poles are alike); the terminal takes the pylons' circuits and arm reach. lods: detail steps, [[metres from the camera it is drawn to, voxel size], ...], each from where the one before ends, fading over fade metres. sink: metres a tower is set into the lowest ground under its feet. builds_per_frame: pieces put up each frame on a client while the map loads, nearest first (a server puts them all up at once). Keep the lowest wire of the shortest tower, less what slope and sink take, at least the recipe's wire_height, and the highest under its top_height: the tests check.",
+  "builds_per_frame": 2.0,
+  "sink": 0.15,
+  "pylon": {
+    "generator": "VoxLatticePylon",
+    "params": {"seed": 1},
+    "choices": {"circuits": [0, 1, 1], "height": [32.0, 33.0, 34.0]},
+    "lods": [[220.0, 0.12], [2400.0, 0.3]],
+    "fade": 12.0
+  },
+  "pole": {
+    "generator": "VoxPowerPole",
+    "params": {"seed": 1},
+    "choices": {"wires": [0, 1], "height": [8.5, 9.0, 9.5]},
+    "lods": [[120.0, 0.05], [700.0, 0.1]],
+    "fade": 8.0
+  },
+  "terminal": {
+    "generator": "VoxTerminalGantry",
+    "params": {"seed": 1, "height": 26.0},
+    "lods": [[220.0, 0.12], [2400.0, 0.3]],
+    "fade": 12.0
+  },
+  "substation": {
+    "generator": "VoxSubstation",
+    "params": {"seed": 1},
+    "lods": [[260.0, 0.15], [2400.0, 0.3]],
+    "fade": 12.0
+  }
+}

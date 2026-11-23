@@ -14,7 +14,7 @@ func before_test() -> void:
 	_world = await VoxelWorld.add_and_wait(self, WORLD)
 	_player = (load(PLAYER) as PackedScene).instantiate()
 	add_child(_player)
-	_player.global_position = Vector3(0.0, 3.0, 0.0)
+	_player.global_position = (_world.get_node("SpawnPoint") as Marker3D).global_position + Vector3.UP * 2.0
 
 
 func after_test() -> void:
@@ -39,8 +39,8 @@ func _landed() -> void:
 func test_lands_and_stays_on_terrain() -> void:
 	await _frames(300)
 	assert_bool(_player.is_on_floor()).is_true()
-	# The spawn is on the tunnel floor (the road) and the body origin is at the feet.
-	var floor_y := (_world.get_node("Terrain") as VoxelWorld).ground_height(0.0, 0.0)
+	# The body origin is at the feet.
+	var floor_y := (_world.get_node("Terrain") as VoxelWorld).surface_height(_player.global_position.x, _player.global_position.z)
 	assert_float(_player.global_position.y).is_equal_approx(floor_y, 0.1)
 
 

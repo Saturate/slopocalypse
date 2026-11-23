@@ -1,5 +1,179 @@
 # Changelog
 
+## 0.11.0 - 2026-11-22
+
+### slopocalypse
+
+#### Server hosts can keep the web page for an HTTPS proxy on the same machine: `--web-bind=127.0.0.1` (or `WEB_BIND`), with `WEB_PORT` beside `--web-port` for Docker, and `tools/deploy.ts --web`
+
+#### Water towers stand by the farms and in the towns of the map, and farms and other sites are no longer overgrown with trees and rocks.
+
+#### On the generated map (--world=map), roads have their asphalt and lines and every site its dirt track, worn more the further out they are
+
+#### High-voltage pylons cross the countryside between the city and the towns, and wooden poles carry power along roads to farms.
+
+#### Other players are seen climbing ladders instead of falling past them.
+
+#### Mission buildings no longer flatten a road they stand beside. Trees felled before this update stand again.
+
+#### A server's save remembers which world it is for; a save for another world is set aside (world.db.old-...) and a fresh one starts
+
+#### The credits name the people who sent in pull requests.
+
+#### On the generated map the city stands on its own levelled ground where the highway arrives
+
+#### The road is in good repair near the camp and the city and gets more worn and potholed the further out you drive
+
+#### Joining a server, your game builds the same world the server plays (the generated map included); no extra option needed
+
+#### Server admin: the map viewer fills the window, zooms in to real detail, and has zoom buttons, a scale bar and a legend; /admin goes straight to it
+
+#### You start and respawn in a fenced camp with a hut, the mission board and the trader inside; soldiers and drones leave you alone in there. The map changed under the camp, so a save for the old map is set aside and a fresh one starts.
+
+#### Getting shot no longer fills your view with a pale blob.
+
+#### The server's status page shows the kill board: soldiers, drones, players and civilians killed, deaths, headshots and the longest kill, and the top five players
+
+#### Linux servers and games load the world in seconds again instead of minutes, without climbing to several GB of memory
+
+#### Dirt tracks no longer show grass rings and dark holes; tracks run on as packed dirt up to the buildings at farms, cabins and lookouts; site tracks wind less, and sites too far from a road are left out.
+
+#### Joining on a slow computer no longer drops you while the world loads.
+
+#### Farms, cabins, radio masts and lookout towers stand on the map's sites; climb a lookout tower's ladder to its deck.
+
+#### The generated map can be played with --world=map (recipe and seed with --map= and --seed=): you start at its camp with the car beside you
+
+#### Shots, hits and footsteps vary a little in pitch and loudness each time, so repeated sounds feel less mechanical; recorded sounds can now be dropped in beside the generated ones.
+
+#### Gentle hills are smooth instead of terraced, dirt tracks blend into the grass, and farm yards are worn into the ground.
+
+#### Joining a server while someone is in the car shows them in it, not standing where they got in.
+
+#### The gun and its sight keep their size on screen at any field of view: a wider view in Settings (or the sprint widening) brings the gun nearer instead of shrinking the sight picture
+
+#### The Benchmark from the main menu ignores your keyboard and mouse, so every run is the same, and its results have a Copy summary button for sharing the numbers
+
+#### Missions send you to the map's farms, cabins and towers instead of a spot by the highway.
+
+#### Trees, rocks and grass load in squares around you instead of long rows across the world; felled trees from older saves stand again
+
+#### The generated map is now the world you play: you start at its camp, with its city, roads, tracks and countryside
+
+#### A compass strip along the top of the screen shows north, the mission objective, the cars, the camp and your co-op partners by name, with distances; turn it off in Settings
+
+### Internal
+
+#### Review fixes for the contributor batch: car bot from menu args, scope clamp note, deploy web flag checks, late join smoke waits for the seated driver, compass base at the camp centre
+
+#### Capture setups start at the camp on the generated map.
+
+#### World generation (not played yet): farms, water towers, antennas, lookouts and lone cabins placed by zone and remoteness in the map preview
+
+#### World generation (not played yet): every site stands on a level pad with a dirt track to the nearest road
+
+#### Decision record: the generated map becomes the played world
+
+#### Wires can hang between two points as sagging power lines, barbed wire and steel cable (nothing in the world uses them yet)
+
+#### The test gate runs the GDScript suites in parallel and waits for clients before a test server stops.
+
+## 0.10.0 - 2026-11-20
+
+### slopocalypse
+
+#### A shot water tower leaks in thin streams that fall by its legs instead of spraying like a fire hose.
+
+#### Joining a server no longer puts you inside a parked car, and leaving while driving saves you beside the car.
+
+#### Items on the ground are drawn bigger, lie flat with their names above them, and the one you would pick up glows
+
+#### The server's web page has an admin app behind its password, starting with the server's status.
+
+#### Server admins can look at world-generation maps in the admin page: pick a recipe and seed, toggle layers, try changed numbers
+
+#### The bolt-action rifle fits in the backpack now.
+
+#### Mission sites no longer land in the city, and the city keeps clear of the road where it bends.
+
+#### A street now leads from the road into the city on levelled ground, and city streets no longer swallow your feet.
+
+#### Joining a server on a different game version now says which version the server runs, instead of joining with missing effects
+
+#### Search a body where its ragdoll lies; the floating Body label is gone.
+
+#### When joining a server fails, the menu lists what to check: address and port, the UDP port on the server's firewall, your own network, and a VPN as a way round
+
+#### Cars shove people out of the way instead of stopping dead, and hurt them when they hit fast.
+
+#### New players start with 50 tokens instead of 150; the first missions pay for the rest.
+
+#### Server admins can set WEB_PASSWORD to open admin pages on the server's web page; the status page stays public.
+
+#### Craters are shallow bowls with walls you can walk out of, even on a hillside; they are as wide as before.
+
+### Internal
+
+#### World generation: city, towns and the players' camp placed on the land (not played yet).
+
+#### Decision record 0010: world generation makes the land first, then places settlements and roads that shape it.
+
+#### World generation: ponds where water collects in the low ground (not played yet).
+
+#### World generation: road heights within their grade, tunnels and bridges marked (not played yet).
+
+#### World generation (not played yet): roads cut into hills and settlements on level pads in the map preview
+
+#### A local map viewer for tuning world generation.
+
+#### The Windows export builds the admin web app through Node instead of npm.cmd
+
+#### World generation: the land of a map from a recipe (not played yet).
+
+#### tools/server.ts passes arguments after -- to the game
+
+#### World generation: the land read as zones, with a city spot and a spawn (not played yet).
+
+#### World generation: biomes on the new land, woods on the hills and open lowland (not played yet).
+
+#### World generation: roads routed between the camp, the city and towns (not played yet).
+
+#### World generation: a second, hillier map recipe (not played yet).
+
+#### World generation: a map preview tool, and broad lowland with rounded hills (not played yet).
+
+## 0.9.0 - 2026-11-19
+
+#### Press F8 (or Report a bug in the Esc menu) to save one file with a screenshot, your logs and machine details to send us
+
+#### Starting a session no longer freezes for a moment while soldiers fill the map
+
+#### Frames are about 30% quicker near other players and soldiers (measured in the city): your machine no longer runs their movement as well as the server
+
+#### Players who join at the same moment start side by side instead of being flung off the spawn together
+
+#### The heavy rifle's support hand holds the handguard instead of hovering just off it
+
+#### Tapping crouch while sprinting no longer stacks slide boosts into absurd speed
+
+#### Smoother frame rate near the city and buildings: each voxel building is drawn as a few big pieces instead of hundreds of small ones
+
+#### The dead fall as ragdolls, pushed away from whoever shot them
+
+#### Blasts can tear arms, legs or heads off the dead, and a hard killing shot to a leg or arm sometimes does too; the piece flies off bleeding (off with Blood in Settings)
+
+#### Shots draw blood: hits spray out of the far side and mark the wall behind, and pools spread under the dead (turn it off with Blood in Settings)
+
+#### Turning while sprinting follows your new direction straight away instead of sliding
+
+#### A bolt-action rifle: hard-hitting 7.62 rounds, a 5 round magazine and an 8x scope, and you work the bolt after every shot. Find it in crates, buy it from the trader, or take it off the marksmen some squads now bring
+
+#### Benchmark in the main menu: a fixed one-minute run that shows your frame rate and worst stutters, and saves a report you can send us
+
+### Internal
+
+#### The gate retries Godot's import once when the engine crashes during it
+
 ## 0.8.0 - 2026-11-18
 
 #### The city has people: unarmed civilians stroll near their front doors and run for cover or crouch when shooting starts. Killing them counts in your stats

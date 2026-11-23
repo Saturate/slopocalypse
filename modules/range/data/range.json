@@ -17,9 +17,10 @@
       0.0,
       0.0
     ],
+    "roadside_off": 9.0,
+    "roadside_ahead": 60.0,
     "buildings": {
       "gap": 2.5,
-      "row_off_road": 9.0,
       "row_clear": 10.0,
       "row": [
         {

@@ -1,6 +1,6 @@
 class_name TransportCar
 extends StaticBody3D
-## The car that takes the group out to a mission and back: parked in the home tunnel, and
+## The car that takes the group out to a mission and back: parked by the camp's gate, and
 ## waiting at the drop-off point while a mission runs. Nobody drives it yet; F rides. The voxel
 ## kit's car (`VoxCar`), sized as a bigger off-roader in army green with a roof rack, on voxel
 ## wheels; solid, so it gives cover. The server builds no meshes, only its collision.
@@ -39,7 +39,7 @@ func _ready() -> void:
 	label.position.y = top + 0.4
 	label.visibility_range_end = 12.0
 	add_child(label)
-	# Lit from above so it stands out in the tunnel's gloom (and at night on the road).
+	# Lit from above so it stands out at night, in the camp and on the road.
 	var lamp := OmniLight3D.new()
 	lamp.light_color = LAMP_COLOUR
 	lamp.light_energy = LAMP_ENERGY

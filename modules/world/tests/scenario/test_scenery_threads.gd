@@ -56,7 +56,7 @@ func test_a_plan_from_before_a_clearing_is_not_used() -> void:
 	reference.update_around([AT], INF)
 	# A spot where a tree grows, in a chunk not loaded yet in `s` beyond the spawn chunks.
 	var all: Dictionary = reference.get(&"_trees")
-	var chunk: int = (s.call(&"_chunk_of", AT.z) as int)
+	var chunk: int = s.chunk_at(AT.x, AT.z)
 	var centre: Vector3 = ((all[chunk] as Array)[0] as Dictionary)["at"]
 	s.update_around([AT], 100.0, true)
 	assert_bool((s.get(&"_pending") as Dictionary).has(chunk)).is_true()
@@ -65,3 +65,20 @@ func test_a_plan_from_before_a_clearing_is_not_used() -> void:
 	for t: Dictionary in (s.get(&"_trees") as Dictionary)[chunk]:
 		var at: Vector3 = t["at"]
 		assert_float(Vector2(at.x - centre.x, at.z - centre.z).length()).is_greater_equal(10.0)
+
+
+func test_chunks_are_squares_loaded_round_the_point_not_whole_rows() -> void:
+	var s := _scatter()
+	s.update_around([AT], INF)
+	var reach := float((s.get(&"_cfg") as Dictionary)["collision_distance"])
+	var loaded := s.loaded_chunks()
+	assert_int(loaded.size()).is_greater(0)
+	for i in loaded:
+		var area: Rect2 = s.call(&"_chunk_area", i)
+		assert_float(area.size.x).is_less_equal(64.0)
+		var dx := maxf(maxf(area.position.x - AT.x, AT.x - area.end.x), 0.0)
+		var dz := maxf(maxf(area.position.y - AT.z, AT.z - area.end.y), 0.0)
+		assert_float(Vector2(dx, dz).length()).is_less_equal(reach)
+	# The chunk at a point is the one whose square holds it.
+	var here := s.chunk_at(AT.x, AT.z)
+	assert_bool((s.call(&"_chunk_area", here) as Rect2).has_point(Vector2(AT.x, AT.z))).is_true()

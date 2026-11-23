@@ -1,8 +1,9 @@
 class_name Settings
 extends RefCounted
 ## The player's own settings, kept in user://settings.cfg: mouse sensitivity, field of view,
-## volume, fullscreen, UI scale, blood and key bindings. Gameplay code asks for the values
-## (`mouse_scale()`, `fov_offset()`); boot applies the rest once at start.
+## volume, fullscreen, UI scale, blood, the compass strip, the co-op partner marker,
+## colour-blind colours and key bindings. Gameplay code asks for the values (`mouse_scale()`,
+## `fov_offset()`); boot applies the rest once at start.
 ##
 ## Static, like UiStack: one set per machine, no node needed. It still reaches autoloads by
 ## name: `save()` logs through Log, and `set_value()` and `reset()` announce real changes on
@@ -25,6 +26,9 @@ const DEFAULTS := {
 	"fullscreen": false,
 	"ui_scale": 1.0,
 	"blood": true,
+	"compass": true,
+	"coop_marker": true,
+	"colour_blind": false,
 }
 
 static var _values: Dictionary = DEFAULTS.duplicate()
@@ -146,5 +150,5 @@ static func _clamp() -> void:
 	_values["fov_offset"] = clampf(float(_values["fov_offset"]), FOV_MIN, FOV_MAX)
 	_values["volume"] = clampf(float(_values["volume"]), 0.0, 1.0)
 	_values["ui_scale"] = clampf(float(_values["ui_scale"]), UI_MIN, UI_MAX)
-	_values["fullscreen"] = bool(_values["fullscreen"])
-	_values["blood"] = bool(_values["blood"])
+	for key: String in ["fullscreen", "blood", "compass", "coop_marker", "colour_blind"]:
+		_values[key] = bool(_values[key])

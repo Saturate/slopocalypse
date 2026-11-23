@@ -1,0 +1,250 @@
+openapi: 3.1.0
+info:
+  title: Slopocalypse server API
+  version: "1"
+  description: >
+    What the game server answers on its web port (modules/web). Public routes need nothing;
+    admin routes need the server's WEB_PASSWORD (HTTP basic auth, any user name). The admin
+    web app (web/) generates its types from this file: `npm run api-types -w web`.
+servers:
+  - url: /
+paths:
+  /api/v1/status:
+    get:
+      summary: The server at a glance (public).
+      responses:
+        "200":
+          description: Status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+  /admin/api/v1/maps:
+    get:
+      summary: The map recipes on this server (admin).
+      security: [{ basic: [] }]
+      responses:
+        "200":
+          description: Recipe names.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MapList"
+  /admin/api/v1/maps/{name}:
+    get:
+      summary: One map recipe as stored (admin).
+      security: [{ basic: [] }]
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The recipe (its fields are listed in TWEAKING.md).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "404":
+          description: No such recipe.
+  /admin/api/v1/maps/render:
+    post:
+      summary: Render a recipe and seed (admin). Takes seconds; the request waits for it.
+      security: [{ basic: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenderRequest"
+      responses:
+        "200":
+          description: The render.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenderResult"
+        "400":
+          description: Bad input or a recipe that cannot be built.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Still working after a minute; ask again.
+  /admin/api/v1/maps/image/{key}.png:
+    get:
+      summary: A render's image, kept for a while (admin).
+      security: [{ basic: [] }]
+      parameters:
+        - { name: key, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: PNG.
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        "404":
+          description: Not kept any more.
+components:
+  securitySchemes:
+    basic:
+      type: http
+      scheme: basic
+  schemas:
+    Status:
+      type: object
+      required: [name, version, uptime_seconds, players, soldiers_alive]
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        uptime_seconds:
+          type: integer
+        players:
+          type: array
+          description: Names of the players online.
+          items:
+            type: string
+        soldiers_alive:
+          type: integer
+        mission_state:
+          type: string
+          description: Where the crew is in a mission run, e.g. home or in_mission.
+        mission:
+          oneOf:
+            - $ref: "#/components/schemas/Mission"
+            - type: "null"
+        board:
+          type: array
+          items:
+            $ref: "#/components/schemas/Mission"
+        kills:
+          $ref: "#/components/schemas/Kills"
+    Kills:
+      type: object
+      description: The kill board, when the stats module is on (#344).
+      required: [totals, top]
+      properties:
+        totals:
+          type: object
+          description: Everyone's counts on this server added up.
+          required: [soldiers, drones, players, civilians, deaths, headshots, longest_kill_m]
+          properties:
+            soldiers:
+              type: integer
+            drones:
+              type: integer
+            players:
+              type: integer
+            civilians:
+              type: integer
+            deaths:
+              type: integer
+            headshots:
+              type: integer
+            longest_kill_m:
+              type: integer
+        top:
+          type: array
+          description: The players with the most kills of soldiers, drones and players, most first.
+          items:
+            type: object
+            required: [name, kills, headshots, longest_kill_m]
+            properties:
+              name:
+                type: string
+              kills:
+                type: integer
+              headshots:
+                type: integer
+              longest_kill_m:
+                type: integer
+    Mission:
+      type: object
+      required: [codename, kind, place, pays]
+      properties:
+        codename:
+          type: string
+        kind:
+          type: string
+        place:
+          type: string
+        distance_m:
+          type: integer
+        pays:
+          type: integer
+    MapList:
+      type: object
+      required: [maps]
+      properties:
+        maps:
+          type: array
+          items: { type: string }
+    RenderRequest:
+      type: object
+      required: [map]
+      properties:
+        map: { type: string }
+        seed: { type: integer, minimum: 0 }
+        pixels: { type: integer, minimum: 64, maximum: 1024 }
+        layers:
+          type: array
+          items:
+            type: string
+            enum: [zones, settlements, roads, earthworks, sites, power, remoteness]
+        recipe:
+          type: object
+          additionalProperties: true
+          description: An edited recipe to render instead of the stored one (not saved).
+        region:
+          $ref: "#/components/schemas/Region"
+    Region:
+      type: object
+      required: [left, top, size]
+      description: A square of the map in metres (x from left, z from top), at least 32 m a side; the whole map when left out of a request.
+      properties:
+        left: { type: number }
+        top: { type: number }
+        size: { type: number }
+    RenderResult:
+      type: object
+      required: [image, stats, region]
+      properties:
+        image: { type: string, description: Path of the render's PNG. }
+        region:
+          $ref: "#/components/schemas/Region"
+        stats:
+          type: object
+          required: [summary, grid]
+          properties:
+            summary:
+              type: object
+              additionalProperties:
+                oneOf: [{ type: string }, { type: number }]
+            grid:
+              $ref: "#/components/schemas/Grid"
+    Grid:
+      type: object
+      required: [left, top, size, cells, heights, zones, kinds]
+      description: A coarse grid over the map for the hover readout, row by row from the top left.
+      properties:
+        left: { type: number }
+        top: { type: number }
+        size: { type: number }
+        cells: { type: integer }
+        heights:
+          type: array
+          items: { type: number }
+        zones:
+          type: array
+          description: Index into kinds per cell, -1 for none.
+          items: { type: integer }
+        kinds:
+          type: array
+          items: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }

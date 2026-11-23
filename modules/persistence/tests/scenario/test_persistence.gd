@@ -60,6 +60,51 @@ func test_a_returning_player_gets_their_gear_and_spot_back() -> void:
 	assert_dict(_weapons.call(&"build_of", 62, "secondary")).is_equal(GunAssembly.build("pistol_tactical"))
 
 
+func test_a_saved_spot_now_inside_a_car_starts_them_at_the_spawn() -> void:
+	var first := _spawn(68, Vector3(20.0, 1.0, -9.0))
+	assert_bool(_saves.call(&"server_admit", 68, "Driver", "key-d")).is_true()
+	_leave(68, first)
+	# A car parked over the spot since.
+	var car := StaticBody3D.new()
+	car.add_to_group(&"vehicles")
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(2.0, 1.6, 4.5)
+	shape.shape = box
+	car.add_child(shape)
+	add_child(auto_free(car))
+	car.global_position = Vector3(20.0, 1.8, -9.0)
+	await get_tree().physics_frame
+	var again := _spawn(69, Vector3(1.0, 0.0, 1.0))
+	assert_bool(_saves.call(&"server_admit", 69, "driver", "key-d")).is_true()
+	assert_vector(again.global_position).is_equal_approx(Vector3(1.0, 0.0, 1.0), Vector3.ONE * 0.01)
+
+
+class FakeCars:
+	extends Node
+	var spot: Variant = null
+
+	func exit_spot_of(_player: Node3D) -> Variant:
+		return spot
+
+	func car_spot_of(_player: Node3D) -> Variant:
+		return spot
+
+
+func test_a_driver_is_saved_beside_the_car_not_where_they_got_in() -> void:
+	var cars: FakeCars = auto_free(FakeCars.new())
+	cars.add_to_group(&"cars_api")
+	add_child(cars)
+	var driver := _spawn(70, Vector3(5.0, 1.0, 5.0))
+	assert_bool(_saves.call(&"server_admit", 70, "Wheels", "key-w")).is_true()
+	cars.spot = Vector3(30.0, 1.0, -4.0)
+	_leave(70, driver)
+	cars.spot = null
+	var again := _spawn(71)
+	assert_bool(_saves.call(&"server_admit", 71, "wheels", "key-w")).is_true()
+	assert_vector(again.global_position).is_equal_approx(Vector3(30.0, 1.2, -4.0), Vector3.ONE * 0.01)
+
+
 func test_someone_elses_name_is_refused() -> void:
 	_spawn(63)
 	assert_bool(_saves.call(&"server_admit", 63, "Ranger", "key-a")).is_true()

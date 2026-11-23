@@ -10,11 +10,11 @@ var _ticks := 0
 
 
 func _ready() -> void:
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
 	var camera := Camera3D.new()
 	add_child(camera)
-	camera.global_position = Vector3(0.0, 2.0, 6.0)
-	camera.look_at(Vector3(0.0, 1.0, 0.0))
+	camera.global_position = VoxelWorld.spawn_of(world, Vector3(0.0, 2.0, 6.0))
+	camera.look_at(VoxelWorld.spawn_of(world, Vector3(0.0, 1.0, 0.0)))
 	camera.current = true
 	_module = (load(MODULE) as GDScript).new()
 	_module.set(&"folder", OS.get_cache_dir().path_join("slopocalypse-capture-reports"))

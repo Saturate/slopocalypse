@@ -59,6 +59,11 @@ func server_totals() -> Dictionary:
 	return stats.totals()
 
 
+## Server: the `count` players with the most kills (KillStats.top), for the status page.
+func server_top(count: int) -> Array[Dictionary]:
+	return stats.top(count)
+
+
 func _key(peer: int) -> String:
 	var who := Net.identity_of(peer)
 	return str(who["name"]) if who.has("name") else "peer:%d" % peer

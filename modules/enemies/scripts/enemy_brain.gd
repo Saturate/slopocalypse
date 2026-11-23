@@ -19,6 +19,11 @@ extends Node
 ## threat, preferably one it can stand up from to fire, runs there (one squad mate at a time
 ## while the others keep firing), then hides and peeks in turns; pinned, it stays down. A
 ## soldier who spots someone calls it out to squad mates within earshot.
+##
+## It never walks into the players' camp (`keep_out`): the part of a step that would take it
+## in through the fence or gate is dropped, so it slides along the fence and a soldier
+## chasing someone into the camp stops at the gate and fights from there; one already inside
+## (pushed in) may walk out or along but never deeper. It never picks cover inside the camp.
 
 enum State { PATROL, FIGHT, CHASE }
 
@@ -32,10 +37,14 @@ const ON_TARGET := 0.12
 const WAIST := 0.9
 ## The muzzle sits about this far in front of the eye.
 const MUZZLE_AHEAD := 0.6
+## Metres ahead a step is checked against `keep_out`: about a stride.
+const STEP_AHEAD := 1.0
 
 var body: PlayerController
 var config: Dictionary = {}
 var home := Vector3.ZERO
+## The players' camp, which it must not walk into; null lets it go anywhere.
+var keep_out: CampLayout
 
 ## A guard's post and route (see the class comment).
 var has_post := false
@@ -104,6 +113,25 @@ func _fear() -> Dictionary:
 
 func _suppression_cfg() -> Dictionary:
 	return config.get("suppression", {})
+
+
+## Something on its mind (a foe, or fire it is still shaking off): it stays awake far from
+## players (BrainSleep).
+func busy() -> bool:
+	return not surrendered and (is_instance_valid(target) or suppression > 0.0)
+
+
+## Walking its patrol or holding its post with nobody in mind: the opposite of fighting,
+## stalking someone or keeping its head down under fire, when a soldier keeps quiet
+## (glowsticks).
+func is_patrolling() -> bool:
+	return state == State.PATROL and not is_instance_valid(target) and not surrendered and suppression <= 0.0
+
+
+## Wakes it if it was asleep (BrainSleep): something happened to it.
+func _stir() -> void:
+	if BrainSleep.is_asleep(body):
+		BrainSleep.wake(body)
 
 
 func is_pinned() -> bool:
@@ -204,6 +232,7 @@ func _physics_tick(delta: float) -> void:
 					intent.move = Vector2.ZERO
 			State.FIGHT:
 				_fight(delta, intent)
+	_hold_out(intent)
 	intent.look_yaw = _yaw
 	intent.look_pitch = _pitch
 	intent.remote_look = true
@@ -240,6 +269,23 @@ func _hold_post(delta: float, intent: PlayerIntent) -> void:
 	_turn_to(post_yaw + sin(_scan_time / period * TAU) * sweep, 0.0, delta)
 
 
+## Takes the part of its step that would carry it into the camp out of the move.
+func _hold_out(intent: PlayerIntent) -> void:
+	if keep_out == null or intent.move == Vector2.ZERO:
+		return
+	var right := Vector3(cos(_yaw), 0.0, -sin(_yaw))
+	var forward := Vector3(-sin(_yaw), 0.0, -cos(_yaw))
+	var way := keep_out.keep_out_step(body.global_position, right * intent.move.x + forward * intent.move.y, STEP_AHEAD)
+	intent.move = Vector2(way.dot(right), way.dot(forward))
+
+
+## Whether walking `way` from `at`, outside the camp, steps into it.
+static func blocks_step(camp: CampLayout, at: Vector3, way: Vector3) -> bool:
+	if camp == null or way.length() < 0.001 or camp.inside(at):
+		return false
+	return camp.inside(at + way.normalized() * STEP_AHEAD)
+
+
 ## Turns towards `at` and moves straight at it whatever way it faces yet (forward plus a
 ## sidestep), so it never circles a spot it is turning too slowly to face.
 func _walk_toward(at: Vector3, delta: float, intent: PlayerIntent, speed: float, stop := ARRIVED * 0.5) -> void:
@@ -256,6 +302,13 @@ func _walk_toward(at: Vector3, delta: float, intent: PlayerIntent, speed: float,
 
 
 func _fight(delta: float, intent: PlayerIntent) -> void:
+	if body.climbing:
+		# No shooting with both hands on a ladder: down it first, away from the rungs.
+		var away := body.global_basis.inverse() * -body.ladder_into()
+		intent.move = Vector2(away.x, -away.z).limit_length(1.0)
+		intent.fire = false
+		intent.aim = false
+		return
 	intent.move = Vector2.ZERO
 	intent.aim = true
 	var eye := _eye()
@@ -414,6 +467,7 @@ func _on_shot_heard(p: Dictionary) -> void:
 			target = shooter
 			last_seen = shooter.global_position
 			state = State.CHASE
+		_stir()
 	if body.global_position.distance_to(shooter.global_position) > float(config["hearing_range"]):
 		return
 	if target == null or state == State.PATROL:
@@ -421,6 +475,7 @@ func _on_shot_heard(p: Dictionary) -> void:
 		last_seen = shooter.global_position
 		_lost_for = 0.0
 		state = State.CHASE
+		_stir()
 
 
 ## Blasts nearby build suppression: a lot close in, less further out.
@@ -431,6 +486,7 @@ func _on_explosion(p: Dictionary) -> void:
 	var d := body.global_position.distance_to(p["position"])
 	if d < reach:
 		suppression += float(_suppression_cfg().get("explosion", 1.5)) * (1.0 - d / reach)
+		_stir()
 
 
 ## Whether a shot from the muzzle would reach `who`: nothing solid and no leaves on the way.
@@ -562,7 +618,12 @@ func _use_cover(delta: float, intent: PlayerIntent) -> bool:
 			var to_corner := Vector2(_cover_via[0].x - body.global_position.x, _cover_via[0].z - body.global_position.z)
 			if to_corner.length() <= ARRIVED * 0.4:
 				_cover_via.remove_at(0)
-		_walk_toward(_cover if _cover_via.is_empty() else _cover_via[0], delta, intent, 1.0, 0.0)
+		var next := _cover if _cover_via.is_empty() else _cover_via[0]
+		# A spot it cannot walk to without entering the camp is no cover: it fights instead.
+		if blocks_step(keep_out, body.global_position, next - body.global_position):
+			_drop_cover()
+			return false
+		_walk_toward(next, delta, intent, 1.0, 0.0)
 		intent.sprint = true
 		return true
 	body.set_meta(&"moving_to_cover", false)
@@ -642,10 +703,12 @@ func find_cover_route(threat: Vector3) -> Array[Vector3]:
 	var margin := float(cfg.get("settle_distance", 0.2))
 	var tries := int(cfg.get("detour_tries", 6))
 	var here := body.global_position
+	# Outside the camp, no spot or corner inside it: it cannot walk in there.
+	var kept_out := keep_out != null and not keep_out.inside(here)
 	var floors: Array[Vector3] = []
 	for c: Vector3 in _cover_candidates(here, reach, rings, spokes):
 		var spot: Variant = _floor_at(c)
-		if spot is Vector3:
+		if spot is Vector3 and not (kept_out and keep_out.inside(spot)):
 			floors.append(spot)
 	# Hidden spots with what they are worth before the walk is known.
 	var spots: Array[Vector3] = []
@@ -758,6 +821,7 @@ func hear_callout(who: Node3D) -> void:
 	last_seen = who.global_position
 	_lost_for = 0.0
 	state = State.CHASE
+	_stir()
 
 
 func _eye() -> Vector3:

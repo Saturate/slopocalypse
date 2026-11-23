@@ -1,0 +1,15 @@
+{
+  "range_m": 400.0,
+  "range_fade_m": 40.0,
+  "hide_near_m": 4.0,
+  "near_fade_m": 6.0,
+  "in_view_m": 30.0,
+  "in_view_alpha": 0.25,
+  "fade_rate": 6.0,
+  "aim_height_m": 1.4,
+  "marker_height_m": 2.3,
+  "marker_size": 7.0,
+  "name_size": 19.0,
+  "distance_size": 17.0,
+  "colour": "5fb6ff"
+}

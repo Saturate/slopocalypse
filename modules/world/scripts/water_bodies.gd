@@ -9,7 +9,7 @@ extends RefCounted
 ## to a bed that slopes from the edge to `depth` below the level over `shore` metres; outside,
 ## higher ground eases down to just over the level within `bank` metres, so a pond on a slope
 ## gets a sloping bank instead of a pit.
-## Runs without autoloads (the world builder uses TerrainHeights).
+## Runs without autoloads (MapShape builds it in WorldMaps).
 
 ## Each: {outline: PackedVector2Array, level, depth, box: Rect2}.
 var bodies: Array[Dictionary] = []
@@ -90,25 +90,25 @@ func level_at(x: float, z: float) -> float:
 	return NAN
 
 
-## A crater, a sphere at `centre` of `radius` dug into the ground, floods if it reaches
-## below the level of a body it is in or beside (within the body's bank): the water fills it
-## up to that level. Returns the puddle as Vector4(x, z, radius at the surface, level), or
+## A crater, a bowl `depth` deep under `centre` and `radius` wide (as VoxelWorld digs it),
+## floods if it reaches below the level of a body it is in or beside (within the body's
+## bank): the water fills it up to that level. Returns the puddle as Vector4(x, z, radius at the surface, level), or
 ## Vector4.ZERO when it stays dry (or lies inside the body, whose surface already covers it).
-func flood(centre: Vector3, radius: float) -> Vector4:
+func flood(centre: Vector3, radius: float, depth: float) -> Vector4:
 	var p := Vector2(centre.x, centre.z)
 	for b in bodies:
 		if not (b["box"] as Rect2).grow(bank + radius).has_point(p):
 			continue
 		var level := float(b["level"])
-		if centre.y - radius >= level:
+		var bottom := centre.y - depth
+		if bottom >= level or depth <= 0.0:
 			continue
 		if Geometry2D.is_point_in_polygon(p, b["outline"]):
 			return Vector4.ZERO
 		if edge_distance(p, b["outline"]) > bank + radius:
 			continue
-		# Where the crater's bowl meets the water's surface.
-		var up := level - centre.y
-		var at_surface := sqrt(maxf(radius * radius - up * up, 0.0))
+		# Where the crater's bowl (rising from its bottom as distance squared) meets the water.
+		var at_surface := radius * sqrt(minf((level - bottom) / depth, 1.0))
 		if at_surface <= 0.05:
 			continue
 		var puddle := Vector4(centre.x, centre.z, at_surface, level)

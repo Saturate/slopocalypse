@@ -94,13 +94,20 @@ func _physics_tick(_delta: float) -> void:
 	# The click that captures the mouse should not also fire.
 	intent.fire = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	intent.aim = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	# The server ignores both on a ladder; dropping them here too keeps this screen's
+	# crosshair and sights in step with it.
+	if player != null and player.climbing:
+		intent.fire = false
+		intent.aim = false
 	for action: StringName in PlayerIntent.ONE_SHOTS:
 		# Menu-only actions have no key; asking Input about them logs an error every frame.
 		if action in FROM_MENU:
 			continue
 		var input_action := &"charge" if action == &"throw" else action
 		if Input.is_action_just_pressed(input_action):
-			if _remote:
+			if _remote and action == &"interact":
+				intent.submit_interact.rpc_id(1, intent.interact_target)
+			elif _remote:
 				intent.submit_action.rpc_id(1, action)
 			else:
 				intent.set(action, true)

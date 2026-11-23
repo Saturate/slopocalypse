@@ -1,11 +1,4 @@
 {
-  "stall": {
-    "offset": [
-      4.6,
-      0.0,
-      7.0
-    ]
-  },
   "reach": 3.0,
   "sell_share": 0.5,
   "unlisted_price": 10,
@@ -33,6 +26,10 @@
     {
       "item": "medkit",
       "price": 10
+    },
+    {
+      "item": "glowstick",
+      "price": 5
     },
     {
       "item": "mag_ar_30",

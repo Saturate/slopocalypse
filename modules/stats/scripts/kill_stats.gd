@@ -51,6 +51,22 @@ func record_death(player: String, kind: String) -> void:
 	add(player, "deaths." + kind)
 
 
+## The players with the most kills of soldiers, drones and other players, most first, for the
+## server's status page: [{name, kills, headshots, longest_kill}]. Civilians count in a
+## player's own stats but not towards this board; players without a kill are left out.
+func top(count: int) -> Array[Dictionary]:
+	var rows: Array[Dictionary] = []
+	for player: String in _by_player:
+		var kills := int(value(player, "kills.soldier") + value(player, "kills.drone") + value(player, "kills.player"))
+		if kills > 0:
+			rows.append({"name": player, "kills": kills, "headshots": int(value(player, "headshots")), "longest_kill": value(player, LONGEST)})
+	rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return int(a["kills"]) > int(b["kills"]) if int(a["kills"]) != int(b["kills"]) else str(a["name"]) < str(b["name"]))
+	var out: Array[Dictionary] = []
+	out.assign(rows.slice(0, maxi(count, 0)))
+	return out
+
+
 ## Every player's counts added up (longest kill: the longest), for the server's status page.
 func totals() -> Dictionary:
 	var out := {}

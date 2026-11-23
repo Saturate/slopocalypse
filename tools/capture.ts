@@ -1,5 +1,5 @@
 // Renders a capture setup to a PNG so Claude (or a reviewer) can look at the game.
-//   node tools/capture.ts --setup res://modules/player/capture/walk.gd --out screenshots/walk.png [--frames 90] [--sheet 6] [--driver vulkan]
+//   node tools/capture.ts --setup res://modules/player/capture/walk.gd --out screenshots/walk.png [--frames 90] [--sheet 6] [--driver vulkan] [-- <game options>]
 // Opens a real window: rendering is needed, headless Godot draws nothing. `--driver` picks
 // another rendering driver (on macOS the Metal one gives up on frames over a second).
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -48,6 +48,8 @@ const r = await run(
 		"--out", out,
 		"--frames", arg("frames", "60"),
 		"--sheet", arg("sheet", "1"),
+		// Anything after a bare `--` goes to the game (a capture's own options: --map=, --seed=).
+		...(argv.includes("--") ? argv.slice(argv.indexOf("--") + 1) : []),
 	],
 	{ cwd: root, timeoutMs: 120_000 },
 );

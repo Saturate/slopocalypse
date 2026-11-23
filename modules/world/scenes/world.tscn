@@ -1,7 +1,7 @@
 [gd_scene format=3]
 
-[ext_resource type="Script" path="res://modules/world/scripts/voxel_world.gd" id="1_qs8vc"]
-[ext_resource type="Script" path="res://modules/world/scripts/start_tunnel.gd" id="2_rxtff"]
+[ext_resource type="Script" path="res://modules/world/scripts/world_root.gd" id="1_qs8vc"]
+[ext_resource type="Script" path="res://modules/world/scripts/voxel_world.gd" id="2_rxtff"]
 [ext_resource type="Script" path="res://modules/world/scripts/scenery_scatter.gd" id="3_gnmx2"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_443883"]
@@ -40,23 +40,17 @@ adjustment_contrast = 1.12
 adjustment_saturation = 0.9
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_bfafee"]
-size = Vector3(384, 400, 2)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_48d36"]
-size = Vector3(384, 400, 2)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_cbeb26"]
-size = Vector3(2, 400, 3000)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_1bf2d0"]
-size = Vector3(2, 400, 3000)
 
 [node name="World" type="Node3D" unique_id=241444173]
-
-[node name="Terrain" type="Node3D" parent="." unique_id=1989344311]
 script = ExtResource("1_qs8vc")
 
-[node name="StartTunnel" type="Node3D" parent="." unique_id=1155896838]
+[node name="Terrain" type="Node3D" parent="." unique_id=1989344311]
 script = ExtResource("2_rxtff")
 
 [node name="Scenery" type="Node3D" parent="." unique_id=604049499]
@@ -74,28 +68,20 @@ directional_shadow_max_distance = 160.0
 [node name="Environment" type="WorldEnvironment" parent="." unique_id=1174438231 groups=["world_environment"]]
 environment = SubResource("Environment_c83369")
 
-[node name="Cover" type="Node3D" parent="." unique_id=1263814881]
-
 [node name="Boundary" type="StaticBody3D" parent="." unique_id=886081222]
 
 [node name="North" type="CollisionShape3D" parent="Boundary" unique_id=746408035]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -2935)
 shape = SubResource("BoxShape3D_bfafee")
 
 [node name="South" type="CollisionShape3D" parent="Boundary" unique_id=752340907]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 63)
 shape = SubResource("BoxShape3D_48d36")
 
 [node name="West" type="CollisionShape3D" parent="Boundary" unique_id=933984667]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -191, 0, -1436)
 shape = SubResource("BoxShape3D_cbeb26")
 
 [node name="East" type="CollisionShape3D" parent="Boundary" unique_id=933333445]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 191, 0, -1436)
 shape = SubResource("BoxShape3D_1bf2d0")
 
 [node name="SpawnPoint" type="Marker3D" parent="." unique_id=973275349 groups=["spawn_point"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.74964166, 0)
 
 [node name="CarSpawn" type="Marker3D" parent="." unique_id=1652657857]
-transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 2.4, 0.5167098, -22)

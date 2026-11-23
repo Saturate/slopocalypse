@@ -38,3 +38,17 @@ func test_the_flat_world_loads_level_and_ready() -> void:
 	var space := (ground as Node3D).get_world_3d().direct_space_state
 	var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(200, 10, -200), Vector3(200, -10, -200)))
 	assert_float((hit["position"] as Vector3).y).is_equal_approx(0.0, 0.01)
+
+
+## Tools (scripted playtests) put people on the ground through the module: nothing before a
+## world is loaded, the flat plane's 0 after.
+func test_the_module_answers_the_ground_height_once_loaded() -> void:
+	var module: Node = auto_free((load(MODULE) as GDScript).new())
+	# Before _ready: no world yet.
+	assert_object(module.call(&"ground_height", 10.0, 10.0)).is_null()
+	add_child(module)
+	for i in 30:
+		await get_tree().physics_frame
+		if not _announced.is_empty():
+			break
+	assert_float(float(module.call(&"ground_height", 120.0, -300.0))).is_equal(0.0)

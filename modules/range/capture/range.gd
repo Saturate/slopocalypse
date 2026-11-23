@@ -1,10 +1,11 @@
 extends Node3D
 ## Capture setup: the test range, one building at a time from close in front: a spread of
 ## rifle rounds into its front wall (holes in wood, chips off brick and concrete, marks on
-## glass), held for a moment, then on to the next. `--frames 320 --sheet 6` gives about one
-## panel per building, after its rounds.
+## glass), held for a moment, then on to the next. First, from high up, the road, the drop-off
+## car and the whole row, so the car's room from the row shows. `--frames 320 --sheet 6`
+## gives the overview, then about one panel per building, after its rounds.
 
-const WORLD := "res://modules/world/scenes/world.tscn"
+const WORLD := "res://modules/world/scenes/flat_world.tscn"
 const PLAYER := "res://modules/player/scenes/player.tscn"
 const MODULES: Array[String] = [
 	"res://modules/weapons/weapons_module.gd",
@@ -16,6 +17,9 @@ const MODULES: Array[String] = [
 const DWELL := 60
 const FIRING := 36
 const START := 10
+## Ticks on the overview first: long enough that the sheet's first panel (a sixth of the way
+## through 320 frames, two ticks a frame) lands on it.
+const OVERVIEW := 120
 
 var _player: PlayerController
 var _missions: Node
@@ -25,7 +29,7 @@ var _ticks := 0
 
 func _ready() -> void:
 	Net.extra_args = PackedStringArray(["--range"])
-	await VoxelWorld.add_and_wait(self, WORLD)
+	add_child((load(WORLD) as PackedScene).instantiate())
 	for path in MODULES:
 		add_child((load(path) as GDScript).new())
 	_missions = get_tree().get_first_node_in_group(&"missions_api")
@@ -53,6 +57,11 @@ func _physics_process(_delta: float) -> void:
 		return
 	_player.set_physics_process(false)
 	var t := _ticks - START
+	if t < OVERVIEW:
+		if t == 0:
+			_overview(buildings)
+		return
+	t -= OVERVIEW
 	var i := t / DWELL
 	if i >= buildings.size():
 		return
@@ -66,6 +75,19 @@ func _physics_process(_delta: float) -> void:
 		_cam.current = true
 	if t % DWELL < FIRING:
 		_shoot(b, t % DWELL)
+
+
+## High over the road between the drop-off car and the row, looking down on both.
+func _overview(buildings: Array) -> void:
+	var car := _missions.get(&"_dropoff_car") as Node3D
+	var first := (buildings[0] as Node3D).global_position
+	var last := (buildings[buildings.size() - 1] as Node3D).global_position
+	var middle := (car.global_position + first + last) / 3.0
+	var span := maxf(car.global_position.distance_to(first), car.global_position.distance_to(last))
+	_cam.global_position = middle + Vector3(-span * 0.3, span * 0.5, 0.0)
+	_cam.look_at(middle, Vector3.UP)
+	_cam.far = 1000.0
+	_cam.current = true
 
 
 ## One rifle round into the building's front wall, spread across it and up it over the

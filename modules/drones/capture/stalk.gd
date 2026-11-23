@@ -11,14 +11,14 @@ var _camera := Camera3D.new()
 
 
 func _ready() -> void:
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
 	_player = (load(PLAYER) as PackedScene).instantiate()
 	add_child(_player)
-	_player.global_position = Vector3(0, 0.2, 0)
+	_player.global_position = VoxelWorld.spawn_of(world, Vector3(0, 0.2, 0))
 	var module: Node = (load(MODULE) as GDScript).new()
 	add_child(module)
 	_drone = module.server_spawn(_player)
-	_drone.global_position = Vector3(10, 7, -8)
+	_drone.global_position = VoxelWorld.spawn_of(world, Vector3(10, 7, -8))
 	add_child(_camera)
 	_camera.current = true
 	_camera.fov = 70.0

@@ -76,3 +76,21 @@ func test_no_room_leaves_the_loot_where_it_is() -> void:
 	await get_tree().process_frame
 	EventBus.publish(&"player.interact", {"player": player})
 	assert_bool(loot.is_queued_for_deletion()).is_false()
+
+
+func test_items_on_the_ground_are_drawn_bigger_and_never_tiny() -> void:
+	var player := _spawn(46)
+	var loot: LootItem = _module.call(&"server_spawn_loot", "mag_pistol_15", _in_front(player, 1.5))
+	await get_tree().process_frame
+	assert_float(loot.ground_scale()).is_greater_equal(PickupRules.number("ground_scale"))
+
+
+func test_the_item_a_press_would_pick_up_is_outlined_and_only_that_one() -> void:
+	var player := _spawn(47)
+	var loot: LootItem = _module.call(&"server_spawn_loot", "mag_pistol_15", _in_front(player, 1.5))
+	await get_tree().process_frame
+	loot.set_targeted(true)
+	var meshes := loot.find_children("*", "MeshInstance3D", true, false)
+	assert_bool(meshes.all(func(m: Node) -> bool: return (m as MeshInstance3D).material_overlay != null)).is_true()
+	loot.set_targeted(false)
+	assert_bool(meshes.all(func(m: Node) -> bool: return (m as MeshInstance3D).material_overlay == null)).is_true()

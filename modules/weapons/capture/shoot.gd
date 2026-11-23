@@ -14,12 +14,12 @@ var _ticks := 0
 
 func _ready() -> void:
 	# Voxel terrain streams in; wait for the spawn area before dropping anything onto it.
-	await VoxelWorld.add_and_wait(self, WORLD)
+	var world := await VoxelWorld.add_and_wait(self, WORLD)
 	# Equipped the way the game does it: one rifle, held by the body, seen in first person.
 	add_child((load(MODULE) as GDScript).new())
 	_player = (load(PLAYER) as PackedScene).instantiate()
 	add_child(_player)
-	_player.global_position = Vector3(0.0, 0.1, 0.0)
+	_player.global_position = VoxelWorld.spawn_of(world, Vector3(0.0, 0.1, 0.0))
 	EventBus.publish(&"player.spawned", {"player": _player, "local": true})
 	var animator := PlayerBodyAnimator.new()
 	animator.player = _player
@@ -28,7 +28,7 @@ func _ready() -> void:
 	(_player.get_node("Head/Camera") as Camera3D).current = true
 	var dummy: Node3D = (load(DUMMY) as PackedScene).instantiate()
 	add_child(dummy)
-	dummy.global_position = Vector3(0.0, 0.0, -8.0)
+	dummy.global_position = VoxelWorld.spawn_of(world, Vector3(0.0, 0.0, -8.0))
 
 
 func _physics_process(_delta: float) -> void:

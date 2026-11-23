@@ -1,9 +1,13 @@
 class_name PlayerController
 extends CharacterBody3D
 ## First-person movement driven only by PlayerIntent: walk, sprint with momentum, crouch,
-## slide, hop, vault low cover and mantle onto ledges. Cosmetic camera feel (FOV, bob)
-## lives in PlayerCameraFeel on clients; nothing here depends on rendering.
+## slide, hop, vault low cover, mantle onto ledges and climb ladders. Cosmetic camera feel
+## (FOV, bob) lives in PlayerCameraFeel on clients; nothing here depends on rendering.
 
+## A standing person, for checking where one can be put (#406): a little slimmer than the
+## body so touching a car door does not count.
+const STAND_CHECK_RADIUS := 0.3
+const STAND_CHECK_HEIGHT := 1.7
 const CONFIG := "res://modules/player/data/player.json"
 const REQUIRED := {
 	"walk_speed": TYPE_FLOAT,
@@ -14,6 +18,12 @@ const REQUIRED := {
 	"swim_depth": TYPE_FLOAT,
 	"swim_speed": TYPE_FLOAT,
 	"step_height": TYPE_FLOAT,
+	"climb_speed": TYPE_FLOAT,
+	"climb_move_share": TYPE_FLOAT,
+	"climb_aim": TYPE_FLOAT,
+	"climb_top_margin": TYPE_FLOAT,
+	"climb_grab_fall_speed": TYPE_FLOAT,
+	"shove_fade": TYPE_FLOAT,
 	"acceleration": TYPE_FLOAT,
 	"sprint_acceleration": TYPE_FLOAT,
 	"ads_speed_multiplier": TYPE_FLOAT,
@@ -91,6 +101,14 @@ var _slide_left := 0.0
 ## Seconds until another slide may start: chained short slides, each starting fast, would
 ## otherwise outrun sprinting.
 var _slide_cooldown := 0.0
+## A push from outside (a car driving through, #409), on top of the body's own walking; it
+## fades at player.json's `shove_fade` metres a second per second, whatever the body does.
+var _shove := Vector3.ZERO
+## The way into the ladder being climbed (level, unit).
+var _ladder_into := Vector3.ZERO
+## On a ladder, held to it with no gravity. Synced, so other screens show the climb instead
+## of judging a body rising or sinking at climbing speed as falling.
+var climbing := false
 
 
 ## A copy of someone else's body on a client: it shows what the server sends and runs no
@@ -105,6 +123,8 @@ func _ready() -> void:
 	_head = get_node(head_path)
 	_shape_node = get_node(shape_path)
 	_capsule = _shape_node.shape
+	# The spawner sets who this is (metas) before it enters the tree, on every copy.
+	Armband.apply(self)
 	var data: Variant = Data.load_json(CONFIG)
 	if data is Dictionary and Data.require(CONFIG, data, REQUIRED):
 		config = data
@@ -152,6 +172,23 @@ func grounded() -> bool:
 	return absf(velocity.y) <= HELD_AIRBORNE_SPEED
 
 
+## Off the ground and not holding on to anything: what the body animator shows as falling.
+func airborne() -> bool:
+	return not climbing and not grounded()
+
+
+## The way into the ladder being climbed (level, unit); zero when not climbing. A copy held
+## still never steps, so it asks the ladders where it is.
+func ladder_into() -> Vector3:
+	if not climbing:
+		return Vector3.ZERO
+	if is_physics_processing():
+		return _ladder_into
+	var ladder := Ladders.at(global_position, _capsule.height, _capsule.radius)
+	var into: Vector3 = ladder.get("into", Vector3.ZERO)
+	return into
+
+
 func _physics_process(delta: float) -> void:
 	var prof := Prof.start()
 	_physics_tick(delta)
@@ -159,9 +196,15 @@ func _physics_process(delta: float) -> void:
 
 
 func _physics_tick(delta: float) -> void:
+	# Fades however the body moves this step (walking, sliding, vaulting), so none is left over.
+	if _shove != Vector3.ZERO:
+		_shove = _shove.move_toward(Vector3.ZERO, float(config["shove_fade"]) * delta)
 	if _intent.consume_interact():
-		# Whoever owns the thing in front of us (car, later loot) decides what happens.
-		EventBus.publish(&"player.interact", {"player": self})
+		# Whoever owns the thing in front of us (car, loot) decides what happens; `target` is
+		# what this player's own screen offered, if anything.
+		var aimed := _intent.consume_interact_target()
+		var target := get_node_or_null(aimed) if not aimed.is_empty() else null
+		EventBus.publish(&"player.interact", {"player": self, "target": target, "named": not aimed.is_empty()})
 		# Entering a car parks this player mid-step, which takes the body out of the physics
 		# space; moving it now makes Jolt log "Parameter space is null".
 		if not can_process():
@@ -241,7 +284,40 @@ func _step_normal(delta: float) -> void:
 
 	var depth := water_depth()
 	_set_swimming(depth > float(config["swim_depth"]))
-	if swimming:
+	var ladder := {} if swimming else Ladders.at(global_position, _capsule.height, _capsule.radius)
+	var was_climbing := climbing
+	climbing = false
+	if not ladder.is_empty():
+		var into: Vector3 = ladder["into"]
+		var aim := float(config["climb_aim"])
+		var push := (transform.basis * Vector3(_intent.move.x, 0.0, -_intent.move.y)).limit_length(1.0).dot(into)
+		var top := float(ladder["top"])
+		if was_climbing:
+			# Holding on until the ground or the ladder's end lets go.
+			climbing = not is_on_floor() or (push > aim and global_position.y < top - float(config["climb_top_margin"]))
+		elif is_on_floor():
+			# From the ground only heading into it and below its top (not from the deck it leads to).
+			climbing = push > aim and global_position.y < top - float(config["climb_top_margin"])
+		else:
+			# Off the ground, only heading into it (a hop onto it) or, dropping near its top, away
+			# from it (backing off its deck), and falling slowly enough to catch it: put down in
+			# mid-air beside one, jumping back from its foot or dropping past it fast, nobody
+			# hangs on it.
+			var off_deck := velocity.y <= 0.0 and global_position.y >= top - float(config["climb_top_margin"])
+			var heading := push > aim or (push < -aim and off_deck)
+			climbing = heading and velocity.y > -float(config["climb_grab_fall_speed"])
+		if climbing:
+			# Into the ladder climbs, away from it climbs down, sideways holds on; never past its top.
+			var up := float(config["climb_speed"]) * signf(push) if absf(push) > aim else 0.0
+			velocity.y = minf(up, (top - global_position.y) / maxf(delta, 0.0001))
+			_ladder_into = into
+	if climbing:
+		_intent.consume_jump()
+		# Both hands on the rails: the server takes no trigger or sights from a climber, so
+		# whichever weapon reads this intent next stays quiet (#505).
+		_intent.fire = false
+		_intent.aim = false
+	elif swimming:
 		# Afloat: held with the head out, the feet `swim_depth` under the surface.
 		var surface := float(_ground.call(&"water_level_at", global_position))
 		velocity.y = (surface - float(config["swim_depth"]) - global_position.y) * SWIM_SETTLE
@@ -270,7 +346,9 @@ func _step_normal(delta: float) -> void:
 		speed = float(config["walk_speed"]) * float(config["swim_speed"])
 	elif depth > float(config["wade_depth"]):
 		speed *= float(config["wade_speed"])
-	if not is_on_floor() and not swimming:
+	if climbing and not is_on_floor():
+		speed *= float(config["climb_move_share"])
+	elif not is_on_floor() and not swimming:
 		accel *= float(config["air_control"])
 		build *= float(config["air_control"])
 	var wish := transform.basis * Vector3(_intent.move.x, 0.0, -_intent.move.y)
@@ -286,7 +364,54 @@ func _step_normal(delta: float) -> void:
 		horizontal = horizontal.move_toward(goal, accel * delta)
 	velocity.x = horizontal.x
 	velocity.z = horizontal.y
+	if climbing and not is_on_floor():
+		# Held to the ladder: pushing away from it climbs down rather than letting go.
+		var away := -Vector3(velocity.x, 0.0, velocity.z).dot(_ladder_into)
+		if away > 0.0:
+			velocity += _ladder_into * away
 	_move_with_steps(delta)
+	_be_shoved(delta)
+
+
+## Carried along by the push, apart from its own velocity so walking, sliding and swimming
+## stay as they are; it slides along walls like any move.
+func _be_shoved(delta: float) -> void:
+	if _shove == Vector3.ZERO:
+		return
+	var step := Vector3(_shove.x, 0.0, _shove.z) * delta
+	var hit := move_and_collide(step)
+	if hit != null:
+		move_and_collide(hit.get_remainder().slide(hit.get_normal()))
+
+
+## Server: something pushes this body along `push` (metres a second): it is carried that way
+## for a moment. The strongest push in a moment wins; they don't stack. The dead aren't.
+func shove(push: Vector3) -> void:
+	if get_meta(&"dead", false):
+		return
+	if push.length() > _shove.length():
+		_shove = push
+
+
+## Server: drops any push still carrying the body (it was stopped, moved or respawned).
+func clear_shove() -> void:
+	_shove = Vector3.ZERO
+
+
+## Server: lets go of any ladder (put somewhere else, or into a car), so the body doesn't
+## arrive still holding on and a ladder beside where it lands is caught only as any other.
+func let_go() -> void:
+	climbing = false
+	_ladder_into = Vector3.ZERO
+
+
+## Puts the body at `at`, standing still with nothing carrying it and holding on to
+## nothing (a respawn, back to spawn, out of a car, back on top of the ground).
+func put_at(at: Vector3) -> void:
+	global_position = at
+	velocity = Vector3.ZERO
+	clear_shove()
+	let_go()
 
 
 ## `move_and_slide`, but a step no higher than `step_height` in the way (a stair, a kerb, a
@@ -358,6 +483,7 @@ func _try_traverse() -> bool:
 
 func _start_path(new_mode: Mode, over: Vector3, to: Vector3, exit_velocity: Vector3) -> void:
 	mode = new_mode
+	climbing = false
 	_path_t = 0.0
 	_path_from = global_position
 	_path_over = over
@@ -383,6 +509,7 @@ func _step_path(delta: float) -> void:
 
 func _start_slide() -> void:
 	mode = Mode.SLIDE
+	climbing = false
 	_slide_left = config["slide_time"]
 	var flat := Vector3(velocity.x, 0.0, velocity.z)
 	# The boost tops out one boost over sprint speed (repeated slides stacked it: 93 m/s in a
@@ -416,3 +543,19 @@ func _apply_height(height: float) -> void:
 	_capsule.radius = config["radius"]
 	_shape_node.position.y = height / 2.0
 	_head.position.y = height - float(config["eye_offset"])
+
+
+## Whether a vehicle's body overlaps a standing person with their feet at `at` in `world`.
+static func vehicle_at(world: World3D, at: Vector3) -> bool:
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = STAND_CHECK_RADIUS
+	capsule.height = STAND_CHECK_HEIGHT
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = capsule
+	query.transform = Transform3D(Basis.IDENTITY, at + Vector3.UP * (STAND_CHECK_HEIGHT / 2.0 + 0.05))
+	query.collision_mask = PhysicsLayers.SOLID
+	for hit: Dictionary in world.direct_space_state.intersect_shape(query, 8):
+		var body := hit.get("collider") as Node
+		if body != null and body.is_in_group(&"vehicles"):
+			return true
+	return false

@@ -1,6 +1,7 @@
 class_name SettingsScreen
 extends ScreenFrame
-## Mouse sensitivity, field of view, volume, UI scale, fullscreen, blood and key bindings. Changes
+## Mouse sensitivity, field of view, volume, UI scale, fullscreen, blood, compass, partner
+## marker, colour-blind colours and key bindings. Changes
 ## apply at once and are saved when the screen closes. Keys are listed for the actions the
 ## running game has registered, so the list is full in a session and empty on the title
 ## (modules register their keys when they load).
@@ -18,6 +19,9 @@ var _key_buttons: Dictionary[String, Button] = {}
 var _sliders: Dictionary[String, HSlider] = {}
 var _fullscreen: Button
 var _blood: Button
+var _compass: Button
+var _coop_marker: Button
+var _colour_blind: Button
 
 
 func _init() -> void:
@@ -33,6 +37,15 @@ func _init() -> void:
 	# module the toggle would do nothing, so it isn't offered.
 	_blood = _toggle("Blood", "blood")
 	_blood.visible = Features.is_enabled(&"gore")
+	# Read by the compass module each frame; offered only with it.
+	_compass = _toggle("Compass", "compass")
+	_compass.visible = Features.is_enabled(&"compass")
+	# Read by the coop_marker module each frame; offered only with it.
+	_coop_marker = _toggle("Partner marker", "coop_marker")
+	_coop_marker.visible = Features.is_enabled(&"coop_marker")
+	# Read by the player module's armbands, which repaint at once; offered only with it.
+	_colour_blind = _toggle("Colour-blind colours", "colour_blind")
+	_colour_blind.visible = Features.is_enabled(&"player")
 	var keys_head := Label.new()
 	keys_head.theme_type_variation = &"HeadingLabel"
 	keys_head.text = "KEYS"
@@ -132,7 +145,7 @@ func _refresh() -> void:
 	for key: String in _sliders:
 		_sliders[key].set_value_no_signal(float(Settings.value(key)))
 		_sliders[key].value_changed.emit(_sliders[key].value)
-	for toggle: Button in [_fullscreen, _blood]:
+	for toggle: Button in [_fullscreen, _blood, _compass, _coop_marker, _colour_blind]:
 		toggle.set_pressed_no_signal(bool(Settings.value(String(toggle.get_meta(&"setting")))))
 		_show_toggle(toggle)
 	var keys := content.get_node(^"Keys") as GridContainer
