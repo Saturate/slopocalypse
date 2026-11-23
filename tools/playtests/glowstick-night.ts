@@ -73,8 +73,10 @@ export default playtest({ title: "Glowstick at night: Ana cracks one and Bo sees
 		const light = lights[0];
 		if (light !== undefined) t.expect(Number(await own.node(light.path).get("light_cull_mask")) & FIRST_PERSON, "her own light on her first-person layer").toBe(0);
 		t.expect((await own.find(`${self.path}/*${STICK}*/ViewLight`, "OmniLight3D", 5)).length, "faint tint lights on her own gun").toBe(1);
+		// Away from the mission board she stood against, on open ground 4 m from Bo.
 		const at = await s.position("Bo");
-		await s.lookAt("Ana", [at[0], at[1] - 2, at[2]]);
+		await s.teleport("Ana", [at[0], at[1] + 1, at[2] - 4]);
+		await s.lookAt("Ana", [at[0], at[1], at[2]]);
 		await own.screenshot("night-own-view", {
 			expect: "Ana's own first-person view at night, looking a little down toward Bo: her rifle at the hip is dark with at most a faint blue tint, not flooded in flat blue; the ground just ahead of her has a soft blue light on it that fades over a few metres.",
 		});
