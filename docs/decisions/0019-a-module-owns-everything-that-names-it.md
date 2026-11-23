@@ -2,7 +2,7 @@
 
 Status: accepted
 Date: 2026-11-23
-Issue or PR: module-ownership PR
+Issue or PR: #542
 
 ## Context
 Architecture rule 2 says removing a module is deleting its folder and its flag. Three places
