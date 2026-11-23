@@ -172,7 +172,7 @@ export async function soloSmoke(godot: string, root: string): Promise<StepResult
 		else for (const line of scanLog(readFileSync(child.log, "utf8"), GODOT_NOISE)) problems.push(`solo server: ${line}`);
 	}
 	return problems.length > 0
-		? { ok: false, detail: problems.slice(0, 20).join("\n") }
+		? { ok: false, detail: problems.slice(0, 40).join("\n") }
 		: { ok: true, detail: "solo runs through its own server process, which exits with the game" };
 }
 
@@ -223,7 +223,7 @@ export async function netSmoke(godot: string, root: string, preferredPort = 7791
 		if (name === "client 1 (bot)" && (rep.ammo < 0 || rep.ammo >= 30)) problems.push(`${name}: the ammo count did not follow the server (ammo=${rep.ammo})`);
 	}
 	return problems.length > 0
-		? { ok: false, detail: problems.slice(0, 20).join("\n") }
+		? { ok: false, detail: problems.slice(0, 40).join("\n") }
 		: { ok: true, detail: "server + 2 clients: walking, shooting and driving reach the server and everyone else" };
 }
 
@@ -272,7 +272,7 @@ export async function lateJoinSmoke(godot: string, root: string, port = 7792): P
 	const results: [string, ProcResult][] = [["server", await server], ["sitting client", await sitter], ["late client", await late]];
 	const problems = results.flatMap(([name, r]) => seatProblems(name, r, name === "sitting client" ? 1 : 2));
 	return problems.length > 0
-		? { ok: false, detail: problems.slice(0, 20).join("\n") }
+		? { ok: false, detail: problems.slice(0, 40).join("\n") }
 		: { ok: true, detail: "a client that joins after someone got in the car sees them in it" };
 }
 
@@ -321,7 +321,12 @@ export async function saveSmoke(godot: string, root: string, preferredPort = 779
 		if (secondServer.output.includes("Stale is back") || secondServer.output.includes("is Stale")) problems.push("second server: let a client on another build join");
 		check("second server", secondServer);
 		check("returning client", back);
-		if (!secondServer.output.includes("Saver is back")) problems.push("second server: did not recognise Saver from the save");
+		if (!secondServer.output.includes("Saver is back")) {
+			problems.push("second server: did not recognise Saver from the save");
+			// macOS CI keeps no logs; what each server did with the save is the evidence.
+			for (const [name, r] of [["first server", firstServer], ["second server", secondServer]] as const)
+				for (const line of r.output.split("\n").filter((l) => l.includes("persistence:") || l.includes("world:") || l.includes("net:"))) problems.push(`  ${name}> ${line.trim()}`);
+		}
 		const rep = parseReport(back.output);
 		if (rep === undefined) problems.push(`returning client: no NET-REPORT line; it ended with:\n${lastLines(back.output)}\n  and the second server with:\n${lastLines(secondServer.output, 12)}`);
 		else if (Math.abs(rep.moved - walked) > 1.5) problems.push(`returning client: not put back where it left (moved=${rep.moved}, left at ${walked})`);
@@ -329,6 +334,6 @@ export async function saveSmoke(godot: string, root: string, preferredPort = 779
 		rmSync(saves, { recursive: true, force: true });
 	}
 	return problems.length > 0
-		? { ok: false, detail: problems.slice(0, 20).join("\n") }
+		? { ok: false, detail: problems.slice(0, 40).join("\n") }
 		: { ok: true, detail: "a named player's spot survives a server restart; a client on another build is turned away" };
 }
