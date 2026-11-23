@@ -99,19 +99,12 @@ func _physics_process(delta: float) -> void:
 
 ## Where each player is, or the car they sit in.
 func player_spots() -> Array[Vector3]:
-	var cars := get_tree().get_first_node_in_group(&"cars_api")
+	var cars := PlayerSpot.cars_api(get_tree())
 	var out: Array[Vector3] = []
 	for p: Node in get_tree().get_nodes_in_group(&"players"):
 		var player := p as Node3D
-		if player == null:
-			continue
-		var at := player.global_position
-		# Seated players are parked out of processing; only then is asking the cars worth it.
-		if cars != null and not player.can_process():
-			var seat: Variant = cars.call(&"exit_spot_of", player)
-			if seat is Vector3:
-				at = seat
-		out.append(at)
+		if player != null:
+			out.append(PlayerSpot.of(player, cars))
 	return out
 
 
