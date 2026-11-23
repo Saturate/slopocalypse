@@ -272,7 +272,8 @@ func _view_light(colour: Color) -> OmniLight3D:
 	var cfg: Dictionary = config["own_light"]
 	var light := OmniLight3D.new()
 	light.name = "ViewLight"
-	light.light_color = colour
+	# Paler than the stick: the full colour on a dark gun reads as a navy silhouette.
+	light.light_color = colour.lerp(Color.WHITE, float(cfg["view_pale"]))
 	light.light_energy = float(cfg["view_energy"])
 	light.omni_range = float(cfg["view_range"])
 	# Even across the gun: no hot spot on the part nearest the chest.
@@ -299,3 +300,7 @@ func _budget_lights() -> void:
 		lights.sort_custom(func(a: OmniLight3D, b: OmniLight3D) -> bool: return a.global_position.distance_squared_to(eye) < b.global_position.distance_squared_to(eye))
 	for i in lights.size():
 		lights[i].visible = i < limit
+		# Your own gun's tint goes with your own light.
+		var tint := lights[i].get_parent().get_node_or_null("ViewLight") as OmniLight3D
+		if tint != null:
+			tint.visible = lights[i].visible

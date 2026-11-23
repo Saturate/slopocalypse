@@ -24,6 +24,7 @@ Running notes: playtest feedback, findings, known issues and ideas for later. De
   - A patrolling soldier's stick at 40 to 60 m is one to three coloured pixels at 960x540; a fresh reviewer could not pick the soldiers out. Patrols do not read as "lights moving out there" yet.
   - A partner 7 m away in plain view has no visible marker (the faint value plus the near fade), and at 8 m at night the marker text is dark and hard to read over the glow.
   - At 2 m the partner's bands look like blocks standing off the shoulders.
+  - Only your own stick leaves your first-person gun out of its light; a partner's lit stick within about a metre of you still lights your gun with its usual steep light (docs/decisions/0018).
 - Gore: limbs taken off while Blood was on stay off if Blood is turned off and on again, but their stump caps are removed and not put back (#387).
 
 - Car chase camera is rigidly parented to the car, so speed and turns are hard to read (visual review, #8). A smoothed follow camera with lag and FOV kick is a candidate after the Checkpoint A playtest.

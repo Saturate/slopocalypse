@@ -34,4 +34,6 @@ their screen is not first person and keeps its usual layers. Decals skip the lay
 Any light that sits at your own body (a future torch or muzzle light on your own gun, seen by
 you) can leave the layer out the same way. A camera or light that sets a cull mask has to keep
 layer 19 in, or your own gun vanishes or goes unlit; new decals that spare people should skip it
-too.
+too. Only your own stick leaves the layer out: a partner's stick right next to you still
+lights your gun with its usual steep light. A mesh moved out of your hands into the world (none
+is today; dropped guns are built fresh) would keep layer 19 and has to be moved off it.

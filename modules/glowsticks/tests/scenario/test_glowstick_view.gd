@@ -47,7 +47,7 @@ func test_your_own_light_leaves_your_arms_and_gun_out_and_tints_them_faintly() -
 	var tint := stick.get_node("ViewLight") as OmniLight3D
 	assert_int(tint.light_cull_mask).is_equal(RenderLayers.FIRST_PERSON)
 	assert_float(tint.light_energy).is_equal_approx(float(own["view_energy"]), 0.001)
-	assert_float(tint.light_energy).is_less(float(own["energy"]) * 2.0)
+	assert_float(tint.light_energy).is_less(float(own["energy"]))
 
 
 func test_someone_elses_stick_has_the_usual_light() -> void:

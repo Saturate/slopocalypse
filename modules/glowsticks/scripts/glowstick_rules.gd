@@ -20,7 +20,7 @@ const REQUIRED := {
 }
 const STICK_REQUIRED := {"size": TYPE_ARRAY, "at": TYPE_ARRAY, "glow": TYPE_FLOAT, "halo": TYPE_FLOAT, "halo_strength": TYPE_FLOAT}
 const LIGHT_REQUIRED := {"energy": TYPE_FLOAT, "range": TYPE_FLOAT, "falloff": TYPE_FLOAT, "max_lights": TYPE_FLOAT}
-const OWN_LIGHT_REQUIRED := {"energy": TYPE_FLOAT, "range": TYPE_FLOAT, "falloff": TYPE_FLOAT, "view_energy": TYPE_FLOAT, "view_range": TYPE_FLOAT}
+const OWN_LIGHT_REQUIRED := {"energy": TYPE_FLOAT, "range": TYPE_FLOAT, "falloff": TYPE_FLOAT, "view_energy": TYPE_FLOAT, "view_range": TYPE_FLOAT, "view_pale": TYPE_FLOAT}
 const GROUND_REQUIRED := {"glow": TYPE_FLOAT, "halo": TYPE_FLOAT, "halo_strength": TYPE_FLOAT, "lift": TYPE_FLOAT, "turn": TYPE_FLOAT}
 ## The inventory item a fresh stick is.
 const ITEM := "glowstick"

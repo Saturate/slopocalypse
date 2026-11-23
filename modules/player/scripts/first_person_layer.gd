@@ -9,10 +9,14 @@ const ARMS := "Skeleton/Arms"
 const HELD := "Skeleton/WeaponAttachment"
 
 var _body: Node
+var _arms: Node
+var _held: Node
 
 
 func _ready() -> void:
 	_body = get_parent()
+	_arms = _body.get_node_or_null(ARMS)
+	_held = _body.get_node_or_null(HELD)
 	for node in _body.find_children("*", "GeometryInstance3D", true, false):
 		if covers(node):
 			(node as GeometryInstance3D).layers = RenderLayers.FIRST_PERSON
@@ -28,17 +32,18 @@ func _exit_tree() -> void:
 func covers(node: Node) -> bool:
 	if _body == null:
 		return false
-	if node == _body.get_node_or_null(ARMS):
-		return true
-	var held := _body.get_node_or_null(HELD)
-	return held != null and held.is_ancestor_of(node)
+	return node == _arms or (_held != null and _held.is_ancestor_of(node))
 
 
 func _on_node_added(node: Node) -> void:
-	if node is GeometryInstance3D and covers(node):
+	if not node is GeometryInstance3D:
+		return
+	var prof := Prof.start()
+	if covers(node):
 		# Deferred, after whatever else moves new meshes between layers as they enter the
 		# tree (gore keeps bodies off the layer blood paints).
 		_tag.call_deferred(node)
+	Prof.stop(&"player/first_person_layer", prof)
 
 
 func _tag(node: Node) -> void:

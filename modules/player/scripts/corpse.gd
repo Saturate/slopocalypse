@@ -94,7 +94,8 @@ static func from_body(player: Node3D, push: Vector3, velocity := Vector3.ZERO) -
 			if geometry.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
 				geometry.material_override = null
 			geometry.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-	# Your own arms and gun sit on the first-person layer; dead, they are a body like any.
+	# Your own arms sit on the first-person layer (the gun went with WeaponAttachment);
+	# dead, they are a body like any.
 	for mesh in copy.find_children("*", "GeometryInstance3D", true, false):
 		var geometry := mesh as GeometryInstance3D
 		if geometry.layers & RenderLayers.FIRST_PERSON:
