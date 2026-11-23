@@ -1,0 +1,24 @@
+{
+  "fps": 60,
+  "size": [1600, 900],
+  "fade": 0,
+  "shots": [
+    { "setup": "res://trailer/shots/home_base.gd", "skip": 0.2, "seconds": 5.5, "hud": "off" },
+    { "setup": "res://trailer/shots/breach.gd", "skip": 0.3, "seconds": 5.0, "hud": "off" },
+    { "setup": "res://trailer/shots/firefight.gd", "skip": 0.3, "seconds": 6.0, "hud": "off" },
+    { "setup": "res://trailer/shots/strike.gd", "skip": 0.2, "seconds": 6.5, "hud": "off" }
+  ],
+  "stills": [
+    { "name": "home-a", "shot": 0, "at": 1.0 },
+    { "name": "home-b", "shot": 0, "at": 5.0 },
+    { "name": "breach-a", "shot": 1, "at": 2.6 },
+    { "name": "breach-b", "shot": 1, "at": 3.4 },
+    { "name": "breach-c", "shot": 1, "at": 3.7 },
+    { "name": "fight-a", "shot": 2, "at": 0.4 },
+    { "name": "fight-b", "shot": 2, "at": 3.5 },
+    { "name": "fight-c", "shot": 2, "at": 5.0 },
+    { "name": "strike-a", "shot": 3, "at": 2.2 },
+    { "name": "strike-b", "shot": 3, "at": 3.6 },
+    { "name": "strike-c", "shot": 3, "at": 4.4 }
+  ]
+}
