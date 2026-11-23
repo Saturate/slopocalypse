@@ -5,7 +5,7 @@ const MODULE := "res://modules/audio/audio_module.gd"
 
 
 func test_every_sound_is_synthesised() -> void:
-	for sound in ["rifle", "pistol", "bolt_rifle", "bolt_cycle", "suppressed", "impact", "hit", "explosion", "footstep", "reload", "pickup", "hurt", "wind", "crickets", "bird0", "bird1", "bird2", "bird3"]:
+	for sound in ["rifle", "pistol", "bolt_rifle", "bolt_cycle", "suppressed", "impact", "hit", "explosion", "footstep", "reload", "pickup", "hurt", "crack", "wind", "crickets", "bird0", "bird1", "bird2", "bird3"]:
 		var wav := SoundBank.generated(sound)
 		assert_object(wav).override_failure_message(sound).is_not_null()
 		assert_float(wav.get_length()).override_failure_message(sound).is_greater(0.02)
@@ -170,3 +170,11 @@ func test_a_shot_into_something_with_its_own_surface_sounds_makes_no_plain_impac
 	wall.set_meta(&"surface_sounds", true)
 	EventBus.publish(&"weapon.fired", {"from": Vector3(0, 1, 0), "to": Vector3(0, 1, -10), "damage": 0.0, "collider": wall})
 	assert_bool(_sounds_of(module).has("impact")).is_false()
+
+
+func test_a_round_passing_close_cracks_where_it_passed() -> void:
+	var module := _surface_module()
+	EventBus.publish(&"suppression.near_miss", {"position": Vector3(1, 1.3, 0), "level": 0.4})
+	var voices := _players_of(module).filter(func(n: Node) -> bool: return n.get_meta(&"sound") == "crack")
+	assert_int(voices.size()).is_equal(1)
+	assert_vector((voices[0] as Node3D).global_position).is_equal(Vector3(1, 1.3, 0))

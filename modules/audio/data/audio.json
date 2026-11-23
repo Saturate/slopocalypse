@@ -30,7 +30,8 @@
     "collapse": 0.0,
     "launch": 0.0,
     "bolt_rifle": 0.0,
-    "bolt_cycle": -9.0
+    "bolt_cycle": -9.0,
+    "crack": -4.0
   },
   "jitter": {
     "default": { "pitch": [0.97, 1.03], "volume_db": [-1.0, 1.0] },
@@ -58,6 +59,7 @@
   "surface_hit_range": 60.0,
   "surface_break_range": 160.0,
   "rotor_range": 140.0,
+  "crack_range": 20.0,
   "rotor_angry_pitch": 1.3,
   "rotor_angry_db": 5.0,
   "shot_range": 320.0,

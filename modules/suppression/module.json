@@ -1,0 +1,10 @@
+{
+  "id": "suppression",
+  "depends_on": ["player", "weapons"],
+  "flag": "suppression",
+  "entry": "suppression_module.gd",
+  "debug_calls": ["level_of"],
+  "settings": [
+    {"key": "shake_under_fire", "type": "bool", "default": true, "label": "Screen shake under fire", "order": 50}
+  ]
+}
