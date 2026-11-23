@@ -143,3 +143,36 @@ func test_plain_cuts_long_containers_and_names_freed_objects() -> void:
 	var gone := Node.new()
 	gone.free()
 	assert_str(str(DebugHandler.plain([gone])[0])).is_equal("<freed>")
+
+
+## Every allowed call names a method its module's entry script really has, so a rename
+## breaks this test, not a playtest an hour later. A deleted module's entries are skipped.
+func test_every_allowed_call_exists_on_its_module() -> void:
+	for target: String in DebugHandler.CALLS:
+		var at := target.rfind(":")
+		var id := target.substr(0, at)
+		if not FileAccess.file_exists("res://modules/%s/module.json" % id):
+			continue
+		var manifest: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://modules/%s/module.json" % id))
+		assert_bool(manifest is Dictionary).override_failure_message("%s: no module.json" % target).is_true()
+		# Read as text: loading every module's script here would compile half the game.
+		var source := FileAccess.get_file_as_string("res://modules/%s/%s" % [id, str((manifest as Dictionary).get("entry", ""))])
+		assert_bool(source.contains("\nfunc %s(" % target.substr(at + 1))).override_failure_message("%s: no such method" % target).is_true()
+
+
+func test_settings_change_this_process_only_from_the_list() -> void:
+	var h := _handler()
+	var before: Variant = Settings.value("colour_blind")
+	var heard: Array = []
+	var on_changed := func(p: Dictionary) -> void: heard.append(p)
+	EventBus.subscribe(&"settings.changed", on_changed)
+	var got := h.call_method("setting", {"key": "colour_blind", "value": not before}, get_tree())
+	EventBus.unsubscribe(&"settings.changed", on_changed)
+	assert_bool(bool(got["result"])).is_equal(not before)
+	assert_bool(bool(Settings.value("colour_blind"))).is_equal(not before)
+	assert_array(heard.map(func(p: Dictionary) -> String: return str(p["key"]))).contains(["colour_blind"])
+	# Off the list, or the wrong type: refused and left alone.
+	assert_str(str(h.call_method("setting", {"key": "fullscreen", "value": true}, get_tree())["error"])).contains("not a setting")
+	assert_str(str(h.call_method("setting", {"key": "colour_blind", "value": "yes"}, get_tree())["error"])).contains("takes a bool")
+	assert_bool(bool(Settings.value("colour_blind"))).is_equal(not before)
+	Settings.set_value("colour_blind", before)

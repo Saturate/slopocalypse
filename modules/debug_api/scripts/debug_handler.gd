@@ -13,6 +13,7 @@ const METHODS := {
 	"get": "path, property (any property, script variables too)",
 	"set": "path, property, value (a Godot value string, e.g. Vector3(0, 2, 0))",
 	"call": "target (module/node:method, from the allow-list CALLS), args (Godot value strings; a NodePath is passed as the node there)",
+	"setting": "key (from SETTINGS), value (JSON, the setting's own type); this process only, never saved",
 	"publish": "topic, payload (object)",
 	"screenshot": "",
 	"log": "lines",
@@ -32,13 +33,18 @@ const CALLS: Array[String] = [
 	"inventory:server_give",
 	"inventory:count",
 	"player:server_move_to",
+	"player:server_damage",
 	"daytime:server_set_hour",
 	"glowsticks:lit_of",
 	"glowsticks:server_state",
 	"car:occupied_seats",
 	"coop_marker:markers",
 	"world:is_ready_at",
+	"world:ground_height",
 ]
+## The player settings `setting` may change (Settings.DEFAULTS keys): the ones playtests turn
+## on and off per client. Window, volume and key settings stay out.
+const SETTINGS: Array[String] = ["colour_blind", "coop_marker", "compass", "blood"]
 ## Values `get` and `call` return are cut to this many elements per container.
 const MAX_ITEMS := 200
 ## Arguments a call takes at most.
@@ -119,6 +125,8 @@ func call_method(method: String, params: Dictionary, tree: SceneTree) -> Diction
 			return _set_property(tree, params)
 		"call":
 			return _call(tree, params)
+		"setting":
+			return _setting(params)
 		"publish":
 			var topic := str(params.get("topic", ""))
 			if topic.is_empty():
@@ -216,6 +224,20 @@ func _call(tree: SceneTree, params: Dictionary) -> Dictionary:
 	if args.size() < node.get_method_argument_count(method) - _default_count(node, method) or args.size() > node.get_method_argument_count(method):
 		return {"error": "%s takes %d argument(s), got %d" % [target, node.get_method_argument_count(method), args.size()]}
 	return {"result": plain(node.callv(method, args))}
+
+
+## Changes one of this process's settings as the settings screen would (modules hear
+## `settings.changed`), without saving it: the playtest's clients share the player's own
+## settings file.
+func _setting(params: Dictionary) -> Dictionary:
+	var key := str(params.get("key", ""))
+	if not SETTINGS.has(key):
+		return {"error": "%s is not a setting this API changes; allowed: %s" % [key, ", ".join(SETTINGS)]}
+	var value: Variant = params.get("value")
+	if typeof(value) != typeof(Settings.DEFAULTS[key]):
+		return {"error": "%s takes a %s, got %s" % [key, type_string(typeof(Settings.DEFAULTS[key])), type_string(typeof(value))]}
+	Settings.set_value(key, value)
+	return {"result": plain(Settings.value(key))}
 
 
 func _default_count(node: Object, method: String) -> int:

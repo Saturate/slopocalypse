@@ -321,6 +321,13 @@ func server_move_to(player: PlayerController, at: Vector3) -> void:
 	server_hold(player)
 
 
+## Server: takes `amount` health from a player as a hit with no shooter would (scripted
+## playtests kill someone this way). Returns the damage dealt; god mode deals none.
+func server_damage(player: PlayerController, amount: float) -> float:
+	var health := player.get_node_or_null("Health") as HealthComponent
+	return health.server_apply_damage(amount) if health != null else 0.0
+
+
 ## Everywhere: a dead player is hidden, cannot be hit and does not move; the camera stays
 ## where they fell.
 func _on_player_died(p: Dictionary) -> void:

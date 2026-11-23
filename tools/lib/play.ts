@@ -136,6 +136,45 @@ export function yawPitchTo(from: Vec3, to: Vec3): { yaw: number; pitch: number }
 	return { yaw: Math.atan2(-dx, -dz), pitch: Math.atan2(dy, Math.hypot(dx, dz)) };
 }
 
+// Horizontal distance: walking cares where the feet are on the map, not how high.
+export const flatDistance = (a: Vec3, b: Vec3): number => Math.hypot(a[0] - b[0], a[2] - b[2]);
+
+export interface Steer {
+	// Facing (yaw around Y) from `at` towards `to`, as yawPitchTo gives it.
+	yaw: number;
+	// Forward push 0..1: full until the last couple of metres, then less, so a poll every few
+	// hundred milliseconds does not carry the walker past the target and back.
+	forward: number;
+	distance: number;
+	arrived: boolean;
+}
+
+export const SLOW_WITHIN_M = 2;
+const MIN_PUSH = 0.3;
+
+// One step of walking from `at` to `to`: which way to face and how hard to push.
+export function steer(at: Vec3, to: Vec3, within: number): Steer {
+	const distance = flatDistance(at, to);
+	const arrived = distance <= within;
+	return { yaw: yawPitchTo(at, [to[0], at[1], to[2]]).yaw, forward: arrived ? 0 : Math.min(1, Math.max(MIN_PUSH, distance / SLOW_WITHIN_M)), distance, arrived };
+}
+
+// The player's walking pace, m/s (modules/player/data/player.json walk_speed; a tool test
+// keeps the two the same).
+export const WALK_SPEED = 4.5;
+
+// How long a walk of `distance` metres may take before it counts as stuck: three times
+// the time at walking pace, and never under 10 s.
+export function walkTimeoutMs(distance: number, speed = WALK_SPEED): number {
+	return Math.max(10_000, Math.ceil((distance / speed) * 3 * 1000));
+}
+
+// Rounds fired between two magazine readings: a reload in between (the count went up)
+// counts as nothing fired, never as a negative.
+export function roundsFired(before: number, now: number): number {
+	return before >= 0 && now >= 0 ? Math.max(0, before - now) : 0;
+}
+
 // The debug API file that belongs to the process logging to `logFile` (each run gives every
 // process its own log, so this needs no pid, which a launcher on Windows would not match).
 export function apiForLog(games: readonly ApiGame[], logFile: string): ApiGame | undefined {
@@ -512,6 +551,14 @@ export class Game {
 		return this.rpc("call", { target, args: args.map(godotValue) });
 	}
 
+	// One of this process's settings (DebugHandler.SETTINGS: colour_blind, coop_marker,
+	// compass, blood), as the settings screen changes it; never saved to the settings file.
+	async setting(key: string, value: boolean): Promise<void> {
+		const got = await this.rpc("setting", { key, value });
+		this.run.rec.add("action", `${this.name}: setting ${key} = ${describeValue(value)}`, got === value, got === value ? undefined : `reads back ${describeValue(got)}`);
+		if (got !== value) throw new PlaytestFailure(`${this.name}: setting ${key} reads back ${describeValue(got)}`);
+	}
+
 	async log(lines = 50): Promise<string> {
 		return str(await this.rpc("log", { lines }));
 	}
@@ -594,6 +641,16 @@ export interface SessionOptions {
 const CHEST_HEIGHT = 1.2;
 const NIGHT_HOUR = 23;
 const DAY_HOUR = 12;
+// More than any health in the game: a kill.
+const KILL_DAMAGE = 100_000;
+// Feet this far above the ground on a teleport: the body drops onto it, not through it.
+const GROUND_CLEARANCE = 0.2;
+const WALK_WITHIN_M = 1;
+const WALK_POLL_MS = 150;
+const FIRE_TIMEOUT_MS = 5_000;
+const RELEASE_MS = 150;
+// WeaponsModule.WEAPON_SLOTS, in the order weapon_slot counts them.
+export const WEAPON_SLOTS = ["primary", "secondary"] as const;
 // The player's one-shot intent actions (PlayerIntent.ONE_SHOTS).
 export const ONE_SHOTS = ["jump", "interact", "reload", "throw", "detonate", "weapon_1", "weapon_2", "back_to_spawn", "glowstick", "glowstick_drop"] as const;
 export type OneShot = (typeof ONE_SHOTS)[number];
@@ -723,6 +780,121 @@ export class Session {
 
 	async count(name: string, item: string): Promise<number> {
 		return num(await this.server.call("inventory:count", (await this.player(name)).peerId, item));
+	}
+
+	// Server: the player's health now (their HealthComponent).
+	async health(name: string): Promise<number> {
+		return num(await this.server.node(`${(await this.player(name)).path}/Health`).get("health"));
+	}
+
+	// Server: hurts the player as a hit with no shooter would; returns the damage dealt (none
+	// in god mode or when already dead).
+	async damage(name: string, amount: number): Promise<number> {
+		const dealt = num(await this.server.call("player:server_damage", nodePath((await this.player(name)).path), float(amount)));
+		this.run.rec.add("action", `${name} takes ${amount} damage`, true, `${dealt} dealt`);
+		return dealt;
+	}
+
+	// Server: kills the player and waits until the server has them dead.
+	async kill(name: string): Promise<void> {
+		await this.damage(name, KILL_DAMAGE);
+		await this.server.waitFor(`has ${name} dead`, (st) => st.players.some((p) => p.playerName === name && p.dead), 10_000);
+	}
+
+	// Server: the untouched ground's height at (x, z) (buildings are not in it).
+	async ground(x: number, z: number): Promise<number> {
+		const h = await this.server.call("world:ground_height", float(x), float(z));
+		if (typeof h !== "number") throw new Error(`the server has no ground height at ${x}, ${z} (no world loaded?)`);
+		return h;
+	}
+
+	// A point on the ground at (x, z), a little above it so the body settles onto it.
+	async onGround(x: number, z: number): Promise<Vec3> {
+		return [x, (await this.ground(x, z)) + GROUND_CLEARANCE, z];
+	}
+
+	// Server: walks the player to `to` (only x and z count) by steering their intent, facing
+	// the way they go, and waits on the wall clock until they are within `within` metres. Fails
+	// the step with where they got stuck when `timeoutMs` (by default three times the time at
+	// walking pace) runs out. Stops them either way.
+	async walkTo(name: string, to: Vec3, opts: { within?: number; timeoutMs?: number } = {}): Promise<void> {
+		const within = opts.within ?? WALK_WITHIN_M;
+		const p = await this.player(name);
+		const timeout = opts.timeoutMs ?? walkTimeoutMs(flatDistance(p.at, to));
+		const intent = this.server.node(`${p.path}/Intent`);
+		const started = Date.now();
+		let at = p.at;
+		let s = steer(at, to, within);
+		try {
+			while (!s.arrived) {
+				if (this.run.rec.closed) throw new PlaytestFailure("the run is over");
+				if (Date.now() - started >= timeout) {
+					const where = at.map((n) => n.toFixed(1)).join(", ");
+					this.run.rec.add("action", `${name} walks to ${to[0].toFixed(1)}, ${to[2].toFixed(1)}`, false, `stuck at ${where}, ${s.distance.toFixed(1)} m short after ${timeout / 1000} s`);
+					throw new PlaytestFailure(`${name} did not reach ${to[0].toFixed(1)}, ${to[2].toFixed(1)} within ${timeout / 1000} s; stuck at ${where}, ${s.distance.toFixed(1)} m short`);
+				}
+				await intent.set("look_yaw", float(s.yaw));
+				await intent.set("look_pitch", float(0));
+				await intent.set("remote_look", true);
+				await intent.set("move", vec2([0, s.forward]));
+				await sleep(WALK_POLL_MS);
+				at = (await this.player(name)).at;
+				s = steer(at, to, within);
+			}
+		} finally {
+			// A game that died mid-walk must not hide why the walk failed.
+			if (!this.run.rec.closed) await intent.set("move", vec2([0, 0])).catch(() => {});
+		}
+		this.run.rec.add("action", `${name} walks to ${to[0].toFixed(1)}, ${to[2].toFixed(1)}`, true, `${s.distance.toFixed(1)} m off after ${((Date.now() - started) / 1000).toFixed(1)} s`);
+		const own = this.clients.get(name);
+		if (own !== undefined) await own.waitFor("sees itself where it walked to", (st) => st.players.some((x) => x.local && flatDistance(x.at, to) <= within + 0.5), 10_000);
+	}
+
+	// The drawn gun on the server and its rounds as the player's own game last heard them from
+	// the server (-1 before it has).
+	private async gun(name: string): Promise<{ server: NodeHandle; rounds: number }> {
+		const p = await this.player(name);
+		const slot = num(await this.server.node(`${p.path}/Intent`).get("weapon_slot"));
+		const path = `${p.path}/Head/Camera/Weapon_${WEAPON_SLOTS[slot] ?? "primary"}`;
+		const ammo = await this.client(name).node(path).get("_synced_ammo");
+		return { server: this.server.node(path), rounds: typeof ammo === "number" ? ammo : -1 };
+	}
+
+	private async rounds(name: string): Promise<number> {
+		return (await this.gun(name)).rounds;
+	}
+
+	// Server: aims the player at a point or another player's chest and pulls the trigger until
+	// at least `shots` rounds have left the drawn gun (read from the owner's magazine count). A
+	// pull per round for a pistol; an automatic gun may let go of one or two more before the
+	// release reaches it. Returns the rounds fired; fails when a pull fires nothing in time.
+	async fire(name: string, at: Vec3 | string, opts: { shots?: number; timeoutMs?: number } = {}): Promise<number> {
+		const shots = opts.shots ?? 1;
+		await this.lookAt(name, at);
+		const intent = this.server.node(`${(await this.player(name)).path}/Intent`);
+		await this.run.expect.poll(() => this.rounds(name), { what: `${name}'s magazine`, timeout: 10_000 }).toBeGreaterThan(0);
+		let fired = 0;
+		try {
+			while (fired < shots) {
+				// A trigger held through a draw (or the last pull) is not a new pull: let go first,
+				// and pull only once the gun is out (a semi-automatic counts a pull during the draw
+				// as held from then on).
+				await intent.set("fire", false);
+				const { server } = await this.gun(name);
+				await this.run.expect.poll(async () => num(await server.get("_draw_left")), { what: `${name}'s gun drawn on the server`, timeout: 10_000 }).toSatisfy((v) => v <= 0, "to be out");
+				await sleep(RELEASE_MS);
+				const before = await this.rounds(name);
+				if (before <= 0) break;
+				await intent.set("fire", true);
+				// Added up pull by pull, so a reload in between does not reset the count.
+				fired += await this.run.expect.poll(async () => roundsFired(before, await this.rounds(name)), { what: `rounds out of ${name}'s gun`, timeout: opts.timeoutMs ?? FIRE_TIMEOUT_MS, interval: 50 }).toBeGreaterThan(0);
+				await intent.set("fire", false);
+			}
+		} finally {
+			if (!this.run.rec.closed) await intent.set("fire", false).catch(() => {});
+		}
+		this.run.rec.add("action", `${name} fires at ${typeof at === "string" ? at : at.map((n) => n.toFixed(1)).join(", ")}`, fired >= shots, `${fired} round(s)`);
+		return fired;
 	}
 
 	// Walks the player to the first car and presses interact; waits until they sit in it.
