@@ -48,7 +48,12 @@ func show_results(results: Dictionary, can_save: bool) -> void:
 	_gap()
 	_line("Frame time: %.1f ms average, %.1f ms for 95%% of frames, %.1f ms worst" % [results["frame_ms_mean"], results["frame_ms_p95"], results["frame_ms_worst"]])
 	if results.has("draw_calls"):
-		_line("Drawing: %d draw calls, %d objects; GPU %.1f ms, render CPU %.1f ms a frame" % [int(results["draw_calls"]), int(results.get("objects_drawn", 0.0)), float(results.get("gpu_ms", 0.0)), float(results.get("render_cpu_ms", 0.0))])
+		var gpu := "GPU %.1f ms" % float(results["gpu_ms"]) if results.has("gpu_ms") else "GPU not timed by %s" % str(results.get("driver", "this driver"))
+		_line("Drawing: %d draw calls, %d objects; %s, render CPU %.1f ms a frame" % [int(results["draw_calls"]), int(results.get("objects_drawn", 0.0)), gpu, float(results.get("render_cpu_ms", 0.0))])
+	if results.get("budget") is Dictionary:
+		# The perf module's split (its PerfBudget), read by key so this module needs no other.
+		var b: Dictionary = results["budget"]
+		_line("Where a frame goes: scripts %.1f ms, physics %.1f, render %.1f, other %.1f" % [b.get("scripts_ms", 0.0), b.get("physics_ms", 0.0), b.get("render_ms", 0.0), b.get("other_ms", 0.0)], &"HintLabel")
 	_line("%d frames over %d seconds" % [int(results["frames"]), int(results.get("seconds", 0.0))], &"HintLabel")
 	var hitches: Array = results.get("hitches", [])
 	if not hitches.is_empty():

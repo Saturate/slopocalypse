@@ -54,3 +54,13 @@ func test_the_server_sets_the_time_and_the_clock_runs() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	assert_float(clock.hour).is_greater(21.0)
+
+
+func test_no_shadows_switches_the_suns_shadow_off() -> void:
+	var parts := _world_parts()
+	var sun: DirectionalLight3D = parts[0]
+	sun.shadow_enabled = true
+	var lighting: DayLighting = auto_free(DayLighting.new())
+	lighting.shadows = false
+	lighting.attach(sun, parts[1])
+	assert_bool(sun.shadow_enabled).is_false()

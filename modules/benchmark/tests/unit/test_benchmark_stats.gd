@@ -48,6 +48,31 @@ func test_p95_on_small_runs_is_the_right_rank() -> void:
 	assert_float(float(BenchmarkStats.summarise(twenty)["frame_ms_p95"])).is_equal(19.0)
 
 
+func test_samples_average_into_drawing_numbers_the_budget_and_both_passes() -> void:
+	var samples: Array[Dictionary] = [
+		{"draw_calls": 1000, "gpu_ms": 4.0, "render_cpu_ms": 1.0, "driver": "vulkan", "budget": {"frame_ms": 10.0, "scripts_ms": 2.0, "other_ms": 1.0}, "shadow": {"draw_calls": 600}, "visible": {"draw_calls": 400}},
+		{"draw_calls": 2000, "gpu_ms": 6.0, "render_cpu_ms": 3.0, "driver": "vulkan", "budget": {"frame_ms": 12.0, "scripts_ms": 4.0, "other_ms": 3.0}, "shadow": {"draw_calls": 800}, "visible": {"draw_calls": 1200}},
+	]
+	var out := BenchmarkStats.average_samples(samples)
+	assert_float(float(out["draw_calls"])).is_equal(1500.0)
+	assert_float(float(out["gpu_ms"])).is_equal(5.0)
+	assert_str(str(out["driver"])).is_equal("vulkan")
+	assert_dict(out["budget"]).is_equal({"frame_ms": 11.0, "scripts_ms": 3.0, "other_ms": 2.0})
+	assert_dict(out["shadow"]).is_equal({"draw_calls": 700.0})
+	assert_dict(out["visible"]).is_equal({"draw_calls": 800.0})
+
+
+func test_a_driver_that_cannot_time_the_gpu_leaves_gpu_out() -> void:
+	var samples: Array[Dictionary] = [{"draw_calls": 10, "driver": "metal", "budget": {"frame_ms": 5.0}}]
+	var out := BenchmarkStats.average_samples(samples)
+	assert_bool(out.has("gpu_ms")).is_false()
+	assert_str(str(out["driver"])).is_equal("metal")
+
+
+func test_no_samples_average_to_nothing() -> void:
+	assert_dict(BenchmarkStats.average_samples([] as Array[Dictionary])).is_empty()
+
+
 func test_the_short_summary_names_the_numbers_and_the_machine() -> void:
 	var results := {"fps_mean": 87.4, "fps_low_1pct": 41.2, "frame_ms_worst": 52.3, "frames": 5200, "seconds": 60.0}
 	var machine := {"version": "0.10.0", "gpu": "NVIDIA GeForce RTX 2070 SUPER", "renderer": "forward_plus (Vulkan)", "cpu": "AMD Ryzen 7 3700X", "os": "Windows 10", "resolution": "1920x1080"}

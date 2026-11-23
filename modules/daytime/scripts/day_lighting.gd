@@ -12,6 +12,8 @@ const STAR_SEED := 7
 
 var sun: DirectionalLight3D
 var environment: Environment
+## False under --no-shadows (RenderSwitches): the sun casts none.
+var shadows := true
 
 var _sky: ProceduralSkyMaterial
 
@@ -20,6 +22,8 @@ var _sky: ProceduralSkyMaterial
 func attach(light: DirectionalLight3D, env: Environment) -> void:
 	sun = light
 	environment = env
+	if sun != null and not shadows:
+		sun.shadow_enabled = false
 	_sky = null
 	if environment != null and environment.sky != null:
 		_sky = environment.sky.sky_material as ProceduralSkyMaterial
