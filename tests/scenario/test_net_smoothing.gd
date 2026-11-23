@@ -123,6 +123,22 @@ func test_a_teleport_is_not_slid_across() -> void:
 	assert_vector(_on_client(smooth).position).is_equal_approx(Vector3(200, 0, 0), Vector3.ONE * 0.001)
 
 
+func test_a_client_write_on_a_still_thing_gives_way_to_the_server() -> void:
+	_smoothing.delay = 0.0
+	var smooth := _spawn(Vector3.ZERO, true)
+	await _settle()
+	# Standing still the smoothing writes nothing new, but the next update puts the server's
+	# value back.
+	_on_client(smooth).position = Vector3(0, 5, 0)
+	await _settle()
+	assert_vector(_on_client(smooth).position).is_equal_approx(Vector3.ZERO, Vector3.ONE * 0.001)
+	_on_client(smooth).position = Vector3(0, 5, 0)
+	# A move on the server is shown, smoothed, from wherever the client had it.
+	smooth.position = Vector3(3, 0, 0)
+	await _settle()
+	assert_vector(_on_client(smooth).position).is_equal_approx(Vector3(3, 0, 0), Vector3.ONE * 0.001)
+
+
 func test_it_lets_go_of_things_that_leave() -> void:
 	var smooth := _spawn(Vector3.ZERO, true)
 	await _settle()

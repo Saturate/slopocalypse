@@ -9,6 +9,8 @@ extends Node
 ## enough that a one-frame flicker (a bump while walking) does not pop the pose.
 const BLEND_RATE := 12.0
 const AIM_RATE := 15.0
+## Hand IK side -> the gun's marker for that hand.
+const GRIPS := {&"R": &"GripR", &"L": &"GripL"}
 
 var player: PlayerController
 ## Someone else's body: posed less often when far off or out of view (BodyLod). Off for your
@@ -87,6 +89,10 @@ func _process(delta: float) -> void:
 		poses += 1
 	else:
 		_since += delta
+		# Hidden (a dead soldier until its body goes, someone in a car): nothing to see.
+		if not _skeleton.is_visible_in_tree():
+			Prof.stop(&"player/player_body_animator:frame", prof)
+			return
 		var middle := player.global_position + Vector3.UP
 		if not _posed or _since + _lead >= BodyLod.shared().interval_at(get_viewport(), middle):
 			_pose(_since)
@@ -166,8 +172,8 @@ func _update_hands() -> void:
 		return
 	var targets := {}
 	if _socket != null:
-		for side: StringName in [&"R", &"L"]:
-			var marker := _marker(&"Grip" + side)
+		for side: StringName in GRIPS:
+			var marker := _marker(GRIPS[side])
 			if marker != null:
 				targets[side] = _socket.transform * (_socket.global_transform.affine_inverse() * marker.global_position)
 	_hand_ik.set(&"targets", targets)

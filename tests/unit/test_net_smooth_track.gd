@@ -82,3 +82,20 @@ func test_it_keeps_only_what_it_still_needs() -> void:
 		t.push(float(i) * 0.016, [Vector3(i, 0, 0), 0.0])
 		t.sample(float(i) * 0.016)
 	assert_int(t.size()).is_less(12)
+
+
+func test_standing_still_then_moving_blends_from_where_it_stood() -> void:
+	var t := _track()
+	t.push(1.0, [Vector3(1, 0, 0), 0.2])
+	t.push(1.1, [Vector3(1, 0, 0), 0.2])
+	t.push(1.2, [Vector3(3, 0, 0), 0.4])
+	# 1.15 - 0.1 = 1.05: between two equal updates, it stands.
+	var still := t.sample(1.15)
+	assert_vector(still[0]).is_equal(Vector3(1, 0, 0))
+	assert_float(still[1]).is_equal_approx(0.2, 0.0001)
+	# 1.25 - 0.1 = 1.15: half way from where it stood to where it went.
+	var moving := t.sample(1.25)
+	assert_vector(moving[0]).is_equal_approx(Vector3(2, 0, 0), Vector3.ONE * 0.0001)
+	assert_float(moving[1]).is_equal_approx(0.3, 0.0001)
+	# The still sample is not changed by sampling again later.
+	assert_vector(still[0]).is_equal(Vector3(1, 0, 0))

@@ -57,8 +57,13 @@ func _load() -> void:
 		off_screen_rate = maxf(float(data["off_screen_rate"]), MIN_RATE)
 		view_radius = float(data["view_radius"])
 	var player: Variant = Data.load_json(PLAYER_CONFIG)
-	if player is Dictionary:
-		reference_fov = float((player as Dictionary).get("fov", reference_fov))
+	if player is Dictionary and Data.require(PLAYER_CONFIG, player, {"fov": TYPE_FLOAT}):
+		var fov := float(player["fov"])
+		# tan() of half of it must be finite and positive.
+		if fov > 1.0 and fov < 179.0:
+			reference_fov = fov
+		else:
+			Log.warn(&"player", "%s: fov %.1f is out of range; distances are judged at %.0f degrees" % [PLAYER_CONFIG, fov, reference_fov])
 
 
 ## Seconds between poses for a body `distance` metres off (already scaled by the zoom), in

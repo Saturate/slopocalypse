@@ -29,7 +29,9 @@ func _ready() -> void:
 		scenery.visible = false
 	add_child((load(WEAPONS) as GDScript).new())
 	add_child(_camera)
-	_camera.fov = 60.0
+	# The field of view distances are judged at, so the rows land in the every-frame, mid and
+	# far bands as named.
+	_camera.fov = BodyLod.shared().reference_fov
 	_camera.global_position = ORIGIN + Vector3(0.0, _ground(ORIGIN.x, ORIGIN.z) + 1.7, 0.0)
 	_camera.current = true
 	var peer := 50

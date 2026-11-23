@@ -97,12 +97,33 @@ func test_your_own_body_is_posed_every_frame_wherever_it_is() -> void:
 	assert_int(own.poses - start).is_equal(FRAMES)
 
 
-func test_a_copy_posed_less_often_still_holds_its_gun() -> void:
-	var mid := _copy(Vector3(0.0, 0.0, -25.0), true)
-	await _frames(FRAMES)
-	var player := mid.player
+func _assert_hands_on_grip(animator: PlayerBodyAnimator, band: String) -> void:
+	var player := animator.player
 	var skeleton := player.get_node("Body/Skeleton") as Skeleton3D
 	for side in ["R", "L"]:
 		var hand := skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone("Hand_" + side)).origin
 		var marker := ShotEffects.held_rifle(player).find_child("Grip" + side, true, false) as Node3D
-		assert_float(hand.distance_to(marker.global_position)).override_failure_message("%s hand is %.3f m off the grip" % [side, hand.distance_to(marker.global_position)]).is_less(0.03)
+		var gap := hand.distance_to(marker.global_position)
+		assert_float(gap).override_failure_message("%s: %s hand is %.3f m off the grip" % [band, side, gap]).is_less(0.03)
+
+
+func test_a_copy_posed_less_often_still_holds_its_gun() -> void:
+	var mid := _copy(Vector3(0.0, 0.0, -25.0), true)
+	var far := _copy(Vector3(3.0, 0.0, -90.0), true)
+	var behind := _copy(Vector3(0.0, 0.0, 6.0), true)
+	await _frames_for(FRAMES, 0.5)
+	_assert_hands_on_grip(mid, "mid")
+	_assert_hands_on_grip(far, "far")
+	_assert_hands_on_grip(behind, "out of view")
+
+
+func test_a_hidden_copy_is_not_posed() -> void:
+	var hidden := _copy(Vector3(0.0, 0.0, -6.0), true)
+	await _frames(2)
+	(hidden.player.get_node("Body") as Node3D).visible = false
+	var start := hidden.poses
+	await _frames(FRAMES)
+	assert_int(hidden.poses - start).is_equal(0)
+	(hidden.player.get_node("Body") as Node3D).visible = true
+	await _frames(2)
+	assert_int(hidden.poses - start).is_greater(0)

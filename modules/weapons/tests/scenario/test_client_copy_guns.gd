@@ -17,7 +17,8 @@ func before_test() -> void:
 	add_child(_client)
 	# A client that never reaches a server is still a client: not the server, never local peer 1.
 	_peer = ENetMultiplayerPeer.new()
-	assert_int(_peer.create_client("127.0.0.1", 7990 + randi() % 9)).is_equal(OK)
+	# Nothing listens on port 1, so it never connects, even while another gate runs servers.
+	assert_int(_peer.create_client("127.0.0.1", 1)).is_equal(OK)
 	var api := SceneMultiplayer.new()
 	api.multiplayer_peer = _peer
 	get_tree().set_multiplayer(api, _client.get_path())
