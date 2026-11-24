@@ -99,6 +99,34 @@ impl Mesh {
         self.indices.shrink_to_fit();
     }
 
+    /// Bends a straight mesh along a curve given as rows: the vertices whose z rounds to row
+    /// `r` (z = `start` + r * `step`, clamped to the rows given) move to `centres[r]` plus their
+    /// x times `acrosses[r]` (the curve's sideways direction there, in x and z) and their y up.
+    /// Normals turn with their row's direction, so lighting stays right on a bend. A road piece
+    /// has tens of thousands of vertices: this is the hot part of building one.
+    pub fn bend_rows(
+        &mut self,
+        start: f32,
+        step: f32,
+        centres: &[[f32; 3]],
+        acrosses: &[[f32; 2]],
+    ) {
+        let rows = centres.len().min(acrosses.len());
+        if rows == 0 || step <= 0.0 {
+            return;
+        }
+        debug_assert_eq!(self.positions.len(), self.normals.len());
+        let row_of =
+            |z: f32| -> usize { (((z - start) / step).round().max(0.0) as usize).min(rows - 1) };
+        for (p, n) in self.positions.iter_mut().zip(self.normals.iter_mut()) {
+            let r = row_of(p[2]);
+            let c = centres[r];
+            let a = acrosses[r];
+            *p = [c[0] + a[0] * p[0], c[1] + p[1], c[2] + a[1] * p[0]];
+            *n = [a[0] * n[0] - a[1] * n[2], n[1], a[1] * n[0] + a[0] * n[2]];
+        }
+    }
+
     /// Adds `other`'s faces to this mesh.
     pub fn append(&mut self, other: &Mesh) {
         let base = self.positions.len() as u32;
@@ -1517,6 +1545,37 @@ mod tests {
 
     fn fill(c: Colour) -> Op {
         Op::Fill(Paint::solid(c))
+    }
+
+    #[test]
+    fn bending_moves_each_row_onto_the_curve_and_turns_its_normals() {
+        let mut m = Mesh {
+            positions: vec![
+                [1.0, 0.5, 0.0],
+                [2.0, 0.0, 1.04],
+                [0.0, 0.0, 9.0],
+                [0.0, 0.0, -3.0],
+            ],
+            normals: vec![
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 0.0, 0.0],
+            ],
+            ..Mesh::default()
+        };
+        // Row 0 runs straight; row 1 has turned a quarter (across now points along z).
+        let centres = [[10.0, 1.0, 20.0], [11.0, 2.0, 21.0]];
+        let acrosses = [[1.0, 0.0], [0.0, 1.0]];
+        m.bend_rows(0.0, 1.0, &centres, &acrosses);
+        assert_eq!(m.positions[0], [11.0, 1.5, 20.0]);
+        assert_eq!(m.normals[0], [1.0, 0.0, 0.0]);
+        assert_eq!(m.positions[1], [11.0, 2.0, 23.0]);
+        assert_eq!(m.normals[1], [-1.0, 0.0, 0.0]);
+        // Past either end: the nearest row.
+        assert_eq!(m.positions[2], [11.0, 2.0, 21.0]);
+        assert_eq!(m.normals[2], [0.0, 1.0, 0.0]);
+        assert_eq!(m.positions[3], [10.0, 1.0, 20.0]);
     }
 
     #[test]
