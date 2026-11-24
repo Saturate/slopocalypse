@@ -44,6 +44,8 @@ export function localGodot(root: string): string {
 // the bundle id in its environment is not its own (the terminal's leaks in), so the window
 // would take the keyboard; and macOS stops drawing a window that is covered, minimised or off
 // screen (Godot pulls off-screen positions back), so it stays on top instead of hiding.
+// The game plays no sound either (the audio server still runs, so audio code is exercised and
+// Movie Maker still records it); SLOP_SOUND=1 keeps it audible.
 // Launchers meant for a person at the keyboard (run-local, range, library) keep a normal window.
 export const GODOT_BUNDLE_ID = "org.godotengine.godot";
 
@@ -53,6 +55,7 @@ export interface QuietWindow {
 }
 
 export function quietWindow(os: string, env: NodeJS.ProcessEnv): QuietWindow {
-	if (os !== "darwin") return { args: [], env };
-	return { args: ["--always-on-top"], env: { ...env, __CFBundleIdentifier: GODOT_BUNDLE_ID } };
+	const args = env.SLOP_SOUND === "1" ? [] : ["--audio-driver", "Dummy"];
+	if (os !== "darwin") return { args, env };
+	return { args: [...args, "--always-on-top"], env: { ...env, __CFBundleIdentifier: GODOT_BUNDLE_ID } };
 }
