@@ -3,11 +3,15 @@ extends Node3D
 ## metres a second (30 by default) with scenery streaming as in play, and every frame's time
 ## spent building scenery is logged. At the end it prints the worst frames, what each kind of
 ## build step cost, and how many frames the ground under the camera was missing its chunk,
-## grass or road (what the player would see popping in).
+## grass or road (what the player would see popping in). The same for the voxel ground: its
+## time a frame (`world/voxel_world:frame`), each part's cost, and the frames the camera's
+## ground tile had no mesh or no collision; frames well over the ground's budget are printed
+## with their parts as they happen.
 
 const WORLD := "res://modules/world/scenes/world.tscn"
 const CITY := "res://modules/city/city_module.gd"
 const ZONE := "world/scenery_build"
+const TERRAIN := "world/voxel_world"
 const HEIGHT := 2.0
 ## Metres driven before the summary.
 const DRIVE := 1500.0
@@ -16,6 +20,10 @@ const ZONES_READ := 200
 
 var _camera := Camera3D.new()
 var _scatter: SceneryScatter
+var _terrain: VoxelWorld
+var _terrain_frames: Array[float] = []
+var _no_mesh: Array[float] = []
+var _no_collision: Array[float] = []
 var _map: GroundShape
 var _from := Vector3.ZERO
 var _heading := Vector3.RIGHT
@@ -34,6 +42,7 @@ func _ready() -> void:
 			_speed = float(arg.trim_prefix("--speed="))
 	var world := await VoxelWorld.add_and_wait(self, WORLD)
 	_scatter = world.get_node("Scenery")
+	_terrain = world.get_node("Terrain")
 	_map = WorldMaps.shape_or_default()
 	var city: Node = (load(CITY) as GDScript).new()
 	add_child(city)
@@ -64,6 +73,18 @@ func _process(delta: float) -> void:
 		if zone == ZONE or zone.begins_with(ZONE + "/"):
 			spent += float(frame[zone])
 	_frames.append(spent)
+	_terrain_frames.append(float(frame.get(TERRAIN + ":frame", 0.0)))
+	if float(frame.get(TERRAIN + ":frame", 0.0)) > _terrain_budget() + 2.0:
+		var parts := {}
+		for zone: String in frame:
+			if zone.begins_with(TERRAIN):
+				parts[zone] = frame[zone]
+		print("slow ground frame at %.0f m: %s" % [_travelled, parts])
+	var tile := Vector2i(floori(_camera.global_position.x / VoxelWorld.TILE), floori(_camera.global_position.z / VoxelWorld.TILE))
+	if not (_terrain.get(&"_tiles") as Dictionary).has(tile):
+		_no_mesh.append(snappedf(_travelled, 0.1))
+	if not (_terrain.get(&"_collision") as Dictionary).has(tile):
+		_no_collision.append(snappedf(_travelled, 0.1))
 	var here := _scatter.chunk_at(_camera.global_position.x, _camera.global_position.z)
 	if here >= 0 and _scatter.chunk_node(here) == null:
 		_missing.append(snappedf(_travelled, 0.1))
@@ -96,7 +117,19 @@ func _summary() -> void:
 	var zones := stats.keys()
 	zones.sort()
 	for zone: String in zones:
-		if zone.begins_with(ZONE):
+		if zone.begins_with(ZONE) or zone.begins_with(TERRAIN):
 			var z: Dictionary = stats[zone]
 			print("  %-34s calls %5d  mean %6.2f  max %6.2f ms" % [zone, int(z["calls"]), float(z["ms"]) / maxf(float(z["calls"]), 1.0), float(z["max_ms"])])
 	print("camera's chunk missing at metres %s; still putting in grass or road at %s" % [_missing, _unfinished])
+	var ground := _terrain_frames.duplicate()
+	ground.sort()
+	var over_terrain := 0
+	for f: float in _terrain_frames:
+		if f > _terrain_budget():
+			over_terrain += 1
+	print("voxel ground per frame over %d frames: median %.2f, p99 %.2f, max %.2f ms; frames over its %.1f ms budget: %d" % [ground.size(), ground[ground.size() / 2], ground[int(ground.size() * 0.99)], ground[-1], _terrain_budget(), over_terrain])
+	print("camera's ground tile without a mesh at metres %s; without collision at %s" % [_no_mesh, _no_collision])
+
+
+func _terrain_budget() -> float:
+	return float((_terrain.get(&"_cfg") as Dictionary)["build_budget_ms"])

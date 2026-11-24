@@ -9,7 +9,7 @@ extends Node3D
 ## and coarser far away. Both apply the same digs from the same replayed events.
 
 const SHADER := "res://modules/world/shaders/voxel_ground.gdshader"
-const VOXEL_REQUIRED := {"max_dig_depth": TYPE_FLOAT, "crater_depth_share": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "lods": TYPE_ARRAY, "builds_per_frame": TYPE_FLOAT}
+const VOXEL_REQUIRED := {"max_dig_depth": TYPE_FLOAT, "crater_depth_share": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "lods": TYPE_ARRAY, "build_budget_ms": TYPE_FLOAT}
 const GROUND_REQUIRED := {"tilt_grade": TYPE_FLOAT, "band": TYPE_FLOAT, "pad_band": TYPE_FLOAT, "band_grade": TYPE_FLOAT, "ledge": TYPE_FLOAT, "ledge_grade": TYPE_FLOAT, "wall_light": TYPE_FLOAT, "tilt_variation": TYPE_FLOAT, "track_fray": TYPE_FLOAT, "track_verge": TYPE_FLOAT, "yard_fray": TYPE_FLOAT, "yard_round": TYPE_FLOAT, "lane_soil": TYPE_ARRAY, "lane_mix": TYPE_FLOAT, "verge_mix": TYPE_FLOAT, "rut_dark": TYPE_FLOAT}
 const TILE := 32.0
 ## Collision height maps sample the ground every metre.
@@ -28,6 +28,13 @@ const WAY_YARD := 3
 const WAY_PAD := 4
 ## Focus points closer together than this (metres) count as one.
 const THIN_GRID := 4.0
+## Ground this close to a focus point (metres) is built whatever the frame's budget: someone
+## stands on it or is about to.
+const URGENT_REACH := 8.0
+## Tiles of each kind (collision, visible) being sampled or meshed at once: enough to keep the
+## threads busy, few enough that tiles queued for where someone was don't hold up the ones
+## where they are now, and that starting them never takes long in one frame.
+const MAX_JOBS := 12
 const GRASS := Color(0.36, 0.5, 0.22)
 const LITTER := Color(0.33, 0.29, 0.18)
 const STRAW := Color(0.7, 0.61, 0.36)
@@ -86,6 +93,23 @@ var _pending := true
 ## visible tile -> {task, result, voxel}. Results are an Array the task appends to.
 var _base_jobs: Dictionary[Vector2i, Dictionary] = {}
 var _tile_jobs: Dictionary[Vector2i, Dictionary] = {}
+## Visible tiles whose craters, pads or lanes changed since they were built: rebuilt in turn,
+## the old one showing until then.
+var _stale: Dictionary[Vector2i, bool] = {}
+## Bumped whenever a tile's craters, pads or lanes change, so a job started before is not used.
+var _tile_gen: Dictionary[Vector2i, int] = {}
+## The visible tiles wanted ({tile: distance}) and the same nearest first as Vector4(distance,
+## x, z, voxel size), for the focus tiles `_order_focus`.
+var _wanted_tiles := {}
+var _tile_order: Array[Vector4] = []
+var _order_focus: Array[Vector2i] = []
+## The list being made on a worker thread (`_advance_list`): {task, result, focus, points}.
+var _list_job := {}
+## The collision tiles wanted ({tile: distance}) and the same nearest first as Vector3(distance,
+## x, z), for the focus tiles `_collision_focus`.
+var _collision_wanted := {}
+var _collision_order: Array[Vector3] = []
+var _collision_focus: Array[Vector2i] = []
 ## How the visible ground tilts and draws roads, tracks and lanes (world.json `ground`, as
 ## `VoxelGround.tile_arrays` takes it).
 var _look := {}
@@ -167,7 +191,7 @@ func _process(_delta: float) -> void:
 func _process_tick(_delta: float) -> void:
 	if heights == null:
 		return
-	update_around(_focus_points(), float(_cfg["builds_per_frame"]), true)
+	update_around(_focus_points(), float(_cfg["build_budget_ms"]), true)
 	_follow_sun()
 
 
@@ -428,9 +452,7 @@ func _apply_pads(pads: Array) -> void:
 		if _collision.has(key):
 			_collision[key].queue_free()
 			_collision[key] = _build_collision(key)
-		if _tiles.has(key):
-			_drop_tile_job(key)
-			_replace_tile(key, _tile_voxel[key])
+		_touch(key)
 
 
 ## `h` levelled towards any of `pads` over (x, z): their height inside, easing out to `h`.
@@ -520,11 +542,12 @@ func _dent(x: float, z: float, depth: float, radius: float) -> void:
 			if not _digs_in.has(key):
 				_digs_in[key] = []
 			_digs_in[key].append(dig)
+			# Collision right away: whoever stands there falls into the crater now. The
+			# visible tile follows within a frame or two, off the main thread.
 			if _collision.has(key):
 				_collision[key].queue_free()
 				_collision[key] = _build_collision(key)
-			if _tiles.has(key):
-				_replace_tile(key, _tile_voxel[key])
+			_touch(key)
 	var puddle := heights.water.flood(center, radius, depth)
 	if puddle != Vector4.ZERO:
 		flooded.emit(puddle)
@@ -537,9 +560,12 @@ func dig_log() -> Array[Vector4]:
 	return _dig_log
 
 
-## Builds collision and visible tiles near `points` (at most `budget` this call) and frees
-## far ones. With `threaded`, ground heights and colours are sampled on worker threads and a
-## tile is built from them on a later call; otherwise right away.
+## Builds collision and visible tiles near `points` and frees far ones. Right away, `budget`
+## is how many tiles this call may build. With `threaded` it is milliseconds of this frame:
+## ground is sampled on worker threads and meshed on VoxelGround's mesher threads, and this
+## call only starts jobs and puts finished tiles in, nearest first, until the time is up. The
+## ground within URGENT_REACH of a point goes in whatever the budget, so nobody stands where
+## there is none.
 func update_around(points: Array[Vector3], budget: float, threaded := false) -> void:
 	# Many focus points stand close together (a squad, a player in a car): one per few metres
 	# is plenty, and fewer points make every distance below cheaper.
@@ -550,45 +576,77 @@ func update_around(points: Array[Vector3], budget: float, threaded := false) -> 
 	if focus == _last_focus and not _pending:
 		return
 	_last_focus = focus
+	# Past a day of milliseconds a budget means "no limit" (and keeps the sum in an int).
+	var deadline := Time.get_ticks_usec() + int(minf(budget, 8.64e7) * 1000.0) if threaded else -1
 	# Clients build collision too (around their camera): cheap, and the world announces
 	# itself only once the spawn is solid, on every machine.
-	var built := _update_collision(points, budget, threaded)
-	_pending = built >= budget or not _base_jobs.is_empty()
+	var built := _update_collision(points, budget, deadline)
+	_pending = built < 0.0 or not _base_jobs.is_empty()
 	if _visual:
-		_pending = _update_tiles(points, budget - built, threaded) or _pending or not _tile_jobs.is_empty()
+		# The first step of the call is the tiles' if collision had nothing to do.
+		_pending = _update_tiles(points, budget - built if built >= 0.0 else 0.0, deadline, built == 0.0) or _pending or not _tile_jobs.is_empty()
 
 
-func _update_collision(points: Array[Vector3], budget: float, threaded := false) -> float:
+## True once the time (threaded) or the count of builds (right away) is used up. Threaded,
+## the call's first build is always made, so even a budget of nothing gets somewhere: steps
+## that only start a job or hand samples to a mesher (cheap) don't use up that first build,
+## though once the time is up they wait for the next call too.
+func _spent(built: float, budget: float, deadline: int, first: bool) -> bool:
+	if deadline >= 0:
+		return not first and Time.get_ticks_usec() >= deadline
+	return built >= budget
+
+
+## Builds missing collision tiles nearest first; how many it built, or -1 when it stopped
+## with some still to build.
+func _update_collision(points: Array[Vector3], budget: float, deadline: int) -> float:
 	var reach: float = _cfg["collision_distance"]
-	var wanted := _tiles_near(points, reach)
-	var missing: Array = []
-	for key: Vector2i in wanted:
-		if not _collision.has(key):
-			missing.append([wanted[key], key])
+	var tl := Prof.start()
+	if _collision_focus != _last_focus:
+		_collision_focus = _last_focus
+		_collision_wanted = _tiles_near(points, reach)
+		_collision_order.clear()
+		for key: Vector2i in _collision_wanted:
+			_collision_order.append(Vector3(_collision_wanted[key], key.x, key.y))
+		_collision_order.sort()
+	Prof.stop(&"world/voxel_world/collision_list", tl)
+	var wanted := _collision_wanted
 	var built := 0.0
-	for entry: Array in _nearest_first(missing):
-		if built >= budget:
+	var left := false
+	var first := true
+	for entry in _collision_order:
+		var key := Vector2i(int(entry.y), int(entry.z))
+		if _collision.has(key):
+			continue
+		var urgent := entry.x <= URGENT_REACH
+		if not urgent and _spent(built, budget, deadline, first):
+			left = true
 			break
-		var key: Vector2i = entry[1]
-		if threaded and not _base_heights.has(key):
-			if not _base_jobs.has(key):
-				_start_base(key)
-				continue
-			if not WorkerThreadPool.is_task_completed(int(_base_jobs[key]["task"])):
-				continue
+		if not _base_heights.has(key) and _base_jobs.has(key) and WorkerThreadPool.is_task_completed(int(_base_jobs[key]["task"])):
 			_take_base(key)
+		# Ground under someone is sampled right here if its job hasn't finished: a body must
+		# never stand where there is no collision.
+		if deadline >= 0 and not urgent and not _base_heights.has(key):
+			if not _base_jobs.has(key) and _base_jobs.size() < MAX_JOBS:
+				_start_base(key)
+			continue
+		var tc := Prof.start()
 		_collision[key] = _build_collision(key)
+		Prof.stop(&"world/voxel_world/collision", tc)
 		built += 1.0
+		first = false
 	for key: Vector2i in _collision.keys():
 		if not wanted.has(key) and _distance(key, points) > reach + TILE:
 			_collision[key].queue_free()
 			_collision.erase(key)
 			_base_heights.erase(key)
+	# A job nobody needs any more (the tile went out of reach, or was sampled right here) is
+	# let go once its worker is done with it.
 	for key: Vector2i in _base_jobs.keys():
-		if not wanted.has(key) and WorkerThreadPool.is_task_completed(int(_base_jobs[key]["task"])):
+		if (not wanted.has(key) or _collision.has(key)) and WorkerThreadPool.is_task_completed(int(_base_jobs[key]["task"])):
 			WorkerThreadPool.wait_for_task_completion(int(_base_jobs[key]["task"]))
 			_base_jobs.erase(key)
-	return built
+	return -1.0 if left else built
 
 
 func _start_base(key: Vector2i) -> void:
@@ -619,76 +677,201 @@ func _base_samples(key: Vector2i) -> PackedFloat32Array:
 
 func _exit_tree() -> void:
 	# Tasks read this node's terrain; none may outlive it.
-	for job: Dictionary in _base_jobs.values() + _tile_jobs.values():
+	for job: Dictionary in _base_jobs.values():
 		WorkerThreadPool.wait_for_task_completion(int(job["task"]))
 	_base_jobs.clear()
-	_tile_jobs.clear()
+	for key: Vector2i in _tile_jobs.keys():
+		_drop_tile_job(key)
+	_drop_list_job()
 
 
-## Builds or re-details visible tiles; true when the budget ran out with work left.
-func _update_tiles(points: Array[Vector3], budget: float, threaded := false) -> bool:
-	var reach: float = _cfg["load_distance"]
-	var wanted := _tiles_near(points, reach)
-	var todo: Array = []
-	for key: Vector2i in wanted:
-		var voxel := _voxel_for(wanted[key])
-		if not (_tiles.has(key) and is_equal_approx(_tile_voxel[key], voxel)):
-			todo.append([wanted[key], key, voxel])
+## Builds or re-details visible tiles nearest first; true while any is left to do.
+func _update_tiles(points: Array[Vector3], budget: float, deadline: int, first: bool) -> bool:
+	var tl := Prof.start()
+	var listing := false
+	if _order_focus != _last_focus:
+		if deadline < 0:
+			_drop_list_job()
+			_apply_list(_last_focus, points, _list(points))
+		else:
+			listing = _advance_list(points)
+	Prof.stop(&"world/voxel_world/tile_list", tl)
 	var built := 0.0
-	var more := false
-	for entry: Array in _nearest_first(todo):
-		if built >= budget:
+	var more := listing
+	# The ground under someone with none showing yet (a respawn, a teleport) goes in whatever
+	# the budget. Measured from where they are now: the list is from when they last changed
+	# tile, or still being made after a teleport.
+	var urgent_tiles := {}
+	if deadline >= 0:
+		urgent_tiles = _tiles_near(points, URGENT_REACH)
+		for key: Vector2i in urgent_tiles:
+			if _tiles.has(key):
+				continue
+			if _advance_tile(key, _voxel_for(urgent_tiles[key]), true):
+				first = false
+			else:
+				more = true
+	for entry in _tile_order:
+		var key := Vector2i(int(entry.y), int(entry.z))
+		var voxel := entry.w
+		if _tiles.has(key) and not _stale.has(key) and is_equal_approx(_tile_voxel[key], voxel):
+			# A job for another detail, from before the points moved back: not needed now.
+			if _tile_jobs.has(key):
+				_let_go(key)
+			continue
+		if urgent_tiles.has(key) and not _tiles.has(key):
+			continue
+		if _spent(built, budget, deadline, first):
 			more = true
 			break
-		var key: Vector2i = entry[1]
-		var voxel: float = entry[2]
-		# Tiles with craters read the craters, which change as people dig: built right here.
-		if threaded and not _digs_in.has(key) and not _pads_in.has(key):
-			var job: Dictionary = _tile_jobs.get(key, {})
-			if job.is_empty() or not is_equal_approx(float(job["voxel"]), voxel):
-				if job.is_empty() or WorkerThreadPool.is_task_completed(int(job["task"])):
-					_drop_tile_job(key)
-					_start_tile(key, voxel)
-				continue
-			if not WorkerThreadPool.is_task_completed(int(job["task"])):
-				continue
-			var result: Array = job["result"]
+		if deadline < 0:
 			_drop_tile_job(key)
-			if not result.is_empty():
-				_make_tile(key, voxel, result[0], result[1], result[2], PackedByteArray())
-				built += 1.0
-				continue
-		_drop_tile_job(key)
-		_replace_tile(key, voxel)
-		built += 1.0
-	for key: Vector2i in _tiles.keys():
-		if not wanted.has(key) and _distance(key, points) > reach + TILE:
-			_tiles[key].queue_free()
-			_tiles.erase(key)
-			_tile_voxel.erase(key)
+			_replace_tile(key, voxel)
+			built += 1.0
+		elif _advance_tile(key, voxel, false):
+			first = false
+		else:
+			more = true
 	for key: Vector2i in _tile_jobs.keys():
-		if not wanted.has(key) and WorkerThreadPool.is_task_completed(int(_tile_jobs[key]["task"])):
-			_drop_tile_job(key)
+		if not _wanted_tiles.has(key) and not urgent_tiles.has(key):
+			_let_go(key)
 	return more
 
 
+## The visible tiles wanted round `points`: [{tile: distance}, the same nearest first as
+## Vector4(distance, x, z, voxel size)]. Pure: safe on a worker thread, where it runs while
+## streaming (a few hundred tiles took milliseconds of script time).
+func _list(points: Array[Vector3]) -> Array:
+	var wanted := _tiles_near(points, float(_cfg["load_distance"]))
+	var order: Array[Vector4] = []
+	for key: Vector2i in wanted:
+		var d: float = wanted[key]
+		order.append(Vector4(d, key.x, key.y, _voxel_for(d)))
+	# Vector4s sort by x first: by distance, natively (a script comparison is far slower).
+	order.sort()
+	return [wanted, order]
+
+
+## Lists the tiles on a worker thread when a point has moved to another tile, keeping the old
+## list until the new one is ready; true while one is being made.
+func _advance_list(points: Array[Vector3]) -> bool:
+	if _list_job.is_empty():
+		var copy := points.duplicate()
+		var result: Array = []
+		var task := WorkerThreadPool.add_task(func() -> void: result.append_array(_list(copy)), true, "ground tile list")
+		_list_job = {"task": task, "result": result, "focus": _last_focus, "points": copy}
+		return true
+	if not WorkerThreadPool.is_task_completed(int(_list_job["task"])):
+		return true
+	var job := _list_job
+	_drop_list_job()
+	_apply_list(job["focus"], job["points"], job["result"])
+	# The points moved on again while it was made: the next call lists them anew.
+	return _order_focus != _last_focus
+
+
+func _drop_list_job() -> void:
+	if not _list_job.is_empty():
+		WorkerThreadPool.wait_for_task_completion(int(_list_job["task"]))
+		_list_job = {}
+
+
+## Takes `list` (see `_list`) for the focus tiles `focus`, and frees tiles past it.
+func _apply_list(focus: Array[Vector2i], points: Array[Vector3], list: Array) -> void:
+	_order_focus = focus
+	_wanted_tiles = list[0]
+	_tile_order = list[1]
+	var reach: float = _cfg["load_distance"]
+	for key: Vector2i in _tiles.keys():
+		if not _wanted_tiles.has(key) and _distance(key, points) > reach + TILE:
+			_tiles[key].queue_free()
+			_tiles.erase(key)
+			_tile_voxel.erase(key)
+			_stale.erase(key)
+
+
+## Moves tile `key`'s build on a step without waiting for any thread: starts its sampling,
+## hands the samples to a mesher, or puts the meshed tile in. True once it is in.
+func _advance_tile(key: Vector2i, voxel: float, urgent: bool) -> bool:
+	var job: Dictionary = _tile_jobs.get(key, {})
+	if not job.is_empty() and (int(job["gen"]) != int(_tile_gen.get(key, 0)) or not is_equal_approx(float(job["voxel"]), voxel)):
+		# Started before a crater, pad or lane changed the tile, or for another detail.
+		if not _let_go(key):
+			return false
+		job = {}
+	if job.is_empty():
+		if urgent or _tile_jobs.size() < MAX_JOBS:
+			_start_tile(key, voxel)
+		return false
+	if not bool(job["sampled"]):
+		if not WorkerThreadPool.is_task_completed(int(job["task"])):
+			return false
+		# Finished already: this only lets the pool forget the task.
+		WorkerThreadPool.wait_for_task_completion(int(job["task"]))
+		job["sampled"] = true
+		var inputs: Array = job["result"]
+		if inputs.size() < 4:
+			_tile_jobs.erase(key)
+			return false
+		VoxShading.ensure()
+		var spacing := _tile_spacing(voxel)
+		job["mesh"] = VoxelGround.mesh_start(inputs[0], int(TILE / spacing) + 1, spacing, inputs[1], int(TILE / COLOUR_SPACING) + 1, int(TILE / voxel), voxel, hash(key), _look, inputs[2], inputs[3])
+		return false
+	var id := int(job["mesh"])
+	if not VoxelGround.mesh_ready(id):
+		return false
+	var tu := Prof.start()
+	var arrays := VoxelGround.mesh_take(id)
+	_tile_jobs.erase(key)
+	_put_tile(key, voxel, arrays)
+	Prof.stop(&"world/voxel_world/tile_upload", tu)
+	return true
+
+
+## Drops tile `key`'s job unless its worker is still sampling; true when it is gone.
+func _let_go(key: Vector2i) -> bool:
+	var job: Dictionary = _tile_jobs.get(key, {})
+	if job.is_empty():
+		return true
+	if not bool(job["sampled"]) and not WorkerThreadPool.is_task_completed(int(job["task"])):
+		return false
+	_drop_tile_job(key)
+	return true
+
+
+## Samples tile `key` on a worker thread. The craters, pads and lanes it reads change on this
+## thread, so it gets its own copies, and the tile's generation to tell whether they still hold.
 func _start_tile(key: Vector2i, voxel: float) -> void:
 	var result: Array = []
 	var spacing := _tile_spacing(voxel)
-	# Lanes and pads change on this thread: the task gets its own copy.
 	var lanes := _own_ways(key)
-	var work := func() -> void:
-		result.append(_ground_samples(key, spacing))
-		result.append(_tile_colours(key, false))
-		result.append(_ways(key, lanes))
+	var pads: Array = (_pads_in.get(key, []) as Array).duplicate()
+	var digs: Array = (_digs_in.get(key, []) as Array).duplicate()
+	var work := func() -> void: result.append_array(_tile_inputs(key, spacing, pads, digs, lanes))
 	var task := WorkerThreadPool.add_task(work, true, "ground tile")
-	_tile_jobs[key] = {"task": task, "result": result, "voxel": voxel}
+	_tile_jobs[key] = {"task": task, "result": result, "voxel": voxel, "gen": int(_tile_gen.get(key, 0)), "sampled": false, "mesh": 0}
 
 
+## Forgets tile `key`'s job, waiting for its worker if it is still sampling (only right-away
+## builds and leaving the tree may wait).
 func _drop_tile_job(key: Vector2i) -> void:
-	if _tile_jobs.has(key):
-		WorkerThreadPool.wait_for_task_completion(int(_tile_jobs[key]["task"]))
-		_tile_jobs.erase(key)
+	if not _tile_jobs.has(key):
+		return
+	var job: Dictionary = _tile_jobs[key]
+	if not bool(job["sampled"]):
+		WorkerThreadPool.wait_for_task_completion(int(job["task"]))
+	if int(job["mesh"]) != 0:
+		VoxelGround.mesh_drop(int(job["mesh"]))
+	_tile_jobs.erase(key)
+
+
+## Tile `key`'s look changed (a crater, a pad, a lane): a job already started for it is out
+## of date, and a built one is rebuilt in turn, still showing until then.
+func _touch(key: Vector2i) -> void:
+	_tile_gen[key] = int(_tile_gen.get(key, 0)) + 1
+	if _tiles.has(key):
+		_stale[key] = true
+	_pending = true
 
 
 func _voxel_for(distance: float) -> float:
@@ -754,12 +937,6 @@ func _distance_to(key: Vector2i, p: Vector3) -> float:
 	return sqrt(dx * dx + dz * dz)
 
 
-## [[distance, ...], ...] sorted nearest first, distances worked out once beforehand.
-func _nearest_first(entries: Array) -> Array:
-	entries.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
-	return entries
-
-
 ## One point per THIN_GRID metres square: the rest add nothing at tile scale.
 func _thin(points: Array[Vector3]) -> Array[Vector3]:
 	var seen := {}
@@ -781,8 +958,9 @@ func _focus_key(points: Array[Vector3]) -> Array[Vector2i]:
 	return keys
 
 
-## The smooth ground (with craters) on a grid over tile `key`, `spacing` metres apart.
-func _sample(key: Vector2i, spacing: float) -> PackedFloat32Array:
+## The ground with `pads` and `digs` (tile `key`'s, see `_pads_in`, `_digs_in`) on a grid
+## over the tile, `spacing` metres apart. Pure given its own copies: safe on a worker thread.
+func _sample(key: Vector2i, spacing: float, pads: Array, digs: Array) -> PackedFloat32Array:
 	var n := int(TILE / spacing) + 1
 	var out := PackedFloat32Array()
 	out.resize(n * n)
@@ -790,7 +968,9 @@ func _sample(key: Vector2i, spacing: float) -> PackedFloat32Array:
 	var z0 := key.y * TILE
 	for j in n:
 		for i in n:
-			out[j * n + i] = surface_height(x0 + i * spacing, z0 + j * spacing)
+			var x := x0 + i * spacing
+			var z := z0 + j * spacing
+			out[j * n + i] = _dig_into(_pad_into(ground_height(x, z), x, z, pads), x, z, digs)
 	return out
 
 
@@ -831,16 +1011,31 @@ func _build_collision(key: Vector2i) -> StaticBody3D:
 	return body
 
 
+## Builds tile `key` right here (the spawn before anyone arrives, captures, tests).
 func _replace_tile(key: Vector2i, voxel: float) -> void:
 	var spacing := _tile_spacing(voxel)
-	_make_tile(key, voxel, _sample(key, spacing), _tile_colours(key, true), _ways(key, _own_ways(key)), _dug_mask(key, spacing))
+	var ts := Prof.start()
+	var inputs := _tile_inputs(key, spacing, _pads_in.get(key, []), _digs_in.get(key, []), _own_ways(key))
+	Prof.stop(&"world/voxel_world/tile_sample", ts)
+	VoxShading.ensure()
+	var tm := Prof.start()
+	var arrays := VoxelGround.tile_arrays(inputs[0], int(TILE / spacing) + 1, spacing, inputs[1], int(TILE / COLOUR_SPACING) + 1, int(TILE / voxel), voxel, hash(key), _look, inputs[2], inputs[3])
+	Prof.stop(&"world/voxel_world/tile_mesh", tm)
+	_put_tile(key, voxel, arrays)
 
 
-## Per height sample of tile `key`, 1 where a crater has been dug (lanes and strips leave
-## its earth unpainted); empty when the tile has none.
-func _dug_mask(key: Vector2i, spacing: float) -> PackedByteArray:
+## What tile `key` is meshed from: [heights, colours, ways, dug mask], with `pads`, `digs`
+## and `lanes` the tile's own (see `_start_tile`). Pure given its own copies: safe on a
+## worker thread.
+func _tile_inputs(key: Vector2i, spacing: float, pads: Array, digs: Array, lanes: PackedFloat32Array) -> Array:
+	return [_sample(key, spacing, pads, digs), _tile_colours(key, pads, digs), _ways(key, lanes), _dug_mask(key, spacing, digs)]
+
+
+## Per height sample of tile `key`, 1 where one of `digs` has dug a crater (lanes and strips
+## leave its earth unpainted); empty when there are none.
+func _dug_mask(key: Vector2i, spacing: float, digs: Array) -> PackedByteArray:
 	var mask := PackedByteArray()
-	if not _digs_in.has(key):
+	if digs.is_empty():
 		return mask
 	var n := int(TILE / spacing) + 1
 	mask.resize(n * n)
@@ -848,7 +1043,7 @@ func _dug_mask(key: Vector2i, spacing: float) -> PackedByteArray:
 		for i in n:
 			var x := key.x * TILE + i * spacing
 			var z := key.y * TILE + j * spacing
-			mask[j * n + i] = 1 if _dig_into(0.0, x, z, _digs_in[key]) < -DUG_DEPTH else 0
+			mask[j * n + i] = 1 if _dig_into(0.0, x, z, digs) < -DUG_DEPTH else 0
 	return mask
 
 
@@ -856,38 +1051,22 @@ func _tile_spacing(voxel: float) -> float:
 	return clampf(voxel * 4.0, 1.0, 8.0)
 
 
-## The untouched ground's heights over visible tile `key` every `spacing` metres. Pure: safe
-## on a worker thread.
-func _ground_samples(key: Vector2i, spacing: float) -> PackedFloat32Array:
-	var n := int(TILE / spacing) + 1
-	var out := PackedFloat32Array()
-	out.resize(n * n)
-	for j in n:
-		for i in n:
-			out[j * n + i] = ground_height(key.x * TILE + i * spacing, key.y * TILE + j * spacing)
-	return out
-
-
-## Ground colours over tile `key`; `digs` false skips craters (no dug earth), which keeps it
-## safe on a worker thread for tiles nobody has dug.
-func _tile_colours(key: Vector2i, digs: bool) -> PackedColorArray:
+## Ground colours over tile `key`, dug earth where `pads` and `digs` lower it.
+func _tile_colours(key: Vector2i, pads: Array, digs: Array) -> PackedColorArray:
 	var cc := int(TILE / COLOUR_SPACING) + 1
 	var colours := PackedColorArray()
 	colours.resize(cc * cc)
 	for j in cc:
 		for i in cc:
-			colours[j * cc + i] = _colour_at(key.x * TILE + i * COLOUR_SPACING, key.y * TILE + j * COLOUR_SPACING, digs)
+			colours[j * cc + i] = _colour_at(key.x * TILE + i * COLOUR_SPACING, key.y * TILE + j * COLOUR_SPACING, pads, digs)
 	return colours
 
 
-func _make_tile(key: Vector2i, voxel: float, samples: PackedFloat32Array, colours: PackedColorArray, ways: PackedFloat32Array, dug: PackedByteArray) -> void:
+## Puts a meshed tile in (`arrays` as `VoxelGround.tile_arrays` gives them), in place of any
+## earlier one.
+func _put_tile(key: Vector2i, voxel: float, arrays: Array) -> void:
 	if _tiles.has(key):
 		_tiles[key].queue_free()
-	var spacing := _tile_spacing(voxel)
-	var cn := int(TILE / spacing) + 1
-	var cc := int(TILE / COLOUR_SPACING) + 1
-	VoxShading.ensure()
-	var arrays := VoxelGround.tile_arrays(samples, cn, spacing, colours, cc, int(TILE / voxel), voxel, hash(key), _look, ways, dug)
 	var inst := MeshInstance3D.new()
 	if not arrays.is_empty():
 		var mesh := ArrayMesh.new()
@@ -899,6 +1078,7 @@ func _make_tile(key: Vector2i, voxel: float, samples: PackedFloat32Array, colour
 	add_child(inst)
 	_tiles[key] = inst
 	_tile_voxel[key] = voxel
+	_stale.erase(key)
 
 
 ## The ways this world adds over tile `key`, in world metres: the lanes painted into it and
@@ -961,12 +1141,7 @@ func set_lanes_for(owner: StringName, lanes: Array) -> void:
 					_lanes_in[key].append_array(way)
 					touched[key] = true
 	for key: Vector2i in touched:
-		# A tile being built on a worker thread started with the old lanes: dropped, so the
-		# next update builds it again with these.
-		_drop_tile_job(key)
-		if _tiles.has(key):
-			_replace_tile(key, _tile_voxel[key])
-	_pending = true
+		_touch(key)
 
 
 ## The lanes painted into tile `key`: way segments in world metres (see `set_lanes_for`).
@@ -976,15 +1151,20 @@ func lanes_in(key: Vector2i) -> PackedFloat32Array:
 
 ## The colour the ground's top gets at x/z (before steep slopes turn it to bare rock).
 func ground_colour(x: float, z: float) -> Color:
-	return _colour_at(x, z, true)
+	var key := _tile_of(Vector3(x, 0.0, z))
+	return _colour_at(x, z, _pads_in.get(key, []), _digs_in.get(key, []))
 
 
-func _colour_at(x: float, z: float, digs: bool) -> Color:
+## The colour at x/z, dug earth where `pads` and `digs` (the tile's) lower the ground. Pure
+## given its own copies: safe on a worker thread.
+func _colour_at(x: float, z: float, pads: Array, digs: Array) -> Color:
 	if _biomes == null:
 		return GRASS
 	var c := GRASS.lerp(STRAW, _biomes.dry(x, z))
 	c = c.lerp(LITTER, _biomes.forest(x, z) * 0.8)
 	c = c.lerp(STONE, _biomes.rock(x, z) * 0.6)
-	if digs and surface_height(x, z) < ground_height(x, z) - 0.3:
-		c = DIRT
+	if not (pads.is_empty() and digs.is_empty()):
+		var h := ground_height(x, z)
+		if _dig_into(_pad_into(h, x, z, pads), x, z, digs) < h - 0.3:
+			c = DIRT
 	return c

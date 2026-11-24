@@ -104,9 +104,9 @@ func test_lanes_laid_while_tiles_build_reach_them() -> void:
 	direct.set_lanes_for(&"test", [yard])
 	direct.update_around([AT], INF)
 	var threaded := _visual_world()
-	# Start the jobs, then lay the lanes before any of them is taken.
-	threaded.update_around([AT], 64.0, true)
-	assert_bool((threaded.get(&"_tile_jobs") as Dictionary).is_empty()).is_false()
+	# Start the jobs, then lay the lanes before any of them is taken. The tiles are listed on
+	# a worker first, so the jobs start a call or two in.
+	await _jobs_started(threaded, AT)
 	threaded.set_lanes_for(&"test", [yard])
 	for frame in 600:
 		threaded.update_around([AT], 8.0, true)
@@ -118,3 +118,13 @@ func test_lanes_laid_while_tiles_build_reach_them() -> void:
 	assert_array(b.keys()).contains_exactly_in_any_order(a.keys())
 	for key: Vector2i in a:
 		assert_array(Array(b[key])).override_failure_message("tile %s differs" % key).is_equal(Array(a[key]))
+
+
+## Calls `update_around` until tile jobs are running (and before any is taken).
+func _jobs_started(w: VoxelWorld, at: Vector3) -> void:
+	for frame in 120:
+		w.update_around([at], 0.0, true)
+		if not (w.get(&"_tile_jobs") as Dictionary).is_empty():
+			return
+		await get_tree().process_frame
+	fail("no tile job started")
