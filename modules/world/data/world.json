@@ -42,7 +42,7 @@
     "max_saved_digs": 4000.0,
     "collision_distance": 96.0,
     "load_distance": 300.0,
-    "builds_per_frame": 2.0,
+    "build_budget_ms": 2.0,
     "lods": [[48.0, 0.25], [110.0, 0.5], [200.0, 1.0], [300.0, 2.0]]
   },
   "ground": {
