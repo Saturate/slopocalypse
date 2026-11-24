@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assetFor, executableIn, GODOT_VERSION } from "./godot.ts";
+import { assetFor, executableIn, GODOT_BUNDLE_ID, GODOT_VERSION, quietWindow } from "./godot.ts";
 
 test("pinned version is 4.7.2-stable", () => {
 	assert.equal(GODOT_VERSION, "4.7.2-stable");
@@ -33,4 +33,17 @@ test("console executable on Windows so headless output reaches the terminal", ()
 		executableIn("tools/godot", "darwin", "arm64"),
 		"tools/godot/Godot.app/Contents/MacOS/Godot",
 	);
+});
+
+test("a tool's window on macOS keeps drawing on top without taking focus", () => {
+	const w = quietWindow("darwin", { __CFBundleIdentifier: "com.example.terminal", HOME: "/h" });
+	assert.deepEqual(w.args, ["--always-on-top"]);
+	assert.equal(w.env.__CFBundleIdentifier, GODOT_BUNDLE_ID);
+	assert.equal(w.env.HOME, "/h");
+});
+
+test("other systems keep the window as it is", () => {
+	const env = { HOME: "/h" };
+	assert.deepEqual(quietWindow("win32", env), { args: [], env });
+	assert.deepEqual(quietWindow("linux", env), { args: [], env });
 });

@@ -38,3 +38,21 @@ export function executableIn(dir: string, os: string, cpu: string): string {
 export function localGodot(root: string): string {
 	return join(root, executableIn(GODOT_DIR, platform, arch));
 }
+
+// What a windowed run a tool starts (captures, playtests, benches, trailers) adds so it stays
+// out of the way of whoever is at the machine. On macOS Godot forces itself to the front when
+// the bundle id in its environment is not its own (the terminal's leaks in), so the window
+// would take the keyboard; and macOS stops drawing a window that is covered, minimised or off
+// screen (Godot pulls off-screen positions back), so it stays on top instead of hiding.
+// Launchers meant for a person at the keyboard (run-local, range, library) keep a normal window.
+export const GODOT_BUNDLE_ID = "org.godotengine.godot";
+
+export interface QuietWindow {
+	args: string[];
+	env: NodeJS.ProcessEnv;
+}
+
+export function quietWindow(os: string, env: NodeJS.ProcessEnv): QuietWindow {
+	if (os !== "darwin") return { args: [], env };
+	return { args: ["--always-on-top"], env: { ...env, __CFBundleIdentifier: GODOT_BUNDLE_ID } };
+}
