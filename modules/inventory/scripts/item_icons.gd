@@ -22,6 +22,9 @@ var cells_for: Callable
 var _icons: Dictionary[String, Texture2D] = {}
 var _queue: Array[String] = []
 var _busy := false
+## The item being rendered now: asked for again meanwhile it must not queue a second render,
+## whose new texture would free the first one under a canvas that drew it (a white tile).
+var _rendering := ""
 var _viewport: SubViewport
 var _pivot: Node3D
 var _camera: Camera3D
@@ -63,9 +66,15 @@ func _ready() -> void:
 func icon(item: String) -> Texture2D:
 	if _icons.has(item):
 		return _icons[item]
-	if not _queue.has(item):
+	if not _queue.has(item) and item != _rendering:
 		_queue.append(item)
 	return null
+
+
+## Whether `item`'s picture is still to come (asked for, not rendered yet). False once it is
+## rendered, and for an item that has no model and so never gets one.
+func is_pending(item: String) -> bool:
+	return not _icons.has(item)
 
 
 func _process(_delta: float) -> void:
@@ -76,12 +85,14 @@ func _process(_delta: float) -> void:
 
 func _render(item: String) -> void:
 	_busy = true
+	_rendering = item
 	for child in _pivot.get_children():
 		child.queue_free()
 	var model: Node3D = model_for.call(item) if model_for.is_valid() else null
 	if model == null:
 		_icons[item] = null
 		_busy = false
+		_rendering = ""
 		return
 	var cells: Vector2i = cells_for.call(item) if cells_for.is_valid() else Vector2i.ONE
 	_viewport.size = Vector2i(maxi(cells.x, 1), maxi(cells.y, 1)) * CELL_PIXELS
@@ -95,6 +106,7 @@ func _render(item: String) -> void:
 	_icons[item] = ImageTexture.create_from_image(image)
 	holder.queue_free()
 	_busy = false
+	_rendering = ""
 	icon_ready.emit(item)
 
 

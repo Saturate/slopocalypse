@@ -71,3 +71,27 @@ func test_a_bolt_actions_fire_rate_is_what_the_bolt_allows() -> void:
 	assert_float(shown).is_equal_approx(60.0 / float(bolt["cycle_seconds"]), 0.01)
 	var rifle: Dictionary = GunAssembly.assemble_named("ar_standard")["stats"]
 	assert_float(GunModding.shown_value(rifle, "rounds_per_minute")).is_equal(float(rifle["rounds_per_minute"]))
+
+
+func _labels(rows: Array[Dictionary]) -> Array:
+	return rows.map(func(r: Dictionary) -> String: return str(r["label"]))
+
+
+func test_a_gun_lists_its_damage_fire_rate_and_magazine() -> void:
+	var rows := GunModding.gun_detail_rows(GunAssembly.build("ar_standard"))
+	assert_array(_labels(rows)).contains(["Damage", "Fire rate", "Magazine"])
+	assert_str(str(rows[0]["value"])).is_equal("25")
+
+
+func test_a_launcher_lists_its_rocket_damage() -> void:
+	var rows := GunModding.gun_detail_rows(GunAssembly.build("launcher"))
+	var damage := rows.filter(func(r: Dictionary) -> bool: return str(r["label"]) == "Damage")
+	assert_int(damage.size()).is_equal(1)
+	assert_str(str(damage[0]["value"])).is_equal("%.0f" % float(RocketLauncher.rocket_config()["damage"]))
+
+
+func test_a_part_lists_what_it_changes() -> void:
+	var rows := GunModding.part_detail_rows(GunAssembly.catalogue()["stk_ar_std"]["stats"])
+	assert_array(_labels(rows)).contains(["Recoil", "Ergonomics", "Weight"])
+	assert_array(_labels(rows)).not_contains(["Magazine"])
+	assert_str(str(rows[0]["value"])).is_equal("-25%")

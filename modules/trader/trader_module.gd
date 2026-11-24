@@ -38,6 +38,13 @@ func stock() -> Array:
 	return config.get("stock", [])
 
 
+## The trade screen's tabs over the goods, `[{category, label}]` (categories from the
+## inventory's item data). A tab of category `all` shows everything; the last tab also holds
+## goods whose category no tab names.
+func tabs() -> Array:
+	return config.get("tabs", [])
+
+
 ## What an item costs at the stall (its stock price, or `unlisted_price`).
 func price_of(item: String) -> int:
 	for entry: Dictionary in stock():

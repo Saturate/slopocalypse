@@ -134,7 +134,7 @@ func quick_move(theirs: bool, place: Dictionary) -> bool:
 	var other := _gear(not theirs)
 	if placed.is_empty() or other == null or gear == null:
 		return false
-	if not _fits_anywhere(other, str(placed["item"]), gear.is_full(int(placed["uid"]))):
+	if not fits_anywhere(other, str(placed["item"]), gear.is_full(int(placed["uid"]))):
 		_panel(theirs).flash_uid = int(placed["uid"])
 		_flash_left = FLASH_SECONDS
 		_refresh()
@@ -143,7 +143,7 @@ func quick_move(theirs: bool, place: Dictionary) -> bool:
 	return true
 
 
-static func _fits_anywhere(gear: InventoryGear, item: String, full: bool) -> bool:
+static func fits_anywhere(gear: InventoryGear, item: String, full: bool) -> bool:
 	for slot: Dictionary in gear.slots():
 		if gear.can_place(item, full, {"slot": slot["name"]}, -1):
 			return true
