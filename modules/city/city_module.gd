@@ -65,6 +65,13 @@ func _on_player_spawned(p: Dictionary) -> void:
 		player.add_child(bot)
 		if site == null:
 			_waiting_bots.append(bot)
+	if multiplayer.is_server() and args.has(BOT_ARG):
+		# The walk is the benchmark's load: shot dead it would lie in the street and respawn
+		# at the start, and the city's soldiers would pile up round it instead (as the
+		# deaths bench keeps its player alive too).
+		var health := HealthComponent.find_on(player)
+		if health != null:
+			health.invulnerable = true
 	if multiplayer.is_server() and args.has(START_ARG):
 		_server_put_in_city(player)
 
