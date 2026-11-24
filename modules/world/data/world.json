@@ -65,7 +65,7 @@
     "rut_dark": 0.06
   },
   "scatter": {
-    "_comment": "Trees, rocks and grass (TWEAKING.md lists the rest). site_clearance: metres round each map site's pad, by site kind, kept free of trees and rocks so they don't crowd what stands there; default for kinds not listed. power_clearance: metres either side of a high-voltage line and of a pole line (at most 32) kept free of trees and rocks, so no crown grows into the wires. camp_clearance: metres round the players' camp pad kept free of trees and rocks. max_steepness: no tree or rock on ground steeper than this (rise over run); grass_max_steepness: no grass on ground steeper than this, which the ground draws in ledges (keep both at or under ground.ledge_grade).",
+    "_comment": "Trees, rocks and grass (TWEAKING.md lists the rest). site_clearance: metres round each map site's pad, by site kind, kept free of trees and rocks so they don't crowd what stands there; default for kinds not listed. power_clearance: metres either side of a high-voltage line and of a pole line (at most 32) kept free of trees and rocks, so no crown grows into the wires. camp_clearance: metres round the players' camp pad kept free of trees and rocks. max_steepness: no tree or rock on ground steeper than this (rise over run); grass_max_steepness: no grass on ground steeper than this, which the ground draws in ledges (keep both at or under ground.ledge_grade). build_budget_ms: milliseconds a frame may spend putting new scenery chunks together (collision, grass, road pieces); the rest waits for the next frame.",
     "site_clearance": {"default": 3.0, "farm": 6.0, "water_tower": 3.0, "town_tower": 3.0, "antenna": 14.0, "lookout": 14.0, "cabin": 4.0},
     "power_clearance": {"high_voltage": 14.0, "low_voltage": 5.0},
     "camp_clearance": 8.0,
@@ -86,6 +86,7 @@
     "tree_blast_reach": 1.6,
     "tree_fall_seconds": 1.8,
     "tree_collapse": 0.35,
-    "tree_wither_seconds": 120.0
+    "tree_wither_seconds": 120.0,
+    "build_budget_ms": 4.0
   }
 }

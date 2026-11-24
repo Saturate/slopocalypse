@@ -561,6 +561,30 @@ impl VoxelModel {
         arrays_of(&grid.mesh_max_run(max_run.max(1) as usize))
     }
 
+    /// `mesh_arrays_bendable(max_run)` bent along a curve given as rows (see `Mesh::bend_rows`
+    /// in voxkit_core): the model's row at z = `start` + r * `step` goes to `centres[r]`, its x
+    /// along `acrosses[r]`. Done here because bending vertex by vertex in GDScript cost a road
+    /// piece several milliseconds (#391).
+    #[func]
+    fn mesh_arrays_bent(
+        &mut self,
+        max_run: i64,
+        start: f32,
+        step: f32,
+        centres: PackedVector3Array,
+        acrosses: PackedVector2Array,
+    ) -> VarArray {
+        let Some(grid) = self.grid.as_mut() else {
+            return VarArray::new();
+        };
+        grid.corners = shading().is_some();
+        let mut mesh = grid.mesh_max_run(max_run.max(1) as usize);
+        let centres: Vec<[f32; 3]> = centres.as_slice().iter().map(|c| [c.x, c.y, c.z]).collect();
+        let acrosses: Vec<[f32; 2]> = acrosses.as_slice().iter().map(|a| [a.x, a.y]).collect();
+        mesh.bend_rows(start, step, &centres, &acrosses);
+        arrays_of(&mesh)
+    }
+
     #[func]
     fn mesh_arrays(&mut self) -> VarArray {
         let Some(grid) = self.grid.as_mut() else {

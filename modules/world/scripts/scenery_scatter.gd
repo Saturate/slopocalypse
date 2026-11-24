@@ -12,19 +12,19 @@ extends Node3D
 
 @export_file("*.json") var config_path: String = "res://modules/world/data/world.json"
 
-const REQUIRED := {"seed": TYPE_FLOAT, "trees_per_hectare": TYPE_FLOAT, "rocks_per_hectare": TYPE_FLOAT, "grass_per_m2": TYPE_FLOAT, "clear_radius": TYPE_FLOAT, "max_steepness": TYPE_FLOAT, "grass_max_steepness": TYPE_FLOAT, "road_clearance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "grass_distance": TYPE_FLOAT, "tree_detail_distance": TYPE_FLOAT, "variants": TYPE_FLOAT, "tree_hits": TYPE_FLOAT, "tree_blast_reach": TYPE_FLOAT, "tree_fall_seconds": TYPE_FLOAT, "tree_collapse": TYPE_FLOAT, "tree_wither_seconds": TYPE_FLOAT, "site_clearance": TYPE_DICTIONARY, "power_clearance": TYPE_DICTIONARY, "camp_clearance": TYPE_FLOAT}
+const REQUIRED := {"seed": TYPE_FLOAT, "trees_per_hectare": TYPE_FLOAT, "rocks_per_hectare": TYPE_FLOAT, "grass_per_m2": TYPE_FLOAT, "clear_radius": TYPE_FLOAT, "max_steepness": TYPE_FLOAT, "grass_max_steepness": TYPE_FLOAT, "road_clearance": TYPE_FLOAT, "load_distance": TYPE_FLOAT, "collision_distance": TYPE_FLOAT, "grass_distance": TYPE_FLOAT, "tree_detail_distance": TYPE_FLOAT, "variants": TYPE_FLOAT, "tree_hits": TYPE_FLOAT, "tree_blast_reach": TYPE_FLOAT, "tree_fall_seconds": TYPE_FLOAT, "tree_collapse": TYPE_FLOAT, "tree_wither_seconds": TYPE_FLOAT, "build_budget_ms": TYPE_FLOAT, "site_clearance": TYPE_DICTIONARY, "power_clearance": TYPE_DICTIONARY, "camp_clearance": TYPE_FLOAT}
 
 const CHUNK := 64.0
 ## Chunks split across the width into cells, so distance culling works per cell.
 const CELL := 64.0
 const GRASS_CELL := 32.0
+## Floats per grass tuft in a MultiMesh buffer: a 3x4 transform, then a colour.
+const GRASS_STRIDE := 16
 ## Longest road face before it is bent, in metres.
 const ROAD_BEND_STEP := 1.0
 ## The smoothed terrain sags a little past a crater's rim, and the shader shows that
 ## fringe as dirt, so grass clears slightly wider than the hole.
 const GRASS_CLEAR_MARGIN := 0.4
-## Chunks built per frame at most, so walking into new ground never stalls a frame for long.
-const BUILDS_PER_FRAME := 1
 const TREE_NEAR_VOXEL := 0.15
 const TREE_FAR_VOXEL := 0.45
 const ROCK_VOXEL := 0.1
@@ -91,8 +91,14 @@ var _damage: TreeDamage
 ## Chunk plans being worked out on worker threads: chunk -> {task, result (an Array the
 ## task appends its plan to), clearings (generation they were made with)}.
 var _pending: Dictionary[int, Dictionary] = {}
-## Bumped whenever the clearings change, so plans made with the old ones are thrown away.
-var _clearings_gen := 0
+## Bumped whenever the clearings or yards change, so plans made with the old ones are thrown
+## away.
+var _plan_gen := 0
+## Chunks already standing (collision, trees and rocks) whose grass and road pieces are still
+## being put in, a step at a time within the build budget: chunk -> {node, grass (its plan,
+## null once put in), road (next piece), roads (how many), piece (the road piece whose model
+## is made but not yet meshed, or null), digs_seen (craters the grass plan already left out)}.
+var _building: Dictionary[int, Dictionary] = {}
 ## Where players start (the map's camp): scenery there is built before anyone arrives.
 var home := Vector3.ZERO
 ## The map's roads and tracks (#472), and their 8 m pieces by the chunk each piece's
@@ -149,16 +155,19 @@ func _process(_delta: float) -> void:
 func _process_tick(_delta: float) -> void:
 	if _heights == null:
 		return
-	update_around(_focus_points(), BUILDS_PER_FRAME, true)
+	update_around(_focus_points(), float(_cfg["build_budget_ms"]), true)
 	for i: int in _roads_dirty:
 		if _roads.has(i):
 			_mesh_map_road(_roads[i])
 	_roads_dirty.clear()
 
 
-## Builds chunks near any of `points` (at most `budget` this call) and frees the ones far
-## from all of them. With `threaded`, where trees and rocks go is worked out on worker
-## threads and a chunk is built from its plan on a later call; otherwise right away.
+## Builds chunks near any of `points` and frees the ones far from all of them. Right away,
+## `budget` is how many chunks this call builds, each whole. With `threaded`, where everything
+## goes is worked out on worker threads, and `budget` is the milliseconds this call may spend
+## putting chunks together on this thread: a chunk's collision, trees and rocks arrive in one
+## step, its grass and each road piece in steps of their own, nearest chunk first, so walking
+## into new ground never stalls a frame.
 func update_around(points: Array[Vector3], budget: float, threaded := false) -> void:
 	var reach: float = _cfg["load_distance"] if _visual else _cfg["collision_distance"]
 	var wanted: Dictionary[int, bool] = {}
@@ -174,10 +183,19 @@ func update_around(points: Array[Vector3], budget: float, threaded := false) -> 
 				if _nearest(i, points) <= reach:
 					wanted[i] = true
 	var built := 0
+	# Right away there is no time limit: chunks left half built by streaming are finished too.
+	var deadline := Time.get_ticks_usec() + int(budget * 1000.0) if threaded else (1 << 62)
+	# The first step always runs, so a budget smaller than one step still makes progress.
+	var stepped := false
 	# Nearest first, so the ground you stand on is never waiting behind the horizon.
 	var order := wanted.keys()
 	order.sort_custom(func(a: int, b: int) -> bool: return _nearest(a, points) < _nearest(b, points))
 	for i: int in order:
+		if _building.has(i):
+			while _building.has(i) and (not stepped or Time.get_ticks_usec() < deadline):
+				_build_step(i)
+				stepped = true
+			continue
 		if _chunks.has(i):
 			continue
 		if not threaded:
@@ -189,14 +207,22 @@ func update_around(points: Array[Vector3], budget: float, threaded := false) -> 
 		if not _pending.has(i):
 			_start_plan(i)
 			continue
-		if built >= budget or not WorkerThreadPool.is_task_completed(int(_pending[i]["task"])):
+		if (stepped and Time.get_ticks_usec() >= deadline) or not WorkerThreadPool.is_task_completed(int(_pending[i]["task"])):
 			continue
 		var plan := _take_plan(i, false)
 		if plan.is_empty():
 			_start_plan(i)
 			continue
-		_chunks[i] = _build_chunk(i, plan)
-		built += 1
+		_chunks[i] = _begin_chunk(i, plan)
+		stepped = true
+		while _building.has(i) and Time.get_ticks_usec() < deadline:
+			_build_step(i)
+	# Chunks no longer wanted are kept a chunk past the load distance before being freed: any
+	# still being put together finish after the wanted ones.
+	for i: int in _building.keys():
+		while _building.has(i) and (not stepped or Time.get_ticks_usec() < deadline):
+			_build_step(i)
+			stepped = true
 	for i: int in _chunks.keys():
 		if not wanted.has(i) and _nearest(i, points) > reach + CHUNK:
 			_free_chunk(i)
@@ -209,8 +235,11 @@ func update_around(points: Array[Vector3], budget: float, threaded := false) -> 
 func _start_plan(i: int) -> void:
 	var result: Array = []
 	var clearings: Array[Vector3] = _clearings.duplicate()
-	var task := WorkerThreadPool.add_task(func() -> void: result.append(plan_chunk(i, clearings)), true, "scenery chunk")
-	_pending[i] = {"task": task, "result": result, "clearings": _clearings_gen}
+	# Never changed in place once made (`set_yards_for` makes a new one), so the task may read it.
+	var yards := _yards_near
+	var digs := _digs_over(_chunk_area(i))
+	var task := WorkerThreadPool.add_task(func() -> void: result.append(plan_chunk(i, clearings, yards, digs)), true, "scenery chunk")
+	_pending[i] = {"task": task, "result": result, "gen": _plan_gen, "digs_seen": _digs.size()}
 
 
 ## Chunk `i`'s finished plan (waiting for it if it is still running). When there is none or
@@ -222,8 +251,10 @@ func _take_plan(i: int, here := true) -> Dictionary:
 		_pending.erase(i)
 		WorkerThreadPool.wait_for_task_completion(int(job["task"]))
 		var result: Array = job["result"]
-		if int(job["clearings"]) == _clearings_gen and not result.is_empty():
-			return result[0]
+		if int(job["gen"]) == _plan_gen and not result.is_empty():
+			var plan: Dictionary = result[0]
+			plan["digs_seen"] = job["digs_seen"]
+			return plan
 	return plan_chunk(i, _clearings) if here else {}
 
 
@@ -257,7 +288,7 @@ func set_clearings(circles: Array) -> void:
 ## instance must set the same circles (they change what grows where).
 func _apply_clearings(circles: Array) -> void:
 	var before := _clearings.duplicate()
-	_clearings_gen += 1
+	_plan_gen += 1
 	_clearings.clear()
 	for c: Dictionary in circles:
 		var at: Vector3 = c["at"]
@@ -343,6 +374,7 @@ func _nearest(i: int, points: Array[Vector3]) -> float:
 func _free_chunk(i: int) -> void:
 	var node: Node3D = _chunks[i]
 	_chunks.erase(i)
+	_building.erase(i)
 	_trees.erase(i)
 	_tree_meshes.erase(i)
 	for p in ROADS_PER_CHUNK:
@@ -387,16 +419,26 @@ func _tree(gen: VoxGenerator, p: Dictionary) -> Dictionary:
 	return out
 
 
-## Where chunk `i`'s trees and rocks go: pure (terrain, biomes, the chunk's seed and
-## `clearings`), so it runs on a worker thread and comes out the same on every machine.
-## {trees: [{at, xform, pine, v, scale}], rocks: [{xform, v}], rng_state (where the chunk's
-## random sequence is after them, for the grass)}.
-func plan_chunk(i: int, clearings: Array[Vector3]) -> Dictionary:
+## Where chunk `i`'s trees, rocks and (where anyone looks) grass go: pure (terrain, biomes,
+## the chunk's seed, `clearings`, `yards` as `_yards_near` and `digs` as the craters over the
+## chunk, the current ones when null), so it runs on a worker thread and comes out the same on
+## every machine. {trees: [{at, xform, pine, v, scale}], rocks: [{xform, v}], grass: {cell:
+## [transforms, colours]}, digs_seen (how many craters there were; the caller sets it when
+## the plan ran elsewhere)}.
+func plan_chunk(i: int, clearings: Array[Vector3], yards: Variant = null, digs: Variant = null) -> Dictionary:
 	# No profile zone: Prof is not thread-safe, and the point is that this is off the frame.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([_seed, i])
 	var area := _chunk_area(i)
-	return {"trees": _plan_trees(rng, area, clearings), "rocks": _plan_rocks(rng, area, clearings), "rng_state": rng.state}
+	var plan := {"trees": _plan_trees(rng, area, clearings), "rocks": _plan_rocks(rng, area, clearings)}
+	if _visual:
+		var near: Dictionary = yards if yards is Dictionary else _yards_near
+		var holes: Array[Vector4] = []
+		holes.assign(digs if digs is Array else _digs_over(area))
+		plan["grass"] = _plan_grass(rng, area, clearings, near, holes)
+	if digs == null:
+		plan["digs_seen"] = _digs.size()
+	return plan
 
 
 func _chunk_area(i: int) -> Rect2:
@@ -405,14 +447,21 @@ func _chunk_area(i: int) -> Rect2:
 	return square.intersection(extent)
 
 
+## Builds chunk `i` from its plan whole, right away.
 func _build_chunk(i: int, plan: Dictionary) -> Node3D:
+	var node := _begin_chunk(i, plan)
+	while _building.has(i):
+		_build_step(i)
+	return node
+
+
+## The first step of building chunk `i`: its collision, trees and rocks, into the tree in one
+## go (they block movement, shots and sight on every machine). What is left to see (grass,
+## road pieces) is queued in `_building` for `_build_step`.
+func _begin_chunk(i: int, plan: Dictionary) -> Node3D:
 	var t := Prof.start()
 	var node := Node3D.new()
 	node.name = "Chunk%d" % i
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash([_seed, i])
-	rng.state = int(plan["rng_state"])
-	var area := _chunk_area(i)
 	var collision := StaticBody3D.new()
 	collision.name = "Collision"
 	collision.set_meta(&"chunk", i)
@@ -429,14 +478,37 @@ func _build_chunk(i: int, plan: Dictionary) -> Node3D:
 		for key: Array in placed.keys():
 			meshes[key] = _add_instances(node, key, placed[key])
 		_tree_meshes[i] = meshes
-		_add_grass(node, rng, area)
-		_add_map_roads(node, i)
+		var roads: Array = _line_pieces.get(i, [])
+		_building[i] = {"node": node, "grass": plan.get("grass", {}), "road": 0, "piece": null, "roads": mini(roads.size(), ROADS_PER_CHUNK), "digs_seen": int(plan.get("digs_seen", _digs.size()))}
 	for n in (_trees[i] as Array).size():
 		var id := Vector2i(i, n)
 		if _damage.is_felled(id):
 			_damage.apply(id, false)
 	Prof.stop(&"world/scenery_build", t)
 	return node
+
+
+## One more piece of chunk `i`'s visuals: its grass first, then its road pieces one at a time.
+## Drops the chunk from `_building` once nothing is left.
+func _build_step(i: int) -> void:
+	var t := Prof.start()
+	var job: Dictionary = _building[i]
+	var node: Node3D = job["node"]
+	if job["grass"] is Dictionary:
+		_put_grass(node, job["grass"], int(job["digs_seen"]))
+		job["grass"] = null
+		Prof.stop(&"world/scenery_build/grass", t)
+	elif job["piece"] is Dictionary:
+		# A piece's model and its mesh are a step each: together they can pass the budget.
+		_mesh_map_road(job["piece"])
+		job["piece"] = null
+		Prof.stop(&"world/scenery_build/road_mesh", t)
+	elif int(job["road"]) < int(job["roads"]):
+		job["piece"] = _add_road_piece(node, i, int(job["road"]))
+		job["road"] = int(job["road"]) + 1
+		Prof.stop(&"world/scenery_build/road_model", t)
+	if job["grass"] == null and job["piece"] == null and int(job["road"]) >= int(job["roads"]):
+		_building.erase(i)
 
 
 ## A spot on gentle ground inside `area`, clear of the spawn, the camp and the road, kept
@@ -622,9 +694,10 @@ func _multimesh(node: Node3D, mesh: Mesh, transforms: Array, colours: Array, cen
 	return inst
 
 
-func _add_grass(node: Node3D, rng: RandomNumberGenerator, area: Rect2) -> void:
-	if _grass_mesh_cached == null:
-		_grass_mesh_cached = _grass_mesh()
+## Where the grass tufts go in `area`, carrying on with the chunk's random sequence after its
+## trees and rocks, as a MultiMesh buffer per grass cell (`_grass_buffers`). Pure, like
+## `plan_chunk`.
+func _plan_grass(rng: RandomNumberGenerator, area: Rect2, clearings: Array[Vector3], yards: Dictionary, digs: Array[Vector4]) -> Dictionary:
 	var per_cell: Dictionary[Vector2i, Array] = {}
 	var count := int(float(_cfg["grass_per_m2"]) * area.get_area())
 	for i in count:
@@ -634,14 +707,14 @@ func _add_grass(node: Node3D, rng: RandomNumberGenerator, area: Rect2) -> void:
 		var keep := 1.0 - _biomes.forest(x, z) * 0.8 - _biomes.rock(x, z) * 0.6
 		if rng.randf() > keep:
 			continue
-		if _heights.near_road(x, z, 0.5) or _on_yard(x, z, 0.5):
+		if _heights.near_road(x, z, 0.5) or _on_yard(x, z, 0.5, yards):
 			continue
 		if _heights.in_water(x, z):
 			continue
-		if _in_clearing(x, z, _clearings):
+		if _in_clearing(x, z, clearings):
 			continue
 		var at := Vector3(x, _heights.height_at(x, z), z)
-		if _in_old_dig(at):
+		if _in_dig(at, digs):
 			continue
 		# Ground this steep is drawn in ledges up to half one off the ground walked on: a
 		# tuft there would stand out of a ledge's side.
@@ -657,9 +730,70 @@ func _add_grass(node: Node3D, rng: RandomNumberGenerator, area: Rect2) -> void:
 			per_cell[cell] = [[], []]
 		(per_cell[cell][0] as Array).append(xform)
 		(per_cell[cell][1] as Array).append(colour)
+	return _grass_buffers(per_cell)
+
+
+## {cell: [transforms, colours]} as {cell: buffer}: each tuft's transform relative to its
+## cell's centre (where the MultiMesh sits, see `_multimesh`) as three rows of the basis
+## with the origin last, then its colour, the layout `MultiMesh.buffer` takes. Made off the
+## main thread, so putting the grass in is one copy instead of a call per tuft.
+func _grass_buffers(per_cell: Dictionary[Vector2i, Array]) -> Dictionary:
+	var out := {}
+	for cell: Vector2i in per_cell:
+		var centre := _grass_centre(cell)
+		var xforms: Array = per_cell[cell][0]
+		var colours: Array = per_cell[cell][1]
+		var buffer := PackedFloat32Array()
+		buffer.resize(xforms.size() * GRASS_STRIDE)
+		for k in xforms.size():
+			var x: Transform3D = xforms[k]
+			var b := x.basis
+			var o := x.origin - centre
+			var c: Color = colours[k]
+			var at := k * GRASS_STRIDE
+			buffer[at] = b.x.x
+			buffer[at + 1] = b.y.x
+			buffer[at + 2] = b.z.x
+			buffer[at + 3] = o.x
+			buffer[at + 4] = b.x.y
+			buffer[at + 5] = b.y.y
+			buffer[at + 6] = b.z.y
+			buffer[at + 7] = o.y
+			buffer[at + 8] = b.x.z
+			buffer[at + 9] = b.y.z
+			buffer[at + 10] = b.z.z
+			buffer[at + 11] = o.z
+			buffer[at + 12] = c.r
+			buffer[at + 13] = c.g
+			buffer[at + 14] = c.b
+			buffer[at + 15] = c.a
+		out[cell] = buffer
+	return out
+
+
+func _grass_centre(cell: Vector2i) -> Vector3:
+	return Vector3((cell.x + 0.5) * GRASS_CELL, 0.0, (cell.y + 0.5) * GRASS_CELL)
+
+
+## The planned grass as one MultiMesh per cell. Craters dug since the plan was made (all but
+## the first `digs_seen`) are cleared from it here.
+func _put_grass(node: Node3D, per_cell: Dictionary, digs_seen: int) -> void:
+	if _grass_mesh_cached == null:
+		_grass_mesh_cached = _grass_mesh()
 	for cell: Vector2i in per_cell.keys():
-		var centre := Vector3((cell.x + 0.5) * GRASS_CELL, 0.0, (cell.y + 0.5) * GRASS_CELL)
-		var inst := _multimesh(node, _grass_mesh_cached, per_cell[cell][0], per_cell[cell][1], centre)
+		var buffer: PackedFloat32Array = per_cell[cell]
+		for k in range(digs_seen, _digs.size()):
+			_clear_buffer(buffer, _grass_centre(cell), _digs[k])
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		mm.mesh = _grass_mesh_cached
+		mm.instance_count = buffer.size() / GRASS_STRIDE
+		mm.buffer = buffer
+		var inst := MultiMeshInstance3D.new()
+		inst.multimesh = mm
+		inst.position = _grass_centre(cell)
+		node.add_child(inst)
 		inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		# Grass far away is noise; fade it out with distance to keep the horizon clean.
 		inst.visibility_range_end = float(_cfg["grass_distance"])
@@ -668,11 +802,37 @@ func _add_grass(node: Node3D, rng: RandomNumberGenerator, area: Rect2) -> void:
 		_grass_cells[cell] = inst
 
 
-func _in_old_dig(at: Vector3) -> bool:
-	for d: Vector4 in _digs_near.get(Vector2i(floori(at.x / GRASS_CELL), floori(at.z / GRASS_CELL)), []):
+## Hides the tufts in a grass cell's buffer (centred on `centre`) that crater `dig` took the
+## ground from, the way `clear_grass` does for grass already put in.
+func _clear_buffer(buffer: PackedFloat32Array, centre: Vector3, dig: Vector4) -> void:
+	var local := Vector3(dig.x, dig.y, dig.z) - centre
+	var reach := dig.w + GRASS_CLEAR_MARGIN
+	for at in range(0, buffer.size(), GRASS_STRIDE):
+		if Vector3(buffer[at + 3], buffer[at + 7], buffer[at + 11]).distance_to(local) >= reach:
+			continue
+		for k in 12:
+			buffer[at + k] = 0.0
+		buffer[at + 3] = local.x
+		buffer[at + 7] = local.y
+		buffer[at + 11] = local.z
+
+
+func _in_dig(at: Vector3, digs: Array[Vector4]) -> bool:
+	for d in digs:
 		if at.distance_to(Vector3(d.x, d.y, d.z)) < d.w + GRASS_CLEAR_MARGIN:
 			return true
 	return false
+
+
+## The craters so far whose cleared ground reaches into `area`, each once.
+func _digs_over(area: Rect2) -> Array[Vector4]:
+	var out: Array[Vector4] = []
+	for cz in range(floori(area.position.y / GRASS_CELL), floori(area.end.y / GRASS_CELL) + 1):
+		for cx in range(floori(area.position.x / GRASS_CELL), floori(area.end.x / GRASS_CELL) + 1):
+			for d: Vector4 in _digs_near.get(Vector2i(cx, cz), []):
+				if not out.has(d):
+					out.append(d)
+	return out
 
 
 ## Removes the grass a crater took the ground out from under, so it doesn't float.
@@ -688,14 +848,18 @@ func clear_grass(center: Vector3, radius: float) -> void:
 				_digs_near[Vector2i(cx, cz)] = []
 			_digs_near[Vector2i(cx, cz)].append(dig)
 			var inst: MultiMeshInstance3D = _grass_cells.get(Vector2i(cx, cz))
-			if inst == null:
-				continue
-			var mm := inst.multimesh
-			var local := center - inst.position
-			for k in mm.instance_count:
-				if mm.get_instance_transform(k).origin.distance_to(local) < reach:
-					# A zero basis draws nothing; MultiMesh has no way to drop one instance.
-					mm.set_instance_transform(k, Transform3D(Basis().scaled(Vector3.ZERO), local))
+			if inst != null:
+				_clear_cell(inst, center, reach)
+
+
+## Hides the tufts of one grass cell within `reach` of `center`.
+func _clear_cell(inst: MultiMeshInstance3D, center: Vector3, reach: float) -> void:
+	var mm := inst.multimesh
+	var local := center - inst.position
+	for k in mm.instance_count:
+		if mm.get_instance_transform(k).origin.distance_to(local) < reach:
+			# A zero basis draws nothing; MultiMesh has no way to drop one instance.
+			mm.set_instance_transform(k, Transform3D(Basis().scaled(Vector3.ZERO), local))
 
 
 ## Takes a crater out of a road piece, with a scorched ring of broken asphalt round it.
@@ -953,7 +1117,9 @@ func set_yards_for(owner: StringName, yards: Array) -> void:
 	if ground != null and ground.has_method(&"set_lanes_for"):
 		ground.call(&"set_lanes_for", owner, yards)
 	_yard_rects.clear()
-	_yards_near.clear()
+	# A new dictionary, not cleared in place: plans running on worker threads hold the old one.
+	_yards_near = {}
+	_plan_gen += 1
 	for key: StringName in _yard_sets:
 		for y: Dictionary in _yard_sets[key]:
 			var from: Vector2 = y["from"]
@@ -979,52 +1145,51 @@ func set_yards_for(owner: StringName, yards: Array) -> void:
 				break
 
 
-## Whether (x, z) is on a yard or within `margin` (at most YARD_MARGIN) of one.
-func _on_yard(x: float, z: float, margin: float) -> bool:
+## Whether (x, z) is on a yard or within `margin` (at most YARD_MARGIN) of one; `yards` is
+## a plan's hold on `_yards_near` (null: the current one).
+func _on_yard(x: float, z: float, margin: float, yards: Variant = null) -> bool:
 	var p := Vector2(x, z)
-	for rect: Rect2 in _yards_near.get(Vector2i(floori(x / CHUNK), floori(z / CHUNK)), []):
+	var near: Dictionary = yards if yards is Dictionary else _yards_near
+	for rect: Rect2 in near.get(Vector2i(floori(x / CHUNK), floori(z / CHUNK)), []):
 		if rect.grow(margin).has_point(p):
 			return true
 	return false
 
 
-## The road pieces whose middles are in chunk `i`, each a voxel road of its kind (lanes and
-## lines for roads, a single soil-coloured lane for a track), worn by how remote it is.
-func _add_map_roads(node: Node3D, i: int) -> void:
-	if not _line_pieces.has(i):
-		return
+## Road piece `p` of those whose middles are in chunk `i`: a voxel road of its kind (lanes
+## and lines for roads, a single soil-coloured lane for a track), worn by how remote it is.
+## Returns its entry in `_roads`, still to be meshed (`_mesh_map_road`).
+func _add_road_piece(node: Node3D, i: int, p: int) -> Dictionary:
 	var far: MapRemoteness = (_heights as MapShape).map.get("remoteness")
-	var pieces: Array = _line_pieces[i]
-	for p in mini(pieces.size(), ROADS_PER_CHUNK):
-		var piece: Vector3 = pieces[p]
-		var line := _lines[int(piece.x)]
-		var mid := piece.y
-		var half := piece.z
-		var at := line.point_at(mid)
-		var track := line.kind == "track"
-		# A track has no kerb: the ground draws its frayed edge over the strip's own
-		# (VoxelWorld `ground.track_fray`), so the strip stays straight under it.
-		var shoulder := 0.0 if track else ROAD_SHOULDER
-		var lanes := 1 if track else 2
-		var look := {"seed": hash([_seed, i, p]), "length": half * 2.0, "voxel": ROAD_VOXEL, "z_phase": mid,
-			"lanes": lanes, "lane_width": maxf((line.width - shoulder * 2.0) / lanes, 1.0), "shoulder": shoulder}
-		if track:
-			look["asphalt"] = TRACK_SOIL
-			look["surface"] = VoxRoad.DIRT
-			look["centre"] = 0
-			look["edges"] = 0
-		var r := far.at(at.x, at.y) if far != null else 0.0
-		look["wear"] = lerpf(_wear_curve.x, _wear_curve.y, r)
-		look["potholes"] = roundi(lerpf(_pothole_curve.x, _pothole_curve.y, r))
-		var model := VoxRoad.new().build(look)
-		var inst := MeshInstance3D.new()
-		inst.position = Vector3(at.x, 0.0, at.y)
-		node.add_child(inst)
-		var entry := {"model": model, "line": int(piece.x), "s": mid, "half_length": half, "mesh": inst}
-		_roads[i * ROADS_PER_CHUNK + p] = entry
-		for d in _digs:
-			_carve_road(entry, Vector3(d.x, d.y, d.z), d.w)
-		_mesh_map_road(entry)
+	var piece: Vector3 = (_line_pieces[i] as Array)[p]
+	var line := _lines[int(piece.x)]
+	var mid := piece.y
+	var half := piece.z
+	var at := line.point_at(mid)
+	var track := line.kind == "track"
+	# A track has no kerb: the ground draws its frayed edge over the strip's own
+	# (VoxelWorld `ground.track_fray`), so the strip stays straight under it.
+	var shoulder := 0.0 if track else ROAD_SHOULDER
+	var lanes := 1 if track else 2
+	var look := {"seed": hash([_seed, i, p]), "length": half * 2.0, "voxel": ROAD_VOXEL, "z_phase": mid,
+		"lanes": lanes, "lane_width": maxf((line.width - shoulder * 2.0) / lanes, 1.0), "shoulder": shoulder}
+	if track:
+		look["asphalt"] = TRACK_SOIL
+		look["surface"] = VoxRoad.DIRT
+		look["centre"] = 0
+		look["edges"] = 0
+	var r := far.at(at.x, at.y) if far != null else 0.0
+	look["wear"] = lerpf(_wear_curve.x, _wear_curve.y, r)
+	look["potholes"] = roundi(lerpf(_pothole_curve.x, _pothole_curve.y, r))
+	var model := VoxRoad.new().build(look)
+	var inst := MeshInstance3D.new()
+	inst.position = Vector3(at.x, 0.0, at.y)
+	node.add_child(inst)
+	var entry := {"model": model, "line": int(piece.x), "s": mid, "half_length": half, "mesh": inst}
+	_roads[i * ROADS_PER_CHUNK + p] = entry
+	for d in _digs:
+		_carve_road(entry, Vector3(d.x, d.y, d.z), d.w)
+	return entry
 
 
 ## A road piece bent along its road: each grid row of the straight model goes to its metre
@@ -1034,10 +1199,6 @@ func _mesh_map_road(entry: Dictionary) -> void:
 	var model: VoxelModel = entry["model"]
 	var inst: MeshInstance3D = entry["mesh"]
 	VoxShading.ensure()
-	var arrays := model.mesh_arrays_bendable(int(ROAD_BEND_STEP / ROAD_VOXEL))
-	if arrays.is_empty():
-		inst.mesh = null
-		return
 	var line := _lines[int(entry["line"])]
 	var mid := float(entry["s"])
 	var origin := inst.position
@@ -1054,25 +1215,10 @@ func _mesh_map_road(entry: Dictionary) -> void:
 		# Left of the direction: the model's x and z then turn onto the road as a rotation;
 		# its right would mirror it and turn every face inside out.
 		acrosses[r] = -line.across_at(s)
-	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	var straight := vertices.duplicate()
-	for k in vertices.size():
-		var v := vertices[k]
-		var r := clampi(roundi((v.z - start) / ROAD_VOXEL), 0, rows - 1)
-		var c := centres[r]
-		var a := acrosses[r]
-		vertices[k] = Vector3(c.x + a.x * v.x, c.y + v.y, c.z + a.y * v.x)
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	# Bent pieces turn: normals follow the turn, so lighting stays right on a bend.
-	if arrays[Mesh.ARRAY_NORMAL] is PackedVector3Array:
-		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
-		for k in normals.size():
-			var r := clampi(roundi((straight[k].z - start) / ROAD_VOXEL), 0, rows - 1)
-			var a := acrosses[r]
-			var n := normals[k]
-			# The model's x (across) and z (along) turned to the road's across and direction.
-			normals[k] = Vector3(a.x * n.x - a.y * n.z, n.y, a.y * n.x + a.x * n.z)
-		arrays[Mesh.ARRAY_NORMAL] = normals
+	var arrays := model.mesh_arrays_bent(int(ROAD_BEND_STEP / ROAD_VOXEL), start, ROAD_VOXEL, centres, acrosses)
+	if arrays.is_empty():
+		inst.mesh = null
+		return
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	mesh.surface_set_material(0, VoxGenerator.material())
