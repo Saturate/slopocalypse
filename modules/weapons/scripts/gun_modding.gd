@@ -24,6 +24,20 @@ const STAT_ROWS: Array[Dictionary] = [
 	{"key": "magnification", "label": "Magnification", "format": "%.1fx", "higher_better": true},
 	{"key": "weight", "label": "Weight", "format": "%.2f kg", "higher_better": false},
 ]
+## A whole gun's numbers for its details on the trade screen: these rows of `STAT_ROWS`.
+const GUN_DETAIL_KEYS: Array[String] = ["damage", "rounds_per_minute", "magazine", "range", "reload_seconds"]
+## What a single part changes, for its details: key, label and format. Percentages are the
+## change to the gun's own value.
+const PART_DETAIL_ROWS: Array[Dictionary] = [
+	{"key": "magazine", "label": "Magazine", "format": "%.0f rounds"},
+	{"key": "range", "label": "Range", "format": "%.0f m"},
+	{"key": "magnification", "label": "Magnification", "format": "%.1fx"},
+	{"key": "recoil_pct", "label": "Recoil", "format": "%+.0f%%"},
+	{"key": "spread_pct", "label": "Spread", "format": "%+.0f%%"},
+	{"key": "reload_pct", "label": "Reload time", "format": "%+.0f%%"},
+	{"key": "ergonomics", "label": "Ergonomics", "format": "%+.0f"},
+	{"key": "weight", "label": "Weight", "format": "%.2f kg"},
+]
 
 
 ## Part ids that fit `slot`, by display name.
@@ -133,3 +147,34 @@ static func compare(before: Dictionary, after: Dictionary) -> Array[Dictionary]:
 			"verdict": verdict,
 		})
 	return rows
+
+
+## `{label, value}` rows for a gun built from `slots`. A launcher's receiver deals no bullet
+## damage; its rocket's is what counts.
+static func gun_detail_rows(slots: Dictionary) -> Array[Dictionary]:
+	var result := WeaponBuild.assemble(GunAssembly.catalogue(), slots)
+	var out: Array[Dictionary] = []
+	if not result["ok"]:
+		return out
+	var stats: Dictionary = result["stats"]
+	for row in STAT_ROWS:
+		var key: String = row["key"]
+		if not GUN_DETAIL_KEYS.has(key):
+			continue
+		var value := shown_value(stats, key)
+		if key == "damage" and bool(GunAssembly.receiver_of(slots).get("projectile", false)):
+			value = float(RocketLauncher.rocket_config().get("damage", 0.0))
+		if is_zero_approx(value):
+			continue
+		out.append({"label": row["label"], "value": str(row["format"]) % value})
+	return out
+
+
+## `{label, value}` rows for one part's own `stats`.
+static func part_detail_rows(stats: Dictionary) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for row in PART_DETAIL_ROWS:
+		var key: String = row["key"]
+		if stats.has(key) and not is_zero_approx(float(stats[key])):
+			out.append({"label": row["label"], "value": str(row["format"]) % float(stats[key])})
+	return out

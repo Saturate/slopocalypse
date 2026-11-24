@@ -149,9 +149,48 @@ func item_icon(item: String) -> Texture2D:
 	return _icons.icon(item) if _icons != null else null
 
 
+## Client: whether `item`'s picture is still being rendered (so a screen that drew it without
+## one should draw again). False for an item that will never have one.
+func item_icon_pending(item: String) -> bool:
+	return _icons != null and _icons.is_pending(item)
+
+
+## What shelf an item sits on (guns, ammo, medical, gear): its own `category`, else its kind's
+## from `categories`, else gear.
+func item_category(item: String) -> String:
+	var info := item_info(item)
+	if info.has("category"):
+		return str(info["category"])
+	return str((_data.get("categories", {}) as Dictionary).get(str(info.get("kind", "")), "gear"))
+
+
+## What an item does, as rows of `{label, value}` to show: healing and grid size from here,
+## the rest from the modules that know (a gun's damage from weapons) through
+## `inventory.item_stats`, whose handlers append rows to `stats`.
+func item_stats(item: String) -> Array[Dictionary]:
+	var info := item_info(item)
+	var rows: Array[Dictionary] = []
+	var use: Dictionary = info.get("use", {})
+	if use.has("heal"):
+		rows.append({"label": "Heals", "value": "%.0f over %.0f s" % [float(use["heal"]), float(use.get("seconds", 0.0))]})
+	var grid: Variant = info.get("grid")
+	if grid is Array:
+		rows.append({"label": "Holds", "value": "%d x %d" % [int(grid[0]), int(grid[1])]})
+	var ask := {"item": item, "stats": rows}
+	EventBus.publish(&"inventory.item_stats", ask)
+	return rows
+
+
 func kind_colour(kind: String) -> Color:
 	var c: Array = (_data.get("kinds", {}) as Dictionary).get(kind, [0.4, 0.4, 0.4])
 	return Color(float(c[0]), float(c[1]), float(c[2]))
+
+
+## Whether one `item` would fit somewhere in `peer`'s gear (this player's copy on a client),
+## as the server's `server_give` places it.
+func room_for(peer: int, item: String) -> bool:
+	var gear := grid_of(peer)
+	return gear != null and GearScreen.fits_anywhere(gear, item, false)
 
 
 ## The gear of `peer`: the server's own on the server, this player's copy on a client.

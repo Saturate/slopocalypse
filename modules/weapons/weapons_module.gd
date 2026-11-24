@@ -27,6 +27,8 @@ const RECEIVER_HANDLING: Array[String] = ["ads_spread_multiplier", "braced_sprea
 var _charge_spawner := MultiplayerSpawner.new()
 var _rocket_spawner := MultiplayerSpawner.new()
 var _rockets_fired := 0
+## The charge's numbers from `weapons.json`, read on the first stats ask for it.
+var _charge_config: Dictionary = {}
 var _charges_placed := 0
 ## Peer id -> slot -> part id, for players who changed their gun; everyone else carries the
 ## default. Kept on every instance so players spawned later get the right gun.
@@ -61,6 +63,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"weapons.build_changed", _on_build_changed)
 	EventBus.subscribe(&"inventory.loot_spawned", _on_loot_spawned)
 	EventBus.subscribe(&"inventory.item_model", _on_item_model)
+	EventBus.subscribe(&"inventory.item_stats", _on_item_stats)
 	EventBus.subscribe(&"inventory.slot_changed", _on_slot_changed)
 	EventBus.subscribe(&"weapon.fired", _on_shot_near_charge)
 	Net.peer_joined.connect(_on_peer_joined)
@@ -81,6 +84,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"weapons.build_changed", _on_build_changed)
 	EventBus.unsubscribe(&"inventory.loot_spawned", _on_loot_spawned)
 	EventBus.unsubscribe(&"inventory.item_model", _on_item_model)
+	EventBus.unsubscribe(&"inventory.item_stats", _on_item_stats)
 	EventBus.unsubscribe(&"inventory.slot_changed", _on_slot_changed)
 	EventBus.unsubscribe(&"weapon.fired", _on_shot_near_charge)
 	if Net.peer_joined.is_connected(_on_peer_joined):
@@ -302,6 +306,27 @@ func _on_item_model(p: Dictionary) -> void:
 	var model := MeshInstance3D.new()
 	model.mesh = mesh
 	p["model"] = model
+
+
+## The inventory wants an item's numbers (for the trade screen's details): a gun in its
+## default build, a part's own changes, or a charge's blast.
+func _on_item_stats(ask: Dictionary) -> void:
+	var item := str(ask.get("item", ""))
+	var rows: Array = ask["stats"]
+	if GUN_ITEMS.has(item):
+		rows.append_array(GunModding.gun_detail_rows(build_of_item(item, {})))
+		return
+	var part: Dictionary = GunAssembly.catalogue().get(item, {})
+	if not part.is_empty():
+		rows.append_array(GunModding.part_detail_rows(part.get("stats", {})))
+		return
+	if _charge_config.is_empty():
+		var data: Variant = Data.load_json(ChargeThrower.CONFIG)
+		_charge_config = (data as Dictionary).get("charge", {}) if data is Dictionary else {}
+	var charge := _charge_config
+	if str(charge.get("item", "")) == item:
+		rows.append({"label": "Damage", "value": "%.0f" % float(charge.get("damage", 0.0))})
+		rows.append({"label": "Blast radius", "value": "%.1f m" % float(charge.get("radius", 0.0))})
 
 
 ## The inventory module's API when it is loaded; without it every part is free to use.

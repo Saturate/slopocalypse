@@ -254,6 +254,12 @@
       0.3
     ]
   },
+  "categories": {
+    "primary_gun": "guns",
+    "sidearm": "guns",
+    "magazine": "ammo",
+    "med": "medical"
+  },
   "items": {
     "opt_reddot": {
       "name": "Tube red dot",
@@ -262,7 +268,8 @@
         1,
         1
       ],
-      "kind": "optic"
+      "kind": "optic",
+      "about": "Rifle sight: a red dot for quick aiming at short range."
     },
     "opt_holo": {
       "name": "Window holo sight",
@@ -271,7 +278,8 @@
         2,
         1
       ],
-      "kind": "optic"
+      "kind": "optic",
+      "about": "Rifle sight: a wide window, easy to keep both eyes on."
     },
     "opt_thermal": {
       "name": "Thermal scope",
@@ -280,7 +288,8 @@
         3,
         1
       ],
-      "kind": "optic"
+      "kind": "optic",
+      "about": "Rifle scope that shows warm bodies bright, day or night."
     },
     "opt_scope_4x": {
       "name": "4x scope",
@@ -289,7 +298,8 @@
         3,
         1
       ],
-      "kind": "optic"
+      "kind": "optic",
+      "about": "Rifle scope for picking targets at range."
     },
     "muz_flash": {
       "name": "Flash hider",
@@ -298,7 +308,8 @@
         1,
         1
       ],
-      "kind": "muzzle"
+      "kind": "muzzle",
+      "about": "Rifle muzzle device that hides the flash a little."
     },
     "muz_comp": {
       "name": "Compensator",
@@ -307,7 +318,8 @@
         1,
         1
       ],
-      "kind": "muzzle"
+      "kind": "muzzle",
+      "about": "Rifle muzzle brake: less kick, more noise."
     },
     "muz_supp": {
       "name": "Suppressor",
@@ -316,7 +328,8 @@
         2,
         1
       ],
-      "kind": "muzzle"
+      "kind": "muzzle",
+      "about": "Rifle suppressor: quieter shots, a little heavier."
     },
     "mag_ar_30": {
       "name": "30 round magazine",
@@ -325,7 +338,8 @@
         1,
         2
       ],
-      "kind": "magazine"
+      "kind": "magazine",
+      "about": "Standard rifle magazine."
     },
     "mag_ar_45": {
       "name": "45 round magazine",
@@ -334,7 +348,8 @@
         1,
         3
       ],
-      "kind": "magazine"
+      "kind": "magazine",
+      "about": "Long rifle magazine: more rounds, slower to reload."
     },
     "stk_ar_std": {
       "name": "Fixed stock",
@@ -343,7 +358,8 @@
         2,
         1
       ],
-      "kind": "furniture"
+      "kind": "furniture",
+      "about": "Rifle stock that soaks up recoil."
     },
     "stk_ar_light": {
       "name": "Skeleton stock",
@@ -352,7 +368,8 @@
         2,
         1
       ],
-      "kind": "furniture"
+      "kind": "furniture",
+      "about": "Light rifle stock: handles faster, kicks more."
     },
     "grp_ar_std": {
       "name": "Pistol grip",
@@ -361,7 +378,8 @@
         1,
         1
       ],
-      "kind": "furniture"
+      "kind": "furniture",
+      "about": "Rifle grip."
     },
     "hg_ar_std": {
       "name": "Vented handguard",
@@ -370,7 +388,8 @@
         3,
         1
       ],
-      "kind": "furniture"
+      "kind": "furniture",
+      "about": "Short rifle handguard."
     },
     "hg_ar_long": {
       "name": "Long rail handguard",
@@ -379,7 +398,8 @@
         4,
         1
       ],
-      "kind": "furniture"
+      "kind": "furniture",
+      "about": "Long rifle handguard with room on the rail."
     },
     "bar_ar_14": {
       "name": "14 inch barrel",
@@ -388,7 +408,8 @@
         4,
         1
       ],
-      "kind": "barrel"
+      "kind": "barrel",
+      "about": "Full length rifle barrel: reaches further."
     },
     "bar_ar_10": {
       "name": "10 inch barrel",
@@ -397,7 +418,8 @@
         3,
         1
       ],
-      "kind": "barrel"
+      "kind": "barrel",
+      "about": "Short rifle barrel: handy indoors, spreads more."
     },
     "sld_pistol_std": {
       "name": "Standard slide",
@@ -406,7 +428,8 @@
         2,
         1
       ],
-      "kind": "pistol"
+      "kind": "pistol",
+      "about": "Pistol slide."
     },
     "sld_pistol_long": {
       "name": "Long threaded slide",
@@ -415,7 +438,8 @@
         2,
         1
       ],
-      "kind": "pistol"
+      "kind": "pistol",
+      "about": "Longer pistol slide, threaded for a muzzle device."
     },
     "mag_pistol_15": {
       "name": "15 round pistol magazine",
@@ -424,7 +448,9 @@
         1,
         1
       ],
-      "kind": "pistol"
+      "kind": "pistol",
+      "about": "Standard pistol magazine.",
+      "category": "ammo"
     },
     "mag_pistol_21": {
       "name": "21 round extended magazine",
@@ -433,7 +459,9 @@
         1,
         2
       ],
-      "kind": "pistol"
+      "kind": "pistol",
+      "about": "Extended pistol magazine.",
+      "category": "ammo"
     },
     "muz_pistol_comp": {
       "name": "Pistol compensator",
@@ -442,7 +470,8 @@
         1,
         1
       ],
-      "kind": "pistol"
+      "kind": "pistol",
+      "about": "Pistol compensator: less kick."
     },
     "muz_pistol_supp": {
       "name": "Pistol suppressor",
@@ -451,7 +480,8 @@
         2,
         1
       ],
-      "kind": "pistol"
+      "kind": "pistol",
+      "about": "Pistol suppressor: quieter shots."
     },
     "opt_pistol_dot": {
       "name": "Mini red dot",
@@ -460,7 +490,8 @@
         1,
         1
       ],
-      "kind": "pistol"
+      "kind": "pistol",
+      "about": "Small red dot for a pistol."
     },
     "gun_rifle": {
       "name": "Rifle (with its parts)",
@@ -469,7 +500,8 @@
         5,
         2
       ],
-      "kind": "primary_gun"
+      "kind": "primary_gun",
+      "about": "Assault rifle, fully built. Swap its parts on the modding screen (B)."
     },
     "gun_pistol": {
       "name": "Pistol (with its parts)",
@@ -478,7 +510,8 @@
         2,
         2
       ],
-      "kind": "sidearm"
+      "kind": "sidearm",
+      "about": "Sidearm, fully built."
     },
     "rig_light": {
       "name": "Chest rig",
@@ -492,7 +525,8 @@
         4,
         2
       ],
-      "model": "rig_light"
+      "model": "rig_light",
+      "about": "Chest rig with pouches for magazines and small things."
     },
     "rig_heavy": {
       "name": "Assault rig",
@@ -506,7 +540,8 @@
         5,
         3
       ],
-      "model": "rig_heavy"
+      "model": "rig_heavy",
+      "about": "Armoured rig with more pouches."
     },
     "bag_small": {
       "name": "Day pack",
@@ -520,7 +555,8 @@
         5,
         5
       ],
-      "model": "bag_small"
+      "model": "bag_small",
+      "about": "Small backpack."
     },
     "bag_large": {
       "name": "Raid pack",
@@ -534,7 +570,8 @@
         6,
         7
       ],
-      "model": "bag_large"
+      "model": "bag_large",
+      "about": "Big backpack for long trips."
     },
     "usb_drive": {
       "name": "Encrypted drive (mission)",
@@ -544,7 +581,8 @@
         1
       ],
       "kind": "objective",
-      "model": "drive"
+      "model": "drive",
+      "about": "Mission objective. Bring it home."
     },
     "breach_charge": {
       "name": "Breaching charge (G to place, T to set off)",
@@ -553,7 +591,8 @@
         1,
         1
       ],
-      "kind": "explosive"
+      "kind": "explosive",
+      "about": "Explosive for doors and walls. G places it, T sets it off."
     },
     "medkit": {
       "name": "Field medkit",
@@ -567,7 +606,8 @@
       "use": {
         "heal": 60.0,
         "seconds": 3.0
-      }
+      },
+      "about": "Heals you over a few seconds. Right click it to use."
     },
     "gun_rocket": {
       "name": "Rocket launcher (one rocket a load)",
@@ -576,7 +616,8 @@
         6,
         2
       ],
-      "kind": "primary_gun"
+      "kind": "primary_gun",
+      "about": "Fires one rocket per load. Mind the backblast."
     },
     "gun_bolt": {
       "name": "Bolt-action rifle (with its parts)",
@@ -585,7 +626,8 @@
         5,
         2
       ],
-      "kind": "primary_gun"
+      "kind": "primary_gun",
+      "about": "Bolt-action rifle: hard hitting, slow to work."
     },
     "bar_bolt_24": {
       "name": "24 inch heavy barrel (bolt-action)",
@@ -594,7 +636,8 @@
         5,
         1
       ],
-      "kind": "barrel"
+      "kind": "barrel",
+      "about": "Heavy barrel for the bolt-action rifle."
     },
     "stk_bolt_walnut": {
       "name": "Walnut rifle stock (bolt-action)",
@@ -603,7 +646,8 @@
         4,
         1
       ],
-      "kind": "furniture"
+      "kind": "furniture",
+      "about": "Wooden stock for the bolt-action rifle."
     },
     "bolt_std": {
       "name": "Rifle bolt (bolt-action)",
@@ -612,7 +656,8 @@
         2,
         1
       ],
-      "kind": "furniture"
+      "kind": "furniture",
+      "about": "Bolt for the bolt-action rifle."
     },
     "mag_bolt_5": {
       "name": "5 round 7.62x51 magazine",
@@ -621,7 +666,8 @@
         1,
         1
       ],
-      "kind": "magazine"
+      "kind": "magazine",
+      "about": "Magazine for the bolt-action rifle."
     },
     "opt_scope_8x": {
       "name": "8x long scope",
@@ -630,7 +676,8 @@
         3,
         1
       ],
-      "kind": "optic"
+      "kind": "optic",
+      "about": "Long range scope."
     },
     "gun_mg": {
       "name": "Machine gun (with its parts)",
@@ -639,7 +686,8 @@
         5,
         3
       ],
-      "kind": "primary_gun"
+      "kind": "primary_gun",
+      "about": "Belt-fed machine gun: heavy, slow to draw, steady on its bipod."
     },
     "bar_mg_heavy": {
       "name": "Heavy barrel with carry handle (machine gun)",
@@ -648,7 +696,8 @@
         4,
         1
       ],
-      "kind": "barrel"
+      "kind": "barrel",
+      "about": "Machine gun barrel with a carry handle."
     },
     "stk_mg": {
       "name": "Fixed stock (machine gun)",
@@ -657,7 +706,8 @@
         2,
         1
       ],
-      "kind": "furniture"
+      "kind": "furniture",
+      "about": "Machine gun stock."
     },
     "bpd_mg": {
       "name": "Folding bipod (machine gun)",
@@ -666,7 +716,8 @@
         2,
         1
       ],
-      "kind": "furniture"
+      "kind": "furniture",
+      "about": "Machine gun bipod."
     },
     "belt_mg_100": {
       "name": "100 round 7.62x51 belt box",
@@ -675,7 +726,8 @@
         2,
         2
       ],
-      "kind": "magazine"
+      "kind": "magazine",
+      "about": "Belt box for the machine gun."
     },
     "glowstick": {
       "name": "Glowstick (L to crack, stow or show; K to drop)",
@@ -687,7 +739,8 @@
       "kind": "light",
       "use": {
         "event": "glowsticks.use"
-      }
+      },
+      "about": "Light to wear at night. L cracks it; it burns until spent."
     }
   }
 }

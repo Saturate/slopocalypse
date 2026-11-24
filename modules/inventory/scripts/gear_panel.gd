@@ -21,6 +21,9 @@ var inventory: Node
 ## Uid not to draw (being dragged), and uid to outline in red (refused quick move).
 var skip_uid := -1
 var flash_uid := -1
+## Placed item -> `[text, colour]` for a tag in its corner (the trader's offer), or unset for
+## no tags.
+var tag_for: Callable
 
 var _slots_col: VBoxContainer
 var _grids_col: VBoxContainer
@@ -132,6 +135,7 @@ func _draw_slot(box: Control, name: String) -> void:
 			continue
 		var cells := _slot_cells(name)
 		GridPainter.draw_tile(box, inventory, worn, Vector2.ZERO, cells.x, cells.y, CELL, 1.0)
+		_draw_tag(box, worn, Vector2.ZERO, cells.x, cells.y)
 		if int(worn["uid"]) == flash_uid:
 			box.draw_rect(rect.grow(-GridPainter.GAP), GridPainter.FLASH, false, 3.0)
 
@@ -150,8 +154,17 @@ func _draw_grid(view: Control, name: String) -> void:
 			continue
 		var at := Vector2(int(placed["x"]), int(placed["y"])) * CELL
 		GridPainter.draw_tile(view, inventory, placed, at, int(placed["w"]), int(placed["h"]), CELL, 1.0)
+		_draw_tag(view, placed, at, int(placed["w"]), int(placed["h"]))
 		if uid == flash_uid:
 			view.draw_rect(Rect2(at, Vector2(int(placed["w"]), int(placed["h"])) * CELL).grow(-GridPainter.GAP), GridPainter.FLASH, false, 3.0)
+
+
+func _draw_tag(canvas: Control, placed: Dictionary, at: Vector2, w: int, h: int) -> void:
+	if not tag_for.is_valid():
+		return
+	var tag: Array = tag_for.call(placed)
+	if tag.size() == 2:
+		GridPainter.draw_tag(canvas, at, w, h, CELL, str(tag[0]), tag[1])
 
 
 ## What is under `global`: `{slot: name, view}` or `{grid: name, cell: Vector2i, local, view}`,

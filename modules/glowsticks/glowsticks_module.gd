@@ -50,6 +50,7 @@ func _ready() -> void:
 	EventBus.subscribe(&"enemy.died", _on_enemy_died)
 	EventBus.subscribe(&"glowsticks.use", _on_use)
 	EventBus.subscribe(&"inventory.item_model", _on_item_model)
+	EventBus.subscribe(&"inventory.item_stats", _on_item_stats)
 	Net.peer_joined.connect(_on_peer_joined)
 	Net.peer_left.connect(_on_peer_left)
 	if DisplayServer.get_name() != "headless":
@@ -67,6 +68,7 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"enemy.died", _on_enemy_died)
 	EventBus.unsubscribe(&"glowsticks.use", _on_use)
 	EventBus.unsubscribe(&"inventory.item_model", _on_item_model)
+	EventBus.unsubscribe(&"inventory.item_stats", _on_item_stats)
 	if Net.peer_joined.is_connected(_on_peer_joined):
 		Net.peer_joined.disconnect(_on_peer_joined)
 	if Net.peer_left.is_connected(_on_peer_left):
@@ -302,6 +304,12 @@ func _on_use(ask: Dictionary) -> void:
 func _on_item_model(ask: Dictionary) -> void:
 	if str(ask.get("item", "")) == ITEM and ask.get("model") == null:
 		ask["model"] = GlowstickView.stick(config, GlowstickRules.colour(config["spare_colour"]), 0.0)
+
+
+## How long a stick burns, for its details on the trade screen.
+func _on_item_stats(ask: Dictionary) -> void:
+	if str(ask.get("item", "")) == ITEM:
+		(ask["stats"] as Array).append({"label": "Burns", "value": "%.0f min" % (float(config["burn_seconds"]) / 60.0)})
 
 
 func _on_peer_joined(_peer: int) -> void:
