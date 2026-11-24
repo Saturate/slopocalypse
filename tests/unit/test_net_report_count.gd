@@ -39,8 +39,38 @@ func test_a_client_counts_only_once_its_player_is_in_the_world() -> void:
 	_ticks(30)
 	assert_int(int(_net.get(&"_frames"))).is_equal(0)
 	_net.set(&"_in_play", true)
+	_net.set(&"_world_ready", true)
 	_ticks(20)
 	assert_int(int(_net.get(&"_frames"))).is_equal(20)
+
+
+# The spawner can hand a client its player seconds before it has built the server's world;
+# counting from then, a slow machine reported before its world (and spawn point) existed.
+func test_a_client_whose_player_arrived_first_waits_for_its_world() -> void:
+	_net.set(&"mode", NetSession.Mode.CLIENT)
+	_net.set(&"_in_play", true)
+	_ticks(30)
+	assert_int(int(_net.get(&"_frames"))).is_equal(0)
+	_net.set(&"_world_ready", true)
+	_ticks(20)
+	assert_int(int(_net.get(&"_frames"))).is_equal(20)
+
+
+# A server's kick gives the peer time to hang up itself, in ticks: one long frame (loading
+# the world) cut the line before the peer had a polled frame to answer in (#552).
+func test_a_kicked_peer_is_cut_only_after_kick_seconds_of_ticks() -> void:
+	var kicking := {5: NetSession.KICK_SECONDS, 9: NetSession.KICK_SECONDS * 2.0}
+	var tick := 1.0 / 60.0
+	var cut: Array[int] = []
+	var ticks := 0
+	while cut.is_empty():
+		cut = NetSession.kicks_due(kicking, tick)
+		ticks += 1
+	assert_array(cut).contains_exactly([5])
+	# About KICK_SECONDS of ticks, give or take one for float rounding.
+	assert_int(ticks).is_between(roundi(NetSession.KICK_SECONDS / tick) - 1, roundi(NetSession.KICK_SECONDS / tick) + 1)
+	assert_bool(kicking.has(5)).is_false()
+	assert_bool(kicking.has(9)).is_true()
 
 
 func test_a_server_waits_for_each_connected_client_that_has_not_reported() -> void:

@@ -162,8 +162,17 @@ func _on_world_ready(payload: Dictionary) -> void:
 		return
 	if Net.has_local_player():
 		_server_spawn(Net.local_peer_id())
-	for peer in multiplayer.get_peers():
-		_server_spawn(peer)
+	server_spawn_joined(multiplayer.get_peers())
+
+
+## Server, once the world is ready: a body for each of `peers` that has said who they are.
+## One still connecting gets theirs on `peer_joined`, and one turned away never does: a body
+## spawned before the hello has no name, so nothing keyed by it (a saved spot, gear) reaches
+## them, and only peers who said hello are ever let go (`peer_left`), so it would stay (#552).
+func server_spawn_joined(peers: PackedInt32Array) -> void:
+	for peer in peers:
+		if not Net.identity_of(peer).is_empty():
+			_server_spawn(peer)
 
 
 func _on_peer_joined(peer: int) -> void:

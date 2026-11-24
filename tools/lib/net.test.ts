@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSocket } from "node:dgram";
-import { freeUdpPort, parseReport, parseSoloServer } from "./net.ts";
+import { freeUdpPort, parseReport, parseSoloServer, SMOKE_PORTS, smokePort } from "./net.ts";
 
 test("reads the solo server line, Windows path and CRLF included", () => {
 	const out = "[INFO] net: solo server pid=1234 port=7800 log=C:/Users/me/AppData/Roaming/Godot/app_userdata/Slopocalypse/logs/solo-server.log\r\n[INFO] boot: loaded";
@@ -28,4 +28,12 @@ test("a taken UDP port is skipped for the next free one", async () => {
 	} finally {
 		socket.close();
 	}
+});
+
+test("smoke ports start in their own range, clear of the game's", () => {
+	const last = SMOKE_PORTS.first + SMOKE_PORTS.count - 1;
+	assert.equal(smokePort(() => 0), SMOKE_PORTS.first);
+	assert.equal(smokePort(() => 0.999999), last);
+	// freeUdpPort searches 50 up from the start: clear of 7777 to 7849 and of Linux's ephemeral ports.
+	assert.ok(SMOKE_PORTS.first > 7849 && last + 50 < 32768);
 });

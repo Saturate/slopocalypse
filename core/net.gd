@@ -50,7 +50,10 @@ const ENET_TIMEOUT_MAX_MS := 30000
 const HELLO_SECONDS := 10.0
 ## A gap between physics ticks this long is logged in tool runs (see `_note_stall`).
 const STALL_LOG_MS := 1500
-## How long a kicked peer has to receive the reason before the line is cut.
+## How long a kicked peer has to receive the reason and hang up before the line is cut,
+## counted in physics ticks: a long frame (the server loading its world) runs at most
+## `physics/common/max_physics_steps_per_frame` of them (Godot's default 8, about 0.13 s), so
+## the peer always gets several polled frames to answer in.
 const KICK_SECONDS := 0.5
 const MAX_NAME_LENGTH := 32
 const MAX_KEY_LENGTH := 64
@@ -88,6 +91,8 @@ var _last_tick_ms := 0
 var _frames := 0
 ## Client or solo: this instance's own player is in the world, so its report clock runs.
 var _in_play := false
+## Client or solo: the world is loaded and announced here (`world.ready`), or there is none.
+var _world_ready := false
 ## Server: someone has joined (said hello and was let in), which starts its report clock.
 var _had_players := false
 ## Server: peers that said their report is out; seconds waited for the rest.
@@ -102,6 +107,8 @@ var _unnamed: Dictionary = {}
 var _builds: Dictionary = {}
 ## Client: why the server sent us away, shown when the connection drops.
 var _kick_reason := ""
+## Server: peers sent away, peer -> seconds left before the line is cut.
+var _kicking: Dictionary = {}
 
 ## A person is at the keyboard: failures go back to the menu instead of quitting or erroring.
 var interactive := false
@@ -230,7 +237,10 @@ func leave(reason: String = "") -> void:
 	_identities.clear()
 	_unnamed.clear()
 	_builds.clear()
+	_kicking.clear()
 	_kick_reason = ""
+	_in_play = false
+	_world_ready = false
 	forget_menu_choice()
 	menu_message = reason
 	awaiting_menu = true
@@ -256,6 +266,7 @@ func _fail(reason: String) -> void:
 func _on_peer_left(id: int) -> void:
 	_unnamed.erase(id)
 	_builds.erase(id)
+	_kicking.erase(id)
 	if not _identities.has(id):
 		# Only a server learns who peers are; on a client this would misread every peer.
 		Log.info(&"net", "peer %d left%s" % [id, " before saying who they are" if multiplayer.is_server() else ""])
@@ -398,10 +409,34 @@ func server_kick(peer: int, reason: String) -> void:
 		return
 	Log.info(&"net", "kicking peer %d: %s" % [peer, reason])
 	_kicked.rpc_id(peer, reason)
-	get_tree().create_timer(KICK_SECONDS).timeout.connect(func() -> void:
-		var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
-		if enet != null and multiplayer.get_peers().has(peer):
-			enet.disconnect_peer(peer))
+	_kicking[peer] = KICK_SECONDS
+
+
+## Server: the kicked peers whose time to hang up ran out with this tick. Ticks down `kicking`
+## and forgets those.
+static func kicks_due(kicking: Dictionary, delta: float) -> Array[int]:
+	var due: Array[int] = []
+	for peer: int in kicking.keys():
+		kicking[peer] = float(kicking[peer]) - delta
+		if float(kicking[peer]) <= 0.0:
+			kicking.erase(peer)
+			due.append(peer)
+	return due
+
+
+## Server: hangs up on `peer` and treats them as gone at once. ENet drops a peer's channels the
+## moment the server starts a disconnect but keeps the peer until the other end answers, and
+## every replication packet sent to it meanwhile logs "Unable to send packet on channel 0"
+## (#552); going through SceneMultiplayer stops replicating to them first. It does not report
+## the peer as disconnected (nor does the disconnect when it lands), so they are let go here.
+func _cut(peer: int) -> void:
+	if not multiplayer.get_peers().has(peer):
+		return
+	var scene := multiplayer as SceneMultiplayer
+	if scene == null:
+		return
+	scene.disconnect_peer(peer)
+	_on_peer_left(peer)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -471,9 +506,7 @@ func _drop_silent(delta: float) -> void:
 		if float(_unnamed[peer]) >= HELLO_SECONDS:
 			Log.warn(&"net", "peer %d never said who they are; dropping them" % peer)
 			_unnamed.erase(peer)
-			var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
-			if enet != null:
-				enet.disconnect_peer(peer)
+			_cut(peer)
 
 
 ## The command line's user arguments plus any a menu choice added (`extra_args`).
@@ -503,6 +536,9 @@ func _physics_tick(delta: float) -> void:
 	_note_stall()
 	_watch_empty(delta)
 	_drop_silent(delta)
+	if not _kicking.is_empty():
+		for peer in kicks_due(_kicking, delta):
+			_cut(peer)
 	# Counted from when the session has someone in it, not from launch: a slow machine can
 	# spend seconds loading first, and the smoke tests start their processes seconds apart.
 	if _report_after < 0 or not _report_clock_running():
@@ -549,7 +585,12 @@ func _report_clock_running() -> bool:
 	if not _in_play and is_inside_tree():
 		var me := multiplayer.get_unique_id()
 		_in_play = get_tree().get_nodes_in_group(&"players").any(func(p: Node) -> bool: return int(p.get_meta(&"peer_id", 0)) == me)
-	return _in_play
+	# The spawner can deliver our player seconds before this client has built the server's
+	# world; until then there is no spawn point to measure from (the report would use the
+	# origin, about 800 m off on a map) and the bots' time goes into the loading (#552, #581).
+	if _in_play and not _world_ready and is_inside_tree():
+		_world_ready = get_tree().get_first_node_in_group(&"world_map") == null
+	return _in_play and _world_ready
 
 
 ## The server's own clock says nothing about how far its clients got, so it reports and stops
@@ -633,8 +674,22 @@ var _shots := 0
 
 
 func _enter_tree() -> void:
-	# Test hook only: counts shots for the report. A topic name, not a module dependency.
-	EventBus.subscribe(&"weapon.fired", func(_p: Dictionary) -> void: _shots += 1)
+	# Test hooks only: shots and the world for the report. Topic names, not module dependencies.
+	EventBus.subscribe(&"weapon.fired", _count_shot)
+	EventBus.subscribe(&"world.ready", _note_world_ready)
+
+
+func _exit_tree() -> void:
+	EventBus.unsubscribe(&"weapon.fired", _count_shot)
+	EventBus.unsubscribe(&"world.ready", _note_world_ready)
+
+
+func _count_shot(_p: Dictionary) -> void:
+	_shots += 1
+
+
+func _note_world_ready(_p: Dictionary) -> void:
+	_world_ready = true
 
 
 func _parse(args: PackedStringArray) -> void:
