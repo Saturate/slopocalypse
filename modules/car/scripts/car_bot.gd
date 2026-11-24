@@ -10,7 +10,14 @@ const SIT := "sit"
 const SEATED_LOG := "bot seated"
 ## Let the player land and the car settle before walking over.
 const WAIT_TICKS := 90
+## Drives for DRIVE_TICKS, and on until the car, as this instance sees it, is DRIVE_DISTANCE
+## from where the bot got in (the net smoke checks for 5 m), for at most DRIVE_TICKS_MAX: the
+## ticks are this client's, and the car may not move at once (still frozen until it has
+## ground, the throttle reaching a loaded server late), so time alone does not say it went
+## anywhere (#581).
 const DRIVE_TICKS := 240
+const DRIVE_DISTANCE := 8.0
+const DRIVE_TICKS_MAX := 600
 const ENTER_RANGE := 2.5
 const INTERACT_EVERY := 30
 const DRIVE_STEER := 0.15
@@ -24,6 +31,7 @@ var sit := false
 var _state := State.WALK
 var _car: CarController
 var _ticks := 0
+var _drive_from := Vector3.ZERO
 
 
 ## Called by the car module when this bot's player is in a car.
@@ -31,6 +39,7 @@ func entered(car: CarController) -> void:
 	_car = car
 	_state = State.DRIVE
 	_ticks = 0
+	_drive_from = car.global_position
 	if sit:
 		# tools/lib/net.ts lateJoinSmoke waits for this line before a second client joins.
 		Log.info(&"car", SEATED_LOG)
@@ -74,7 +83,7 @@ func _drive() -> void:
 	if sit:
 		_send_car(intent, 0.0, 0.0, true)
 		return
-	if _ticks < DRIVE_TICKS:
+	if _ticks < DRIVE_TICKS or (_ticks < DRIVE_TICKS_MAX and _car.global_position.distance_to(_drive_from) < DRIVE_DISTANCE):
 		_send_car(intent, 1.0, DRIVE_STEER, false)
 		return
 	_send_car(intent, 0.0, 0.0, true)
