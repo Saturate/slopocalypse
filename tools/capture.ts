@@ -4,9 +4,9 @@
 // another rendering driver (on macOS the Metal one gives up on frames over a second).
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { argv, exit } from "node:process";
+import { argv, env, exit, platform } from "node:process";
 import { GODOT_NOISE } from "./lib/gate.ts";
-import { localGodot } from "./lib/godot.ts";
+import { localGodot, quietWindow } from "./lib/godot.ts";
 import { scanLog } from "./lib/log-scan.ts";
 import { run } from "./lib/proc.ts";
 
@@ -35,9 +35,11 @@ if (!existsSync(join(shots, ".gdignore"))) {
 
 const driverAt = argv.indexOf("--driver");
 const driver = driverAt >= 0 ? argv[driverAt + 1] : undefined;
+const quiet = quietWindow(platform, env);
 const r = await run(
 	localGodot(root),
 	[
+		...quiet.args,
 		...(driver !== undefined ? ["--rendering-driver", driver] : []),
 		"--path", root,
 		"--resolution", "1280x720",
@@ -51,7 +53,7 @@ const r = await run(
 		// Anything after a bare `--` goes to the game (a capture's own options: --map=, --seed=).
 		...(argv.includes("--") ? argv.slice(argv.indexOf("--") + 1) : []),
 	],
-	{ cwd: root, timeoutMs: 120_000 },
+	{ cwd: root, timeoutMs: 120_000, env: quiet.env },
 );
 const problems = scanLog(r.output, GODOT_NOISE);
 if (r.code !== 0 || problems.length > 0 || !existsSync(out)) {

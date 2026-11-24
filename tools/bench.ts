@@ -14,11 +14,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { cpus, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { arch, argv, exit, platform } from "node:process";
+import { arch, argv, env, exit, platform } from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 import { ablationDeltas, baselineDriver, budgetLine, compare, parseBaseline, moduleCosts, netCosts, parseBenchArgs, parsePerfLog, passesLine, renderingDriver, serverCost, serverLine, summarise, table, worstSpikes, zoneCosts, type BenchArgs, type Summary } from "./lib/bench.ts";
 import { renderReport, type Failure, type ScenarioResult } from "./lib/bench-report.ts";
-import { localGodot } from "./lib/godot.ts";
+import { localGodot, quietWindow } from "./lib/godot.ts";
 import { summariseReport } from "./lib/report.ts";
 import { run } from "./lib/proc.ts";
 import { benchmarkArgs, rangeArgs } from "./lib/range.ts";
@@ -71,8 +71,9 @@ let driver: string | undefined;
 // results are written), so they get no frame count to stop at.
 async function windowed(name: string, userArgs: readonly string[], logs: Logs, extra: readonly string[], selfTimed = false): Promise<void> {
 	const engine = driver === undefined ? [] : ["--rendering-driver", driver];
+	const quiet = quietWindow(platform, env);
 	const stop = selfTimed ? [] : [`--net-report-after=${RUN_FRAMES}`];
-	const r = await run(godot, [...engine, "--path", root, "--", "--solo", ...userArgs, ...extra, "--uncapped", "--perf-spike-ms=20", ...stop, `--perf-log=${logs.perf}`, `--server-perf-log=${logs.server}`], { cwd: root, timeoutMs: RUN_SECONDS * 1000 });
+	const r = await run(godot, [...engine, ...quiet.args, "--path", root, "--", "--solo", ...userArgs, ...extra, "--uncapped", "--perf-spike-ms=20", ...stop, `--perf-log=${logs.perf}`, `--server-perf-log=${logs.server}`], { cwd: root, timeoutMs: RUN_SECONDS * 1000, env: quiet.env });
 	if (r.timedOut) console.log(`  ${name}: stopped after ${RUN_SECONDS} s, before ${RUN_FRAMES} frames (under ${(RUN_FRAMES / RUN_SECONDS).toFixed(0)} fps)`);
 	await delay(SERVER_EXIT_MS);
 }

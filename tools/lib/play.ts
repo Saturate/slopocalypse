@@ -9,6 +9,7 @@ import { env, platform } from "node:process";
 import { isDeepStrictEqual } from "node:util";
 import { discover, godotUserDir, rpc, type Game as ApiGame } from "./debug-api.ts";
 import { GODOT_NOISE } from "./gate.ts";
+import { quietWindow } from "./godot.ts";
 import { scanLog, stripAnsi } from "./log-scan.ts";
 import { watch, type Watched } from "./net.ts";
 import { brighterPixels, decodePng, findColour, meanLuma, parseColour, WHOLE, type Image, type Region } from "./png.ts";
@@ -1050,11 +1051,14 @@ export class PlayRun {
 
 	private start(name: string, role: "server" | "client", userArgs: readonly string[], window: number): Proc {
 		const log = resolvePath(this.outDir, "logs", `${name}.log`);
-		const screen = role === "server" || this.headless ? ["--headless"] : ["--resolution", `${WINDOW.width}x${WINDOW.height}`, "--position", `${WINDOW.gap + (window % 2) * (WINDOW.width + WINDOW.gap)},${40 + Math.floor(window / 2) * (WINDOW.height + 60)}`];
+		const windowed = role !== "server" && !this.headless;
+		const quiet = windowed ? quietWindow(platform, env) : { args: [], env };
+		const screen = !windowed ? ["--headless"] : [...quiet.args, "--resolution", `${WINDOW.width}x${WINDOW.height}`, "--position", `${WINDOW.gap + (window % 2) * (WINDOW.width + WINDOW.gap)},${40 + Math.floor(window / 2) * (WINDOW.height + 60)}`];
 		const proc: Proc = { game: new Game(this, name, role), log, output: "", pid: undefined, done: Promise.resolve({ code: 0, output: "", timedOut: false }), ended: false };
 		// Godot keeps its own --log-file from scripts; the copy after -- tells the debug API.
 		const watched: Watched = watch(this.cfg.godot, [...screen, "--log-file", log, "--path", this.cfg.root, "--", ...userArgs, "--debug-api", `--log-file=${log}`], {
 			cwd: this.cfg.root,
+			env: quiet.env,
 			timeoutMs: this.cfg.keep ? KEEP_BACKSTOP_MS : this.cfg.timeoutMs + 60_000,
 			onSpawn: (pid) => (proc.pid = pid),
 		});

@@ -7,10 +7,10 @@
 // --only N renders just shot N (to tune it). Needs ffmpeg: node tools/get-ffmpeg.ts.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { argv, exit, platform } from "node:process";
+import { argv, env, exit, platform } from "node:process";
 import { GODOT_NOISE } from "./lib/gate.ts";
 import { ffmpegBin } from "./lib/ffmpeg.ts";
-import { localGodot } from "./lib/godot.ts";
+import { localGodot, quietWindow } from "./lib/godot.ts";
 import { scanLog } from "./lib/log-scan.ts";
 import { run } from "./lib/proc.ts";
 import { concatList, gifArgs, godotArgs, joinArgs, leadInSeconds, parseShotList, segmentArgs, stillArgs, totalSeconds } from "./lib/trailer.ts";
@@ -29,6 +29,7 @@ async function main(): Promise<void> {
 	mkdirSync(out, { recursive: true });
 	const ffmpeg = ffmpegBin(root, platform);
 	const godot = localGodot(root);
+	const quiet = quietWindow(platform, env);
 	console.log(`${name}: ${list.shots.length} shots, ${totalSeconds(list).toFixed(1)} s at ${list.size[0]}x${list.size[1]} ${list.fps} fps`);
 	const segments: string[] = [];
 	for (let i = 0; i < list.shots.length; i++) {
@@ -40,7 +41,7 @@ async function main(): Promise<void> {
 		const startFile = join(out, `shot_${i}.start`);
 		rmSync(startFile, { force: true });
 		console.log(`  shot ${i}: ${shot.title ?? shot.setup} (${shot.seconds} s)`);
-		const r = await run(godot, godotArgs(root, list, shot, movie, startFile), { cwd: root, timeoutMs: 600_000 });
+		const r = await run(godot, [...quiet.args, ...godotArgs(root, list, shot, movie, startFile)], { cwd: root, timeoutMs: 600_000, env: quiet.env });
 		// Quitting mid-scene leaves engine resources the exit reports as leaked: harmless here.
 		const problems = scanLog(r.output, GODOT_NOISE).filter((l) => !/leaked at exit/.test(l));
 		if (r.code !== 0 || problems.length > 0 || !existsSync(movie)) {
