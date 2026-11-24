@@ -1,5 +1,81 @@
 # Changelog
 
+## 0.12.0 - 2026-11-24
+
+### slopocalypse
+
+#### The F3 overlay and the benchmark results show where each frame's time goes: scripts, physics, rendering and the rest, with the shadow passes counted apart
+
+#### A belt-fed machine gun: 100 rounds, hits hard, sprays standing and shoots tight crouched on its bipod, but it is slow to draw, reload and aim, and you walk slower with it out. Find it in crates or at the trader.
+
+#### Servers use far less CPU while nobody is near: soldiers and civilians far from every player stand still until someone comes within 360 m
+
+#### Rounds passing close to you now pin you down: the screen edges darken, the view jolts and a crack snaps past with each near miss, and your own aim gets wider until the fire lets up. The shake can be turned off in Settings (Screen shake under fire).
+
+#### The glowstick, charge and set-off hints at the bottom left show their keys (L, K, G, T) instead of a question mark
+
+#### Walking or driving into new ground no longer stutters while trees, grass and roads appear
+
+#### Soldiers and drones around your car keep showing up however far you drive from where you got in
+
+#### Crowds of soldiers and civilians cost less frame time: those far off or out of view are animated a few times a second instead of every frame
+
+#### Settings has a "Colour-blind colours" switch: armbands become blue, white, vermillion, amber and pink, which stay apart with red-green colour blindness, and every band in the world changes at once
+
+#### Missions at farms, cabins and masts are one fenced compound: the huts stand close round the site and a fence with a gate on the track rings the lot
+
+#### Everyone wears a coloured armband on both upper arms: blue for co-op players, green for civilians, red or their faction's colour for soldiers, readable at night too
+
+Soldiers think a few times a second instead of every tick, reacting like people do, so the server keeps up when the city fills with fighting.
+
+#### Joining a server no longer freezes the game while the map builds; a loading card shows instead
+
+#### Your own glowstick no longer floods your gun and the ground at your feet with colour, and a dropped glowstick now shows as a stick lying on the ground
+
+#### Your co-op partners have a small blue marker over them with their name and distance, seen through walls, so you can find them in a fight or at night
+
+#### Driving into new ground no longer stalls the game for a moment while the ground is built
+
+#### Steep hillsides step in uneven ledges with green sides instead of a black pegboard, and potholes are shallow dips in the asphalt
+
+#### Glowsticks: find or buy one, press L to crack it and it glows on your chest in your armband colour for five minutes (L again stows it, K drops it); some soldiers on night patrol carry one too
+
+#### Distances on the compass no longer print over each other when three markers bunch up
+
+#### Some militia and regulars squads bring a machine gunner, who keeps firing at the cover you ducked behind for a few seconds while the rest of the squad moves up
+
+#### You can't shoot or aim while climbing a ladder, your gun drops out of view while you climb, and you no longer catch a ladder you fall past fast or appear beside in mid-air
+
+### Internal
+
+#### A client with no window builds the ground round the car it drives, not where it got in.
+
+#### Save smoke prints what each server did with the save when it fails
+
+#### Windows opened by the capture, playtest, bench and trailer tools no longer take the keyboard on macOS
+
+#### Trailer shots: staged scenes with a moving camera, a blocked-view check and stills
+
+#### A sleep test no longer races the sleep sweep.
+
+#### Playtests, debug API calls and player settings now live in the module that owns them
+
+#### Brain sleep test no longer races the first sweep
+
+#### Decision records get their own numbers
+
+#### The city benchmark's walker can no longer be shot, so it measures the walk.
+
+#### World state test waits on the clock while the map builds
+
+#### Scripted playtests can walk, shoot, hurt players, find the ground and change a client's settings; a new playtest covers dying and switching guns with a lit glowstick
+
+#### The map API test waits on time instead of a frame count.
+
+#### Scripted playtests (tools/play.ts) drive a real server and clients, check state and hand screenshots to a blind reviewer
+
+#### Headless playtest clients build the ground and scenery round their own player, and scenarios about what is drawn are skipped in headless runs
+
 ## 0.11.0 - 2026-11-22
 
 ### slopocalypse
