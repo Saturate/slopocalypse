@@ -37,11 +37,14 @@ func _init(map_zones: LandZones, places: Settlements, net: RoadNetwork, far: Map
 			occupancy.claim_anyway((place["footprint"] as Rect2).grow(float(config["settlement_clearance"])))
 	var inside := map_zones.land.bounds().grow(-float(config["edge_margin"]))
 	_spacing_any = float(config["spacing_any"])
-	# The land's height range over the zone grid, for kinds that stand only on high ground.
+	# The land's height range over the zone grid, for kinds that stand only on high ground;
+	# the sea floor is no part of it.
 	_low = INF
 	_high = -INF
 	for j in map_zones.side():
 		for i in map_zones.side():
+			if map_zones.is_sea_cell(i, j):
+				continue
 			var c := map_zones.cell_centre(i, j)
 			var h := map_zones.land.height(c.x, c.y)
 			_low = minf(_low, h)

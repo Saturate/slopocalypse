@@ -39,7 +39,9 @@ func test_the_highway_leads_away_from_the_camp_and_is_a_road() -> void:
 func test_every_pond_is_a_water_body_with_its_level() -> void:
 	var map := _shape()
 	var ponds := (map.map["land"] as WorldLand).ponds()
-	assert_int(map.water.bodies.size()).is_equal(ponds.size())
+	# Every pond, then the sea round the island (#454).
+	assert_int(map.water.bodies.size()).is_equal(ponds.size() + 1)
+	assert_bool(map.water.bodies[ponds.size()].get("sea", false)).is_true()
 	for i in ponds.size():
 		var centre: Vector2 = ponds[i]["centre"]
 		assert_float(map.water.level_at(centre.x, centre.y)).is_equal(float(ponds[i]["level"]))

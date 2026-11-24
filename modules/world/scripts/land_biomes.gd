@@ -1,6 +1,6 @@
 class_name LandBiomes
 extends GroundBiomes
-## A generated map's woods, dry grass and rock (WorldLand's biome fields).
+## A generated map's woods, dry grass, rock and beaches (WorldLand's biome fields).
 
 var land: WorldLand
 
@@ -19,3 +19,7 @@ func dry(x: float, z: float) -> float:
 
 func rock(x: float, z: float) -> float:
 	return land.rock(x, z)
+
+
+func sand(x: float, z: float) -> float:
+	return land.sand(x, z)

@@ -2,7 +2,9 @@ class_name PlayerHud
 extends CanvasLayer
 ## Client only, local player: health (number and a thin bar, bottom left), a red flash at
 ## the edges when hit, a pulsing red edge while health is low, and the death screen with
-## the respawn countdown. Reads the replicated health; never changes it.
+## the respawn countdown. Out at sea past its depth limit (#454), a stamina bar under the
+## health and a line telling you to swim back. Reads the replicated health and the body's
+## own sea stamina; never changes them.
 ##
 ## Minimal on purpose: no panels over the world. Health fades back when it is full and
 ## nothing has hurt you for a while.
@@ -17,6 +19,8 @@ const QUIET_SECONDS := 4.0
 const FADED_ALPHA := 0.5
 const FADE_RATE := 3.0
 const MARGIN := Vector2(36, 40)
+## Pixels between the health bar and the sea stamina bar under it.
+const STAMINA_GAP := 6
 
 var player: PlayerController
 
@@ -25,6 +29,7 @@ var _canvas: Control
 var _number: Label
 var _died: Label
 var _respawn: Label
+var _tired: Label
 var _last := -1.0
 var _flash := 0.0
 ## Starts at zero so the readout shows when you spawn, then fades.
@@ -60,6 +65,9 @@ func _ready() -> void:
 	_died.add_theme_color_override(&"font_color", UiPalette.BAD)
 	_died.add_theme_font_size_override(&"font_size", 64)
 	_respawn = _centred(&"HudLabel", 30)
+	_tired = _centred(&"HudLabel", 160)
+	_tired.text = "Too far out to sea. Swim back to shore"
+	_tired.add_theme_color_override(&"font_color", UiPalette.WARN)
 	_edges = GradientTexture2D.new()
 	var g := Gradient.new()
 	g.set_color(0, Color(0.6, 0.0, 0.0, 0.0))
@@ -117,6 +125,7 @@ func _process_tick(delta: float) -> void:
 		_respawn.text = "Your backpack is where you fell.  Back in %d" % maxi(0, ceili(_respawn_seconds - _dead_for))
 	_died.visible = dead
 	_respawn.visible = dead
+	_tired.visible = not dead and player.far_out()
 	_number.visible = not dead
 	_number.text = "%d" % ceili(_health.health)
 	_number.add_theme_color_override(&"font_color", UiPalette.BAD if share < LOW_SHARE else UiPalette.TEXT)
@@ -174,3 +183,9 @@ func _draw() -> void:
 	_canvas.draw_rect(Rect2(at + Vector2(0, 2), BAR_SIZE), Color(0, 0, 0, 0.45 * _alpha))
 	_canvas.draw_rect(Rect2(at, BAR_SIZE), Color(1, 1, 1, 0.15 * _alpha))
 	_canvas.draw_rect(Rect2(at, Vector2(BAR_SIZE.x * share, BAR_SIZE.y)), Color(colour, _alpha))
+	var stamina := player.sea_stamina_share()
+	if stamina < 1.0:
+		var below := at + Vector2(0, BAR_SIZE.y + STAMINA_GAP)
+		_canvas.draw_rect(Rect2(below + Vector2(0, 2), BAR_SIZE), Color(0, 0, 0, 0.45))
+		_canvas.draw_rect(Rect2(below, BAR_SIZE), Color(1, 1, 1, 0.15))
+		_canvas.draw_rect(Rect2(below, Vector2(BAR_SIZE.x * stamina, BAR_SIZE.y)), UiPalette.WARN if stamina > 0.0 else UiPalette.BAD)

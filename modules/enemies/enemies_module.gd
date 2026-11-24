@@ -155,8 +155,8 @@ func _physics_tick(delta: float) -> void:
 
 
 ## A spot for a squad: somewhere in `spawn_area` (metres out from the start, on its open
-## side), at least `spawn_clear` from every player so nobody sees them appear, and never
-## within `camp_margin` of the camp's fence. After a few tries it takes the last spot, moved
+## side), out of the water, at least `spawn_clear` from every player so nobody sees them
+## appear, and never within `camp_margin` of the camp's fence. After a few tries it takes the last spot, moved
 ## out past the camp's margin if it fell inside it.
 func _spread_spot() -> Vector3:
 	var area: Array = config["spawn_area"]
@@ -170,9 +170,15 @@ func _spread_spot() -> Vector3:
 		# Even over the area, not bunched near its inner edge.
 		var r := sqrt(_rng.randf_range(pow(float(area[0]), 2.0), pow(float(area[1]), 2.0)))
 		spot = _spawn + Vector3(cos(a), 0.0, sin(a)) * r
-		if not near_camp(spot) and players.all(func(p: Node) -> bool: return (p as Node3D).global_position.distance_to(spot) >= clear):
+		if not near_camp(spot) and not _in_water(spot) and players.all(func(p: Node) -> bool: return (p as Node3D).global_position.distance_to(spot) >= clear):
 			break
 	return clear_of_camp(spot)
+
+
+## Whether `at` is in water (a pond, or the sea round an island): no squad lands there.
+func _in_water(at: Vector3) -> bool:
+	var ground := get_tree().get_first_node_in_group(&"ground")
+	return ground != null and ground.has_method(&"water_depth_at") and float(ground.call(&"water_depth_at", at)) > 0.0
 
 
 ## Whether `at` is within `camp_margin` of the camp's fence (or inside it).

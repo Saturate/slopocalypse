@@ -12,6 +12,14 @@ const HIGH := Color(0.62, 0.55, 0.42)
 const FOREST := Color(0.16, 0.33, 0.15)
 const ROCK := Color(0.55, 0.54, 0.5)
 const DRY := Color(0.72, 0.66, 0.38)
+const SAND := Color(0.86, 0.8, 0.6)
+## The sea, shallow to deep: bluer and darker than a pond.
+const SEA_SHALLOW := Color(0.3, 0.6, 0.68)
+const SEA_DEEP := Color(0.08, 0.2, 0.38)
+## Metres of sea from the shallow tint to the deep one.
+const SEA_DEEP_AT := 12.0
+## The harbour spot: a jetty drawn from the shore out to sea.
+const HARBOUR := Color(0.55, 0.35, 0.15)
 const SHALLOW := Color(0.36, 0.6, 0.7)
 const DEEP := Color(0.12, 0.27, 0.42)
 ## Metres of water from the shallow tint to the deep one.
@@ -45,6 +53,10 @@ const GRID_CELLS := 128
 const RECIPE := {"size": "n", "relief": "n", "hill_mask": {"frequency": "n", "from": "n", "to": "n"}, "layers": "a"}
 const LAYER := {"frequency": "n", "amplitude": "n"}
 const SECTIONS := {
+	"coast": {"sea_level": "n", "edge": "n", "radius": "n", "roundness": "n", "noise": {"frequency": "n", "amplitude": "n", "octaves": "n"}, "sea_depth": "n",
+		"inland": "n", "beach": {"rise": "n", "sea_band": "n", "land_band": "n", "sand_grade": "n", "sand_height": "n"},
+		"cliff": {"rise": "n", "sea_band": "n", "land_band": "n", "inland": "n", "from": "n", "to": "n"},
+		"islets": {"frequency": "n", "threshold": "n", "near": "n", "far": "n", "rise": "n"}},
 	"water": {"cell": "n", "deepen": "n", "min_depth": "n", "min_area": "n", "max_area": "n", "freeboard": "n"},
 	"biomes": {"forest_frequency": "n", "forest_threshold": "n", "dry_frequency": "n", "rock_frequency": "n", "rock_threshold": "n",
 		"map_metres_per_texel": "n", "rock_grade_from": "n", "rock_grade_to": "n", "hill_forest": "n", "lowland_forest": "n",
@@ -68,6 +80,15 @@ const ROAD_KINDS: Array[String] = ["highway", "two_lane"]
 ## good (a road sample of 0 never ends). Wide enough for any recipe worth looking at.
 const LIMITS := {
 	"size": Vector2(256, 4096),
+	"coast.roundness": Vector2(1, 16),
+	"coast.noise.octaves": Vector2(1, 8),
+	"coast.sea_depth": Vector2(1, 200),
+	"coast.edge": Vector2(0, 1000),
+	"coast.inland": Vector2(1, 3000),
+	"coast.cliff.inland": Vector2(1, 3000),
+	"coast.noise.amplitude": Vector2(0, 1000),
+	"settlements.harbour.reach": Vector2(16, 600),
+	"settlements.harbour.size": Vector2(4, 100),
 	"water.cell": Vector2(4, 64),
 	"zones.cell": Vector2(4, 64),
 	"zones.wet_distance": Vector2(0, 200),
@@ -128,6 +149,9 @@ static func check(recipe: Dictionary) -> String:
 		var octaves: Variant = (layer as Dictionary).get("octaves", 1)
 		if not (octaves is float or octaves is int) or float(octaves) < 1.0 or float(octaves) > MAX_OCTAVES:
 			return "layers[%d].octaves: 1 to %d" % [i, MAX_OCTAVES]
+	problem = _check_island(recipe)
+	if not problem.is_empty():
+		return problem
 	for section: String in SECTIONS:
 		if recipe.has(section):
 			if not recipe[section] is Dictionary:
@@ -185,6 +209,43 @@ static func check(recipe: Dictionary) -> String:
 		if value != null and (float(value) < limit.x or float(value) > limit.y):
 			return "%s: %d to %d" % [path, limit.x, limit.y]
 	return ""
+
+
+## What is wrong with the island's parts of `recipe` (#454): the islets' ring, the camp's
+## distance to the sea and the harbour's jetty lengths, or "".
+static func _check_island(recipe: Dictionary) -> String:
+	var coast: Variant = recipe.get("coast")
+	if coast is Dictionary and (coast as Dictionary).get("islets") is Dictionary:
+		var islets: Dictionary = coast["islets"]
+		if (islets.get("near") is float or islets.get("near") is int) and (islets.get("far") is float or islets.get("far") is int) and float(islets["near"]) > float(islets["far"]):
+			return "coast.islets: near no further out than far"
+	var places: Variant = recipe.get("settlements")
+	if not places is Dictionary:
+		return ""
+	var camp: Variant = (places as Dictionary).get("camp")
+	if camp is Dictionary and (camp as Dictionary).has("sea") and not _is_range((camp as Dictionary)["sea"], 0.0, 2000.0):
+		return "settlements.camp.sea: [nearest, furthest], 0 to 2000"
+	var harbour: Variant = (places as Dictionary).get("harbour")
+	if harbour == null:
+		return ""
+	if not harbour is Dictionary:
+		return "settlements.harbour: not an object"
+	var problem := _check_fields(harbour, {"reach": "n", "min_depth": "n", "max_grade": "n", "size": "n"}, "settlements.harbour.")
+	if not problem.is_empty():
+		return problem
+	if not _is_range((harbour as Dictionary).get("length"), 1.0, 200.0):
+		return "settlements.harbour.length: [shortest, longest], 1 to 200"
+	return ""
+
+
+## Whether `value` is [low, high] numbers within `from` to `to`, low no more than high.
+static func _is_range(value: Variant, from: float, to: float) -> bool:
+	if not value is Array or (value as Array).size() != 2:
+		return false
+	var pair: Array = value
+	if not (pair[0] is float or pair[0] is int) or not (pair[1] is float or pair[1] is int):
+		return false
+	return float(pair[0]) >= from and float(pair[1]) <= to and float(pair[0]) <= float(pair[1])
 
 
 ## The number at a dotted path, or null where its section is left out (fields are checked
@@ -431,7 +492,10 @@ static func render(land: WorldLand, pixels: int, works: Earthworks = null, regio
 			var level := land.water_level(x, z)
 			# An embankment can stand above a pond's edge: then it is ground.
 			if not is_nan(level) and level > h:
-				image.set_pixel(i, j, SHALLOW.lerp(DEEP, clampf((level - h) / DEEP_AT, 0.0, 1.0)))
+				if land.has_coast() and level == land.sea_level and land.is_sea(x, z):
+					image.set_pixel(i, j, SEA_SHALLOW.lerp(SEA_DEEP, clampf((level - h) / SEA_DEEP_AT, 0.0, 1.0)) * lerpf(1.0, shade, 0.3))
+				else:
+					image.set_pixel(i, j, SHALLOW.lerp(DEEP, clampf((level - h) / DEEP_AT, 0.0, 1.0)))
 				continue
 			var t := clampf((h - low) / maxf(high - low, 0.001), 0.0, 1.0)
 			var ground := LOW.lerp(HIGH, t)
@@ -445,6 +509,7 @@ static func render(land: WorldLand, pixels: int, works: Earthworks = null, regio
 			var woods := land.forest(x, z)
 			ground = ground.lerp(DRY, land.dry(x, z, woods) * 0.5)
 			ground = ground.lerp(FOREST, woods * 0.85)
+			ground = ground.lerp(SAND, land.sand(x, z, slope))
 			ground = ground.lerp(ROCK, land.rock(x, z, slope) * 0.8)
 			image.set_pixel(i, j, ground * shade)
 	return image
@@ -547,7 +612,7 @@ static func draw_zones(image: Image, zones: LandZones, region := Rect2()) -> voi
 
 
 ## The city's square in red, towns' in orange (drawn twice as thick as zone lines), the
-## camp as a white dot in its pad's white square.
+## camp as a white dot in its pad's white square, the harbour's jetty in brown.
 static func draw_settlements(image: Image, places: Settlements, region := Rect2()) -> void:
 	var b := region if region.size.x > 0.0 else places.zones.land.bounds()
 	var pixels := image.get_width()
@@ -575,6 +640,19 @@ static func draw_settlements(image: Image, places: Settlements, region := Rect2(
 				for x: int in [x0 + t, x1 - t]:
 					if x >= 0 and x < pixels:
 						image.set_pixel(x, y, colour)
+	var harbour := places.harbour()
+	if not harbour.is_empty():
+		var root: Vector3 = harbour["root"]
+		var end: Vector3 = harbour["end"]
+		var from := (Vector2(root.x, root.z) - b.position) / step
+		var to := (Vector2(end.x, end.z) - b.position) / step
+		var steps := maxi(ceili(from.distance_to(to)), 1)
+		for k in steps + 1:
+			var c := Vector2i(from.lerp(to, float(k) / steps).floor())
+			for dj in range(-2, 3):
+				for di in range(-2, 3):
+					if c.x + di >= 0 and c.y + dj >= 0 and c.x + di < pixels and c.y + dj < pixels:
+						image.set_pixel(c.x + di, c.y + dj, HARBOUR)
 	var camp := places.camp()
 	var ci := floori((camp.x - b.position.x) / step)
 	var cj := floori((camp.y - b.position.y) / step)
@@ -615,6 +693,33 @@ static func draw_roads(image: Image, net: RoadNetwork, earthworks: bool, region 
 					image.fill_rect(dot, colours[k])
 
 
+## An island's land, sea and harbour in a line: land area, islets, sea level, and how far
+## the harbour is from the camp and how deep the water at its end.
+static func coast_summary(land: WorldLand, zones: LandZones, places: Settlements) -> String:
+	var b := land.bounds()
+	var dry := 0
+	var step := 16.0
+	var x := b.position.x + step / 2.0
+	while x < b.end.x:
+		var z := b.position.y + step / 2.0
+		while z < b.end.y:
+			if not land.is_sea(x, z):
+				dry += 1
+			z += step
+		x += step
+	var out := "land %.2f km2, sea level %.0f m" % [dry * step * step / 1.0e6, land.sea_level]
+	if zones != null:
+		out += ", %d islets" % zones.zones(&"islet").size()
+	if places != null:
+		var h := places.harbour()
+		if h.is_empty():
+			out += ", no harbour"
+		else:
+			var root: Vector3 = h["root"]
+			out += ", harbour %.0f m from the camp, %.0f m jetty to %.1f m of water" % [Vector2(root.x, root.z).distance_to(places.camp()), float(h["length"]), float(h["depth"])]
+	return out
+
+
 ## What the viewer shows beside the map: a summary of the land, settlements and roads, and
 ## a coarse grid of heights and zone kinds for the hover readout.
 static func stats(land: WorldLand, zones: LandZones, places: Settlements, net: RoadNetwork, works: Earthworks, built_ms: int) -> Dictionary:
@@ -626,6 +731,8 @@ static func stats(land: WorldLand, zones: LandZones, places: Settlements, net: R
 		"hillside (>0.2)": "%d %%" % roundi((1.0 - land.walkable_share(16.0, 0.2)) * 100.0),
 		"ponds": land.ponds().size(),
 	}
+	if land.has_coast():
+		summary["coast"] = coast_summary(land, zones, places)
 	if places != null:
 		var city := places.city()
 		summary["city"] = "%d m" % int((city["footprint"] as Rect2).size.x) if not city.is_empty() else "none"

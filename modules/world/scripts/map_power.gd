@@ -108,6 +108,8 @@ func _init(shaped: Earthworks, places: Settlements, net: RoadNetwork, placed: Ma
 		_settlements.append(t["footprint"])
 	if not places.city().is_empty():
 		_settlements.append(places.city()["footprint"])
+	# Ground set aside (the harbour by the camp) as a settlement's.
+	_settlements.append_array(places.reserved())
 	if placed != null:
 		for s: Dictionary in placed.sites():
 			_sites.append(s["footprint"])

@@ -64,6 +64,8 @@ static func shore_of(terrain: VoxelWorld, at: Vector3) -> Array[Vector3]:
 	var pond := -1
 	var best := INF
 	for i in water.bodies.size():
+		if water.bodies[i].get("sea", false):
+			continue
 		var d := (water.bodies[i]["box"] as Rect2).get_center().distance_to(near)
 		if d < best:
 			best = d

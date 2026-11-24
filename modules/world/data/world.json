@@ -25,7 +25,7 @@
     "potholes": [0.0, 6.0]
   },
   "water": {
-    "_comment": "How ponds look (the map recipe places them): shallow and deep water colours [r, g, b] and colour_depth (metres to fully deep), shore_colour within shore_depth metres of the bank, sky (the reflected colour), wind [x, z] (ripple direction and strength), ripple_speed and ripple_seconds.",
+    "_comment": "How ponds look (the map recipe places them): shallow and deep water colours [r, g, b] and colour_depth (metres to fully deep), shore_colour within shore_depth metres of the bank, sky (the reflected colour), wind [x, z] (ripple direction and strength), ripple_speed and ripple_seconds. sea: the sea round an island map (#454), the same fields for its own look (what it leaves out is as a pond's), plus wave_scale (under 1 makes the wave pattern larger), wave_strength (how much the crests stand out), foam [r, g, b], foam_depth (metres of water at the shore that foam runs in over, 0 for none) and foam_speed, bed [r, g, b] (the sea floor as seen through the water past bed_distance metres, where the ground drawn under it is coarse or not there); depth_limit: metres of sea under a swimmer past which they tire (modules/player/data/player.json sea_stamina_seconds), so the sea, not a wall, is the world's edge.",
     "colour_depth": 3.5,
     "ripple_speed": 1.5,
     "ripple_seconds": 1.5,
@@ -34,7 +34,23 @@
     "shore_colour": [0.5, 0.75, 0.68],
     "shore_depth": 0.2,
     "sky": [0.62, 0.71, 0.78],
-    "wind": [0.6, 0.25]
+    "wind": [0.6, 0.25],
+    "sea": {
+      "shallow": [0.26, 0.6, 0.62],
+      "deep": [0.04, 0.19, 0.32],
+      "colour_depth": 9.0,
+      "shore_colour": [0.7, 0.85, 0.82],
+      "shore_depth": 0.35,
+      "wind": [1.1, 0.45],
+      "wave_scale": 0.75,
+      "wave_strength": 1.0,
+      "foam": [0.93, 0.96, 0.96],
+      "foam_depth": 1.4,
+      "foam_speed": 0.35,
+      "bed": [0.45, 0.42, 0.31],
+      "bed_distance": 50.0,
+      "depth_limit": 6.0
+    }
   },
   "voxel": {
     "max_dig_depth": 3.0,

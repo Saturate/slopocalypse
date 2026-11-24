@@ -18,7 +18,9 @@ const WAIT_TICKS := 90
 const DRIVE_TICKS := 240
 const DRIVE_DISTANCE := 8.0
 const DRIVE_TICKS_MAX := 600
-const ENTER_RANGE := 2.5
+## Inside the car's enter_distance (car.json, 3.5) and past where its body stops a walker
+## coming at it end on (about 2.6 m from its middle).
+const ENTER_RANGE := 3.0
 const INTERACT_EVERY := 30
 const DRIVE_STEER := 0.15
 

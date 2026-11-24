@@ -75,11 +75,9 @@ func height(x: float, z: float) -> float:
 				limits.append(Vector4(float(pad["level"]), e, _bank, _reach))
 			continue
 		var road: Dictionary = _roads[int(f["road"])]
-		if _in_span(road, p):
-			continue
 		var k := int(f["segment"])
 		var at := _on_segment(road, k, p, bool(f["open_start"]), bool(f["open_end"]))
-		if is_nan(at.x):
+		if is_nan(at.x) or _in_span(road, p, at.x):
 			continue
 		var e := maxf(at.x - float(road["half"]), 0.0)
 		if e > float(road["reach"]):
@@ -290,7 +288,15 @@ func _add_road(road: Dictionary) -> void:
 		var b := points[mini(span.y + 1, last)]
 		var into_a := (points[mini(span.x, last)] - a).normalized()
 		var into_b := (points[maxi(span.y, 0)] - b).normalized()
-		slabs.append(PackedVector2Array([a, into_a, b, into_b]))
+		# Only round the span itself: the planes run on for ever, and a road that winds back
+		# past them further along must still shape its own ground.
+		var box := Rect2(a, Vector2.ZERO)
+		for i in range(maxi(span.x - 1, 0), mini(span.y + 1, last) + 1):
+			box = box.expand(points[i])
+		box = box.grow(half + reach)
+		var slab := PackedVector2Array([a, into_a, b, into_b, box.position, box.end])
+		slab.append_array(points.slice(maxi(span.x - 1, 0), mini(span.y + 1, last) + 1))
+		slabs.append(slab)
 	_roads.append({"points": points, "heights": road["heights"], "half": half, "edge": float(road["width"]) / 2.0, "slabs": slabs,
 		"bank": _track_bank if track else _bank, "reach": reach, "way": way, "along": along})
 	for k in points.size() - 1:
@@ -338,10 +344,18 @@ static func _on_segment(road: Dictionary, k: int, p: Vector2, open_start: bool, 
 
 
 ## Whether `p` lies between the mouths of one of the road's tunnels or bridges.
-static func _in_span(road: Dictionary, p: Vector2) -> bool:
+static func _in_span(road: Dictionary, p: Vector2, from_segment: float) -> bool:
 	for slab: PackedVector2Array in road["slabs"]:
-		if (p - slab[0]).dot(slab[1]) > 0.0 and (p - slab[2]).dot(slab[3]) > 0.0:
-			return true
+		if p.x < slab[4].x or p.y < slab[4].y or p.x > slab[5].x or p.y > slab[5].y:
+			continue
+		if (p - slab[0]).dot(slab[1]) <= 0.0 or (p - slab[2]).dot(slab[3]) <= 0.0:
+			continue
+		# Between the mouths' planes, but only over the span when it is nearer than the
+		# segment asking: a road winding back past a span further along still shapes its own
+		# ground.
+		for i in range(6, slab.size() - 1):
+			if p.distance_to(Geometry2D.get_closest_point_to_segment(p, slab[i], slab[i + 1])) < from_segment:
+				return true
 	return false
 
 

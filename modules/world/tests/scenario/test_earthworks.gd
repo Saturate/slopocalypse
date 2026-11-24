@@ -3,7 +3,7 @@ extends GdUnitTestSuite
 ## are no steeper than the recipe allows, settlements stand on level pads, and land away
 ## from them is untouched.
 
-const SEED := 7
+const SEED := 1
 
 static var _works: Earthworks
 static var _net: RoadNetwork
@@ -65,7 +65,9 @@ func test_banks_are_never_steeper_than_the_recipe_allows() -> void:
 					# Across a climbing road the bank also climbs with it: the steepest it can be
 					# is the bank and the road's own grade together.
 					assert_float(rise).override_failure_message("%s at %d, %.0f m out" % [road["from"], i, out]).is_less_equal(bank + float(road["max_grade"]) + 0.02)
-	assert_int(checked).is_greater(100)
+	# Enough bank to judge: the island's lowland (#454) needs fewer, lower cuts than the
+	# square map did.
+	assert_int(checked).is_greater(50)
 
 
 func test_the_land_over_a_tunnel_and_under_a_bridge_is_left_alone() -> void:
@@ -82,7 +84,10 @@ func test_the_land_over_a_tunnel_and_under_a_bridge_is_left_alone() -> void:
 				spans += 1
 				for i in range(span.x, span.y + 1):
 					var p := points[i]
-					# Another road or a settlement may still shape it; none crosses here in these seeds.
+					# Another road or a settlement may still shape it: only where no other road
+					# comes within its earthworks' reach.
+					if _other_road_near(net, road, p, float(recipe["earthworks"]["reach"]) + 10.0):
+						continue
 					assert_float(works.height(p.x, p.y)).override_failure_message("seed %d %s at %d" % [seed_value, road["from"], i]).is_equal(land.height(p.x, p.y))
 		if spans > 0:
 			break
@@ -144,3 +149,27 @@ func _within(p: Vector2, distance: float) -> bool:
 	var all: Array[Dictionary] = _places.towns().duplicate()
 	all.append(_places.city())
 	return all.any(func(s: Dictionary) -> bool: return (s["footprint"] as Rect2).grow(distance).has_point(p))
+
+
+func _other_road_near(net: RoadNetwork, road: Dictionary, p: Vector2, within: float) -> bool:
+	for other: Dictionary in net.roads():
+		if other == road:
+			continue
+		for q: Vector2 in other["points"]:
+			if q.distance_to(p) < within:
+				return true
+	return false
+
+
+func test_a_road_winding_back_past_a_tunnel_still_shapes_its_own_ground() -> void:
+	# A tunnel running north from (0, 0) to (0, 100), its mouths facing into it; the road it is
+	# part of comes back past it 40 m to the east, between the mouths' planes.
+	var span := PackedVector2Array([Vector2(0, -4), Vector2(0, 1), Vector2(0, 104), Vector2(0, -1), Vector2(-70, -70), Vector2(70, 170)])
+	span.append_array(PackedVector2Array([Vector2(0, -4), Vector2(0, 0), Vector2(0, 50), Vector2(0, 100), Vector2(0, 104)]))
+	var road := {"slabs": [span]}
+	# Over the tunnel: nearer the span than any segment of the road asking.
+	assert_bool(Earthworks._in_span(road, Vector2(2, 50), 40.0)).is_true()
+	# Beside the road where it comes back: its own segment is nearer than the span.
+	assert_bool(Earthworks._in_span(road, Vector2(38, 50), 2.0)).is_false()
+	# Outside the mouths' planes: never the span's.
+	assert_bool(Earthworks._in_span(road, Vector2(2, -20), 40.0)).is_false()
