@@ -15,14 +15,15 @@ const WEAPON_SLOTS: Array[String] = ["primary", "secondary"]
 ## A bullet landing this close to a placed charge sets it off.
 const CHARGE_SHOT_RADIUS := 0.35
 ## Gun items and the default build each comes with.
-const GUN_ITEMS := {"gun_rifle": "primary", "gun_pistol": "secondary", "gun_rocket": "primary", "gun_bolt": "primary", "gun_mg": "primary"}
+const GUN_ITEMS := {"gun_rifle": "primary", "gun_pistol": "secondary", "gun_rocket": "primary", "gun_bolt": "primary", "gun_mg": "primary", "gun_fn57": "secondary", "gun_deagle": "secondary", "gun_python": "secondary"}
 ## Gun items that aren't their slot's default gun, with the build they come as.
-const ITEM_BUILDS := {"gun_rocket": "launcher", "gun_bolt": "bolt_standard", "gun_mg": "mg_standard"}
+const ITEM_BUILDS := {"gun_rocket": "launcher", "gun_bolt": "bolt_standard", "gun_mg": "mg_standard", "gun_fn57": "fn57_standard", "gun_deagle": "deagle_standard", "gun_python": "python_standard"}
 ## How a gun handles that belongs to its receiver rather than adding up over parts: a
 ## receiver that names one replaces the value from `weapons.json` (a bolt-action tightens
 ## almost all its spread when aimed; a machine gun is slow to draw, tight on its bipod, and
-## slows whoever has it out).
-const RECEIVER_HANDLING: Array[String] = ["ads_spread_multiplier", "braced_spread_multiplier", "draw_seconds", "move_speed_multiplier"]
+## slows whoever has it out; a heavy pistol is slow to come back down after a shot and
+## sprays on the move).
+const RECEIVER_HANDLING: Array[String] = ["ads_spread_multiplier", "braced_spread_multiplier", "draw_seconds", "move_speed_multiplier", "recoil_recovery", "moving_spread_multiplier"]
 
 var _charge_spawner := MultiplayerSpawner.new()
 var _rocket_spawner := MultiplayerSpawner.new()
@@ -478,6 +479,7 @@ func _equip(player: PlayerController, slots: Dictionary) -> void:
 		weapon.stats["damage"] = float(weapon.stats.get("damage", 0.0)) * float(player.get_meta(&"damage_scale"))
 	weapon.semi_auto = GunAssembly.receiver_of(slots).get("fire_mode", "auto") == "semi"
 	weapon.cycle_seconds = GunAssembly.cycle_seconds_of(slots, weapon.stats)
+	weapon.round_by_round = GunAssembly.round_by_round_of(slots)
 	var receiver := GunAssembly.receiver_of(slots)
 	for key in RECEIVER_HANDLING:
 		if receiver.has(key):
@@ -491,6 +493,9 @@ func _equip(player: PlayerController, slots: Dictionary) -> void:
 	weapon.active = drawn_slot(player) == slot
 	if weapon.active:
 		_hold(player, slot)
+	else:
+		# Not in the hands, so not being loaded: a revolver loads only while it is drawn.
+		weapon.rules.interrupt_reload()
 
 
 ## Puts the drawn slot's gun in the hands and makes it the one that fires; the other waits.
@@ -502,6 +507,9 @@ func _draw(player: PlayerController, slot: String) -> void:
 			weapon.active = s == slot
 			if weapon.active:
 				weapon.start_draw()
+			else:
+				# Putting a revolver away stops loading it, with the rounds in so far.
+				weapon.rules.interrupt_reload()
 	_hold(player, slot)
 
 

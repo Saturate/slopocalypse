@@ -7,6 +7,8 @@ const DRAG_SPEED := 0.008
 const ZOOM_STEP := 1.12
 const TURNTABLE_SPEED := 0.35
 const PITCH_LIMIT := Vector2(-1.45, 0.25)
+## Closest a framed model is looked at from: near enough that a handgun fills the view.
+const MIN_FRAME_DISTANCE := 0.35
 
 var target := Vector3.ZERO
 var distance := 8.0
@@ -18,7 +20,7 @@ var _dragging := false
 
 func frame(aabb: AABB) -> void:
 	target = aabb.get_center()
-	distance = maxf(aabb.size.length() * 1.15, 1.5)
+	distance = maxf(aabb.size.length() * 1.15, MIN_FRAME_DISTANCE)
 	_place()
 
 

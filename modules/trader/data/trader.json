@@ -176,6 +176,26 @@
     {
       "item": "belt_mg_100",
       "price": 20
+    },
+    {
+      "item": "gun_fn57",
+      "price": 25
+    },
+    {
+      "item": "mag_fn57_30",
+      "price": 10
+    },
+    {
+      "item": "gun_deagle",
+      "price": 35
+    },
+    {
+      "item": "mag_deagle_7",
+      "price": 6
+    },
+    {
+      "item": "gun_python",
+      "price": 30
     }
   ]
 }

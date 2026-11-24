@@ -170,7 +170,7 @@ func shown_stats() -> Array[Dictionary]:
 	var next := WeaponBuild.assemble(GunAssembly.catalogue(), _draft)
 	if not current["ok"] or not next["ok"]:
 		return []
-	return GunModding.compare(current["stats"], next["stats"])
+	return GunModding.compare(GunModding.screen_stats(_current, current["stats"]), GunModding.screen_stats(_draft, next["stats"]))
 
 
 func _refresh() -> void:

@@ -1,5 +1,5 @@
-//! Fire rules for hitscan weapons: rate of fire, magazine, reload, the action that readies
-//! the next round, and seeded spread.
+//! Fire rules for hitscan weapons: rate of fire, magazine, reload (all at once or a round at
+//! a time), the action that readies the next round, and seeded spread.
 //! Pure Rust so the server and every client compute identical results, and so the rules are
 //! covered by fast `cargo test` without the engine.
 
@@ -10,10 +10,22 @@ pub mod parts;
 pub struct WeaponStats {
     pub rounds_per_minute: f64,
     pub magazine: u32,
+    /// The whole reload, or for `Reload::RoundByRound` the time to load one round.
     pub reload_seconds: f64,
     /// Half-angle of the spread cone, in radians.
     pub spread_radians: f64,
     pub action: Action,
+    pub reload: Reload,
+}
+
+/// How rounds go back in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reload {
+    /// A fresh magazine: nothing can fire until the whole reload is done, then it is full.
+    Magazine,
+    /// One round per `reload_seconds` until full (a revolver's cylinder). Firing with rounds
+    /// loaded, or `interrupt_reload`, stops it with what is in so far.
+    RoundByRound,
 }
 
 /// How the next round gets into the chamber after a shot.
@@ -32,6 +44,7 @@ pub struct WeaponState {
     stats: WeaponStats,
     ammo: u32,
     cooldown: f64,
+    /// Time left on the reload, or on the round being loaded for `Reload::RoundByRound`.
     reload_left: Option<f64>,
     /// Time left working the bolt; `Some` while the chamber is empty after a shot.
     cycle_left: Option<f64>,
@@ -86,19 +99,31 @@ impl WeaponState {
             .cycle_left
             .map(|left| left - delta)
             .filter(|&left| left > 0.0);
-        if let Some(left) = self.reload_left {
-            let left = left - delta;
-            if left <= 0.0 {
+        let Some(mut left) = self.reload_left.map(|left| left - delta) else {
+            return;
+        };
+        match self.stats.reload {
+            Reload::Magazine if left <= 0.0 => {
                 self.reload_left = None;
                 self.ammo = self.stats.magazine;
-            } else {
-                self.reload_left = Some(left);
+            }
+            Reload::Magazine => self.reload_left = Some(left),
+            Reload::RoundByRound => {
+                // A long tick can cover more than one round; the leftover carries into the
+                // next so the pace doesn't depend on the tick rate.
+                while left <= 0.0 && self.ammo < self.stats.magazine {
+                    self.ammo += 1;
+                    left += self.stats.reload_seconds.max(f64::EPSILON);
+                }
+                self.reload_left = (self.ammo < self.stats.magazine).then_some(left);
             }
         }
     }
 
     pub fn try_fire(&mut self) -> Result<(f64, f64), Blocked> {
-        if self.reload_left.is_some() {
+        // Loading a round at a time, the trigger wins with whatever is loaded; only once the
+        // shot is sure to go, so a pull refused for another reason keeps the reload going.
+        if self.reload_left.is_some() && (self.stats.reload == Reload::Magazine || self.ammo == 0) {
             return Err(Blocked::Reloading);
         }
         if self.ammo == 0 {
@@ -110,6 +135,7 @@ impl WeaponState {
         if self.cooldown > 0.0 {
             return Err(Blocked::Cooldown);
         }
+        self.reload_left = None;
         self.ammo -= 1;
         self.cooldown = 60.0 / self.stats.rounds_per_minute;
         if let Action::Manual { cycle_seconds } = self.stats.action
@@ -130,6 +156,17 @@ impl WeaponState {
         self.reload_left = Some(self.stats.reload_seconds);
         // Reloading replaces working the bolt: the reload chambers a round itself.
         self.cycle_left = None;
+        true
+    }
+
+    /// Stops a round-by-round reload with the rounds loaded so far (switching away from the
+    /// gun). A magazine reload carries on: there's no half-full magazine to keep. Returns
+    /// whether a reload stopped.
+    pub fn interrupt_reload(&mut self) -> bool {
+        if self.stats.reload != Reload::RoundByRound || self.reload_left.is_none() {
+            return false;
+        }
+        self.reload_left = None;
         true
     }
 
@@ -183,7 +220,143 @@ mod tests {
             reload_seconds: 2.0,
             spread_radians: 0.01,
             action: Action::SelfLoading,
+            reload: Reload::Magazine,
         }
+    }
+
+    fn revolver() -> WeaponStats {
+        WeaponStats {
+            rounds_per_minute: 240.0,
+            magazine: 6,
+            reload_seconds: 0.5,
+            spread_radians: 0.005,
+            action: Action::SelfLoading,
+            reload: Reload::RoundByRound,
+        }
+    }
+
+    /// Fires `n` rounds, waiting out the rate of fire between them.
+    fn fire(w: &mut WeaponState, n: u32) {
+        for _ in 0..n {
+            w.try_fire().unwrap();
+            w.tick(0.3);
+        }
+    }
+
+    #[test]
+    fn a_revolver_loads_one_round_per_step() {
+        let mut w = WeaponState::new(revolver(), 1);
+        fire(&mut w, 6);
+        assert_eq!(w.ammo(), 0);
+        assert!(w.start_reload());
+        w.tick(0.49);
+        assert_eq!(w.ammo(), 0);
+        assert!(w.is_reloading());
+        w.tick(0.02);
+        assert_eq!(w.ammo(), 1);
+        assert!(w.is_reloading());
+        w.tick(0.5);
+        assert_eq!(w.ammo(), 2);
+    }
+
+    #[test]
+    fn a_revolver_stops_loading_at_a_full_cylinder() {
+        let mut w = WeaponState::new(revolver(), 1);
+        fire(&mut w, 4);
+        assert!(w.start_reload());
+        // Four rounds at 0.5 s is 2 s; run 2.5 s of ticks.
+        for _ in 0..150 {
+            w.tick(1.0 / 60.0);
+        }
+        assert_eq!(w.ammo(), 6);
+        assert!(!w.is_reloading());
+        assert!(!w.start_reload());
+    }
+
+    #[test]
+    fn a_long_tick_loads_every_round_it_covers() {
+        let mut w = WeaponState::new(revolver(), 1);
+        fire(&mut w, 6);
+        w.start_reload();
+        w.tick(1.25);
+        assert_eq!(w.ammo(), 2);
+        w.tick(0.25);
+        assert_eq!(w.ammo(), 3);
+        w.tick(60.0);
+        assert_eq!(w.ammo(), 6);
+        assert!(!w.is_reloading());
+    }
+
+    #[test]
+    fn firing_stops_a_round_by_round_reload_with_what_is_loaded() {
+        let mut w = WeaponState::new(revolver(), 1);
+        fire(&mut w, 6);
+        w.start_reload();
+        w.tick(1.1);
+        assert_eq!(w.ammo(), 2);
+        assert!(w.try_fire().is_ok());
+        assert!(!w.is_reloading());
+        assert_eq!(w.ammo(), 1);
+        // The half-loaded round is not kept: the reload ended.
+        w.tick(5.0);
+        assert_eq!(w.ammo(), 1);
+    }
+
+    #[test]
+    fn a_pull_refused_by_the_rate_of_fire_keeps_the_reload_going() {
+        let mut w = WeaponState::new(revolver(), 1);
+        w.try_fire().unwrap();
+        assert!(w.start_reload());
+        assert_eq!(w.try_fire(), Err(Blocked::Cooldown));
+        assert!(w.is_reloading());
+        w.tick(0.51);
+        assert_eq!(w.ammo(), 6);
+    }
+
+    #[test]
+    fn an_empty_revolver_keeps_loading_through_a_trigger_pull() {
+        let mut w = WeaponState::new(revolver(), 1);
+        fire(&mut w, 6);
+        w.start_reload();
+        w.tick(0.2);
+        assert_eq!(w.try_fire(), Err(Blocked::Reloading));
+        assert!(w.is_reloading());
+        w.tick(0.31);
+        assert_eq!(w.ammo(), 1);
+    }
+
+    #[test]
+    fn interrupting_keeps_the_rounds_loaded_so_far() {
+        let mut w = WeaponState::new(revolver(), 1);
+        fire(&mut w, 6);
+        w.start_reload();
+        w.tick(1.6);
+        assert!(w.interrupt_reload());
+        assert!(!w.is_reloading());
+        assert_eq!(w.ammo(), 3);
+        w.tick(5.0);
+        assert_eq!(w.ammo(), 3);
+    }
+
+    #[test]
+    fn a_magazine_reload_carries_on_when_interrupted() {
+        let mut w = WeaponState::new(rifle(), 1);
+        w.try_fire().unwrap();
+        w.start_reload();
+        assert!(!w.interrupt_reload());
+        assert!(w.is_reloading());
+        w.tick(2.01);
+        assert_eq!(w.ammo(), 30);
+    }
+
+    #[test]
+    fn an_empty_reload_loads_a_revolver_round_by_round() {
+        let mut w = WeaponState::new(revolver(), 1);
+        w.start_empty_reload();
+        assert_eq!(w.ammo(), 0);
+        w.tick(0.51);
+        assert_eq!(w.ammo(), 1);
+        assert!(w.try_fire().is_ok());
     }
 
     fn bolt_action() -> WeaponStats {
@@ -193,6 +366,7 @@ mod tests {
             reload_seconds: 3.0,
             spread_radians: 0.002,
             action: Action::Manual { cycle_seconds: 1.0 },
+            reload: Reload::Magazine,
         }
     }
 

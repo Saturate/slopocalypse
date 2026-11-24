@@ -67,6 +67,12 @@ static func cycle_seconds_of(slots: Dictionary, stats: Dictionary) -> float:
 	return maxf(float(stats.get("cycle_seconds", 0.0)), 0.0)
 
 
+## True for a receiver that loads a round at a time (`reload` "per_round": a revolver), its
+## `reload_seconds` then being the time for one round.
+static func round_by_round_of(slots: Dictionary) -> bool:
+	return str(receiver_of(slots).get("reload", "")) == "per_round"
+
+
 ## Where the model sits relative to the hands' socket: a pistol is held further out and
 ## higher than a rifle's receiver.
 static func hold_offset(slots: Dictionary) -> Vector3:
