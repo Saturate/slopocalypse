@@ -80,6 +80,21 @@
       "heavy_stock": "stk_mg",
       "bipod": "bpd_mg",
       "belt_box": "belt_mg_100"
+    },
+    "fn57_standard": {
+      "receiver": "rcv_fn57",
+      "fn_slide": "sld_fn57",
+      "fn_magazine": "mag_fn57_20"
+    },
+    "deagle_standard": {
+      "receiver": "rcv_deagle",
+      "de_barrel": "bar_deagle_6",
+      "de_magazine": "mag_deagle_7"
+    },
+    "python_standard": {
+      "receiver": "rcv_python",
+      "rv_barrel": "bar_python_6",
+      "rv_grip": "grp_python_walnut"
     }
   },
   "parts": {
@@ -974,6 +989,331 @@
         "magazine": 100.0,
         "ergonomics": -4.0,
         "weight": 1.8
+      }
+    },
+    "rcv_fn57": {
+      "name": "Five-seveN frame, 5.7x28",
+      "slot": "receiver",
+      "mesh": "vox_fn57_receiver",
+      "weapon_slot": "secondary",
+      "fire_mode": "semi",
+      "hold": [
+        0.0,
+        0.0,
+        -0.2
+      ],
+      "eye_relief": 0.42,
+      "hip_sight": [
+        0.03,
+        -0.1,
+        -0.45
+      ],
+      "provides": [
+        "fn_slide",
+        "fn_magazine"
+      ],
+      "requires": [
+        "fn_slide",
+        "fn_magazine"
+      ],
+      "mounts": {
+        "fn_slide": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fn_magazine": [
+          0.0,
+          -0.125,
+          0.073
+        ]
+      },
+      "markers": {
+        "GripR": [
+          0.0,
+          -0.07,
+          0.077
+        ],
+        "GripL": [
+          -0.03,
+          -0.085,
+          0.047
+        ]
+      },
+      "stats": {
+        "rounds_per_minute": 600.0,
+        "damage": 14.0,
+        "spread_degrees": 0.9,
+        "recoil_pitch_degrees": 1.0,
+        "recoil_yaw_degrees": 0.35,
+        "reload_seconds": 1.5,
+        "ads_seconds": 0.11,
+        "ergonomics": 52.0,
+        "weight": 0.38
+      },
+      "draw_seconds": 0.22,
+      "recoil_recovery": 10.0
+    },
+    "sld_fn57": {
+      "name": "Five-seveN slide with threaded barrel",
+      "slot": "fn_slide",
+      "mesh": "vox_fn57_slide",
+      "provides": [
+        "pistol_optic",
+        "pistol_muzzle"
+      ],
+      "mounts": {
+        "pistol_optic": [
+          0.0,
+          0.03,
+          0.025
+        ],
+        "pistol_muzzle": [
+          0.0,
+          0.016,
+          -0.145
+        ]
+      },
+      "markers": {
+        "Sight": [
+          0.0,
+          0.036,
+          0.064
+        ],
+        "Muzzle": [
+          0.0,
+          0.016,
+          -0.145
+        ]
+      },
+      "stats": {
+        "range": 60.0,
+        "weight": 0.2
+      }
+    },
+    "mag_fn57_20": {
+      "name": "20 round 5.7x28 magazine",
+      "slot": "fn_magazine",
+      "mesh": "vox_fn57_mag20",
+      "provides": [],
+      "stats": {
+        "magazine": 20.0,
+        "weight": 0.12
+      }
+    },
+    "mag_fn57_30": {
+      "name": "30 round 5.7x28 extended magazine",
+      "slot": "fn_magazine",
+      "mesh": "vox_fn57_mag30",
+      "provides": [],
+      "stats": {
+        "magazine": 30.0,
+        "ergonomics": -5.0,
+        "reload_pct": 8.0,
+        "weight": 0.17
+      }
+    },
+    "rcv_deagle": {
+      "name": "Desert Eagle frame and slide, .50",
+      "slot": "receiver",
+      "mesh": "vox_deagle_receiver",
+      "weapon_slot": "secondary",
+      "fire_mode": "semi",
+      "hold": [
+        0.0,
+        0.0,
+        -0.2
+      ],
+      "eye_relief": 0.42,
+      "hip_sight": [
+        0.03,
+        -0.1,
+        -0.45
+      ],
+      "provides": [
+        "de_barrel",
+        "de_magazine"
+      ],
+      "requires": [
+        "de_barrel",
+        "de_magazine"
+      ],
+      "mounts": {
+        "de_barrel": [
+          0.0,
+          0.0,
+          -0.045
+        ],
+        "de_magazine": [
+          0.0,
+          -0.135,
+          0.068
+        ]
+      },
+      "markers": {
+        "Sight": [
+          0.0,
+          0.044,
+          0.085
+        ],
+        "GripR": [
+          0.0,
+          -0.075,
+          0.09
+        ],
+        "GripL": [
+          -0.035,
+          -0.09,
+          0.058
+        ]
+      },
+      "stats": {
+        "rounds_per_minute": 150.0,
+        "damage": 50.0,
+        "spread_degrees": 1.1,
+        "recoil_pitch_degrees": 5.5,
+        "recoil_yaw_degrees": 1.4,
+        "reload_seconds": 2.6,
+        "ads_seconds": 0.2,
+        "ergonomics": 34.0,
+        "weight": 1.45
+      },
+      "draw_seconds": 0.75,
+      "recoil_recovery": 2.5,
+      "moving_spread_multiplier": 2.5
+    },
+    "bar_deagle_6": {
+      "name": "Desert Eagle 6 inch barrel with rail",
+      "slot": "de_barrel",
+      "mesh": "vox_deagle_barrel",
+      "provides": [
+        "pistol_optic"
+      ],
+      "mounts": {
+        "pistol_optic": [
+          0.0,
+          0.038,
+          -0.065
+        ]
+      },
+      "markers": {
+        "Muzzle": [
+          0.0,
+          0.02,
+          -0.155
+        ]
+      },
+      "stats": {
+        "range": 60.0,
+        "ergonomics": -4.0,
+        "weight": 0.6
+      }
+    },
+    "mag_deagle_7": {
+      "name": "7 round .50 magazine",
+      "slot": "de_magazine",
+      "mesh": "vox_deagle_magazine",
+      "provides": [],
+      "stats": {
+        "magazine": 7.0,
+        "weight": 0.25
+      }
+    },
+    "rcv_python": {
+      "name": "Python frame and cylinder, .357",
+      "slot": "receiver",
+      "mesh": "vox_python_receiver",
+      "weapon_slot": "secondary",
+      "fire_mode": "semi",
+      "reload": "per_round",
+      "hold": [
+        0.0,
+        0.0,
+        -0.2
+      ],
+      "eye_relief": 0.42,
+      "hip_sight": [
+        0.03,
+        -0.1,
+        -0.45
+      ],
+      "provides": [
+        "rv_barrel",
+        "rv_grip"
+      ],
+      "requires": [
+        "rv_barrel",
+        "rv_grip"
+      ],
+      "mounts": {
+        "rv_barrel": [
+          0.0,
+          0.0,
+          -0.034
+        ],
+        "rv_grip": [
+          0.0,
+          -0.03,
+          0.05
+        ]
+      },
+      "markers": {
+        "Sight": [
+          0.0,
+          0.026,
+          0.04
+        ],
+        "GripR": [
+          0.0,
+          -0.075,
+          0.072
+        ],
+        "GripL": [
+          -0.03,
+          -0.09,
+          0.045
+        ]
+      },
+      "stats": {
+        "rounds_per_minute": 220.0,
+        "damage": 40.0,
+        "spread_degrees": 0.45,
+        "recoil_pitch_degrees": 3.2,
+        "recoil_yaw_degrees": 0.8,
+        "reload_seconds": 0.5,
+        "ads_seconds": 0.14,
+        "magazine": 6.0,
+        "ergonomics": 40.0,
+        "weight": 0.95
+      },
+      "draw_seconds": 0.4
+    },
+    "bar_python_6": {
+      "name": "Python 6 inch ventilated-rib barrel",
+      "slot": "rv_barrel",
+      "mesh": "vox_python_barrel",
+      "provides": [],
+      "markers": {
+        "Muzzle": [
+          0.0,
+          0.0,
+          -0.152
+        ]
+      },
+      "stats": {
+        "range": 70.0,
+        "weight": 0.5
+      }
+    },
+    "grp_python_walnut": {
+      "name": "Python walnut grip",
+      "slot": "rv_grip",
+      "mesh": "vox_python_grip",
+      "provides": [],
+      "stats": {
+        "recoil_pct": -5.0,
+        "ergonomics": 6.0,
+        "weight": 0.12
       }
     }
   },

@@ -123,6 +123,16 @@ static func shown_value(stats: Dictionary, key: String) -> float:
 	return value
 
 
+## A build's stats as the screen compares them: a gun that loads a round at a time shows
+## its reload as the time to fill it from empty, not the time for one round.
+static func screen_stats(build: Dictionary, stats: Dictionary) -> Dictionary:
+	if not GunAssembly.round_by_round_of(build):
+		return stats
+	var out := stats.duplicate()
+	out["reload_seconds"] = float(stats.get("reload_seconds", 0.0)) * float(stats.get("magazine", 0.0))
+	return out
+
+
 ## One row per stat: label, both values and the change formatted, and whether the change
 ## is better (1), worse (-1) or the same (0).
 static func compare(before: Dictionary, after: Dictionary) -> Array[Dictionary]:
@@ -156,7 +166,7 @@ static func gun_detail_rows(slots: Dictionary) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	if not result["ok"]:
 		return out
-	var stats: Dictionary = result["stats"]
+	var stats := screen_stats(slots, result["stats"])
 	for row in STAT_ROWS:
 		var key: String = row["key"]
 		if not GUN_DETAIL_KEYS.has(key):

@@ -23,6 +23,8 @@ const REQUIRED := {
 	"ads_spread_multiplier": TYPE_FLOAT,
 	"braced_spread_multiplier": TYPE_FLOAT,
 	"braced_max_speed": TYPE_FLOAT,
+	"moving_spread_multiplier": TYPE_FLOAT,
+	"moving_spread_speed": TYPE_FLOAT,
 	"ads_zoom": TYPE_FLOAT,
 }
 
@@ -42,6 +44,9 @@ var semi_auto := false
 ## Seconds to work the bolt after each shot before the next can fire; 0 for a gun that
 ## loads itself. Set from the receiver's `action` ("manual") and `cycle_seconds`.
 var cycle_seconds := 0.0
+## Loads one round per `reload_seconds` instead of a magazine at once (a revolver); firing
+## or switching away stops it with what is loaded. Set from the receiver's `reload`.
+var round_by_round := false
 var rules := WeaponRules.new()
 
 var _recoil_rng := RandomNumberGenerator.new()
@@ -68,7 +73,7 @@ func _ready() -> void:
 		set_physics_process(false)
 		return
 	# Seeded per weapon so server and owning client roll the same spread.
-	rules.setup(stats["rounds_per_minute"], int(stats["magazine"]), stats["reload_seconds"], deg_to_rad(stats["spread_degrees"]), cycle_seconds, get_instance_id())
+	rules.setup(stats["rounds_per_minute"], int(stats["magazine"]), stats["reload_seconds"], deg_to_rad(stats["spread_degrees"]), cycle_seconds, round_by_round, get_instance_id())
 
 
 ## Rounds left. Clients show what the server last told them; only the server fires.
@@ -180,7 +185,7 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 		return
 	# The roll is seeded in the rules; how the holder stands only scales it, so it stays a
 	# pure function of the seed and the synced intent.
-	var spread := rules.last_spread() * spread_scale(holder != null and holder.intent().aim, is_braced())
+	var spread := rules.last_spread() * spread_scale(holder != null and holder.intent().aim, is_braced(), is_moving())
 	# Clients don't run the rules, so the effects learn from here whether a bolt follows.
 	var cycles := rules.is_cycling()
 	var basis := Basis.looking_at(direction)
@@ -238,12 +243,15 @@ func server_fire(origin: Vector3, direction: Vector3) -> void:
 ## How much of the gun's spread a shot gets: all of it from the hip, `ads_spread_multiplier`
 ## of it aimed (a bolt-action's receiver sets its own, far smaller, so it is only accurate
 ## through the scope), times `braced_spread_multiplier` when braced (a machine gun on its
-## bipod; 1 for guns that gain nothing from it), times the holder's `aim_spread_multiplier`
-## (wider while rounds are passing close to them).
-func spread_scale(aimed: bool, braced: bool = false) -> float:
+## bipod; 1 for guns that gain nothing from it), times `moving_spread_multiplier` on the
+## move (a heavy pistol; 1 for most guns), times the holder's `aim_spread_multiplier` (wider
+## while rounds are passing close to them).
+func spread_scale(aimed: bool, braced: bool = false, moving: bool = false) -> float:
 	var scale := float(stats["ads_spread_multiplier"]) if aimed else 1.0
 	if braced:
 		scale *= float(stats["braced_spread_multiplier"])
+	if moving:
+		scale *= float(stats["moving_spread_multiplier"])
 	if holder != null:
 		scale *= holder.aim_spread_multiplier
 	return scale
@@ -255,6 +263,13 @@ func is_braced() -> bool:
 	if holder == null or not holder.intent().crouch or holder.is_sliding() or not holder.grounded():
 		return false
 	return holder.horizontal_speed() <= float(stats["braced_max_speed"])
+
+
+## On the move: faster than `moving_spread_speed` along the ground, or off it.
+func is_moving() -> bool:
+	if holder == null:
+		return false
+	return not holder.grounded() or holder.horizontal_speed() > float(stats["moving_spread_speed"])
 
 
 ## How many times one round may go on through something (weapons.json).

@@ -77,7 +77,7 @@ func test_it_is_slow_to_draw() -> void:
 ## The angle (degrees) of each of `count` shots off the aim, from the rules seeded with
 ## `roll_seed`, standing or crouched.
 func _shot_angles(gun: HitscanWeapon, roll_seed: int, crouched: bool, count: int) -> Array[float]:
-	gun.rules.setup(gun.stats["rounds_per_minute"], int(gun.stats["magazine"]), gun.stats["reload_seconds"], deg_to_rad(gun.stats["spread_degrees"]), 0.0, roll_seed)
+	gun.rules.setup(gun.stats["rounds_per_minute"], int(gun.stats["magazine"]), gun.stats["reload_seconds"], deg_to_rad(gun.stats["spread_degrees"]), 0.0, false, roll_seed)
 	_player.intent().crouch = crouched
 	_shots.clear()
 	var aim := -gun.global_transform.basis.z

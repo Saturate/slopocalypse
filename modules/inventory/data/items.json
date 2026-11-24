@@ -66,6 +66,8 @@
       "opt_scope_8x": 1,
       "mag_bolt_5": 1,
       "belt_mg_100": 1,
+      "mag_fn57_20": 1,
+      "mag_deagle_7": 1,
       "glowstick": 2
     }
   },
@@ -164,6 +166,11 @@
       "mag_bolt_5": 2,
       "gun_mg": 1,
       "belt_mg_100": 1,
+      "gun_fn57": 1,
+      "mag_fn57_30": 1,
+      "gun_deagle": 1,
+      "mag_deagle_7": 1,
+      "gun_python": 1,
       "glowstick": 2
     }
   },
@@ -728,6 +735,109 @@
       ],
       "kind": "magazine",
       "about": "Belt box for the machine gun."
+    },
+    "gun_fn57": {
+      "name": "Five-seveN pistol, 5.7x28 (with its parts)",
+      "short": "Five-seveN",
+      "size": [
+        2,
+        2
+      ],
+      "kind": "sidearm",
+      "about": "Light 5.7 mm sidearm: fast follow-up shots, little kick, quick to draw."
+    },
+    "sld_fn57": {
+      "name": "Five-seveN slide with threaded barrel",
+      "short": "57 slide",
+      "size": [
+        2,
+        1
+      ],
+      "kind": "pistol",
+      "about": "Five-seveN slide, threaded for a compensator or suppressor."
+    },
+    "mag_fn57_20": {
+      "name": "20 round 5.7x28 magazine",
+      "short": "20 rd 5.7",
+      "size": [
+        1,
+        1
+      ],
+      "kind": "pistol",
+      "about": "Standard Five-seveN magazine.",
+      "category": "ammo"
+    },
+    "mag_fn57_30": {
+      "name": "30 round 5.7x28 extended magazine",
+      "short": "30 rd 5.7",
+      "size": [
+        1,
+        2
+      ],
+      "kind": "pistol",
+      "about": "Extended Five-seveN magazine: more rounds, slower to handle.",
+      "category": "ammo"
+    },
+    "gun_deagle": {
+      "name": "Desert Eagle, .50 (with its parts)",
+      "short": "D. Eagle",
+      "size": [
+        3,
+        2
+      ],
+      "kind": "sidearm",
+      "about": "Heavy .50 pistol: two body shots drop a soldier, but it kicks hard and sprays on the move."
+    },
+    "bar_deagle_6": {
+      "name": "Desert Eagle 6 inch barrel with rail",
+      "short": ".50 barrel",
+      "size": [
+        2,
+        1
+      ],
+      "kind": "pistol",
+      "about": "Desert Eagle barrel with a rail on top for a sight."
+    },
+    "mag_deagle_7": {
+      "name": "7 round .50 magazine",
+      "short": "7 rd .50",
+      "size": [
+        1,
+        1
+      ],
+      "kind": "pistol",
+      "about": "Desert Eagle magazine.",
+      "category": "ammo"
+    },
+    "gun_python": {
+      "name": "Python revolver, .357 (with its parts)",
+      "short": "Python",
+      "size": [
+        3,
+        2
+      ],
+      "kind": "sidearm",
+      "about": ".357 revolver, tight and hard-hitting; loads one round at a time and can fire whatever is in."
+    },
+    "bar_python_6": {
+      "name": "Python 6 inch ventilated-rib barrel",
+      "short": ".357 barrel",
+      "size": [
+        2,
+        1
+      ],
+      "kind": "pistol",
+      "about": "Python barrel with a ventilated rib."
+    },
+    "grp_python_walnut": {
+      "name": "Python walnut grip",
+      "short": "Walnut grip",
+      "size": [
+        1,
+        1
+      ],
+      "kind": "pistol",
+      "about": "Wooden Python grip: a little less kick."
     },
     "glowstick": {
       "name": "Glowstick (L to crack, stow or show; K to drop)",

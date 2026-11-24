@@ -7,15 +7,16 @@
 use godot::prelude::*;
 use std::collections::BTreeMap;
 use weapons_core::parts::{self, BuildStats, PartDef, PartStats};
-use weapons_core::{Action, WeaponState, WeaponStats};
+use weapons_core::{Action, Reload, WeaponState, WeaponStats};
 
 struct WeaponsExtension;
 
 #[gdextension]
 unsafe impl ExtensionLibrary for WeaponsExtension {}
 
-/// GDScript: `var rules := WeaponRules.new(); rules.setup(600.0, 30, 2.0, 0.01, 0.0, seed)`;
-/// a `cycle_seconds` above 0 makes it a manual action (the bolt is worked after each shot).
+/// GDScript: `var rules := WeaponRules.new(); rules.setup(600.0, 30, 2.0, 0.01, 0.0, false, seed)`;
+/// a `cycle_seconds` above 0 makes it a manual action (the bolt is worked after each shot);
+/// `round_by_round` loads one round per `reload_seconds` instead of a whole magazine.
 #[derive(GodotClass)]
 #[class(init, base = RefCounted)]
 struct WeaponRules {
@@ -26,6 +27,7 @@ struct WeaponRules {
 #[godot_api]
 impl WeaponRules {
     #[func]
+    #[allow(clippy::too_many_arguments)]
     fn setup(
         &mut self,
         rounds_per_minute: f64,
@@ -33,6 +35,7 @@ impl WeaponRules {
         reload_seconds: f64,
         spread_radians: f64,
         cycle_seconds: f64,
+        round_by_round: bool,
         seed: i64,
     ) {
         let action = if cycle_seconds > 0.0 {
@@ -46,6 +49,11 @@ impl WeaponRules {
             reload_seconds,
             spread_radians,
             action,
+            reload: if round_by_round {
+                Reload::RoundByRound
+            } else {
+                Reload::Magazine
+            },
         };
         // The seed's bits matter, not its sign.
         self.state = Some(WeaponState::new(stats, seed as u64));
@@ -74,6 +82,12 @@ impl WeaponRules {
     #[func]
     fn start_reload(&mut self) -> bool {
         self.state.as_mut().is_some_and(|s| s.start_reload())
+    }
+
+    /// Stops a round-by-round reload with what is loaded; true if one stopped.
+    #[func]
+    fn interrupt_reload(&mut self) -> bool {
+        self.state.as_mut().is_some_and(|s| s.interrupt_reload())
     }
 
     #[func]

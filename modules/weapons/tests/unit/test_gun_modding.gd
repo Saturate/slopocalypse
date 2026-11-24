@@ -95,3 +95,13 @@ func test_a_part_lists_what_it_changes() -> void:
 	assert_array(_labels(rows)).contains(["Recoil", "Ergonomics", "Weight"])
 	assert_array(_labels(rows)).not_contains(["Magazine"])
 	assert_str(str(rows[0]["value"])).is_equal("-25%")
+
+
+func test_a_revolver_shows_the_time_to_fill_it_from_empty() -> void:
+	var build := GunAssembly.build("python_standard")
+	var stats: Dictionary = GunAssembly.assemble_named("python_standard")["stats"]
+	var shown := GunModding.screen_stats(build, stats)
+	assert_float(float(shown["reload_seconds"])).is_equal_approx(float(stats["reload_seconds"]) * float(stats["magazine"]), 0.0001)
+	var pistol := GunAssembly.build("pistol_standard")
+	var pistol_stats: Dictionary = GunAssembly.assemble_named("pistol_standard")["stats"]
+	assert_dict(GunModding.screen_stats(pistol, pistol_stats)).is_equal(pistol_stats)

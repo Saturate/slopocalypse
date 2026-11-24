@@ -174,6 +174,9 @@ func _draw_hud() -> void:
 		_hud.draw_arc(c, DAMAGE_ARC_RADIUS, a - DAMAGE_ARC_HALF, a + DAMAGE_ARC_HALF, 24, Color(UiPalette.BAD, fade), 10.0)
 	if _reload_for >= 0.0 and _weapon != null:
 		var share := clampf(_reload_for / maxf(float(_weapon.stats.get("reload_seconds", 1.0)), 0.01), 0.0, 1.0)
+		# Loading a round at a time, the bar is how full the cylinder is.
+		if _weapon.round_by_round:
+			share = clampf(float(_weapon.ammo()) / maxf(float(magazine_size()), 1.0), 0.0, 1.0)
 		var bar := Rect2(c + Vector2(-40, 34), Vector2(80, 4))
 		_hud.draw_rect(Rect2(bar.position + Vector2(0, 1), bar.size), Color(0, 0, 0, 0.5))
 		_hud.draw_rect(bar, Color(1, 1, 1, 0.2))

@@ -215,3 +215,125 @@ func test_the_machine_guns_voxel_parts_hang_where_the_receiver_mounts_them() -> 
 		var part := model.get_node_or_null(slot) as MeshInstance3D
 		assert_object(part).override_failure_message(slot).is_not_null()
 		assert_int(GunPartMeshes.triangles(part.mesh)).override_failure_message(slot).is_greater(0)
+
+
+## Stats of a named build, failing the test if it does not assemble.
+func _stats(build_name: String) -> Dictionary:
+	var result := GunAssembly.assemble_named(build_name)
+	assert_bool(result["ok"]).override_failure_message("%s: %s" % [build_name, result["errors"]]).is_true()
+	return result["stats"]
+
+
+func test_the_three_new_pistols_take_their_numbers_from_the_data() -> void:
+	var parts := GunAssembly.catalogue()
+	for pair: Array in [["fn57_standard", "rcv_fn57"], ["deagle_standard", "rcv_deagle"], ["python_standard", "rcv_python"]]:
+		var stats := _stats(pair[0])
+		var receiver: Dictionary = parts[pair[1]]
+		for key: String in ["damage", "rounds_per_minute", "spread_degrees", "reload_seconds"]:
+			assert_float(float(stats[key])).override_failure_message("%s %s" % [pair[0], key]).is_equal_approx(float(receiver["stats"][key]), 0.0001)
+		assert_str(GunAssembly.weapon_slot_of(GunAssembly.build(pair[0]))).is_equal("secondary")
+		assert_str(str(receiver["fire_mode"])).is_equal("semi")
+	assert_float(_stats("fn57_standard")["magazine"]).is_equal(float(parts["mag_fn57_20"]["stats"]["magazine"]))
+	assert_float(_stats("deagle_standard")["magazine"]).is_equal(float(parts["mag_deagle_7"]["stats"]["magazine"]))
+	# The revolver's six rounds are the frame's own: it has no magazine part.
+	assert_float(_stats("python_standard")["magazine"]).is_equal(float(parts["rcv_python"]["stats"]["magazine"]))
+
+
+func test_the_pistols_play_their_roles() -> void:
+	var pistol := _stats("pistol_standard")
+	var fn := _stats("fn57_standard")
+	var eagle := _stats("deagle_standard")
+	var python := _stats("python_standard")
+	var feel: Dictionary = Data.load_json(HitscanWeapon.CONFIG)["rifle"]
+	var parts := GunAssembly.catalogue()
+	# Soldiers have 100 health: the .50 drops one in two body shots, the .357 in three.
+	assert_float(eagle["damage"]).is_greater_equal(50.0)
+	assert_float(python["damage"] * 2.0).is_less(100.0)
+	assert_float(python["damage"] * 3.0).is_greater_equal(100.0)
+	# The 5.7 hits light, fires fast and holds the most; quick to draw and to recover.
+	assert_float(fn["damage"]).is_less(pistol["damage"])
+	assert_float(fn["rounds_per_minute"]).is_greater(pistol["rounds_per_minute"])
+	assert_float(fn["magazine"]).is_greater(pistol["magazine"])
+	assert_float(float(parts["rcv_fn57"]["draw_seconds"])).is_less(float(feel["draw_seconds"]))
+	assert_float(float(parts["rcv_fn57"]["recoil_recovery"])).is_greater(float(feel["recoil_recovery"]))
+	# The .50 kicks hardest, fires slowest, recovers and draws slowly and sprays on the move.
+	assert_float(eagle["recoil_pitch_degrees"]).is_greater(python["recoil_pitch_degrees"])
+	assert_float(eagle["rounds_per_minute"]).is_less(python["rounds_per_minute"])
+	assert_float(eagle["reload_seconds"]).is_greater(pistol["reload_seconds"])
+	assert_float(float(parts["rcv_deagle"]["recoil_recovery"])).is_less(float(feel["recoil_recovery"]))
+	assert_float(float(parts["rcv_deagle"]["draw_seconds"])).is_greater(float(feel["draw_seconds"]))
+	assert_float(float(parts["rcv_deagle"]["moving_spread_multiplier"])).is_greater(1.5)
+	assert_float(float(feel["moving_spread_multiplier"])).is_equal(1.0)
+	# The revolver is the tightest of the three and loads a round at a time.
+	assert_float(python["spread_degrees"]).is_less(fn["spread_degrees"])
+	assert_float(python["spread_degrees"]).is_less(eagle["spread_degrees"])
+	assert_bool(GunAssembly.round_by_round_of(GunAssembly.build("python_standard"))).is_true()
+	assert_bool(GunAssembly.round_by_round_of(GunAssembly.build("deagle_standard"))).is_false()
+
+
+func test_the_five_seven_takes_the_long_magazine_and_muzzle_devices() -> void:
+	var build := GunAssembly.build("fn57_standard").duplicate()
+	build["fn_magazine"] = "mag_fn57_30"
+	for muzzle: String in ["muz_pistol_comp", "muz_pistol_supp"]:
+		build["pistol_muzzle"] = muzzle
+		build["pistol_optic"] = "opt_pistol_dot"
+		var result := WeaponBuild.assemble(GunAssembly.catalogue(), build)
+		assert_bool(result["ok"]).override_failure_message(str(result["errors"])).is_true()
+		assert_float(result["stats"]["magazine"]).is_equal(30.0)
+		var model: Node3D = auto_free(GunAssembly.build_model(build))
+		add_child(model)
+		# The device's own muzzle is out past the slide's.
+		assert_float((model.get_node("Muzzle") as Node3D).position.z).is_less(-0.16)
+
+
+func test_the_eagle_takes_a_sight_and_the_revolver_nothing_extra() -> void:
+	var eagle := GunAssembly.build("deagle_standard").duplicate()
+	eagle["pistol_optic"] = "opt_pistol_dot"
+	assert_bool(WeaponBuild.assemble(GunAssembly.catalogue(), eagle)["ok"]).is_true()
+	eagle.erase("pistol_optic")
+	eagle["pistol_muzzle"] = "muz_pistol_supp"
+	assert_bool(WeaponBuild.assemble(GunAssembly.catalogue(), eagle)["ok"]).is_false()
+	var extras := {"pistol_muzzle": "muz_pistol_comp", "pistol_optic": "opt_pistol_dot", "pistol_magazine": "mag_pistol_15"}
+	for slot: String in extras:
+		var python := GunAssembly.build("python_standard").duplicate()
+		python[slot] = extras[slot]
+		assert_bool(WeaponBuild.assemble(GunAssembly.catalogue(), python)["ok"]).override_failure_message(slot).is_false()
+
+
+func test_the_pistols_voxel_parts_hang_where_their_frames_mount_them() -> void:
+	var cases := [
+		["fn57_standard", VoxFiveSeven.MOUNTS, {"fn_slide": "slide", "fn_magazine": "mag20"}],
+		["deagle_standard", VoxDesertEagle.MOUNTS, {"de_barrel": "barrel", "de_magazine": "magazine"}],
+		["python_standard", VoxPython.MOUNTS, {"rv_barrel": "barrel", "rv_grip": "grip"}],
+	]
+	for case: Array in cases:
+		var slots := GunAssembly.build(case[0])
+		var receiver := GunAssembly.receiver_of(slots)
+		var mounts: Dictionary = case[1]
+		var by_slot: Dictionary = case[2]
+		for slot: String in by_slot:
+			var a: Array = receiver["mounts"][slot]
+			assert_vector(Vector3(a[0], a[1], a[2])).override_failure_message("%s %s" % [case[0], slot]).is_equal_approx(mounts[by_slot[slot]], Vector3.ONE * 0.0001)
+		var model: Node3D = auto_free(GunAssembly.build_model(slots))
+		add_child(model)
+		for marker: String in ["GripR", "GripL", "Sight", "Muzzle"]:
+			assert_object(model.get_node_or_null(marker)).override_failure_message("%s %s" % [case[0], marker]).is_not_null()
+		for slot: String in slots:
+			var part := model.get_node_or_null(slot) as MeshInstance3D
+			assert_object(part).override_failure_message("%s %s" % [case[0], slot]).is_not_null()
+			assert_int(GunPartMeshes.triangles(part.mesh)).override_failure_message("%s %s" % [case[0], slot]).is_greater(0)
+	# Markers sit where the models put the grips and sights.
+	var fn_grip: Array = GunAssembly.catalogue()["rcv_fn57"]["markers"]["GripR"]
+	assert_vector(Vector3(fn_grip[0], fn_grip[1], fn_grip[2])).is_equal_approx(VoxFiveSeven.GRIP, Vector3.ONE * 0.0001)
+	var fn_sight: Array = GunAssembly.catalogue()["sld_fn57"]["markers"]["Sight"]
+	assert_float(float(fn_sight[1])).is_equal_approx(VoxFiveSeven.SIGHT_LINE, 0.0001)
+	var de_grip: Array = GunAssembly.catalogue()["rcv_deagle"]["markers"]["GripR"]
+	assert_vector(Vector3(de_grip[0], de_grip[1], de_grip[2])).is_equal_approx(VoxDesertEagle.GRIP, Vector3.ONE * 0.0001)
+	var de_sight: Array = GunAssembly.catalogue()["rcv_deagle"]["markers"]["Sight"]
+	assert_float(float(de_sight[1])).is_equal_approx(VoxDesertEagle.SIGHT_LINE, 0.0001)
+	var py_grip: Array = GunAssembly.catalogue()["rcv_python"]["markers"]["GripR"]
+	assert_vector(Vector3(py_grip[0], py_grip[1], py_grip[2])).is_equal_approx(VoxPython.GRIP, Vector3.ONE * 0.0001)
+	var py_sight: Array = GunAssembly.catalogue()["rcv_python"]["markers"]["Sight"]
+	assert_float(float(py_sight[1])).is_equal_approx(VoxPython.SIGHT_LINE, 0.0001)
+	var py_muzzle: Array = GunAssembly.catalogue()["bar_python_6"]["markers"]["Muzzle"]
+	assert_float(float(py_muzzle[2])).is_equal_approx(-VoxPython.BARREL_LENGTH, 0.0001)
