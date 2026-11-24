@@ -37,13 +37,18 @@ test("console executable on Windows so headless output reaches the terminal", ()
 
 test("a tool's window on macOS keeps drawing on top without taking focus", () => {
 	const w = quietWindow("darwin", { __CFBundleIdentifier: "com.example.terminal", HOME: "/h" });
-	assert.deepEqual(w.args, ["--always-on-top"]);
+	assert.deepEqual(w.args, ["--audio-driver", "Dummy", "--always-on-top"]);
 	assert.equal(w.env.__CFBundleIdentifier, GODOT_BUNDLE_ID);
 	assert.equal(w.env.HOME, "/h");
 });
 
-test("other systems keep the window as it is", () => {
+test("other systems keep the window as it is, without sound", () => {
 	const env = { HOME: "/h" };
-	assert.deepEqual(quietWindow("win32", env), { args: [], env });
-	assert.deepEqual(quietWindow("linux", env), { args: [], env });
+	assert.deepEqual(quietWindow("win32", env), { args: ["--audio-driver", "Dummy"], env });
+	assert.deepEqual(quietWindow("linux", env), { args: ["--audio-driver", "Dummy"], env });
+});
+
+test("SLOP_SOUND=1 keeps the sound", () => {
+	assert.deepEqual(quietWindow("linux", { SLOP_SOUND: "1" }).args, []);
+	assert.deepEqual(quietWindow("darwin", { SLOP_SOUND: "1" }).args, ["--always-on-top"]);
 });
