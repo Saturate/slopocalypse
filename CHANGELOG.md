@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.13.0 - 2026-11-25
+
+### slopocalypse
+
+#### A server sends nothing of the world to a player it is turning away, and someone joining gets the world right after saying who they are
+
+#### The world is now an island in the sea, with beaches, low cliffs and the camp by the water; swim out too far and you tire.
+
+#### A server no longer fills its log with errors when a player is kicked or leaves
+
+#### Three new sidearms: the Five-seveN, the Desert Eagle and the Python revolver, which reloads a round at a time and can fire whatever is loaded
+
+#### A wooden jetty runs out to sea from the camp's shore, with a boat shed, crates and a moored boat; cliffs are grey rock, the shore by the water is sand, and the sea reaches the horizon.
+
+#### The trader shows its goods as item pictures with prices, sorted into Guns, Ammo, Medical and Gear tabs, with details and stats when you point at anything; drag a good into your gear to buy it into that spot, or drag your own item onto the goods to sell it
+
+#### Joining a server while it is still starting up keeps your saved spot and gear instead of starting you fresh
+
+### Internal
+
+#### Agent rules: asset issues come first and asset PRs show their images
+
+#### The server sends the time of day only to players who are in
+
+#### Games started by the capture, playtest, bench and trailer tools play no sound
+
+#### Harbour and store models in the asset library: jetty, boat sheds, harbour props, the mission boat, the BLÅGUL warehouse, shelving and flat-pack boxes
+
+#### A soldier test no longer fails when the soldier happens to look away
+
 ## 0.12.0 - 2026-11-24
 
 ### slopocalypse
