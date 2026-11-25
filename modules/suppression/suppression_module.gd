@@ -83,6 +83,9 @@ func _on_player_spawned(p: Dictionary) -> void:
 	if player == null:
 		return
 	if multiplayer.is_server() and not bool(p.get("npc", false)):
+		if not _levels.has(player):
+			# A kicked or leaving player is freed; a freed key in a typed loop logs an error (#587).
+			player.tree_exiting.connect(_forget.bind(player), CONNECT_ONE_SHOT)
 		_levels[player] = SuppressionLevel.from_config(config)
 	if bool(p.get("local", false)):
 		_local_player = player
@@ -90,6 +93,11 @@ func _on_player_spawned(p: Dictionary) -> void:
 		# A server (or any headless run) draws nothing.
 		if DisplayServer.get_name() != "headless":
 			_show_view(player)
+
+
+func _forget(player: PlayerController) -> void:
+	_levels.erase(player)
+	_last_counted.erase(player)
 
 
 func _show_view(player: PlayerController) -> void:
