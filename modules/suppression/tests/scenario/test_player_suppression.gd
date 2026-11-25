@@ -129,3 +129,15 @@ func test_a_player_parked_in_a_car_is_not_suppressed_where_they_got_in() -> void
 	_player.process_mode = Node.PROCESS_MODE_DISABLED
 	_shot_past(_foe, 0.5)
 	assert_float(_level()).is_equal(0.0)
+
+
+func test_a_player_who_leaves_is_forgotten_without_errors() -> void:
+	Log.begin_capture()
+	remove_child(_player)
+	_player.free()
+	_module._physics_process(0.1)
+	_module.level_of(1)
+	EventBus.publish(&"weapon.fired", {"holder": _foe, "from": Vector3(0, 1.5, -40), "to": Vector3(0, 1.5, 40)})
+	var entries := Log.end_capture()
+	assert_str(LogCapture.text(entries)).is_empty()
+	assert_float(_module.level_of(1)).is_equal(0.0)
