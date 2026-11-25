@@ -64,7 +64,8 @@ const MAX_KEY_LENGTH := 64
 ## change their arguments: they are how an older client is told to update.
 ## 2: the world module tells joining clients which world it plays (#472).
 ## 3: tool-run clients tell the server they have reported (`_wrote_report`).
-const PROTOCOL := 3
+## 4: spawned nodes without a synchronizer carry NetGate's, so spawns list one more (#552).
+const PROTOCOL := 4
 ## How long a --net-report-after server waits for its clients' reports before it stops anyway.
 const REPORT_WAIT_SECONDS := 60.0
 ## Versions are compared up to this many characters, on both sides alike.
@@ -109,6 +110,8 @@ var _builds: Dictionary = {}
 var _kick_reason := ""
 ## Server: peers sent away, peer -> seconds left before the line is cut.
 var _kicking: Dictionary = {}
+## Keeps replication to joined peers (`replicates_to`).
+var _gate: NetGate
 
 ## A person is at the keyboard: failures go back to the menu instead of quitting or erroring.
 var interactive := false
@@ -161,6 +164,10 @@ func _ready() -> void:
 		connected.emit())
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_gone)
+	_gate = NetGate.new()
+	_gate.name = "Gate"
+	_gate.session = self
+	add_child(_gate)
 
 
 ## Called by Boot when the game runs without a mode: starts a private server process on
@@ -319,16 +326,22 @@ func _on_server_gone() -> void:
 	get_tree().quit(0)
 
 
-## Server only: publishes an event here and replays it on every client, so effects
+## Server only: publishes an event here and replays it on every joined client, so effects
 ## (explosions, craters) happen everywhere while the decision stays on the server. Nodes in
-## the payload travel as paths and are looked up again on the client.
+## the payload travel as paths and are looked up again on the client. A client still saying
+## hello has none of the spawned nodes yet (NetGate), so it would get nulls; what it missed
+## reaches it with its catch-up on `peer_joined`.
 func server_broadcast(topic: StringName, payload: Dictionary) -> void:
 	EventBus.publish(topic, payload)
-	if multiplayer.multiplayer_peer is OfflineMultiplayerPeer or multiplayer.get_peers().is_empty():
+	if multiplayer.multiplayer_peer is OfflineMultiplayerPeer:
+		return
+	var peers := joined_peers()
+	if peers.is_empty():
 		return
 	var encoded := _encode(payload)
-	NetStats.add(StringName("event/" + topic), NetStats.size_of([topic, encoded]) * multiplayer.get_peers().size())
-	_replay.rpc(topic, encoded)
+	NetStats.add(StringName("event/" + topic), NetStats.size_of([topic, encoded]) * peers.size())
+	for peer in peers:
+		_replay.rpc_id(peer, topic, encoded)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -395,6 +408,8 @@ func _hello(player_name: String, key: String) -> void:
 	_identities[peer] = {"name": player_name.strip_edges().left(MAX_NAME_LENGTH), "key": key.left(MAX_KEY_LENGTH)}
 	Log.info(&"net", "peer %d is %s" % [peer, _identities[peer]["name"]])
 	_had_players = true
+	# What already exists reaches them before anything `peer_joined` sends.
+	_gate.update_for(peer)
 	peer_joined.emit(peer)
 
 
@@ -409,17 +424,38 @@ func server_kick(peer: int, reason: String) -> void:
 		return
 	Log.info(&"net", "kicking peer %d: %s" % [peer, reason])
 	_kicked.rpc_id(peer, reason)
+	# Nothing new replicates to them from here on (NetGate); a peer still saying hello has
+	# nothing to take back. What a joined player already has is left alone: taking it back
+	# despawns their own body while their game still runs RPCs on it (#552).
 	_kicking[peer] = KICK_SECONDS
 
 
-## Server: the kicked peers whose time to hang up ran out with this tick. Ticks down `kicking`
-## and forgets those.
+## Server: whether replication (spawns and synchronized state) goes to `peer`: once their hello
+## is accepted, and not while they are being kicked. The visibility filter of every
+## synchronizer (NetGate); 0 (everyone) is never all of them.
+func replicates_to(peer: int) -> bool:
+	# A client's filters are asked only whether the server may call it; that is always so.
+	if not multiplayer.is_server():
+		return true
+	return _identities.has(peer) and not _kicking.has(peer)
+
+
+## Server: the connected peers replication goes to (`replicates_to`).
+func joined_peers() -> Array[int]:
+	var out: Array[int] = []
+	for peer in multiplayer.get_peers():
+		if replicates_to(peer):
+			out.append(peer)
+	return out
+
+
+## Server: the kicked peers whose time to hang up ran out with this tick. Ticks down `kicking`;
+## they stay in it, still kicked, until they are cut.
 static func kicks_due(kicking: Dictionary, delta: float) -> Array[int]:
 	var due: Array[int] = []
 	for peer: int in kicking.keys():
 		kicking[peer] = float(kicking[peer]) - delta
 		if float(kicking[peer]) <= 0.0:
-			kicking.erase(peer)
 			due.append(peer)
 	return due
 
@@ -539,6 +575,7 @@ func _physics_tick(delta: float) -> void:
 	if not _kicking.is_empty():
 		for peer in kicks_due(_kicking, delta):
 			_cut(peer)
+			_kicking.erase(peer)
 	# Counted from when the session has someone in it, not from launch: a slow machine can
 	# spend seconds loading first, and the smoke tests start their processes seconds apart.
 	if _report_after < 0 or not _report_clock_running():
