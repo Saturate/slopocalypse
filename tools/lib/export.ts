@@ -15,7 +15,7 @@ const PLATFORMS: Record<TargetOs, string> = { windows: "Windows Desktop", linux:
 // Data the game reads with FileAccess is not a Godot resource, so it must be listed.
 // The changelog and the licence list are read by the title screen (changelog, credits).
 // The admin web app (web/, built into modules/web/static) is plain files the server sends.
-// The icon.ico is served by the web page as the browser tab's icon (tools/icon.ts writes it).
+// The icon.ico is the server web page's favicon and the Windows window icon (tools/icon.ts writes it).
 const INCLUDE = ["*.json", "CHANGELOG.md", "assets/LICENSES.md", "assets/logo/icon.ico", "modules/web/static/*"];
 // Dev-only: tests, builders, captures, tooling and Rust sources never ship.
 const EXCLUDE = [
@@ -37,8 +37,10 @@ export function presetFor(os: TargetOs, exportPath: string): Preset {
 			"binary_format/architecture": "x86_64",
 			// Always, not only for debug builds: the host's server window is the console exe.
 			"debug/export_console_wrapper": 2,
-			// Needs rcedit; the default icon is fine for now.
-			"application/modify_resources": false,
+			// Godot writes the icon and version info into the exe itself (no rcedit since 4.2),
+			// from the .ico as it is, every size in it.
+			"application/modify_resources": true,
+			"application/icon": "res://assets/logo/icon.ico",
 			"application/product_name": "Slopocalypse",
 			"codesign/enable": false,
 		},
@@ -50,7 +52,7 @@ export function presetFor(os: TargetOs, exportPath: string): Preset {
 			"binary_format/architecture": "universal",
 			"texture_format/s3tc_bptc": true,
 			"texture_format/etc2_astc": true,
-			// The project icon is a 32-pixel grid; the app icon wants a full-size render of it.
+			// Godot makes the .icns from one image, so give it the biggest render.
 			"application/icon": "res://assets/logo/icon-1024.png",
 			"application/bundle_identifier": "dev.saturate.slopocalypse",
 			"application/short_version": "1.0",

@@ -130,8 +130,8 @@ test("the ico carries one entry per size, decodable at the small end", () => {
 		const length = ico.readUInt32LE(o + 8);
 		const offset = ico.readUInt32LE(o + 12);
 		assert.ok(offset + length <= ico.length, `entry ${i}'s data fits in the file`);
-		if (size === 256) {
-			assert.deepEqual([...ico.subarray(offset, offset + 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], "the big entry is a png");
+		if (size >= 128) {
+			assert.deepEqual([...ico.subarray(offset, offset + 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], "the big entries are png");
 		} else {
 			assert.equal(ico.readUInt32LE(offset), 40, "the BMP header");
 			assert.equal(ico.readInt32LE(offset + 4), size);

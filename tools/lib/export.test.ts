@@ -27,6 +27,15 @@ test("windows preset embeds the pack, keeps data files and drops dev-only folder
 	assert.match(text, /debug\/export_console_wrapper=2/);
 });
 
+test("windows and macos exports carry the game's icon", () => {
+	const win = presetsFile([presetFor("windows", "x")]);
+	assert.match(win, /application\/modify_resources=true/);
+	assert.match(win, /application\/icon="res:\/\/assets\/logo\/icon\.ico"/);
+	// The window icon at runtime reads the .ico, which is not a Godot resource.
+	assert.match(win, /include_filter="[^"]*assets\/logo\/icon\.ico/);
+	assert.match(presetsFile([presetFor("macos", "x")]), /application\/icon="res:\/\/assets\/logo\/icon-1024\.png"/);
+});
+
 test("linux and macos presets name their platforms", () => {
 	assert.equal(presetFor("linux", "x").platform, "Linux");
 	assert.equal(presetFor("macos", "x").platform, "macOS");

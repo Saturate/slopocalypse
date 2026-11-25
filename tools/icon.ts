@@ -224,7 +224,8 @@ export function encodePng(width: number, height: number, rgba: Uint8Array): Buff
 	return Buffer.concat([PNG_SIGNATURE, chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw, { level: 9 })), chunk("IEND", Buffer.alloc(0))]);
 }
 
-// --- Windows icon: 256 is stored as a PNG (as Windows expects); the rest BMP -----
+// --- Windows icon: 128 and 256 stored as PNG (Windows reads both kinds), the small ones BMP
+// for older loaders; a 128 px BMP alone is 64 KB, a lot for a favicon.
 
 function bmpEntry(size: number, rgba: Uint8Array): Buffer {
 	const maskRows = Math.ceil(size / 32) * 4;
@@ -249,6 +250,8 @@ function bmpEntry(size: number, rgba: Uint8Array): Buffer {
 	return Buffer.concat([header, xor, Buffer.alloc(maskRows * size)]);
 }
 
+const PNG_ENTRY_SIZE = 128;
+
 export function encodeIco(sizes: readonly number[]): Buffer {
 	const header = Buffer.alloc(6 + 16 * sizes.length);
 	header.writeUInt16LE(1, 2);
@@ -263,7 +266,7 @@ export function encodeIco(sizes: readonly number[]): Buffer {
 		header.writeUInt16LE(1, o + 4); // colour planes
 		header.writeUInt16LE(32, o + 6); // bits per pixel
 		const rgba = render(size);
-		const body = size === 256 ? encodePng(size, size, rgba) : bmpEntry(size, rgba);
+		const body = size >= PNG_ENTRY_SIZE ? encodePng(size, size, rgba) : bmpEntry(size, rgba);
 		header.writeUInt32LE(body.length, o + 8);
 		header.writeUInt32LE(offset, o + 12);
 		offset += body.length;
@@ -275,8 +278,9 @@ export function encodeIco(sizes: readonly number[]): Buffer {
 // --- what lands in the repo --------------------------------------------------------
 
 export const PNG_SIZES = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
-// What Windows asks an .ico for: title bar and taskbar (16, 24, 32), Explorer (48, 256).
-export const ICO_SIZES = [16, 24, 32, 48, 64, 256];
+// Godot's Windows export copies 16, 32, 48, 64, 128 and 256 from the .ico into the exe and
+// warns about any it lacks; 24 is the small taskbar icon at 150 % scaling.
+export const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
 // The project icon: Godot imports the SVG at its own pixel size for the window icon,
 // so it is laid out big enough for a dock or taskbar to scale down from.
 export const SVG_SIZE = 256;
