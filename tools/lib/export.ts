@@ -38,7 +38,7 @@ export function presetFor(os: TargetOs, exportPath: string): Preset {
 			// Always, not only for debug builds: the host's server window is the console exe.
 			"debug/export_console_wrapper": 2,
 			// Godot writes the icon and version info into the exe itself (no rcedit since 4.2),
-			// from the .ico as it is, every size in it.
+			// copying the .ico's 16 to 256 px entries as they are.
 			"application/modify_resources": true,
 			"application/icon": "res://assets/logo/icon.ico",
 			"application/product_name": "Slopocalypse",

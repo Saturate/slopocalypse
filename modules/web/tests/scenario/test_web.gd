@@ -53,6 +53,9 @@ func test_the_favicon_serves_the_game_icon() -> void:
 	var text := await _ask("GET /favicon.ico HTTP/1.1\r\n\r\n")
 	assert_str(text).starts_with("HTTP/1.1 200")
 	assert_str(text).contains("image/x-icon")
+	var size := FileAccess.get_file_as_bytes("res://assets/logo/icon.ico").size()
+	assert_int(size).is_greater(0)
+	assert_str(text).contains("Content-Length: %d" % size)
 
 
 func test_other_paths_and_methods_are_refused() -> void:

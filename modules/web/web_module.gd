@@ -41,6 +41,8 @@ const MAX_FAILED_LOGINS := 10
 const FAILED_LOGIN_WINDOW_MS := 60000
 ## The admin web app's built files (web/, `npm run build -w web`), served under APP_PATH.
 const STATIC_DIR := "res://modules/web/static"
+## Written by tools/icon.ts; listed in the export's include filter, as it is not a resource.
+const FAVICON := "res://assets/logo/icon.ico"
 const APP_PATH := "/admin/app"
 const CONTENT_TYPES := {"html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8", "css": "text/css; charset=utf-8",
 	"json": "application/json", "svg": "image/svg+xml", "png": "image/png", "ico": "image/x-icon", "woff2": "font/woff2"}
@@ -76,7 +78,6 @@ func _ready() -> void:
 	set_password(OS.get_environment(PASSWORD_ENV))
 	set_trusted_proxies(OS.get_environment(TRUSTED_PROXY_ENV))
 	load_static(STATIC_DIR)
-	_favicon = FileAccess.get_file_as_bytes("res://assets/logo/icon.ico")
 	var args := OS.get_cmdline_user_args()
 	if not args.has(FLAG) or Net.mode != Net.Mode.SERVER:
 		return
@@ -124,6 +125,8 @@ func listen(port: int, bind: String = "*") -> bool:
 		Log.warn(&"web", "cannot listen on TCP %s port %d: %s" % [bind, port, error_string(err)])
 		_server = null
 		return false
+	# Only a listening page serves it, so a client never reads it.
+	_favicon = FileAccess.get_file_as_bytes(FAVICON)
 	var host := "<this server>" if bind == "*" else ("[%s]" % bind if bind.contains(":") else bind)
 	Log.info(&"web", "status page on http://%s:%d/%s" % [host, _server.get_local_port(), "" if _password.is_empty() else " (admin pages on)"])
 	return true
