@@ -1,13 +1,14 @@
-// The game logo, drawn in code: an S out of amber voxel tiles, one tile loose and
-// falling, on the menu's dark plate. The design is a 32x32 grid (GRID) over a fixed
-// palette, and everything this tool writes is a rendering of that grid, so the art
-// is edited in one place:
+// The game logo, drawn in code: an S out of amber voxel tiles on a dark steel plate.
+// The design is a letter of 5x7 tiles
+// (S_ROWS) laid out fresh at every pixel size (layout), so a 16 px icon gets whole
+// pixels for every tile rather than a shrunk copy of the big one; everything this tool
+// writes is a rendering of that one layout, so the art is edited in one place:
 //
 //   node tools/icon.ts
 //
 //   icon.svg                  the project icon (config/icon in project.godot)
 //   assets/logo/icon-<n>.png  the mark at a run of pixel sizes (the macOS app icon is 1024)
-//   assets/logo/icon.ico      the Windows icon and the server web page's favicon
+//   assets/logo/icon.ico      the Windows exe and window icon, and the server web page's favicon
 //
 // No dependencies: the PNG is encoded here (zlib and a CRC table), the .ico around it.
 
@@ -17,125 +18,170 @@ import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 
-// The design grid: one integer pixel per cell, small enough to stay sharp at a tab icon.
-export const GRID = 32;
-const PLATE_RADIUS = 5;
+// Colour indices into PALETTE.
+export const CLEAR = 0;
+export const PLATE = 1;
+export const RIM = 2;
+export const TILE = 3;
+export const TILE_LIT = 4;
+export const TILE_SHADE = 5;
 
-// [hex, r, g, b]; outside the plate is transparent in the PNGs. The colours are the
-// menu's own (core/main_menu.gd): its background for the plate, its accent for the S.
+// [hex, r, g, b]. The plate, rim and tile are the UI's own colours (core/ui/ui_palette.gd:
+// BACKGROUND, STEEL, ACCENT; a tool test keeps them in step); lit and shaded are the
+// accent a step up and down.
 export const PALETTE: Array<[string, number, number, number]> = [
 	["#000000", 0, 0, 0],
-	["#121414", 18, 20, 20],
-	["#d19e4c", 209, 158, 76],
-	["#f7ba5a", 247, 186, 90],
-	["#a37b3b", 163, 123, 59],
-	// The loose tile is the same tile, in shadow: a step down, not another material (a
-	// darker hue reads as a dead pixel).
-	["#b28641", 178, 134, 65],
-	["#c89649", 200, 150, 73],
-	["#926e35", 146, 110, 53],
+	["#16180f", 0x16, 0x18, 0x0f],
+	["#3b4034", 0x3b, 0x40, 0x34],
+	["#f2a516", 0xf2, 0xa5, 0x16],
+	["#fbc65a", 0xfb, 0xc6, 0x5a],
+	["#b3770c", 0xb3, 0x77, 0x0c],
 ];
 
-// The S as a 5x7 block letter of 4-pixel cells (its origin on the grid), with bold curves
-// and no corner dots (the dotted one reads as a 5 or an 8 at a glance), and 1-pixel seams
-// where two cells meet, so it reads as tiles. The base's bottom-right cell is loose: it
-// sits over right and down from the crack it left, in the falling shades, and keeps a row
-// of plate below it so it rests on the plate rather than over the edge.
-const S_ROWS: number[][] = [[1, 2, 3], [0], [0], [1, 2, 3], [4], [4], [1, 2, 3]];
-const CELL = 4;
-const S_ORIGIN: [number, number] = [6, 2];
-const LOOSE = { row: 6, col: 3, dx: 2, dy: 1 };
+// The S as a 5x7 block letter, with both of its ends (the top-right and bottom-left
+// cells): without them it reads as a 5 or a 3 at a glance.
+export const S_ROWS: readonly string[] = [
+	".XXX.",
+	"X...X",
+	"X....",
+	".XXX.",
+	"....X",
+	"X...X",
+	".XXX.",
+];
+const COLS = 5;
+const ROWS = 7;
 
-function inPlate(x: number, y: number): boolean {
-	const r = PLATE_RADIUS;
-	const top = y < r;
-	const bottom = y >= GRID - r;
-	if (!top && !bottom) return true;
-	if (x >= r && x < GRID - r) return true;
-	const cx = x < r ? r : GRID - 1 - r;
-	const cy = top ? r : GRID - 1 - r;
-	return (x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r;
+export interface Rect {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	c: number;
 }
 
-// One tile: the base colour with a lit top and left edge and a shaded bottom and right.
-function tile(
-	g: Uint8Array,
-	row: number,
-	col: number,
-	base: number,
-	light: number,
-	dark: number,
-	dx: number,
-	dy: number,
-): void {
-	const x0 = S_ORIGIN[0] + col * CELL + dx;
-	const y0 = S_ORIGIN[1] + row * CELL + dy;
-	for (let y = 0; y < CELL; y++)
-		for (let x = 0; x < CELL; x++) g[(y0 + y) * GRID + x0 + x] = base;
-	for (let y = 0; y < CELL; y++) g[(y0 + y) * GRID + x0 + CELL - 1] = dark;
-	for (let y = 0; y < CELL; y++) g[(y0 + y) * GRID + x0] = light;
-	for (let x = 0; x < CELL; x++) g[y0 * GRID + x0 + x] = light;
-	for (let x = 0; x < CELL; x++) g[(y0 + CELL - 1) * GRID + x0 + x] = dark;
+export interface Layout {
+	size: number;
+	// Corner radius of the plate, in pixels.
+	radius: number;
+	// Steel rim inside the plate's edge, so the dark plate still has an outline on a
+	// dark taskbar; 0 where a pixel of rim would eat the letter's margin.
+	rim: number;
+	// One tile step (the letter is 5 by 7 of them); 1/8 of the size, so the letter fills
+	// 7/8 of the height with a pixel of plate above and below at 16 px.
+	pitch: number;
+	// Plate showing between neighbouring tiles; 0 until a pixel of seam leaves a tile solid.
+	seam: number;
+	// Lit and shaded edge of each tile; 0 at the smallest sizes, where an edge pixel is
+	// half the tile and turns the letter into stripes.
+	bevel: number;
+	// Every tile as filled rects, in paint order.
+	rects: Rect[];
+}
+
+// Which sides of a tile get an edge: all four when seams part the tiles, otherwise
+// only the sides that face plate, so a stroke with no seams reads as one solid bar.
+interface Sides {
+	top: boolean;
+	left: boolean;
+	bottom: boolean;
+	right: boolean;
+}
+
+function tileRects(x: number, y: number, t: number, b: number, sides: Sides): Rect[] {
+	const out: Rect[] = [{ x, y, w: t, h: t, c: TILE }];
+	if (b === 0) return out;
+	// Order matters where edges cross: the top-right corner is lit, the bottom-left shaded.
+	if (sides.right) out.push({ x: x + t - b, y, w: b, h: t, c: TILE_SHADE });
+	if (sides.left) out.push({ x, y, w: b, h: t, c: TILE_LIT });
+	if (sides.top) out.push({ x, y, w: t, h: b, c: TILE_LIT });
+	if (sides.bottom) out.push({ x, y: y + t - b, w: t, h: b, c: TILE_SHADE });
+	return out;
 }
 
 function filled(row: number, col: number): boolean {
-	const r = S_ROWS[row];
-	return r !== undefined && r.includes(col) && !(row === LOOSE.row && col === LOOSE.col);
+	return S_ROWS[row]?.[col] === "X";
 }
 
-export function buildGrid(): Uint8Array {
-	const g = new Uint8Array(GRID * GRID);
-	for (let y = 0; y < GRID; y++) for (let x = 0; x < GRID; x++) if (inPlate(x, y)) g[y * GRID + x] = 1;
-	for (let row = 0; row < S_ROWS.length; row++)
-		for (const col of S_ROWS[row]!) if (filled(row, col)) tile(g, row, col, 2, 3, 4, 0, 0);
-	// Seams where two tiles meet: the plate shows through between them.
-	for (let row = 0; row < S_ROWS.length; row++)
-		for (const col of S_ROWS[row]!) {
+export function layout(size: number): Layout {
+	if (!Number.isInteger(size) || size < 16) throw new Error(`icon: size ${size} (16 or more, whole pixels)`);
+	const pitch = Math.floor(size / 8);
+	const seam = pitch >= 8 ? Math.round(pitch / 16) : 0;
+	const bevel = pitch >= 4 ? Math.round(pitch / 8) : 0;
+	const tile = pitch - seam;
+	const ox = Math.floor((size - (COLS * pitch - seam)) / 2);
+	const oy = Math.floor((size - (ROWS * pitch - seam)) / 2);
+	const rects: Rect[] = [];
+	const parted = seam > 0;
+	for (let row = 0; row < ROWS; row++)
+		for (let col = 0; col < COLS; col++) {
 			if (!filled(row, col)) continue;
-			const x0 = S_ORIGIN[0] + col * CELL;
-			const y0 = S_ORIGIN[1] + row * CELL;
-			if (filled(row, col + 1)) for (let y = 0; y < CELL; y++) g[(y0 + y) * GRID + x0 + CELL - 1] = 1;
-			if (filled(row + 1, col)) for (let x = 0; x < CELL; x++) g[(y0 + CELL - 1) * GRID + x0 + x] = 1;
+			const sides: Sides = {
+				top: parted || !filled(row - 1, col),
+				left: parted || !filled(row, col - 1),
+				bottom: parted || !filled(row + 1, col),
+				right: parted || !filled(row, col + 1),
+			};
+			rects.push(...tileRects(ox + col * pitch, oy + row * pitch, tile, bevel, sides));
 		}
-	// The loose tile lands on the plate, so it is painted last.
-	tile(g, LOOSE.row, LOOSE.col, 5, 6, 7, LOOSE.dx, LOOSE.dy);
+	return { size, radius: (size * 5) / 32, rim: size >= 32 ? Math.max(1, Math.round(size / 32)) : 0, pitch, seam, bevel, rects };
+}
+
+// Pixel centres within `inset` of a rounded square of the given radius.
+function inRounded(size: number, radius: number, inset: number, x: number, y: number): boolean {
+	const r = Math.max(0, radius - inset);
+	const px = x + 0.5;
+	const py = y + 0.5;
+	const lo = inset + r;
+	const hi = size - inset - r;
+	if (px < inset || py < inset || px > size - inset || py > size - inset) return false;
+	const cx = px < lo ? lo : px > hi ? hi : px;
+	const cy = py < lo ? lo : py > hi ? hi : py;
+	return (px - cx) * (px - cx) + (py - cy) * (py - cy) <= r * r;
+}
+
+// The layout as palette indices, one per pixel.
+export function rasterize(l: Layout): Uint8Array {
+	const { size } = l;
+	const g = new Uint8Array(size * size);
+	for (let y = 0; y < size; y++)
+		for (let x = 0; x < size; x++)
+			if (inRounded(size, l.radius, 0, x, y)) g[y * size + x] = l.rim > 0 && !inRounded(size, l.radius, l.rim, x, y) ? RIM : PLATE;
+	for (const r of l.rects)
+		for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) g[y * size + x] = r.c;
 	return g;
 }
 
-// The grid at any pixel size: nearest-neighbour, so a tile edge never blurs.
-export function render(size: number, grid: Uint8Array): Uint8Array {
-	const out = new Uint8Array(size * size * 4);
-	const k = GRID / size;
-	for (let y = 0; y < size; y++) {
-		const gy = Math.min(GRID - 1, Math.floor((y + 0.5) * k));
-		for (let x = 0; x < size; x++) {
-			const gx = Math.min(GRID - 1, Math.floor((x + 0.5) * k));
-			const c = grid[gy * GRID + gx]!;
-			const o = (y * size + x) * 4;
-			out[o] = PALETTE[c]![1];
-			out[o + 1] = PALETTE[c]![2];
-			out[o + 2] = PALETTE[c]![3];
-			out[o + 3] = c === 0 ? 0 : 255;
-		}
+export function toRgba(grid: Uint8Array): Uint8Array {
+	const out = new Uint8Array(grid.length * 4);
+	for (let i = 0; i < grid.length; i++) {
+		const c = grid[i]!;
+		out[i * 4] = PALETTE[c]![1];
+		out[i * 4 + 1] = PALETTE[c]![2];
+		out[i * 4 + 2] = PALETTE[c]![3];
+		out[i * 4 + 3] = c === CLEAR ? 0 : 255;
 	}
 	return out;
 }
 
-// A flat grid to SVG: one rect per colour run in each row (Godot's importer handles it).
-export function svgOf(grid: Uint8Array): string {
-	const rows: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" width="${GRID}" height="${GRID}" viewBox="0 0 ${GRID} ${GRID}">`];
-	for (let y = 0; y < GRID; y++) {
-		let x = 0;
-		while (x < GRID) {
-			const c = grid[y * GRID + x]!;
-			let x1 = x + 1;
-			while (x1 < GRID && grid[y * GRID + x1]! === c) x1++;
-			if (c !== 0) rows.push(`  <rect x="${x}" y="${y}" width="${x1 - x}" height="1" fill="${PALETTE[c]![0]}"/>`);
-			x = x1;
-		}
+export function render(size: number): Uint8Array {
+	return toRgba(rasterize(layout(size)));
+}
+
+// The same layout as vector shapes: the plate and rim as rounded rects, then the tiles.
+export function svgOf(l: Layout): string {
+	const s = l.size;
+	const out: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}">`];
+	if (l.rim > 0) {
+		out.push(`  <rect width="${s}" height="${s}" rx="${l.radius}" fill="${PALETTE[RIM]![0]}"/>`);
+		const r = Math.max(0, l.radius - l.rim);
+		out.push(`  <rect x="${l.rim}" y="${l.rim}" width="${s - 2 * l.rim}" height="${s - 2 * l.rim}" rx="${r}" fill="${PALETTE[PLATE]![0]}"/>`);
+	} else {
+		out.push(`  <rect width="${s}" height="${s}" rx="${l.radius}" fill="${PALETTE[PLATE]![0]}"/>`);
 	}
-	rows.push("</svg>");
-	return rows.join("\n") + "\n";
+	for (const r of l.rects) out.push(`  <rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="${PALETTE[r.c]![0]}"/>`);
+	out.push("</svg>");
+	return out.join("\n") + "\n";
 }
 
 // --- PNG (the only bytes this file needs to know: a signature, three chunks) -----
@@ -161,18 +207,19 @@ function chunk(type: string, data: Buffer): Buffer {
 	return out;
 }
 
-export function encodePng(size: number, rgba: Uint8Array): Buffer {
-	if (rgba.length !== size * size * 4) throw new Error(`png: ${rgba.length} bytes for a ${size}x${size} image`);
+export function encodePng(width: number, height: number, rgba: Uint8Array): Buffer {
+	if (rgba.length !== width * height * 4) throw new Error(`png: ${rgba.length} bytes for a ${width}x${height} image`);
 	const ihdr = Buffer.alloc(13);
-	ihdr.writeUInt32BE(size, 0);
-	ihdr.writeUInt32BE(size, 4);
+	ihdr.writeUInt32BE(width, 0);
+	ihdr.writeUInt32BE(height, 4);
 	ihdr[8] = 8; // bit depth
 	ihdr[9] = 6; // colour type: RGBA
-	const raw = Buffer.alloc((size * 4 + 1) * size);
+	const stride = width * 4;
+	const raw = Buffer.alloc((stride + 1) * height);
 	const pixels = Buffer.from(rgba.buffer, rgba.byteOffset, rgba.byteLength);
-	for (let y = 0; y < size; y++) {
-		raw[y * (size * 4 + 1)] = 0; // filter: none
-		pixels.subarray(y * size * 4, (y + 1) * size * 4).copy(raw, y * (size * 4 + 1) + 1);
+	for (let y = 0; y < height; y++) {
+		raw[y * (stride + 1)] = 0; // filter: none
+		pixels.subarray(y * stride, (y + 1) * stride).copy(raw, y * (stride + 1) + 1);
 	}
 	return Buffer.concat([PNG_SIGNATURE, chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw, { level: 9 })), chunk("IEND", Buffer.alloc(0))]);
 }
@@ -198,20 +245,25 @@ function bmpEntry(size: number, rgba: Uint8Array): Buffer {
 			xor[d + 2] = rgba[s]!;
 			xor[d + 3] = rgba[s + 3]!;
 		}
+	// The AND mask stays all zero: the 32-bit alpha already says what is transparent.
 	return Buffer.concat([header, xor, Buffer.alloc(maskRows * size)]);
 }
 
-export function encodeIco(entries: Array<{ size: number; png: Buffer | null; rgba: Uint8Array }>): Buffer {
-	const header = Buffer.alloc(6 + 16 * entries.length);
+export function encodeIco(sizes: readonly number[]): Buffer {
+	const header = Buffer.alloc(6 + 16 * sizes.length);
 	header.writeUInt16LE(1, 2);
-	header.writeUInt16LE(entries.length, 4);
+	header.writeUInt16LE(sizes.length, 4);
 	const data: Buffer[] = [];
 	let offset = header.length;
-	entries.forEach((e, i) => {
+	sizes.forEach((size, i) => {
+		if (size > 256) throw new Error(`ico: ${size} px is over the format's 256`);
 		const o = 6 + i * 16; // the directory follows the 6-byte header
-		header[o] = e.size === 256 ? 0 : e.size; // 0 means 256
-		header[o + 1] = e.size === 256 ? 0 : e.size;
-		const body = e.size === 256 ? e.png ?? bmpEntry(e.size, e.rgba) : bmpEntry(e.size, e.rgba);
+		header[o] = size === 256 ? 0 : size; // 0 means 256
+		header[o + 1] = size === 256 ? 0 : size;
+		header.writeUInt16LE(1, o + 4); // colour planes
+		header.writeUInt16LE(32, o + 6); // bits per pixel
+		const rgba = render(size);
+		const body = size === 256 ? encodePng(size, size, rgba) : bmpEntry(size, rgba);
 		header.writeUInt32LE(body.length, o + 8);
 		header.writeUInt32LE(offset, o + 12);
 		offset += body.length;
@@ -222,27 +274,19 @@ export function encodeIco(entries: Array<{ size: number; png: Buffer | null; rgb
 
 // --- what lands in the repo --------------------------------------------------------
 
-const SIZES = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
+export const PNG_SIZES = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
+// What Windows asks an .ico for: title bar and taskbar (16, 24, 32), Explorer (48, 256).
+export const ICO_SIZES = [16, 24, 32, 48, 64, 256];
+// The project icon: Godot imports the SVG at its own pixel size for the window icon,
+// so it is laid out big enough for a dock or taskbar to scale down from.
+export const SVG_SIZE = 256;
 
-export function main(repow = root): string[] {
-	const grid = buildGrid();
-	const svg = svgOf(grid);
-	writeFileSync(join(repow, "icon.svg"), svg);
-	mkdirSync(join(repow, "assets/logo"), { recursive: true });
-	const png256 = encodePng(256, render(256, grid));
-	for (const size of SIZES) {
-		const png = size === 256 ? png256 : encodePng(size, render(size, grid));
-		writeFileSync(join(repow, `assets/logo/icon-${size}.png`), png);
-	}
-	const ico = encodeIco([
-		{ size: 16, png: null, rgba: render(16, grid) },
-		{ size: 24, png: null, rgba: render(24, grid) },
-		{ size: 32, png: null, rgba: render(32, grid) },
-		{ size: 48, png: null, rgba: render(48, grid) },
-		{ size: 256, png: png256, rgba: render(256, grid) },
-	]);
-	writeFileSync(join(repow, "assets/logo/icon.ico"), ico);
-	return ["icon.svg", "assets/logo/icon.ico", ...SIZES.map((s) => `assets/logo/icon-${s}.png`)];
+export function main(repo = root): string[] {
+	writeFileSync(join(repo, "icon.svg"), svgOf(layout(SVG_SIZE)));
+	mkdirSync(join(repo, "assets/logo"), { recursive: true });
+	for (const size of PNG_SIZES) writeFileSync(join(repo, `assets/logo/icon-${size}.png`), encodePng(size, size, render(size)));
+	writeFileSync(join(repo, "assets/logo/icon.ico"), encodeIco(ICO_SIZES));
+	return ["icon.svg", "assets/logo/icon.ico", ...PNG_SIZES.map((s) => `assets/logo/icon-${s}.png`)];
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {

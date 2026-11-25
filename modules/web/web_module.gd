@@ -3,9 +3,9 @@ extends Node
 ## image passes it). Listens for HTTP on TCP at the game's port number (the game itself
 ## talks UDP there, so they never meet) or at `--web-port=N`, on every address or the one
 ## `--web-bind=` names (a proxy in front, #448), and answers `GET /` (a small
-## status page) and `GET /status.json` (the same as JSON, for bots and dashboards) and
-## `GET /favicon.ico` (the game's logo): read-only and public. Under `/admin` are pages other modules add (`add_admin_page`: the map viewer,
-## the live map), behind a password from `WEB_PASSWORD` in the environment (HTTP basic auth:
+## status page), `GET /status.json` (the same as JSON, for bots and dashboards) and
+## `GET /favicon.ico` (the game's logo): read-only and public. Under `/admin` are pages
+## other modules add (`add_admin_page`: the map viewer, the live map), behind a password from `WEB_PASSWORD` in the environment (HTTP basic auth:
 ## put HTTPS in front); with no password they are off.
 ##
 ## The game must never stall on a visitor: each connection is read and answered a piece per
