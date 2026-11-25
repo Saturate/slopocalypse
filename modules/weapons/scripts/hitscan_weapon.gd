@@ -335,7 +335,11 @@ static func replay_peers(holder: Node) -> Array[int]:
 	if holder == null or not holder.is_inside_tree():
 		return out
 	var sync := holder.get_node_or_null(^"NetSync") as MultiplayerSynchronizer
+	# The session's own peers only get replication once they have joined (NetGate).
+	var gated := holder.multiplayer == Net.multiplayer
 	for peer in holder.multiplayer.get_peers():
+		if gated and not Net.replicates_to(peer):
+			continue
 		if sync == null or sync.public_visibility or sync.get_visibility_for(peer):
 			out.append(peer)
 	return out

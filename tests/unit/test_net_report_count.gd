@@ -69,7 +69,8 @@ func test_a_kicked_peer_is_cut_only_after_kick_seconds_of_ticks() -> void:
 	assert_array(cut).contains_exactly([5])
 	# About KICK_SECONDS of ticks, give or take one for float rounding.
 	assert_int(ticks).is_between(roundi(NetSession.KICK_SECONDS / tick) - 1, roundi(NetSession.KICK_SECONDS / tick) + 1)
-	assert_bool(kicking.has(5)).is_false()
+	# Still being kicked (nothing replicates to them) until the line is cut.
+	assert_bool(kicking.has(5)).is_true()
 	assert_bool(kicking.has(9)).is_true()
 
 

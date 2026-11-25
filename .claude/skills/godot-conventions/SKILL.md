@@ -110,4 +110,5 @@ func _initialize() -> void:
 | Parse error "Expected variable name" | `pass` (and other keywords) can't be a variable name | Rename (`pass_share`) |
 | Same seed, different result on two machines | Physics (Jolt) isn't deterministic across machines; float carving drifts too | Don't let physics decide shared state: work outcomes out from the seed (see `docs/decisions/0005`) |
 | `rust build` fails "dll is locked" | A running game or editor holds the extension | Close the game before the gate when Rust changed; GDScript-only changes gate fine with it open |
+| A peer that is refused or being kicked gets spawns and sync, and the server logs "Unable to send packet on channel 0" | Replication goes to every connected peer by default | `NetGate` (under Net) filters every synchronizer to `Net.replicates_to` (joined, not kicked) and gives spawned nodes without a synchronizer an empty one; set a spawner's `spawn_function` before `add_child`, or it is not wrapped |
 | A shot's sight-check test hits flying debris | Default ray masks include every layer | Rays that mean "as a bullet sees it" use `PhysicsLayers.BULLETS` (debris is excluded) |
