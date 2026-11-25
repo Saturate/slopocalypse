@@ -1,0 +1,6 @@
+{
+  "id": "harbour",
+  "depends_on": ["world", "voxkit"],
+  "flag": "harbour",
+  "entry": "harbour_module.gd"
+}

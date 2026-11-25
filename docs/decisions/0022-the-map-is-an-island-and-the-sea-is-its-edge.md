@@ -30,7 +30,8 @@ now has to stand by the sea with room for a jetty.
   spot in reach wins. The harbour (root on the waterline, facing out to sea, jetty length
   to water deep enough, footprint) is map data (`Settlements.harbour`, `MapShape.harbour`,
   `world.ready` `harbour`); its footprint is reserved from roads, sites, power and trees.
-  The jetty model and the boat come later and only read it.
+  The harbour module puts the jetty, a boat shed, props and the moored boat up there from
+  the map on every machine, as the camp module does its fence, all inside that footprint.
 - The sea is drawn by the pond water shader with its own look (`world.json` `water.sea`)
   over the sea's own cells and out past the map, and swimming works as in ponds. Past
   `depth_limit` metres of sea a swimmer's sea stamina drains, then their health: the sea,

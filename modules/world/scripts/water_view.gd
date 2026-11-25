@@ -173,6 +173,11 @@ const WADERS: Array[StringName] = [&"players", &"enemies", &"vehicles"]
 const WADE_REACH := 60.0
 const WADE_EVERY := 0.35
 const WADE_MOVED := 0.2
+## The sea's horizon band stands this share of the camera's far distance away: inside the
+## far plane so it is drawn, and past everything the fog has not already hidden.
+const HORIZON_REACH := 0.9
+## Metres the horizon band reaches under the sea's surface, so no gap shows where they meet.
+const HORIZON_DIP := 2.0
 
 var water: WaterBodies
 ## The `water` block of world.json.
@@ -181,6 +186,12 @@ var config: Dictionary = {}
 var _material: ShaderMaterial
 ## The sea's: the same shader with the sea's look; null on a map without one.
 var _sea_material: ShaderMaterial
+## A band round the camera from under the sea up to eye level (see `_place_horizon`); null on
+## a map without a sea.
+var _horizon: MeshInstance3D
+var _sea_level := NAN
+## The sea's surface reaches this far (x, z), past the map.
+var _sea_box := Rect2()
 var _ripples := PackedVector4Array()
 var _next_ripple := 0
 var _clock := 0.0
@@ -211,6 +222,10 @@ func _ready() -> void:
 				var rect := land.sea_depth_rect()
 				_sea_material.set_shader_parameter(&"depth_map_rect", Vector4(rect.position.x, rect.position.y, rect.size.x, rect.size.y))
 			_add_surface(sea_mesh(water, water.level_of(i)), "Sea", _sea_material)
+			_sea_level = water.level_of(i)
+			_sea_box = body["box"]
+			_horizon = _horizon_band(look)
+			add_child(_horizon)
 			continue
 		# A map's pond over its own cells: its outline is a hull that may reach over the sea.
 		if water is MapWater and (water as MapWater).land != null:
@@ -312,6 +327,8 @@ func drape(key: String, centre: Vector3, radius: float, height_at: Callable, fil
 
 func _process(delta: float) -> void:
 	var t := Prof.start()
+	if _horizon != null:
+		_place_horizon(get_viewport().get_camera_3d())
 	_clock += delta
 	_material.set_shader_parameter(&"now", _clock)
 	if _sea_material != null:
@@ -321,6 +338,52 @@ func _process(delta: float) -> void:
 		_wade_in = WADE_EVERY
 		_ripple_waders()
 	Prof.stop(&"world/water", t)
+
+
+## The sea seen edge on far out, as a band of its colour: the sea's surface stops at the
+## camera's far distance (and at its own outline), short of the horizon, and the sky's dark
+## floor showed through the gap as a line along it. Unlit, as the fog covers it anyway.
+static func _horizon_band(look: Dictionary) -> MeshInstance3D:
+	var band := CylinderMesh.new()
+	band.top_radius = 1.0
+	band.bottom_radius = 1.0
+	band.height = 1.0
+	band.cap_top = false
+	band.cap_bottom = false
+	band.radial_segments = 64
+	band.rings = 1
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# What the sea looks like across it: its deep colour tinted by the sky, as its shader does.
+	material.albedo_color = _colour(look.get("deep", [0.09, 0.36, 0.26])).lerp(_colour(look.get("sky", [0.62, 0.71, 0.78])), 0.3)
+	band.material = material
+	var node := MeshInstance3D.new()
+	node.name = "Horizon"
+	node.mesh = band
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return node
+
+
+## Stands the horizon band round `camera`, `HORIZON_REACH` of its far distance out (nearer if
+## the sea's surface ends sooner), from just under the sea up to the camera's height: its top
+## edge is then where an endless sea would meet the sky. Hidden without a camera.
+func _place_horizon(camera: Camera3D) -> void:
+	_horizon.visible = camera != null
+	if camera == null:
+		return
+	var eye := camera.global_position
+	var to_edge := minf(minf(eye.x - _sea_box.position.x, _sea_box.end.x - eye.x), minf(eye.z - _sea_box.position.y, _sea_box.end.y - eye.z))
+	# A camera off past the sea's edge (a capture far out) keeps its far distance.
+	var r := minf(camera.far, to_edge if to_edge > 0.0 else camera.far) * HORIZON_REACH
+	var bottom := _sea_level - HORIZON_DIP
+	var top := maxf(eye.y, _sea_level)
+	_horizon.global_transform = Transform3D(Basis.from_scale(Vector3(r, top - bottom, r)), Vector3(eye.x, (top + bottom) / 2.0, eye.z))
+
+
+## The horizon band, or null on a map without a sea.
+func horizon() -> MeshInstance3D:
+	return _horizon
 
 
 ## A ring starting at `at` on the water; `strength` 0..1.

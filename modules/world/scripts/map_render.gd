@@ -54,7 +54,7 @@ const RECIPE := {"size": "n", "relief": "n", "hill_mask": {"frequency": "n", "fr
 const LAYER := {"frequency": "n", "amplitude": "n"}
 const SECTIONS := {
 	"coast": {"sea_level": "n", "edge": "n", "radius": "n", "roundness": "n", "noise": {"frequency": "n", "amplitude": "n", "octaves": "n"}, "sea_depth": "n",
-		"inland": "n", "beach": {"rise": "n", "sea_band": "n", "land_band": "n", "sand_grade": "n", "sand_height": "n"},
+		"inland": "n", "beach": {"rise": "n", "sea_band": "n", "land_band": "n", "sand_grade": "n", "sand_height": "n", "wash": "n"},
 		"cliff": {"rise": "n", "sea_band": "n", "land_band": "n", "inland": "n", "from": "n", "to": "n"},
 		"islets": {"frequency": "n", "threshold": "n", "near": "n", "far": "n", "rise": "n"}},
 	"water": {"cell": "n", "deepen": "n", "min_depth": "n", "min_area": "n", "max_area": "n", "freeboard": "n"},

@@ -40,7 +40,7 @@ const LITTER := Color(0.33, 0.29, 0.18)
 const STRAW := Color(0.7, 0.61, 0.36)
 const STONE := Color(0.5, 0.49, 0.46)
 const SAND := Color(0.78, 0.71, 0.52)
-const ROCK := Color(0.45, 0.44, 0.42)
+const ROCK := Color(0.44, 0.48, 0.54)
 const SOIL := Color(0.42, 0.31, 0.2)
 const DIRT := Color(0.38, 0.28, 0.18)
 
@@ -1192,6 +1192,8 @@ func _colour_at(x: float, z: float, pads: Array, digs: Array) -> Color:
 	c = c.lerp(LITTER, _biomes.forest(x, z) * 0.8)
 	c = c.lerp(SAND, _biomes.sand(x, z))
 	c = c.lerp(STONE, _biomes.rock(x, z) * 0.6)
+	# A sea cliff is grey rock all through, as the steepest ground is drawn.
+	c = c.lerp(ROCK, _biomes.cliff(x, z))
 	if not (pads.is_empty() and digs.is_empty()):
 		var h := ground_height(x, z)
 		if _dig_into(_pad_into(h, x, z, pads), x, z, digs) < h - 0.3:
