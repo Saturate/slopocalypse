@@ -1,8 +1,8 @@
 // The game logo, drawn in code: an S out of amber voxel tiles on a dark steel plate.
-// The design is a letter of 5x7 tiles
-// (S_ROWS) laid out fresh at every pixel size (layout), so a 16 px icon gets whole
-// pixels for every tile rather than a shrunk copy of the big one; everything this tool
-// writes is a rendering of that one layout, so the art is edited in one place:
+// The design is a letter of 5x7 tiles (S_ROWS) laid out fresh at every pixel size
+// (layout), so a 16 px icon gets whole pixels for every tile rather than a shrunk copy
+// of the big one; everything this tool writes is a rendering of that one layout, so the
+// art is edited in one place:
 //
 //   node tools/icon.ts
 //
@@ -51,6 +51,8 @@ export const S_ROWS: readonly string[] = [
 ];
 const COLS = 5;
 const ROWS = 7;
+// 128 px and up: a tile is 16 px, and a 2 px groove still leaves it solid.
+const GROOVE_MIN_PITCH = 16;
 
 export interface Rect {
 	x: number;
@@ -65,22 +67,23 @@ export interface Layout {
 	// Corner radius of the plate, in pixels.
 	radius: number;
 	// Steel rim inside the plate's edge, so the dark plate still has an outline on a
-	// dark taskbar; 0 where a pixel of rim would eat the letter's margin.
+	// dark taskbar or tab bar.
 	rim: number;
 	// One tile step (the letter is 5 by 7 of them); 1/8 of the size, so the letter fills
-	// 7/8 of the height with a pixel of plate above and below at 16 px.
+	// 7/8 of the height, just inside the rim at 16 px.
 	pitch: number;
-	// Plate showing between neighbouring tiles; 0 until a pixel of seam leaves a tile solid.
-	seam: number;
 	// Lit and shaded edge of each tile; 0 at the smallest sizes, where an edge pixel is
 	// half the tile and turns the letter into stripes.
 	bevel: number;
+	// Whether neighbouring tiles in a stroke show the edge between them as a groove. Below
+	// this the grooves chop the strokes into dots, so the letter is drawn as solid bars.
+	grooved: boolean;
 	// Every tile as filled rects, in paint order.
 	rects: Rect[];
 }
 
-// Which sides of a tile get an edge: all four when seams part the tiles, otherwise
-// only the sides that face plate, so a stroke with no seams reads as one solid bar.
+// Which sides of a tile get an edge: all four when the tiles are grooved, otherwise
+// only the sides that face plate, so a stroke reads as one solid bar.
 interface Sides {
 	top: boolean;
 	left: boolean;
@@ -106,25 +109,23 @@ function filled(row: number, col: number): boolean {
 export function layout(size: number): Layout {
 	if (!Number.isInteger(size) || size < 16) throw new Error(`icon: size ${size} (16 or more, whole pixels)`);
 	const pitch = Math.floor(size / 8);
-	const seam = pitch >= 8 ? Math.round(pitch / 16) : 0;
 	const bevel = pitch >= 4 ? Math.round(pitch / 8) : 0;
-	const tile = pitch - seam;
-	const ox = Math.floor((size - (COLS * pitch - seam)) / 2);
-	const oy = Math.floor((size - (ROWS * pitch - seam)) / 2);
+	const grooved = pitch >= GROOVE_MIN_PITCH;
+	const ox = Math.floor((size - COLS * pitch) / 2);
+	const oy = Math.floor((size - ROWS * pitch) / 2);
 	const rects: Rect[] = [];
-	const parted = seam > 0;
 	for (let row = 0; row < ROWS; row++)
 		for (let col = 0; col < COLS; col++) {
 			if (!filled(row, col)) continue;
 			const sides: Sides = {
-				top: parted || !filled(row - 1, col),
-				left: parted || !filled(row, col - 1),
-				bottom: parted || !filled(row + 1, col),
-				right: parted || !filled(row, col + 1),
+				top: grooved || !filled(row - 1, col),
+				left: grooved || !filled(row, col - 1),
+				bottom: grooved || !filled(row + 1, col),
+				right: grooved || !filled(row, col + 1),
 			};
-			rects.push(...tileRects(ox + col * pitch, oy + row * pitch, tile, bevel, sides));
+			rects.push(...tileRects(ox + col * pitch, oy + row * pitch, pitch, bevel, sides));
 		}
-	return { size, radius: (size * 5) / 32, rim: size >= 32 ? Math.max(1, Math.round(size / 32)) : 0, pitch, seam, bevel, rects };
+	return { size, radius: (size * 5) / 32, rim: Math.max(1, Math.round(size / 32)), pitch, bevel, grooved, rects };
 }
 
 // Pixel centres within `inset` of a rounded square of the given radius.
@@ -228,7 +229,7 @@ export function encodePng(width: number, height: number, rgba: Uint8Array): Buff
 // for older loaders; a 128 px BMP alone is 64 KB, a lot for a favicon.
 
 function bmpEntry(size: number, rgba: Uint8Array): Buffer {
-	const maskRows = Math.ceil(size / 32) * 4;
+	const maskRows = Math.ceil(size / 32) * 4; // bytes per mask row, padded to 32 bits
 	const header = Buffer.alloc(40);
 	header.writeUInt32LE(40, 0);
 	header.writeInt32LE(size, 4);
@@ -246,8 +247,15 @@ function bmpEntry(size: number, rgba: Uint8Array): Buffer {
 			xor[d + 2] = rgba[s]!;
 			xor[d + 3] = rgba[s + 3]!;
 		}
-	// The AND mask stays all zero: the 32-bit alpha already says what is transparent.
-	return Buffer.concat([header, xor, Buffer.alloc(maskRows * size)]);
+	// The AND mask repeats the alpha as one bit a pixel, for loaders that ignore alpha.
+	const mask = Buffer.alloc(maskRows * size);
+	for (let y = 0; y < size; y++)
+		for (let x = 0; x < size; x++) {
+			if (rgba[(y * size + x) * 4 + 3] !== 0) continue;
+			const i = (size - 1 - y) * maskRows + (x >> 3);
+			mask[i] = (mask[i] ?? 0) | (0x80 >> (x & 7));
+		}
+	return Buffer.concat([header, xor, mask]);
 }
 
 const PNG_ENTRY_SIZE = 128;

@@ -16,14 +16,14 @@ const isTile = (c: number): boolean => c === TILE || c === TILE_LIT || c === TIL
 function letterAt(size: number): string[] {
 	const l = layout(size);
 	const g = rasterize(l);
-	const ox = Math.floor((size - (5 * l.pitch - l.seam)) / 2);
-	const oy = Math.floor((size - (7 * l.pitch - l.seam)) / 2);
+	const ox = Math.floor((size - 5 * l.pitch) / 2);
+	const oy = Math.floor((size - 7 * l.pitch) / 2);
 	const rows: string[] = [];
 	for (let row = 0; row < 7; row++) {
 		let s = "";
 		for (let col = 0; col < 5; col++) {
-			const x = ox + col * l.pitch + Math.floor((l.pitch - l.seam) / 2);
-			const y = oy + row * l.pitch + Math.floor((l.pitch - l.seam) / 2);
+			const x = ox + col * l.pitch + Math.floor(l.pitch / 2);
+			const y = oy + row * l.pitch + Math.floor(l.pitch / 2);
 			s += isTile(g[y * size + x]!) ? "X" : ".";
 		}
 		rows.push(s);
@@ -45,42 +45,55 @@ test("every size draws the whole S, ends and all, inside the plate", () => {
 	}
 });
 
-test("small sizes draw solid strokes, big ones parted tiles", () => {
-	// 16 px: every pixel of a tile is the plain accent, so the letter is one solid shape.
+test("strokes are solid bars, with grooves between tiles only at big sizes", () => {
+	// 16 px: the tiles are the plain accent, so the letter is one solid shape; the rim
+	// still outlines the plate on a dark background.
 	const g16 = rasterize(layout(16));
-	assert.ok(g16.every((c) => c === CLEAR || c === PLATE || c === TILE), "16 px has no bevel or rim pixels");
-	// 32 px: the top bar is lit along its top and runs unbroken from tile to tile.
-	const l32 = layout(32);
-	assert.equal(l32.seam, 0);
-	const g32 = rasterize(l32);
-	const oy = Math.floor((32 - 7 * l32.pitch) / 2);
-	const bar = [...g32.subarray(oy * 32 + 10, oy * 32 + 22)];
-	assert.ok(bar.every((c) => c === TILE_LIT), "the bar's lit top edge is unbroken");
-	const mid = [...g32.subarray((oy + 1) * 32 + 11, (oy + 1) * 32 + 21)];
-	assert.ok(mid.every((c) => c === TILE), "no edge between tiles inside a bar");
-	assert.equal(g32[16 * 32], RIM, "a rim outlines the plate from 32 px");
-	// 256 px: plate shows between two tiles of the top bar.
+	assert.ok(g16.every((c) => c !== TILE_LIT && c !== TILE_SHADE), "16 px has no bevel pixels");
+	assert.equal(g16[8 * 16], RIM, "a rim outlines the plate at 16 px");
+	// 32 and 64 px: the top bar is lit along its top and runs unbroken from tile to tile.
+	for (const size of [32, 64]) {
+		const l = layout(size);
+		assert.ok(!l.grooved && l.bevel > 0);
+		const g = rasterize(l);
+		const ox = Math.floor((size - 5 * l.pitch) / 2);
+		const oy = Math.floor((size - 7 * l.pitch) / 2);
+		const top = [...g.subarray(oy * size + ox + l.pitch, oy * size + ox + 4 * l.pitch)];
+		assert.ok(top.every((c) => c === TILE_LIT), `${size} px: the bar's lit top edge is unbroken`);
+		const y = oy + Math.floor(l.pitch / 2);
+		const mid = [...g.subarray(y * size + ox + l.pitch + l.bevel, y * size + ox + 4 * l.pitch - l.bevel)];
+		assert.ok(mid.every((c) => c === TILE), `${size} px: no edge between tiles inside a bar`);
+	}
+	// 256 px: a shaded edge then a lit one where two tiles of the top bar meet, and never
+	// plate between them.
 	const l256 = layout(256);
-	assert.ok(l256.seam > 0 && l256.bevel > 0);
+	assert.ok(l256.grooved && l256.bevel > 0);
 	const g256 = rasterize(l256);
-	const ox = Math.floor((256 - (5 * l256.pitch - l256.seam)) / 2);
-	const y = Math.floor((256 - (7 * l256.pitch - l256.seam)) / 2) + 10;
-	assert.equal(g256[y * 256 + ox + 2 * l256.pitch - 1], PLATE, "the seam after the bar's first tile");
+	const ox = Math.floor((256 - 5 * l256.pitch) / 2);
+	const y = Math.floor((256 - 7 * l256.pitch) / 2) + Math.floor(l256.pitch / 2);
+	const meet = ox + 2 * l256.pitch;
+	assert.equal(g256[y * 256 + meet - 1], TILE_SHADE, "the groove's shaded side");
+	assert.equal(g256[y * 256 + meet], TILE_LIT, "the groove's lit side");
+	for (let x = ox + l256.pitch; x < ox + 4 * l256.pitch; x++) assert.ok(isTile(g256[y * 256 + x]!), `no plate in the bar at x ${x}`);
 });
 
-test("the svg holds the same tiles as the pixels", () => {
-	const l = layout(64);
+test("the svg holds the same plate and tiles as the pixels", () => {
+	const l = layout(SVG_SIZE);
+	const s = SVG_SIZE;
 	const svg = svgOf(l);
-	assert.ok(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"') && svg.endsWith("</svg>\n"));
-	const tiles = [...svg.matchAll(/<rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" fill="(#[0-9a-f]{6})"\/>/g)].filter((m) => m[5] !== PALETTE[PLATE]![0]);
+	assert.ok(svg.startsWith(`<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}"`) && svg.endsWith("</svg>\n"));
+	assert.ok(svg.includes(`<rect width="${s}" height="${s}" rx="${l.radius}" fill="${PALETTE[RIM]![0]}"/>`), "the rim");
+	const inner = s - 2 * l.rim;
+	assert.ok(svg.includes(`<rect x="${l.rim}" y="${l.rim}" width="${inner}" height="${inner}" rx="${l.radius - l.rim}" fill="${PALETTE[PLATE]![0]}"/>`), "the plate inside it");
+	const tiles = [...svg.matchAll(/<rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" fill="(#[0-9a-f]{6})"\/>/g)];
 	assert.equal(tiles.length, l.rects.length);
 	const g = rasterize(l);
 	const byHex = new Map(PALETTE.map((p, i) => [p[0], i]));
-	// Laying the rects back over the plate in order gives the same tiles as the raster.
-	const back = new Uint8Array(64 * 64);
+	// Laying the rects out in order gives the same tiles as the raster.
+	const back = new Uint8Array(s * s);
 	for (const m of tiles) {
 		const [x, y, w, h] = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
-		for (let yi = y; yi < y + h; yi++) for (let xi = x; xi < x + w; xi++) back[yi * 64 + xi] = byHex.get(m[5]!)!;
+		for (let yi = y; yi < y + h; yi++) for (let xi = x; xi < x + w; xi++) back[yi * s + xi] = byHex.get(m[5]!)!;
 	}
 	for (let i = 0; i < g.length; i++) if (isTile(g[i]!) || isTile(back[i]!)) assert.equal(back[i], g[i], `pixel ${i}`);
 });
@@ -137,6 +150,11 @@ test("the ico carries one entry per size, decodable at the small end", () => {
 			assert.equal(ico.readInt32LE(offset + 4), size);
 			assert.equal(ico.readInt32LE(offset + 8), size * 2, "the header counts the AND mask too");
 			assert.equal(length, 40 + size * size * 4 + Math.ceil(size / 32) * 4 * size, "the entry data is whole");
+			// The AND mask marks the cut plate corner (bottom row first, so the top row is last).
+			const mask = offset + 40 + size * size * 4;
+			const rowBytes = Math.ceil(size / 32) * 4;
+			assert.equal(ico[mask + (size - 1) * rowBytes]! & 0x80, 0x80, "the top-left pixel is masked");
+			assert.equal(ico[mask + (size >> 1) * rowBytes + (size >> 4)]! & (0x80 >> ((size >> 1) & 7)), 0, "the middle is not");
 		}
 	});
 	// A small entry's pixels are the image, bottom up and BGRA.
