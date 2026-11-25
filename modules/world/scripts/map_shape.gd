@@ -7,6 +7,8 @@ extends GroundShape
 
 ## Metres a pond's water reaches past its survey points: they are a water cell apart.
 const POND_REACH := 1.0
+## Map sizes the sea's surface reaches past the map's edge on every side.
+const SEA_REACH := 1.5
 
 ## MapRender.build's result: {land, zones, places, net, works, remoteness, sites, low, high}.
 var map: Dictionary
@@ -48,6 +50,14 @@ func _init(built: Dictionary, water_config: Dictionary) -> void:
 		for p in outline:
 			box = box.expand(p)
 		water.bodies.append({"name": "pond %d" % i, "outline": outline, "level": float(ponds[i]["level"]), "depth": float(ponds[i]["depth"]), "box": box})
+	# The sea last (#454): its outline a square well past the map so the horizon is water; the
+	# water is only where the land says it is (MapWater), and the view draws it only over
+	# the sea's own cells (WorldLand.sea_runs).
+	if land.has_coast():
+		var outer := land.bounds().grow(land.size * SEA_REACH)
+		var corners := PackedVector2Array([outer.position, Vector2(outer.end.x, outer.position.y), outer.end, Vector2(outer.position.x, outer.end.y)])
+		(water as MapWater).sea = water.bodies.size()
+		water.bodies.append({"name": "sea", "sea": true, "outline": corners, "level": land.sea_level, "depth": land.sea_level - land.seabed(), "box": outer})
 
 
 func height_at(x: float, z: float) -> float:
@@ -139,9 +149,35 @@ func camp_pad() -> Dictionary:
 	return {"centre": centre, "footprint": foot, "out": out}
 
 
+## On an island the harbour's footprint (see `harbour`) counts as the camp's.
 func near_camp(x: float, z: float, margin: float) -> bool:
 	var places: Settlements = map["places"]
-	return places != null and not places.camp_place().is_empty() and (places.camp_place()["footprint"] as Rect2).grow(margin).has_point(Vector2(x, z))
+	if places == null:
+		return false
+	var p := Vector2(x, z)
+	for rect in places.reserved():
+		if rect.grow(margin).has_point(p):
+			return true
+	return not places.camp_place().is_empty() and (places.camp_place()["footprint"] as Rect2).grow(margin).has_point(p)
+
+
+## The harbour spot by the camp (#454), where a jetty goes out to sea: {root (on the
+## shoreline, at sea level), facing (unit, on the ground plane: straight out to sea), length
+## (metres of jetty out to deep enough water), end (at sea level), depth (metres of water at
+## the end), footprint (Rect2 on x, z, kept clear round the root)}; empty on a map without a
+## coast or where none was found.
+func harbour() -> Dictionary:
+	var places: Settlements = map["places"]
+	if places == null or places.harbour().is_empty():
+		return {}
+	var h: Dictionary = places.harbour()
+	var facing: Vector2 = h["facing"]
+	return {"root": h["root"], "facing": Vector3(facing.x, 0.0, facing.y), "length": h["length"], "end": h["end"], "depth": h["depth"], "footprint": h["footprint"]}
+
+
+## The sea's surface height, or NAN on a map without a coast.
+func sea_level() -> float:
+	return land.sea_level
 
 
 ## The city as the map places it (#472): {centre (on its level), size (metres a side), toward

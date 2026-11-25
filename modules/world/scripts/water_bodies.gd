@@ -58,7 +58,7 @@ func body_at(x: float, z: float) -> int:
 func carve(x: float, z: float, dry: float) -> float:
 	var p := Vector2(x, z)
 	for b in bodies:
-		if not (b["box"] as Rect2).grow(bank).has_point(p):
+		if b.get("sea", false) or not (b["box"] as Rect2).grow(bank).has_point(p):
 			continue
 		var level := float(b["level"])
 		var from_edge := edge_distance(p, b["outline"])
@@ -97,7 +97,8 @@ func level_at(x: float, z: float) -> float:
 func flood(centre: Vector3, radius: float, depth: float) -> Vector4:
 	var p := Vector2(centre.x, centre.z)
 	for b in bodies:
-		if not (b["box"] as Rect2).grow(bank + radius).has_point(p):
+		# The sea (MapWater) floods by its own rule: its outline is not its shore.
+		if b.get("sea", false) or not (b["box"] as Rect2).grow(bank + radius).has_point(p):
 			continue
 		var level := float(b["level"])
 		var bottom := centre.y - depth

@@ -5,8 +5,17 @@ extends RefCounted
 ## camp outside them all near an edge, on a square pad of its own (#420, decision 0014).
 ## Each settlement is a compact square footprint (later stages lay out streets and terraces
 ## inside it, #430), a level (the ground's middle height there) and a connector in the
-## middle of each side where roads may arrive. Pure and seeded through its zones; no
-## autoloads.
+## middle of each side where roads may arrive. On an island (#454) the camp stands near the
+## sea with a harbour spot reserved on the shore beside it, where a jetty runs out to water
+## deep enough for a boat. Pure and seeded through its zones; no autoloads.
+
+## Camp spots tried, best first, before settling for one without a harbour.
+const CAMP_TRIES := 64
+## Metres between checks along the shore and out along a jetty.
+const SHORE_STEP := 0.5
+const JETTY_STEP := 2.0
+## Metres either side of a jetty's root the shore is measured over for how steep it is.
+const ROOT_SPAN := 3.0
 
 
 var zones: LandZones
@@ -15,6 +24,7 @@ var _city: Dictionary = {}
 var _towns: Array[Dictionary] = []
 var _camp := Vector2.ZERO
 var _camp_place: Dictionary = {}
+var _harbour: Dictionary = {}
 var _edge_margin := 0
 
 
@@ -45,8 +55,11 @@ func _init(map_zones: LandZones, config: Dictionary) -> void:
 			continue
 		_towns.append(_settlement(&"town", found))
 	var camp_cfg: Dictionary = config["camp"]
-	_camp = _pick_camp(float(camp_cfg["clearance"]))
 	var side := float(camp_cfg["size"])
+	if zones.land.has_coast() and camp_cfg.has("sea") and config.get("harbour") is Dictionary:
+		_camp = _pick_coast_camp(float(camp_cfg["clearance"]), camp_cfg["sea"], config["harbour"], side)
+	else:
+		_camp = _pick_camp(float(camp_cfg["clearance"]))
 	var zone: Dictionary = zones.zone_at(_camp.x, _camp.y)
 	_camp_place = _settlement(&"camp", {"zone": int(zone.get("id", -1)), "footprint": Rect2(_camp - Vector2.ONE * side / 2.0, Vector2.ONE * side)})
 
@@ -70,6 +83,24 @@ func camp() -> Vector2:
 ## the earthworks level it, the highway leaves from its side nearest the city.
 func camp_place() -> Dictionary:
 	return _camp_place
+
+
+## The harbour spot by the camp on an island (#454), where a jetty goes: {root (on the
+## shoreline, at sea level), facing (unit, x and z: straight out to sea), length (metres of
+## jetty out to water deep enough), end (root plus facing times length, at sea level), depth
+## (metres of water at the end), footprint (Rect2 round the root: ground kept free of roads,
+## sites, power and trees)}; empty without a coast or where no shore near the camp suits.
+func harbour() -> Dictionary:
+	return _harbour
+
+
+## Ground set aside that roads, sites, power and trees keep out of, besides the settlements:
+## the harbour's footprint.
+func reserved() -> Array[Rect2]:
+	var out: Array[Rect2] = []
+	if not _harbour.is_empty():
+		out.append(_harbour["footprint"])
+	return out
 
 
 ## The city, the towns and the camp: every footprint roads and sites keep out of.
@@ -178,3 +209,133 @@ func _pick_camp(clearance: float) -> Vector2:
 				best_grade = grade
 				best = c
 	return best
+
+
+## On an island: the best spot for the camp `sea` [nearest, furthest] metres from the sea on
+## flat or open ground of the main island, clear of every settlement by `clearance`, with a
+## harbour spot on the shore within reach (see `_find_harbour`); the flattest such spot in
+## the largest such ground first, as `LandZones` picks its spawn. Without a spot that has a
+## harbour, the best spot without one; without any, as on a map with no coast.
+func _pick_coast_camp(clearance: float, sea: Array, harbour_cfg: Dictionary, side: float) -> Vector2:
+	var places: Array[Dictionary] = _towns.duplicate()
+	if not _city.is_empty():
+		places.append(_city)
+	var land := zones.land
+	var near := float(sea[0])
+	var far := float(sea[1])
+	var spots: Array[Vector3] = []
+	for j in zones.side():
+		for i in zones.side():
+			var c := zones.cell_centre(i, j)
+			var to_sea := zones.sea_distance(c.x, c.y)
+			if to_sea < near or to_sea > far:
+				continue
+			if places.any(func(p: Dictionary) -> bool: return (p["footprint"] as Rect2).grow(clearance).has_point(c)):
+				continue
+			# The whole pad on usable ground, not just its middle.
+			var usable := true
+			for corner: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1), Vector2.ZERO]:
+				var p := c + corner * side / 2.0
+				var kind := str(zones.zone_at(p.x, p.y).get("kind", ""))
+				if kind != "flat" and kind != "open":
+					usable = false
+					break
+			if not usable:
+				continue
+			var zone: Dictionary = zones.zone_at(c.x, c.y)
+			spots.append(Vector3(c.x, c.y, land.grade(c.x, c.y) - minf(float(zone["area"]), 20000.0) / 2.0e6))
+	if spots.is_empty():
+		return _pick_camp(clearance)
+	spots.sort_custom(func(a: Vector3, b: Vector3) -> bool: return a.z < b.z if a.z != b.z else (a.x < b.x if a.x != b.x else a.y < b.y))
+	for k in mini(spots.size(), CAMP_TRIES):
+		var at := Vector2(spots[k].x, spots[k].y)
+		var found := _find_harbour(at, side, harbour_cfg, places)
+		if not found.is_empty():
+			_harbour = found
+			return at
+	return Vector2(spots[0].x, spots[0].y)
+
+
+## The harbour spot nearest the camp at `camp` (its pad `side` metres a side): where the main
+## island's shore meets the sea within `reach` metres, the ground at the waterline no steeper
+## than `max_grade`, and a jetty straight out to sea (facing down the shore's slope) reaches
+## water `min_depth` deep within `length` [shortest, longest] metres over nothing but sea. Its
+## footprint (`size` metres a side round the root) keeps off the camp pad and `places`.
+## Empty when no shore in reach suits.
+func _find_harbour(camp: Vector2, side: float, cfg: Dictionary, places: Array[Dictionary]) -> Dictionary:
+	var land := zones.land
+	var reach := float(cfg["reach"])
+	var lengths: Array = cfg["length"]
+	var min_depth := float(cfg["min_depth"])
+	var max_grade := float(cfg["max_grade"])
+	var size := float(cfg["size"])
+	var pad := Rect2(camp - Vector2.ONE * side / 2.0, Vector2.ONE * side)
+	var cell := zones.cell_size()
+	var span := ceili(reach / cell) + 1
+	var origin := zones.cell_centre(0, 0)
+	var ci := roundi((camp.x - origin.x) / cell)
+	var cj := roundi((camp.y - origin.y) / cell)
+	var best: Dictionary = {}
+	var best_score := INF
+	for j in range(cj - span, cj + span + 1):
+		for i in range(ci - span, ci + span + 1):
+			if not zones.is_sea_cell(i, j):
+				continue
+			var sea_c := zones.cell_centre(i, j)
+			if sea_c.distance_to(camp) > reach:
+				continue
+			for d: Vector2i in LandZones.SIDES:
+				var li := i + d.x
+				var lj := j + d.y
+				if li < 0 or lj < 0 or li >= zones.side() or lj >= zones.side() or zones.is_sea_cell(li, lj):
+					continue
+				var land_c := zones.cell_centre(li, lj)
+				if str(zones.zone_at(land_c.x, land_c.y).get("kind", "")) == "islet":
+					continue
+				var spot := _harbour_at(land_c, sea_c, lengths, min_depth, max_grade, size)
+				if spot.is_empty():
+					continue
+				var foot: Rect2 = spot["footprint"]
+				if foot.intersects(pad) or places.any(func(p: Dictionary) -> bool: return (p["footprint"] as Rect2).intersects(foot)):
+					continue
+				var score := (spot["root"] as Vector3).distance_to(Vector3(camp.x, land.sea_level, camp.y)) + float(spot["length"])
+				if score < best_score:
+					best_score = score
+					best = spot
+	return best
+
+
+## The harbour spot where the shoreline crosses from `land_c` towards `sea_c`, or empty when
+## the ground there is too steep or no jetty reaches deep enough water over open sea.
+func _harbour_at(land_c: Vector2, sea_c: Vector2, lengths: Array, min_depth: float, max_grade: float, size: float) -> Dictionary:
+	var land := zones.land
+	var sea := land.sea_level
+	var root := Vector2.INF
+	var steps := ceili(land_c.distance_to(sea_c) / SHORE_STEP)
+	for k in steps + 1:
+		var p := land_c.lerp(sea_c, float(k) / steps)
+		if land.land_height(p.x, p.y) < sea:
+			root = p
+			break
+	if root == Vector2.INF:
+		return {}
+	var g := Vector2(land.land_height(root.x + ROOT_SPAN, root.y) - land.land_height(root.x - ROOT_SPAN, root.y),
+		land.land_height(root.x, root.y + ROOT_SPAN) - land.land_height(root.x, root.y - ROOT_SPAN)) / (2.0 * ROOT_SPAN)
+	if g.length() > max_grade or g.length() < 0.0001:
+		return {}
+	var facing := -g.normalized()
+	var length := float(lengths[0])
+	while length <= float(lengths[1]):
+		var end := root + facing * length
+		var depth := sea - land.land_height(end.x, end.y)
+		if depth >= min_depth:
+			# Open water all the way out: no rock or sandbar the jetty would cross.
+			var d := JETTY_STEP
+			while d <= length and land.is_sea(root.x + facing.x * d, root.y + facing.y * d):
+				d += JETTY_STEP
+			if d <= length:
+				return {}
+			return {"root": Vector3(root.x, sea, root.y), "facing": facing, "length": length, "end": Vector3(end.x, sea, end.y), "depth": depth,
+				"footprint": Rect2(root - Vector2.ONE * size / 2.0, Vector2.ONE * size)}
+		length += JETTY_STEP
+	return {}

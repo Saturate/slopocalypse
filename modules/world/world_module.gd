@@ -228,6 +228,8 @@ func _load_world() -> void:
 	# The players' camp (CampLayout): the map's, or on the flat world one round its spawn.
 	var camp: Variant = world.get("camp")
 	_announcement["camp"] = camp if camp is CampLayout else CampLayout.of_ready(_announcement)
+	# Where a jetty goes on an island (#454, see MapShape.harbour); empty elsewhere.
+	_announcement["harbour"] = map.harbour() if map != null else {}
 	_loaded = true
 	var held := _held
 	_held = []

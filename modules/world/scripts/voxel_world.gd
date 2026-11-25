@@ -39,6 +39,7 @@ const GRASS := Color(0.36, 0.5, 0.22)
 const LITTER := Color(0.33, 0.29, 0.18)
 const STRAW := Color(0.7, 0.61, 0.36)
 const STONE := Color(0.5, 0.49, 0.46)
+const SAND := Color(0.78, 0.71, 0.52)
 const ROCK := Color(0.45, 0.44, 0.42)
 const SOIL := Color(0.42, 0.31, 0.2)
 const DIRT := Color(0.38, 0.28, 0.18)
@@ -119,6 +120,12 @@ var _lane_sets: Dictionary[StringName, Array] = {}
 var _lanes_in: Dictionary[Vector2i, PackedFloat32Array] = {}
 ## How far past a lane's edge it may still change the ground, metres.
 var _lane_margin := 2.0
+## The distant land's grid (metres) and how far out, as a share of the load distance, it takes
+## over from the voxel ground: short of the edge, so no gap opens between them.
+const FAR_STEP := 16.0
+const FAR_CUT := 0.85
+## See `sea_depth_limit`.
+var _sea_depth_limit := INF
 
 
 func _ready() -> void:
@@ -160,6 +167,9 @@ func _ready() -> void:
 		return
 	heights = map
 	_biomes = map.biomes()
+	var sea: Variant = (world.get("water", {}) as Dictionary).get("sea")
+	if sea is Dictionary and map.land.has_coast():
+		_sea_depth_limit = float((sea as Dictionary).get("depth_limit", INF))
 	home = map.camp()
 	# Other modules place things on the ground where no tile is built (the server only builds
 	# near players): `ground_height` answers anywhere.
@@ -178,6 +188,10 @@ func _ready() -> void:
 		view.config = world.get("water", {})
 		add_child(view)
 		flooded.connect(view.add_puddle)
+		var far := FarLand.new()
+		far.name = "FarLand"
+		far.build(heights, FAR_STEP, float(_cfg["load_distance"]) * FAR_CUT, func(x: float, z: float) -> Color: return _colour_at(x, z, [], []))
+		add_child(far)
 	# The spawn is solid before anyone arrives.
 	update_around([home], INF)
 
@@ -297,6 +311,20 @@ func water_depth_at(position: Vector3) -> float:
 	if is_nan(level):
 		return 0.0
 	return maxf(level - surface_height(position.x, position.z), 0.0)
+
+
+## How deep the sea is at `position` (#454): 0 off the sea (on land, in a pond or a flooded
+## crater). From the world data, as `water_depth_at`.
+func sea_depth_at(position: Vector3) -> float:
+	if not heights is MapShape or not (heights as MapShape).land.is_sea(position.x, position.z):
+		return 0.0
+	return maxf((heights as MapShape).sea_level() - surface_height(position.x, position.z), 0.0)
+
+
+## Metres of sea under a swimmer past which they tire (world.json water.sea depth_limit);
+## INF without one.
+func sea_depth_limit() -> float:
+	return _sea_depth_limit
 
 
 ## The surface of the water at `position`'s x and z (a pond or a flooded crater), or NAN.
@@ -1162,6 +1190,7 @@ func _colour_at(x: float, z: float, pads: Array, digs: Array) -> Color:
 		return GRASS
 	var c := GRASS.lerp(STRAW, _biomes.dry(x, z))
 	c = c.lerp(LITTER, _biomes.forest(x, z) * 0.8)
+	c = c.lerp(SAND, _biomes.sand(x, z))
 	c = c.lerp(STONE, _biomes.rock(x, z) * 0.6)
 	if not (pads.is_empty() and digs.is_empty()):
 		var h := ground_height(x, z)

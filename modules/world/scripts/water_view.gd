@@ -1,10 +1,12 @@
 class_name WaterView
 extends Node3D
-## Client: one flat surface per pond at its level, shaded by how much water is under each
+## Client: one flat surface per pond at its level (and the sea's over the sea, #454, with its
+## own look: `sea` in the config), shaded by how much water is under each
 ## spot (shallow tint at the edge to deep tint `colour_depth` metres down), with what is
 ## under the surface showing through, on a 0.25 m grid so it stays blocky like the ground.
 ## A light band where it thins out at the shore, slow blocky waves drifting with `wind`, and
 ## the sky's tint as you look across it. Flooded craters get the same surface over their bowl.
+## The sea's waves are larger and stronger, and foam runs in to its shore in broken lines.
 ##
 ## Ripples: the last `MAX_RIPPLES` disturbances (rounds and blasts hitting the water, people
 ## and cars moving through it) go to the shader as rings that grow at `ripple_speed` and fade
@@ -32,7 +34,25 @@ uniform vec4 ripples[16];
 uniform float now;
 uniform float ripple_speed = 1.5;
 uniform float ripple_seconds = 1.5;
+// Below 1 the wave pattern grows larger; wave_strength scales how much the crests stand out.
+uniform float wave_scale = 1.0;
+uniform float wave_strength = 1.0;
+// Foam within foam_depth metres of water against the ground (0: none), in lines that run in
+// to the shore at foam_speed.
+uniform vec3 foam : source_color = vec3(0.92, 0.95, 0.95);
+uniform float foam_depth = 0.0;
+uniform float foam_speed = 0.3;
+// The water's depth from the map (metres, red), over `depth_map_rect` (x, z, width, depth):
+// where no ground is built under the surface (past the terrain's reach) the eye would look
+// through to nothing, so the depth comes from here instead.
+uniform sampler2D depth_map : filter_linear, repeat_disable;
+uniform vec4 depth_map_rect = vec4(0.0);
+// What the floor looks like through the water where none is drawn (as lit, before the tint).
+uniform vec3 bed : source_color = vec3(0.0);
+uniform float bed_distance = 100000.0;
 varying vec3 world;
+// Metres past which what the depth texture holds is the sky (at infinity), not ground.
+const float NOTHING_PAST = 1000000.0;
 
 void vertex() {
 	world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -52,7 +72,7 @@ float noise(vec2 p) {
 
 float waves(vec2 at) {
 	vec2 drift = wind * now;
-	return noise((at + drift) * 0.35) * 0.65 + noise((at - drift * 0.6) * 0.9) * 0.35;
+	return noise((at + drift) * 0.35 * wave_scale) * 0.65 + noise((at - drift * 0.6) * 0.9 * wave_scale) * 0.35;
 }
 
 void fragment() {
@@ -70,21 +90,48 @@ void fragment() {
 	view.xyz /= view.w;
 	// How much water the eye looks through to reach what is behind the surface here.
 	float through = max(length(view.xyz) - length(VERTEX), 0.0);
+	// What shows through the water: `bed` where nothing is drawn under it.
+	float seen = 1.0;
+	// How much water the colour goes by: what the eye looks through, or with the map's depth
+	// (the sea) that depth slanted by the view, so the colour neither steps where coarser
+	// ground is drawn further off nor turns to open ocean past where any ground is drawn.
+	float colour_through = through;
+	if (depth_map_rect.z > 0.0) {
+		float known = texture(depth_map, (world.xz - depth_map_rect.xy) / depth_map_rect.zw).r;
+		colour_through = known / max(facing, 0.15);
+		// Nothing drawn there reads as the far plane (or past it, at infinity).
+		if (!(length(view.xyz) < NOTHING_PAST)) {
+			through = colour_through;
+			seen = 0.0;
+		}
+	}
 	if (-view.z < -VERTEX.z) {
 		// Something in front of the water: don't refract it in.
 		uv = SCREEN_UV;
 		through = 0.0;
+		colour_through = 0.0;
 	}
-	float k = clamp(through / colour_depth, 0.0, 1.0);
+	float k = clamp(colour_through / colour_depth, 0.0, 1.0);
 	vec3 behind = texture(screen, uv).rgb;
 	vec3 tint = mix(shallow, deep, sqrt(k));
 	// What is under the water was lit already: it shows through as emission, fading with depth,
 	// so it isn't lit twice; the water's own tint takes the light.
-	vec3 albedo = tint * (0.6 + 0.4 * k) * (0.85 + band_w * mix(0.45, 0.3, facing));
-	EMISSION = behind * shallow * 1.2 * (1.0 - k);
+	vec3 albedo = tint * (0.6 + 0.4 * k) * (0.85 + band_w * mix(0.45, 0.3, facing) * wave_strength);
+	// Further off than `bed_distance` the floor shows as `bed`: the ground drawn there is
+	// coarser and past the sun's shadows, and would show through in patches.
+	seen *= 1.0 - smoothstep(bed_distance * 0.6, bed_distance, length(VERTEX));
+	EMISSION = mix(bed, behind, seen) * shallow * 1.2 * (1.0 - k);
 	// A light band where the water thins out against the ground.
 	float edge = 1.0 - smoothstep(shore_depth * 0.4, shore_depth, through);
 	albedo = mix(albedo, shore, edge * 0.65);
+	if (foam_depth > 0.0) {
+		// Lines of foam rolling in, broken up into patches, and a solid rim at the waterline.
+		float near_shore = 1.0 - smoothstep(foam_depth * 0.3, foam_depth, through);
+		float lines = step(0.6, fract(through / foam_depth * 1.5 + now * foam_speed));
+		float broken = step(0.4, noise(centre * 0.5 + vec2(now * 0.2, 0.0)));
+		float rim = 1.0 - smoothstep(foam_depth * 0.08, foam_depth * 0.2, through);
+		albedo = mix(albedo, foam, clamp(rim + near_shore * lines * broken * 0.75, 0.0, 1.0));
+	}
 	// Looking across it, water shows the sky; kept a tint, not a white mirror.
 	albedo = mix(albedo, sky, pow(1.0 - facing, 2.5) * 0.3);
 	float ring = 0.0;
@@ -110,7 +157,7 @@ void fragment() {
 	// Glints are the sun off wave faces seen at a low angle; from above there are none.
 	float glint = step(0.997, hash(snapped + floor(now * 4.0))) * smoothstep(0.6, 0.2, facing);
 	EMISSION += vec3(0.9, 0.95, 1.0) * glint * 0.45 * far;
-	vec3 tilt = vec3(slope.x, 0.0, slope.y) * 0.6 * mix(0.2, 1.0, facing) + vec3(push.x, 0.0, push.y) * 0.25;
+	vec3 tilt = vec3(slope.x, 0.0, slope.y) * 0.6 * wave_strength * mix(0.2, 1.0, facing) + vec3(push.x, 0.0, push.y) * 0.25;
 	NORMAL = normalize(NORMAL + (VIEW_MATRIX * vec4(tilt, 0.0)).xyz);
 	ROUGHNESS = mix(0.3, 0.12, facing);
 	SPECULAR = mix(0.12, 0.35, facing);
@@ -132,6 +179,8 @@ var water: WaterBodies
 var config: Dictionary = {}
 
 var _material: ShaderMaterial
+## The sea's: the same shader with the sea's look; null on a map without one.
+var _sea_material: ShaderMaterial
 var _ripples := PackedVector4Array()
 var _next_ripple := 0
 var _clock := 0.0
@@ -143,22 +192,31 @@ var _last_at: Dictionary[int, Vector3] = {}
 func _ready() -> void:
 	var shader := Shader.new()
 	shader.code = SHADER
-	_material = ShaderMaterial.new()
-	_material.shader = shader
-	_material.set_shader_parameter(&"shallow", _colour(config.get("shallow", [0.42, 0.68, 0.52])))
-	_material.set_shader_parameter(&"deep", _colour(config.get("deep", [0.09, 0.36, 0.26])))
-	_material.set_shader_parameter(&"colour_depth", float(config.get("colour_depth", 3.0)))
-	_material.set_shader_parameter(&"shore", _colour(config.get("shore_colour", [0.5, 0.75, 0.68])))
-	_material.set_shader_parameter(&"sky", _colour(config.get("sky", [0.62, 0.71, 0.78])))
-	_material.set_shader_parameter(&"shore_depth", float(config.get("shore_depth", 0.2)))
-	var wind: Array = config.get("wind", [0.6, 0.25])
-	_material.set_shader_parameter(&"wind", Vector2(float(wind[0]), float(wind[1])))
-	_material.set_shader_parameter(&"ripple_speed", float(config.get("ripple_speed", 1.5)))
-	_material.set_shader_parameter(&"ripple_seconds", float(config.get("ripple_seconds", 1.5)))
 	_ripples.resize(MAX_RIPPLES)
-	_material.set_shader_parameter(&"ripples", _ripples)
+	_material = _make_material(shader, config)
 	for i in water.bodies.size():
-		_add_surface(surface_mesh(water.bodies[i]["outline"], water.level_of(i)), "Body%d" % i)
+		var body := water.bodies[i]
+		if body.get("sea", false):
+			# The sea's look over the pond's: what it leaves out stays as a pond's.
+			var look := config.duplicate()
+			look.merge(config.get("sea", {}), true)
+			# The sea takes no shadows: far off, the sun's shadows end in a hard line across it.
+			var sea_shader := Shader.new()
+			sea_shader.code = SHADER.replace("depth_draw_always;", "depth_draw_always, shadows_disabled;")
+			_sea_material = _make_material(sea_shader, look)
+			var land := (water as MapWater).land if water is MapWater else null
+			var depths := land.sea_depth_image() if land != null else null
+			if depths != null:
+				_sea_material.set_shader_parameter(&"depth_map", ImageTexture.create_from_image(depths))
+				var rect := land.sea_depth_rect()
+				_sea_material.set_shader_parameter(&"depth_map_rect", Vector4(rect.position.x, rect.position.y, rect.size.x, rect.size.y))
+			_add_surface(sea_mesh(water, water.level_of(i)), "Sea", _sea_material)
+			continue
+		# A map's pond over its own cells: its outline is a hull that may reach over the sea.
+		if water is MapWater and (water as MapWater).land != null:
+			_add_surface(rects_mesh((water as MapWater).land.pond_runs(i), water.level_of(i)), "Body%d" % i)
+		else:
+			_add_surface(surface_mesh(body["outline"], water.level_of(i)), "Body%d" % i)
 	for puddle in water.puddles:
 		add_puddle(puddle)
 	EventBus.subscribe(&"weapon.fired", _on_fired)
@@ -172,10 +230,34 @@ func _exit_tree() -> void:
 	EventBus.unsubscribe(&"explosion", _on_explosion)
 
 
-func _add_surface(mesh: ArrayMesh, part_name: String) -> void:
+func _make_material(shader: Shader, look: Dictionary) -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	material.set_shader_parameter(&"shallow", _colour(look.get("shallow", [0.42, 0.68, 0.52])))
+	material.set_shader_parameter(&"deep", _colour(look.get("deep", [0.09, 0.36, 0.26])))
+	material.set_shader_parameter(&"colour_depth", float(look.get("colour_depth", 3.0)))
+	material.set_shader_parameter(&"shore", _colour(look.get("shore_colour", [0.5, 0.75, 0.68])))
+	material.set_shader_parameter(&"sky", _colour(look.get("sky", [0.62, 0.71, 0.78])))
+	material.set_shader_parameter(&"shore_depth", float(look.get("shore_depth", 0.2)))
+	var wind: Array = look.get("wind", [0.6, 0.25])
+	material.set_shader_parameter(&"wind", Vector2(float(wind[0]), float(wind[1])))
+	material.set_shader_parameter(&"ripple_speed", float(look.get("ripple_speed", 1.5)))
+	material.set_shader_parameter(&"ripple_seconds", float(look.get("ripple_seconds", 1.5)))
+	material.set_shader_parameter(&"wave_scale", float(look.get("wave_scale", 1.0)))
+	material.set_shader_parameter(&"wave_strength", float(look.get("wave_strength", 1.0)))
+	material.set_shader_parameter(&"foam", _colour(look.get("foam", [0.92, 0.95, 0.95])))
+	material.set_shader_parameter(&"foam_depth", float(look.get("foam_depth", 0.0)))
+	material.set_shader_parameter(&"foam_speed", float(look.get("foam_speed", 0.3)))
+	material.set_shader_parameter(&"bed", _colour(look.get("bed", [0.0, 0.0, 0.0])))
+	material.set_shader_parameter(&"bed_distance", float(look.get("bed_distance", 100000.0)))
+	material.set_shader_parameter(&"ripples", _ripples)
+	return material
+
+
+func _add_surface(mesh: ArrayMesh, part_name: String, material: ShaderMaterial = null) -> void:
 	if mesh == null or mesh.get_surface_count() == 0:
 		return
-	mesh.surface_set_material(0, _material)
+	mesh.surface_set_material(0, material if material != null else _material)
 	var part := MeshInstance3D.new()
 	part.name = part_name
 	part.mesh = mesh
@@ -232,6 +314,8 @@ func _process(delta: float) -> void:
 	var t := Prof.start()
 	_clock += delta
 	_material.set_shader_parameter(&"now", _clock)
+	if _sea_material != null:
+		_sea_material.set_shader_parameter(&"now", _clock)
 	_wade_in -= delta
 	if _wade_in <= 0.0:
 		_wade_in = WADE_EVERY
@@ -245,6 +329,8 @@ func add_ripple(at: Vector3, strength: float) -> void:
 	_next_ripple = (_next_ripple + 1) % MAX_RIPPLES
 	if _material != null:
 		_material.set_shader_parameter(&"ripples", _ripples)
+	if _sea_material != null:
+		_sea_material.set_shader_parameter(&"ripples", _ripples)
 
 
 func ripple_count() -> int:
@@ -336,6 +422,42 @@ func _splash(at: Vector3, count: int, speed: float) -> void:
 
 static func _colour(rgb: Array) -> Color:
 	return Color(float(rgb[0]), float(rgb[1]), float(rgb[2]))
+
+
+## The sea's surface at `level`: a quad over each run of the sea's cells on the map
+## (WorldLand.sea_runs) and a frame round the map out to the sea body's outline, so the
+## horizon is water but no inland hollow below sea level gets the sea's surface. Null
+## without a sea.
+static func sea_mesh(bodies: WaterBodies, level: float) -> ArrayMesh:
+	if not bodies is MapWater or (bodies as MapWater).land == null or (bodies as MapWater).sea < 0:
+		return null
+	var map_water := bodies as MapWater
+	var rects := map_water.land.sea_runs()
+	var inner := map_water.land.bounds()
+	var outer: Rect2 = map_water.bodies[map_water.sea]["box"]
+	rects.append(Rect2(outer.position, Vector2(outer.size.x, inner.position.y - outer.position.y)))
+	rects.append(Rect2(Vector2(outer.position.x, inner.end.y), Vector2(outer.size.x, outer.end.y - inner.end.y)))
+	rects.append(Rect2(Vector2(outer.position.x, inner.position.y), Vector2(inner.position.x - outer.position.x, inner.size.y)))
+	rects.append(Rect2(Vector2(inner.end.x, inner.position.y), Vector2(outer.end.x - inner.end.x, inner.size.y)))
+	return rects_mesh(rects, level)
+
+
+## Flat quads at `level` over `rects` (x, z), facing up; null for none.
+static func rects_mesh(rects: Array[Rect2], level: float) -> ArrayMesh:
+	if rects.is_empty():
+		return null
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_normal(Vector3.UP)
+	for r in rects:
+		var a := Vector3(r.position.x, level, r.position.y)
+		var b := Vector3(r.end.x, level, r.position.y)
+		var c := Vector3(r.end.x, level, r.end.y)
+		var d := Vector3(r.position.x, level, r.end.y)
+		# Wound to face up.
+		for v: Vector3 in [a, b, c, a, c, d]:
+			st.add_vertex(v)
+	return st.commit()
 
 
 ## The outline filled in, flat at `level`, facing up; null if it can't be filled.

@@ -547,7 +547,7 @@ func _plan_trees(rng: RandomNumberGenerator, area: Rect2, clearings: Array[Vecto
 	var tries := int(float(_cfg["trees_per_hectare"]) * area.get_area() / 10000.0)
 	var weight := func(x: float, z: float) -> float:
 		# Squared so only forest cores are dense; most woodland is open enough to see through.
-		return maxf(pow(_biomes.forest(x, z), 2.0), 0.02) * (1.0 - _biomes.rock(x, z) * 0.7)
+		return maxf(pow(_biomes.forest(x, z), 2.0), 0.02) * (1.0 - _biomes.rock(x, z) * 0.7) * (1.0 - _biomes.sand(x, z))
 	for t in tries:
 		var spot: Variant = _spot(rng, area, weight, clearings)
 		if not spot is Vector3:
@@ -703,8 +703,8 @@ func _plan_grass(rng: RandomNumberGenerator, area: Rect2, clearings: Array[Vecto
 	for i in count:
 		var x := rng.randf_range(area.position.x, area.end.x)
 		var z := rng.randf_range(area.position.y, area.end.y)
-		# Thick in meadows, thin on the forest floor, on rock and never on the road.
-		var keep := 1.0 - _biomes.forest(x, z) * 0.8 - _biomes.rock(x, z) * 0.6
+		# Thick in meadows, thin on the forest floor and on rock, never on the road or a beach.
+		var keep := 1.0 - _biomes.forest(x, z) * 0.8 - _biomes.rock(x, z) * 0.6 - _biomes.sand(x, z)
 		if rng.randf() > keep:
 			continue
 		if _heights.near_road(x, z, 0.5) or _on_yard(x, z, 0.5, yards):

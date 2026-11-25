@@ -42,14 +42,21 @@ func test_zones_follow_the_land() -> void:
 	var land := zones.land
 	for pond: Dictionary in land.ponds():
 		var c: Vector2 = pond["centre"]
-		assert_str(str(zones.zone_at(c.x, c.y)["kind"])).is_equal("water")
+		# Its deepest survey point sits on a corner of the zone cells: one of the four round it
+		# is water (a small pond may miss the middles of the others).
+		var cell := zones.cell_size()
+		var wet := false
+		for d: Vector2 in [Vector2(-0.5, -0.5), Vector2(0.5, -0.5), Vector2(-0.5, 0.5), Vector2(0.5, 0.5)]:
+			var p := c + d * cell
+			wet = wet or str(zones.zone_at(p.x, p.y)["kind"]) == "water"
+		assert_bool(wet).override_failure_message("pond at %s not in a water zone" % c).is_true()
 	for zone: Dictionary in zones.zones(&"flat"):
 		var c: Vector2 = zone["centre"]
 		if zones.zone_at(c.x, c.y).get("id") == zone["id"]:
 			assert_float(land.grade(c.x, c.y)).is_less(float(_recipe()["zones"]["slope_grade"]))
 
 
-func test_the_player_starts_on_flat_dry_ground_near_an_edge() -> void:
+func test_the_player_starts_on_flat_dry_ground_near_the_sea() -> void:
 	var recipe := _recipe()
 	var cfg: Dictionary = recipe["zones"]
 	# Eight seeds: building zones takes a while, and the city test already covers twenty.
@@ -59,8 +66,8 @@ func test_the_player_starts_on_flat_dry_ground_near_an_edge() -> void:
 		var land := zones.land
 		assert_bool(is_nan(land.water_level(spawn.x, spawn.y))).is_true()
 		assert_float(land.grade(spawn.x, spawn.y)).override_failure_message("seed %d: spawn on a slope" % seed_value).is_less(float(recipe["walkable"]["flat_grade"]) * 1.5)
-		var b := land.bounds()
-		var to_edge := minf(minf(spawn.x - b.position.x, b.end.x - spawn.x), minf(spawn.y - b.position.y, b.end.y - spawn.y))
+		# On an island the edge is the sea (#454), measured on the zone grid.
+		var to_edge := zones.sea_distance(spawn.x, spawn.y)
 		assert_float(to_edge).is_between(float(cfg["spawn_margin"]) - 1.0, float(cfg["spawn_edge"]))
 
 

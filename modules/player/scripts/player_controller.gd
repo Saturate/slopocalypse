@@ -17,6 +17,9 @@ const REQUIRED := {
 	"wade_speed": TYPE_FLOAT,
 	"swim_depth": TYPE_FLOAT,
 	"swim_speed": TYPE_FLOAT,
+	"sea_stamina_seconds": TYPE_FLOAT,
+	"sea_stamina_recovery": TYPE_FLOAT,
+	"exhausted_damage": TYPE_FLOAT,
 	"step_height": TYPE_FLOAT,
 	"climb_speed": TYPE_FLOAT,
 	"climb_move_share": TYPE_FLOAT,
@@ -62,6 +65,8 @@ const PITCH_LIMIT := deg_to_rad(89.0)
 const STEP_PROBE := 0.12
 ## How quickly a swimmer settles to floating height (per second, of the gap).
 const SWIM_SETTLE := 4.0
+## Seconds between hurts while tired out at sea.
+const EXHAUSTED_EVERY := 1.0
 ## Vertical speed (m/s) past which a copy held still counts as off the ground: the synced
 ## velocity jitters a little on slopes and steps.
 const HELD_AIRBORNE_SPEED := 1.5
@@ -87,6 +92,13 @@ var _was_crouching := false
 var _lean := 0.0
 ## Water deeper than `swim_depth` under the feet: floating, slow, weapon down.
 var swimming := false
+## Seconds left swimming out past the sea's depth limit before tiring (#454): drains out
+## there, comes back anywhere else; at 0 the swimmer loses health (`exhausted_damage` each
+## second, on the server) until they turn back. Kept by the server and the body's owner alike
+## (the HUD shows it); negative until the first step sets it full.
+var sea_stamina := -1.0
+## Seconds spent tired since the last hurt.
+var _exhausted_for := 0.0
 ## The node answering `water_depth_at` (the voxel world), found once.
 var _ground: Node
 
@@ -291,6 +303,7 @@ func _step_normal(delta: float) -> void:
 
 	var depth := water_depth()
 	_set_swimming(depth > float(config["swim_depth"]))
+	_tire(delta)
 	var ladder := {} if swimming else Ladders.at(global_position, _capsule.height, _capsule.radius)
 	var was_climbing := climbing
 	climbing = false
@@ -454,6 +467,41 @@ func water_depth() -> float:
 			_ground = null
 			return 0.0
 	return float(_ground.call(&"water_depth_at", global_position))
+
+
+## Whether the swimmer is out where the sea is deeper than its depth limit.
+func far_out() -> bool:
+	if not swimming or _ground == null or not _ground.has_method(&"sea_depth_at"):
+		return false
+	return float(_ground.call(&"sea_depth_at", global_position)) > float(_ground.call(&"sea_depth_limit"))
+
+
+## Sea stamina as a share of full, 0 to 1.
+func sea_stamina_share() -> float:
+	var full := float(config["sea_stamina_seconds"])
+	return clampf(sea_stamina / full, 0.0, 1.0) if full > 0.0 and sea_stamina >= 0.0 else 1.0
+
+
+func _tire(delta: float) -> void:
+	var full := float(config["sea_stamina_seconds"])
+	var health := get_node_or_null(^"Health") as HealthComponent
+	# A fresh body (or one back from the dead) starts rested.
+	if sea_stamina < 0.0 or (health != null and health.is_dead()):
+		sea_stamina = full
+		_exhausted_for = 0.0
+	if far_out():
+		sea_stamina = maxf(sea_stamina - delta, 0.0)
+	else:
+		sea_stamina = minf(sea_stamina + delta * float(config["sea_stamina_recovery"]), full)
+	if sea_stamina > 0.0:
+		_exhausted_for = 0.0
+		return
+	# Hurt once a second, not every tick: each hit flashes the screen and tells listeners.
+	_exhausted_for += delta
+	if _exhausted_for >= EXHAUSTED_EVERY:
+		_exhausted_for -= EXHAUSTED_EVERY
+		if multiplayer.is_server() and health != null:
+			health.server_apply_damage(float(config["exhausted_damage"]) * EXHAUSTED_EVERY)
 
 
 ## Weapons read the meta (they hold no reference to this script's type).

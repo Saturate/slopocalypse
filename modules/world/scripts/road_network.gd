@@ -363,7 +363,13 @@ func _route(a: Vector2, b: Vector2, max_grade: float, cross := 0.0) -> PackedVec
 					continue
 				_extra[k] = float(cost.get(kind, 0.0))
 				for place in places:
-					if (place["footprint"] as Rect2).grow(-cell * 0.5).has_point(c):
+					# Every cell whose middle lies inside: a footprint's edge runs along cell edges,
+					# where a half-cell inset leaves the cells along its far sides open.
+					if (place["footprint"] as Rect2).grow(-cell * 0.25).has_point(c):
+						_extra[k] = -1.0
+				# Any cell it touches: a road's width must not reach onto it either.
+				for rect in settlements.reserved():
+					if rect.grow(cell * 0.5).has_point(c):
 						_extra[k] = -1.0
 	if _slopes.is_empty():
 		_slopes = _grid_slopes(_heights, n, cell)
@@ -473,6 +479,9 @@ func _clear_run(a: Vector2, b: Vector2, max_grade: float) -> bool:
 			return false
 		for place in places:
 			if (place["footprint"] as Rect2).grow(-1.0).has_point(p):
+				return false
+		for rect in settlements.reserved():
+			if rect.has_point(p):
 				return false
 		for rect in _avoid:
 			if rect.grow(_track_half()).has_point(p):

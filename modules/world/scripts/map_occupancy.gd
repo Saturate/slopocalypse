@@ -27,6 +27,8 @@ func _init(map_zones: LandZones, places: Settlements, net: RoadNetwork, clearanc
 	if places != null:
 		for place in places.all_places():
 			_mark((place["footprint"] as Rect2).grow(clearance))
+		for rect in places.reserved():
+			_mark(rect.grow(clearance))
 	if net != null:
 		for road: Dictionary in net.roads():
 			var half := float(road["width"]) / 2.0 + clearance

@@ -125,6 +125,7 @@ func test_a_blast_in_the_air_dents_less_and_high_enough_not_at_all() -> void:
 func test_digging_stops_at_the_deepest_a_crater_may_go() -> void:
 	# Wide enough that its share of the radius would go deeper than the cap.
 	var spot := _out + Vector3(-3, 0, 3)
+	spot.y = _voxels.ground_height(spot.x, spot.z)
 	var radius := _voxels.max_dig_depth / _voxels.crater_depth_share + 2.0
 	var deepest := _voxels.ground_height(spot.x, spot.z) - _voxels.max_dig_depth
 	for i in 4:
