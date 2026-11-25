@@ -39,7 +39,7 @@
       "sea_band": 180.0,
       "land_band": 100.0,
       "sand_grade": 0.12,
-      "sand_height": 2.5
+      "sand_height": 2.5, "wash": 1.2
     },
     "cliff": {
       "rise": 9.0,
@@ -166,7 +166,7 @@
       ],
       "min_depth": 2.5,
       "max_grade": 0.35,
-      "size": 24.0
+      "size": 48.0
     }
   },
   "roads": {

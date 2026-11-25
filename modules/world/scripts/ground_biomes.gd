@@ -1,6 +1,7 @@
 class_name GroundBiomes
 extends RefCounted
-## What grows and lies on the ground at a point, 0 to 1 each: woods, dry grass, rock, sand. The
+## What grows and lies on the ground at a point, 0 to 1 each: woods, dry grass, rock, sand and
+## the bare rock of a sea cliff. The
 ## terrain colours and the scenery read these; the generated map answers them (LandBiomes).
 
 
@@ -17,4 +18,8 @@ func rock(_x: float, _z: float) -> float:
 
 
 func sand(_x: float, _z: float) -> float:
+	return 0.0
+
+
+func cliff(_x: float, _z: float) -> float:
 	return 0.0

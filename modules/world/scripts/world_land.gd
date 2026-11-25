@@ -55,6 +55,7 @@ var _islet_near := 0.0
 var _islet_far := 0.0
 var _islet_rise := 0.0
 var _sand_grade := 0.0
+var _sand_wash := 0.0
 var _sand_height := 0.0
 ## Per water grid point, 1 where the sea reaches it: below sea level and joined to the map's
 ## edge under water.
@@ -183,8 +184,8 @@ func inland(x: float, z: float) -> float:
 
 
 ## Sand, 0 to 1: beaches on gentle ground just over the sea and the sea floor under it, along
-## the coast; none where the shore is steep (rock and cliffs, see `rock`). 0 on a map
-## without a coast.
+## the coast, and within `wash` metres of the sea on any ground short of rock; none where the
+## shore is steep (rock and cliffs, see `rock`). 0 on a map without a coast.
 ## `slope` as for `rock`.
 func sand(x: float, z: float, slope := NAN) -> float:
 	# Only along the coast (a low hollow inland is no beach), and that is cheaper to rule out
@@ -194,8 +195,13 @@ func sand(x: float, z: float, slope := NAN) -> float:
 	var above := land_height(x, z) - sea_level
 	if above > _sand_height:
 		return 0.0
-	var gentle := 1.0 - smoothstep(_sand_grade * 0.6, _sand_grade, grade(x, z) if is_nan(slope) else slope)
-	return gentle * (1.0 - smoothstep(_sand_height * 0.5, _sand_height, above))
+	var g := grade(x, z) if is_nan(slope) else slope
+	var gentle := 1.0 - smoothstep(_sand_grade * 0.6, _sand_grade, g)
+	var beach := gentle * (1.0 - smoothstep(_sand_height * 0.5, _sand_height, above))
+	# Where the ground steepens into the water it is too steep for a beach but not yet rock:
+	# sand fades out just as `rock` fades in, so no grass runs down to the sea between them.
+	var washed := (1.0 - smoothstep(_rock_from, _rock_to, g)) * (1.0 - smoothstep(_sand_wash * 0.5, _sand_wash, above))
+	return maxf(beach, washed)
 
 
 ## The ponds: each {level, centre (its deepest point, x and z), area (square metres), depth
@@ -236,7 +242,11 @@ func forest(x: float, z: float) -> float:
 	var region := smoothstep(0.15, 0.55, _woodland.get_noise_2d(x, z)) * _lowland_forest
 	var woody := maxf(hilliness(x, z) * _hill_forest, region)
 	var clearings := smoothstep(0.0, 0.75, _biomes.forest(x, z))
-	return clampf(woody * clearings * 1.25, 0.0, 1.0)
+	var woods := clampf(woody * clearings * 1.25, 0.0, 1.0)
+	# Nor on a cliff over the sea: its face is bare rock, not leaf litter.
+	if woods > 0.0 and has_coast() and h - sea_level < _cliff_rise * 2.0:
+		woods *= 1.0 - _cliff_at(x, z, h, NAN)
+	return woods
 
 
 ## Yellowed grass and bare patches, 0 to 1: patches out in the open that fade softly into
@@ -263,11 +273,35 @@ func rock(x: float, z: float, slope := NAN) -> float:
 	var crag := steep * smoothstep(0.25, 0.75, hilly)
 	var bare := maxf(field, crag * patches)
 	if has_coast() and steep > 0.0:
-		# Where the sea meets steep ground the shore is bare rock all along: cliffs and
-		# scree, never grass down to the water.
-		var above := land_height(x, z) - sea_level
-		bare = maxf(bare, steep * (1.0 - smoothstep(_cliff_rise, _cliff_rise * 2.0, above)))
+		bare = maxf(bare, _shore_rock(land_height(x, z) - sea_level, steep))
 	return bare
+
+
+## Bare rock where steep ground meets the sea, 0 to 1: cliffs and scree all along the shore,
+## never grass or woods down to the water. 0 on a map without a coast.
+## `slope` as for `rock`.
+func cliff(x: float, z: float, slope := NAN) -> float:
+	if not has_coast() or _biomes == null:
+		return 0.0
+	return _cliff_at(x, z, NAN, slope)
+
+
+## `cliff` with the land height `h` at (x, z) when the caller has it (NAN: worked out here).
+## The coast band and then the height rule most ground out before the grade (four more height
+## samples) is needed: this runs for every colour the ground is drawn with.
+func _cliff_at(x: float, z: float, h: float, slope: float) -> float:
+	if inland(x, z) > _beach_land:
+		return 0.0
+	var above := (land_height(x, z) if is_nan(h) else h) - sea_level
+	if above >= _cliff_rise * 2.0:
+		return 0.0
+	return _shore_rock(above, smoothstep(_rock_from, _rock_to, grade(x, z) if is_nan(slope) else slope))
+
+
+## `cliff` for ground `steep` (0 to 1, from the rock grades) `above` metres over the sea: all
+## of it up to the cliff tops, fading out above them.
+func _shore_rock(above: float, steep: float) -> float:
+	return steep * (1.0 - smoothstep(_cliff_rise, _cliff_rise * 2.0, above))
 
 
 ## Height of the land before water: the noise alone.
@@ -368,6 +402,7 @@ func _read_coast(coast: Dictionary, seed_value: int) -> void:
 	_beach_land = float(beach["land_band"])
 	_sand_grade = float(beach["sand_grade"])
 	_sand_height = float(beach["sand_height"])
+	_sand_wash = float(beach["wash"])
 	var cliff: Dictionary = coast["cliff"]
 	_cliff_rise = float(cliff["rise"])
 	_cliff_sea = float(cliff["sea_band"])

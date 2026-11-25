@@ -79,7 +79,8 @@ func test_the_island_keeps_about_the_land_it_had_with_a_few_islets() -> void:
 
 func test_beaches_are_sand_on_gentle_shores_and_steep_shores_are_rock() -> void:
 	var recipe: Dictionary = Data.load_json(RECIPES[1])
-	var beach: Dictionary = recipe["coast"]["beach"]
+	var rock_to := float(recipe["biomes"]["rock_grade_to"])
+	var wash := float(recipe["coast"]["beach"]["wash"])
 	var sandy := 0
 	var rocky := 0
 	for seed_value in 3:
@@ -100,11 +101,16 @@ func test_beaches_are_sand_on_gentle_shores_and_steep_shores_are_rock() -> void:
 				continue
 			var grade := land.grade(shore.x, shore.y)
 			var sand := land.sand(shore.x, shore.y, grade)
-			if grade > float(beach["sand_grade"]):
+			var rock := land.rock(shore.x, shore.y, grade)
+			if grade > rock_to:
 				assert_float(sand).override_failure_message("seed %d: sand on a steep shore at %s" % [seed_value, shore]).is_equal(0.0)
+			# Sand or rock down to the water, never grass, however steep the shore (a cliff top the
+			# ray steps onto straight from the sea is no waterline).
+			if land.land_height(shore.x, shore.y) - land.sea_level < wash:
+				assert_float(sand + rock).override_failure_message("seed %d: grass on the shore at %s (grade %.2f)" % [seed_value, shore, grade]).is_greater_equal(0.95)
 			if sand > 0.5:
 				sandy += 1
-			if land.rock(shore.x, shore.y, grade) > 0.5:
+			if rock > 0.5:
 				rocky += 1
 	assert_int(sandy).override_failure_message("no beaches").is_greater(50)
 	assert_int(rocky).override_failure_message("no rocky shores").is_greater(5)

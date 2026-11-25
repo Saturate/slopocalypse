@@ -36,6 +36,7 @@
     "compass": true,
     "coop_marker": true,
     "glowsticks": true,
-    "suppression": true
+    "suppression": true,
+    "harbour": true
   }
 }

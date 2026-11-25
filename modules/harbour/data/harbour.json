@@ -1,0 +1,14 @@
+{
+  "_comment": "The harbour by the players' camp on an island map (#454): a jetty from the shore out to the map's harbour spot (MapShape.harbour), and a few things standing about it, as voxel kit pieces. Where it goes is the map's; what it is built of is this file's, and the server and every client must have the same, as its collision comes from it. jetty: the deck stands freeboard metres over the sea; its shore end is where the ground first comes within step metres under the deck (no further than landing metres in from the waterline), so a player walks straight on; it runs out past the map's harbour end to a whole number of 3 m sections; params are the jetty generator's (width, wear, voxel). pieces: each a voxel kit generator with its params, standing at [x, z] metres from an anchor (shore: the jetty's shore end, end: its sea end), x to the right looking out to sea and z out to sea, turned yaw degrees; a land piece is set sink metres into the ground under its lowest corner (and left out where the ground rises more than max_rise metres across it), a floating one (afloat: true, a boat only) has its waterline at the sea's surface. Everything stands inside the harbour's footprint (the map recipe's settlements.harbour.size round the waterline), which roads, sites, power and trees keep off: keep landing plus how far a piece reaches in from the shore end within half of it.",
+  "jetty": {"freeboard": 0.8, "step": 0.25, "landing": 16.0, "params": {"width": 2.4, "wear": 0.3, "ladder": 1, "voxel": 0.06}},
+  "sink": 0.05,
+  "max_rise": 0.75,
+  "pieces": [
+    {"name": "shed", "generator": "VoxBoatShed", "anchor": "shore", "at": [5.0, -3.2], "yaw": 0.0, "params": {"paint": 1, "width": 3.4, "depth": 5.0, "doors": 0, "voxel": 0.08}},
+    {"name": "crates", "generator": "VoxHarbourProp", "anchor": "shore", "at": [-2.4, -1.6], "yaw": 10.0, "params": {"kind": 0, "colour": 0, "count": 3}},
+    {"name": "crates", "generator": "VoxHarbourProp", "anchor": "shore", "at": [-2.5, -2.8], "yaw": -6.0, "params": {"kind": 0, "colour": 2, "count": 2}},
+    {"name": "nets", "generator": "VoxHarbourProp", "anchor": "shore", "at": [-4.2, -5.0], "yaw": 25.0, "params": {"kind": 1, "colour": 2}},
+    {"name": "fuel", "generator": "VoxHarbourProp", "anchor": "shore", "at": [2.4, -6.5], "yaw": 90.0, "params": {"kind": 3}},
+    {"name": "boat", "generator": "VoxBoat", "anchor": "end", "at": [-2.9, -4.5], "yaw": 0.0, "afloat": true, "params": {"paint": 1, "length": 6.5, "beam": 2.4, "console": 1}}
+  ]
+}

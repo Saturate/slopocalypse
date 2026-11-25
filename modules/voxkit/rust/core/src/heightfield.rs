@@ -805,7 +805,13 @@ fn push_walls(out: &mut Mesh, t: &Tile, s: &Shape, colours: &[Colour]) {
                     [colours[i], colours[j]],
                 );
             }
-            // Skirts hide cracks to a neighbouring tile of another detail.
+            // Skirts hide cracks to a neighbouring tile of another detail. Where one shows, it
+            // is the side of its column: rock under bare rock, as a wall there is.
+            let skirt_colour = if colours[i] == t.steep {
+                shade(t.steep)
+            } else {
+                t.side
+            };
             let mut skirt_at = |p0: [f32; 2], p1: [f32; 2], h: [f32; 2], normal: [f32; 3]| {
                 let low = h[0].min(h[1]) - skirt;
                 push_poly(
@@ -817,7 +823,7 @@ fn push_walls(out: &mut Mesh, t: &Tile, s: &Shape, colours: &[Colour]) {
                         [p0[0], h[0], p0[1]],
                     ],
                     Some(normal),
-                    t.side,
+                    skirt_colour,
                     [OPEN; 4],
                 );
             };
@@ -862,14 +868,19 @@ fn wall(out: &mut Mesh, t: &Tile, e: &Edge, h: [[f32; 2]; 2], c: [Colour; 2]) {
     }
     let (p0, p1, toward_b) = (e.p0, e.p1, e.toward_b);
     let back = toward_b.map(|x| -x);
-    // Small steps and ledges are the ground's own colour in shade; only real walls show
-    // soil, or every slope would read brown from a distance.
+    // Small steps and ledges are the ground's own colour in shade, or every slope would read
+    // brown from a distance. A real wall (a drop of more than a step) only stands where the
+    // ground is steeper than any soil holds, so it is bare rock, as such ground's tops are;
+    // where a crater was dug it is the earth the blast opened.
     let small = 2.max(t.ledge_voxels() + 1) as f32 * t.voxel;
+    let dug = t.dug_at((e.p0[0] + e.p1[0]) / 2.0, (e.p0[1] + e.p1[1]) / 2.0);
     let colour = |higher: Colour, step: f32| {
         if step <= small + 1e-4 {
             shade(higher)
-        } else {
+        } else if dug {
             t.side
+        } else {
+            shade(t.steep)
         }
     };
     let at = |p: [f32; 2], y: f32| [p[0], y, p[1]];
@@ -1250,6 +1261,50 @@ mod tests {
         let colours = [0x00FF00; 4];
         let m = mesh(&tile(&heights, 3, &colours));
         assert!(m.colours.contains(&0x777777));
+    }
+
+    #[test]
+    fn real_walls_are_rock_and_blasted_ones_earth() {
+        // Flat for 4 m, then rising 30 m over the next 4: steps far taller than a voxel.
+        let heights = [0.0, 0.0, 30.0, 0.0, 0.0, 30.0, 0.0, 0.0, 30.0];
+        let colours = [0x00FF00; 4];
+        // Walls between columns, not the skirt round the tile.
+        let inner_walls = |m: &Mesh| -> Vec<Colour> {
+            (0..m.positions.len())
+                .filter(|&i| {
+                    let p = m.positions[i];
+                    let inside = |u: f32| u > 1e-3 && u < 8.0 - 1e-3;
+                    m.normals[i][1].abs() < 1e-3 && inside(p[0]) && inside(p[2])
+                })
+                .map(|i| m.colours[i])
+                .collect()
+        };
+        let t = tile(&heights, 3, &colours);
+        let walls = inner_walls(&mesh(&t));
+        assert!(!walls.is_empty());
+        assert!(
+            walls.iter().all(|&c| c != t.side),
+            "soil under steep ground"
+        );
+        // And so are the skirts round the tile under it.
+        let m = mesh(&t);
+        let skirts_under_rock = (0..m.positions.len())
+            .filter(|&i| {
+                let (p, n) = (m.positions[i], m.normals[i]);
+                let on_edge = p[2].abs() < 1e-3 || (p[2] - 8.0).abs() < 1e-3;
+                n[2].abs() > 0.99 && on_edge && p[0] > 4.5 + 1e-3
+            })
+            .map(|i| m.colours[i]);
+        assert!(skirts_under_rock.clone().count() > 0);
+        assert!(
+            skirts_under_rock.into_iter().all(|c| c == shade(t.steep)),
+            "a soil skirt under rock"
+        );
+        // The same drop blasted open is earth.
+        let dug = [1u8; 9];
+        let mut blasted = tile(&heights, 3, &colours);
+        blasted.dug = &dug;
+        assert!(inner_walls(&mesh(&blasted)).contains(&blasted.side));
     }
 
     #[test]

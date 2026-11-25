@@ -23,3 +23,7 @@ func rock(x: float, z: float) -> float:
 
 func sand(x: float, z: float) -> float:
 	return land.sand(x, z)
+
+
+func cliff(x: float, z: float) -> float:
+	return land.cliff(x, z)
