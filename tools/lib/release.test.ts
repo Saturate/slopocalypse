@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { assetName, hasScope, imageTags, parseChangeset, parseReleasePlan, releaseNotes } from "./release.ts";
+import { assetName, hasScope, imageTags, parseChangeset, parsePullRequests, parseReleasePlan, releaseNotes, thanksLogins } from "./release.ts";
 
 const DRY_RUN = `Dry run - the following changes would be made:
 
@@ -99,4 +99,42 @@ test("the notes list the macOS zip only when the release ships one", () => {
 	const plan = { version: "0.4.0", tag: "v0.4.0", changelog: "", entries: [{ bump: "minor" as const, text: "Macs." }], internal: [] };
 	assert.match(releaseNotes(plan), /slopocalypse-0\.4\.0-macos\.zip/);
 	assert.doesNotMatch(releaseNotes(plan, false), /macos/);
+});
+
+test("the releaser's text goes at the top, above the changes", () => {
+	const plan = { version: "0.4.0", tag: "v0.4.0", changelog: "", entries: [{ bump: "minor" as const, text: "Macs." }], internal: [] };
+	const notes = releaseNotes(plan, true, { intro: "  A big one.\n\nHave fun.  " });
+	assert.ok(notes.startsWith("A big one.\n\nHave fun.\n\n## Features"));
+	assert.ok(releaseNotes(plan, true, { intro: "   " }).startsWith("## Features"));
+	assert.ok(releaseNotes(plan).startsWith("## Features"));
+});
+
+test("the thanks come last and are left out when nobody is named", () => {
+	const plan = { version: "0.4.0", tag: "v0.4.0", changelog: "", entries: [{ bump: "minor" as const, text: "Macs." }], internal: [] };
+	const notes = releaseNotes(plan, true, { thanks: ["a", "b", "c"] });
+	assert.ok(notes.trimEnd().endsWith("## Thanks\n\nThanks to @a, @b and @c for their work in this release."));
+	assert.match(releaseNotes(plan, true, { thanks: ["a"] }), /Thanks to @a for their work/);
+	assert.match(releaseNotes(plan, true, { thanks: ["a", "b"] }), /Thanks to @a and @b for/);
+	assert.doesNotMatch(releaseNotes(plan, true, { thanks: [] }), /Thanks/);
+});
+
+test("thanks name PR authors once, without bots and the repo owner", () => {
+	const prs = [
+		{ author: { login: "Saturate", is_bot: false } },
+		{ author: { login: "zed", is_bot: false } },
+		{ author: { login: "dependabot[bot]", is_bot: false } },
+		{ author: { login: "app/github-actions", is_bot: true } },
+		{ author: { login: "Amy", is_bot: false } },
+		{ author: { login: "zed", is_bot: false } },
+		{ author: { login: "amy", is_bot: false } },
+		{ author: { login: "bad login", is_bot: false } },
+		{ author: null },
+	];
+	assert.deepEqual(thanksLogins(prs, "saturate"), ["Amy", "zed"]);
+});
+
+test("the PR list from gh is read without trusting its shape", () => {
+	const json = JSON.stringify([{ number: 1, author: { login: "a", is_bot: false } }, { number: 2, author: { login: "b", is_bot: true } }, { number: 3 }, "x"]);
+	assert.deepEqual(parsePullRequests(json), [{ author: { login: "a", is_bot: false } }, { author: { login: "b", is_bot: true } }, { author: null }]);
+	assert.throws(() => parsePullRequests("{}"));
 });

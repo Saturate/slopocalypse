@@ -94,8 +94,17 @@ const SECTIONS: readonly [Bump, string][] = [
 // Grouped by kind of change when the changesets were readable, one list otherwise.
 // `mac`: whether this release ships a macOS zip (the workflow builds one; the local fallback
 // on Windows cannot).
-export function releaseNotes(plan: ReleasePlan, mac = true): string {
+export interface NotesExtras {
+	// The releaser's own text, shown above the changes.
+	intro?: string | undefined;
+	// GitHub logins to thank, last.
+	thanks?: readonly string[];
+}
+
+export function releaseNotes(plan: ReleasePlan, mac = true, extras: NotesExtras = {}): string {
 	const out: string[] = [];
+	const intro = extras.intro?.trim() ?? "";
+	if (intro !== "") out.push(intro, "");
 	if (plan.entries.length > 0) {
 		for (const [bump, title] of SECTIONS) {
 			const items = plan.entries.filter((e) => e.bump === bump).map((e) => `- ${e.text}`);
@@ -115,5 +124,39 @@ export function releaseNotes(plan: ReleasePlan, mac = true): string {
 		`- Server: \`docker run -d -p 7777:7777/udp -v slopocalypse-data:/data ${IMAGE}:${plan.version}\``,
 		"",
 	);
+	const thanks = (extras.thanks ?? []).map((l) => `@${l}`);
+	if (thanks.length > 0) {
+		const names = thanks.length === 1 ? thanks[0]! : `${thanks.slice(0, -1).join(", ")} and ${thanks[thanks.length - 1]!}`;
+		out.push("## Thanks", "", `Thanks to ${names} for their work in this release.`, "");
+	}
 	return out.join("\n");
+}
+
+export interface PullRequest {
+	author: { login: string; is_bot: boolean } | null;
+}
+
+// `gh pr list --json author` output; entries without a readable author are kept as null.
+export function parsePullRequests(json: string): PullRequest[] {
+	const parsed: unknown = JSON.parse(json);
+	if (!Array.isArray(parsed)) throw new Error("gh did not return a list of pull requests");
+	return parsed.filter(isRecord).map((pr) => {
+		const a = pr["author"];
+		return { author: isRecord(a) && typeof a["login"] === "string" ? { login: a["login"], is_bot: a["is_bot"] === true } : null };
+	});
+}
+
+// Who to thank: PR authors without bots and the repo owner (every agent PR is opened under the
+// owner's account). Logins are mentioned in markdown, so anything that is not a plain login is
+// dropped.
+export function thanksLogins(prs: readonly PullRequest[], owner: string): string[] {
+	const seen = new Map<string, string>();
+	for (const { author } of prs) {
+		if (author === null || author.is_bot || author.login.endsWith("[bot]")) continue;
+		if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/.test(author.login)) continue;
+		const key = author.login.toLowerCase();
+		if (key === owner.toLowerCase() || seen.has(key)) continue;
+		seen.set(key, author.login);
+	}
+	return [...seen.values()].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 }

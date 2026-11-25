@@ -7,6 +7,11 @@ name: release
 # release branch and publishes nothing. tools/release.ts does the same from a local machine.
 on:
   workflow_dispatch:
+    inputs:
+      notes:
+        description: Text at the top of the release notes
+        type: string
+        required: false
 
 concurrency:
   group: release
@@ -21,6 +26,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      pull-requests: read
     outputs:
       version: ${{ steps.plan.outputs.version }}
       tag: ${{ steps.plan.outputs.tag }}
@@ -37,6 +43,9 @@ jobs:
       - run: node tools/get-changesetter.ts
 
       - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTES: ${{ inputs.notes }}
         run: node tools/release-plan.ts build/release/notes.md >> "$GITHUB_OUTPUT"
 
       - name: Nothing to release
