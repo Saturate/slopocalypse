@@ -3,8 +3,8 @@ extends Node
 ## image passes it). Listens for HTTP on TCP at the game's port number (the game itself
 ## talks UDP there, so they never meet) or at `--web-port=N`, on every address or the one
 ## `--web-bind=` names (a proxy in front, #448), and answers `GET /` (a small
-## status page) and `GET /status.json` (the same as JSON, for bots and dashboards): read-only
-## and public. Under `/admin` are pages other modules add (`add_admin_page`: the map viewer,
+## status page) and `GET /status.json` (the same as JSON, for bots and dashboards) and
+## `GET /favicon.ico` (the game's logo): read-only and public. Under `/admin` are pages other modules add (`add_admin_page`: the map viewer,
 ## the live map), behind a password from `WEB_PASSWORD` in the environment (HTTP basic auth:
 ## put HTTPS in front); with no password they are off.
 ##
@@ -66,6 +66,8 @@ var _failed_logins: Dictionary[String, Array] = {}
 var _trusted: Array[PackedInt64Array] = []
 ## The web app's files by name, read once: only these can be asked for.
 var _static: Dictionary[String, PackedByteArray] = {}
+## The game's logo, read once: the tab icon of a page about the game.
+var _favicon: PackedByteArray = []
 
 
 func _ready() -> void:
@@ -74,6 +76,7 @@ func _ready() -> void:
 	set_password(OS.get_environment(PASSWORD_ENV))
 	set_trusted_proxies(OS.get_environment(TRUSTED_PROXY_ENV))
 	load_static(STATIC_DIR)
+	_favicon = FileAccess.get_file_as_bytes("res://assets/logo/icon.ico")
 	var args := OS.get_cmdline_user_args()
 	if not args.has(FLAG) or Net.mode != Net.Mode.SERVER:
 		return
@@ -345,7 +348,7 @@ func handle(req: Dictionary) -> Variant:
 		"/status.json", "/api/v1/status":
 			return [200, "application/json", JSON.stringify(WebStatus.build(get_tree(), _started)), PUBLIC]
 		"/favicon.ico":
-			return [204, "text/plain", ""]
+			return [200, "image/x-icon", _favicon] if not _favicon.is_empty() else [204, "text/plain", ""]
 	return [404, "text/plain", "not found"]
 
 

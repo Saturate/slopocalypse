@@ -49,6 +49,12 @@ func test_the_page_answers() -> void:
 	assert_str(text).contains("Players online")
 
 
+func test_the_favicon_serves_the_game_icon() -> void:
+	var text := await _ask("GET /favicon.ico HTTP/1.1\r\n\r\n")
+	assert_str(text).starts_with("HTTP/1.1 200")
+	assert_str(text).contains("image/x-icon")
+
+
 func test_other_paths_and_methods_are_refused() -> void:
 	assert_str(await _ask("GET /nowhere HTTP/1.1\r\n\r\n")).starts_with("HTTP/1.1 404")
 	assert_str(await _ask("POST / HTTP/1.1\r\nContent-Length: 0\r\n\r\n")).starts_with("HTTP/1.1 405")
