@@ -169,13 +169,39 @@ test("the ico carries one entry per size, decodable at the small end", () => {
 	}
 });
 
+// A PNG's IDAT inflated: the filter bytes and pixels, whatever deflate wrote them
+// (zlib builds differ between Node versions, so the compressed bytes may not match).
+function pngRaw(png: Buffer): Buffer {
+	let p = 8;
+	const idat: Buffer[] = [];
+	while (p < png.length) {
+		const len = png.readUInt32BE(p);
+		if (png.toString("ascii", p + 4, p + 8) === "IDAT") idat.push(png.subarray(p + 8, p + 8 + len));
+		p += 12 + len;
+	}
+	return inflateSync(Buffer.concat(idat));
+}
+
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+
 test("the files in the repo are what the generator writes", () => {
 	for (const size of PNG_SIZES) {
 		const file = readFileSync(join(root, `assets/logo/icon-${size}.png`));
-		// PNGs live in Git LFS, and a checkout without LFS (CI) has only the pointer.
+		// PNGs live in Git LFS, and a checkout without LFS has only the pointer.
 		if (file.subarray(0, 24).toString("ascii") === "version https://git-lfs.") continue;
-		assert.ok(file.equals(encodePng(size, size, render(size))), `icon-${size}.png is stale: node tools/icon.ts`);
+		const want = encodePng(size, size, render(size));
+		assert.ok(file.subarray(0, 33).equals(want.subarray(0, 33)), `icon-${size}.png header is stale: node tools/icon.ts`);
+		assert.ok(pngRaw(file).equals(pngRaw(want)), `icon-${size}.png is stale: node tools/icon.ts`);
 	}
-	assert.ok(readFileSync(join(root, "assets/logo/icon.ico")).equals(encodeIco(ICO_SIZES)), "icon.ico is stale: node tools/icon.ts");
+	const ico = readFileSync(join(root, "assets/logo/icon.ico"));
+	const want = encodeIco(ICO_SIZES);
+	assert.equal(ico.readUInt16LE(4), want.readUInt16LE(4), "icon.ico is stale: node tools/icon.ts");
+	for (let i = 0; i < want.readUInt16LE(4); i++) {
+		const o = 6 + i * 16;
+		const entry = (b: Buffer): Buffer => b.subarray(b.readUInt32LE(o + 12), b.readUInt32LE(o + 12) + b.readUInt32LE(o + 8));
+		const [have, expect] = [entry(ico), entry(want)];
+		const same = expect.subarray(0, 4).equals(PNG_MAGIC) ? have.subarray(0, 4).equals(PNG_MAGIC) && pngRaw(have).equals(pngRaw(expect)) : have.equals(expect);
+		assert.ok(ico[o] === want[o] && same, `icon.ico entry ${i} is stale: node tools/icon.ts`);
+	}
 	assert.equal(readFileSync(join(root, "icon.svg"), "utf8"), svgOf(layout(SVG_SIZE)), "icon.svg is stale: node tools/icon.ts");
 });
