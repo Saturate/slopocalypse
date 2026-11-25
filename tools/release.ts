@@ -1,18 +1,25 @@
 // Cuts a release from the maintainer's machine (no Actions minutes):
-//   node tools/release.ts [--dry-run]
+//   node tools/release.ts [--dry-run] [--notes "<text>"]
 // Bumps the version and changelog with changesetter, builds the Windows zip, the Linux zip
 // and the server image, and only then commits, tags, pushes, creates the GitHub Release with
 // the zips and pushes the image to ghcr.io. --dry-run builds everything, then puts the tree
-// back and publishes nothing.
+// back and publishes nothing. --notes puts text at the top of the release notes.
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { argv, exit, platform } from "node:process";
 import { changesetterBin } from "./lib/changesetter.ts";
-import { assetName, hasScope, IMAGE, imageTags, parseReleasePlan, releaseNotes, type ReleasePlan } from "./lib/release.ts";
+import { collectThanks } from "./lib/release-thanks.ts";
+import { assetName, hasScope, IMAGE, imageTags, parseReleasePlan, releaseNotes, type NotesExtras, type ReleasePlan } from "./lib/release.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const dryRun = argv.includes("--dry-run");
+const notesFlag = argv.indexOf("--notes");
+const intro = notesFlag >= 0 ? argv[notesFlag + 1] : undefined;
+if (notesFlag >= 0 && (intro === undefined || intro.startsWith("--"))) {
+	console.error('--notes needs a text: --notes "<text>"');
+	exit(1);
+}
 const outDir = join(root, "build", "release");
 
 function capture(cmd: string, args: readonly string[]): string {
@@ -92,13 +99,20 @@ function build(p: ReleasePlan): string[] {
 	return [windows, linux];
 }
 
+// Resolved once, so the notes shown before the build are the notes published.
+let extrasCache: NotesExtras | undefined;
+function notesExtras(): NotesExtras {
+	extrasCache ??= { intro, thanks: collectThanks(root) };
+	return extrasCache;
+}
+
 function publish(p: ReleasePlan, assets: readonly string[]): void {
 	step("git", ["add", "-A"]);
 	step("git", ["commit", "-m", `chore(release): ${p.tag}`]);
 	step("git", ["tag", "-a", p.tag, "-m", `Slopocalypse ${p.version}`]);
 	step("git", ["push", "--atomic", "origin", "main", p.tag]);
 	const notes = join(outDir, "notes.md");
-	writeFileSync(notes, releaseNotes(p, false));
+	writeFileSync(notes, releaseNotes(p, false, notesExtras()));
 	step("gh", ["release", "create", p.tag, ...assets, "--title", `Slopocalypse ${p.version}`, "--notes-file", notes]);
 	const user = capture("gh", ["api", "user", "--jq", ".login"]);
 	step("docker", ["login", "ghcr.io", "-u", user, "--password-stdin"], capture("gh", ["auth", "token"]) + "\n");
@@ -113,7 +127,7 @@ async function main(): Promise<void> {
 		return;
 	}
 	if (succeeds("git", ["rev-parse", "--verify", "--quiet", `refs/tags/${p.tag}`])) throw new Error(`tag ${p.tag} already exists`);
-	console.log(`\nReleasing ${p.tag}${dryRun ? " (dry run: nothing is published)" : ""}\n\n${releaseNotes(p, false)}`);
+	console.log(`\nReleasing ${p.tag}${dryRun ? " (dry run: nothing is published)" : ""}\n\n${releaseNotes(p, false, notesExtras())}`);
 
 	let assets: string[];
 	try {
