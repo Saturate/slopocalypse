@@ -3,9 +3,9 @@ extends Node
 ## image passes it). Listens for HTTP on TCP at the game's port number (the game itself
 ## talks UDP there, so they never meet) or at `--web-port=N`, on every address or the one
 ## `--web-bind=` names (a proxy in front, #448), and answers `GET /` (a small
-## status page) and `GET /status.json` (the same as JSON, for bots and dashboards): read-only
-## and public. Under `/admin` are pages other modules add (`add_admin_page`: the map viewer,
-## the live map), behind a password from `WEB_PASSWORD` in the environment (HTTP basic auth:
+## status page), `GET /status.json` (the same as JSON, for bots and dashboards) and
+## `GET /favicon.ico` (the game's logo): read-only and public. Under `/admin` are pages
+## other modules add (`add_admin_page`: the map viewer, the live map), behind a password from `WEB_PASSWORD` in the environment (HTTP basic auth:
 ## put HTTPS in front); with no password they are off.
 ##
 ## The game must never stall on a visitor: each connection is read and answered a piece per
@@ -41,6 +41,8 @@ const MAX_FAILED_LOGINS := 10
 const FAILED_LOGIN_WINDOW_MS := 60000
 ## The admin web app's built files (web/, `npm run build -w web`), served under APP_PATH.
 const STATIC_DIR := "res://modules/web/static"
+## Written by tools/icon.ts; listed in the export's include filter, as it is not a resource.
+const FAVICON := "res://assets/logo/icon.ico"
 const APP_PATH := "/admin/app"
 const CONTENT_TYPES := {"html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8", "css": "text/css; charset=utf-8",
 	"json": "application/json", "svg": "image/svg+xml", "png": "image/png", "ico": "image/x-icon", "woff2": "font/woff2"}
@@ -66,6 +68,8 @@ var _failed_logins: Dictionary[String, Array] = {}
 var _trusted: Array[PackedInt64Array] = []
 ## The web app's files by name, read once: only these can be asked for.
 var _static: Dictionary[String, PackedByteArray] = {}
+## The game's logo, read once: the tab icon of a page about the game.
+var _favicon: PackedByteArray = []
 
 
 func _ready() -> void:
@@ -121,6 +125,8 @@ func listen(port: int, bind: String = "*") -> bool:
 		Log.warn(&"web", "cannot listen on TCP %s port %d: %s" % [bind, port, error_string(err)])
 		_server = null
 		return false
+	# Only a listening page serves it, so a client never reads it.
+	_favicon = FileAccess.get_file_as_bytes(FAVICON)
 	var host := "<this server>" if bind == "*" else ("[%s]" % bind if bind.contains(":") else bind)
 	Log.info(&"web", "status page on http://%s:%d/%s" % [host, _server.get_local_port(), "" if _password.is_empty() else " (admin pages on)"])
 	return true
@@ -345,7 +351,7 @@ func handle(req: Dictionary) -> Variant:
 		"/status.json", "/api/v1/status":
 			return [200, "application/json", JSON.stringify(WebStatus.build(get_tree(), _started)), PUBLIC]
 		"/favicon.ico":
-			return [204, "text/plain", ""]
+			return [200, "image/x-icon", _favicon] if not _favicon.is_empty() else [204, "text/plain", ""]
 	return [404, "text/plain", "not found"]
 
 
