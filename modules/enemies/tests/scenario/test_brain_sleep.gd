@@ -234,8 +234,14 @@ func test_between_thinks_it_notices_nobody_until_it_thinks_again() -> void:
 	var brain := _brain(enemy)
 	brain.set_think_every(100.0)
 	brain._think_in = 100.0
-	# In plain sight ahead (a soldier faces -Z), but it is not thinking.
-	var player := _player(Vector3(0, 0.1, -30))
+	# Its patrol may have it walking or turning: hold it still, facing where it faces now,
+	# so the player stays in its view until it thinks (#585).
+	brain._walking = false
+	brain._move_world = Vector3.ZERO
+	brain._want_yaw = brain._yaw
+	var ahead := Vector3(-sin(brain._yaw), 0.0, -cos(brain._yaw))
+	# In plain sight ahead, but it is not thinking.
+	var player := _player(enemy.global_position + ahead * 30.0 + Vector3.UP * 0.1)
 	await _until(func() -> bool: return brain.target != null, 0.5)
 	assert_object(brain.target).is_null()
 	# Asked to think more often, it thinks at once.
