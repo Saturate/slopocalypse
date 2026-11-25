@@ -80,9 +80,12 @@ func server_set_hour(hour: float) -> void:
 
 
 func _send_hour() -> void:
-	if multiplayer.multiplayer_peer is OfflineMultiplayerPeer or multiplayer.get_peers().is_empty():
+	if multiplayer.multiplayer_peer is OfflineMultiplayerPeer:
 		return
-	_receive_hour.rpc(_clock.hour)
+	# Only to players who are in: a refused client hanging up has no open channel left, and
+	# sending to it logs "Unable to send packet" (#552). Joining players get it on `peer_joined`.
+	for peer in Net.joined_peers():
+		_receive_hour.rpc_id(peer, _clock.hour)
 
 
 func _on_peer_joined(peer: int) -> void:
